@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::sync::mpsc::SyncSender;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -5,6 +7,8 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
+
+mod hook_bridge;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,7 +49,7 @@ enum PermissionStatus {
     Denied,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum Decision {
     Approved,
@@ -54,6 +58,7 @@ enum Decision {
 
 struct AppState {
     requests: Mutex<Vec<PermissionRequest>>,
+    hook_waiters: Mutex<HashMap<String, SyncSender<Decision>>>,
 }
 
 #[tauri::command]
@@ -82,6 +87,15 @@ fn resolve_permission_request(
     request.status = status;
     if !note.trim().is_empty() {
         request.detail = format!("{} Note: {}", request.detail, note.trim());
+    }
+
+    let waiter = state
+        .hook_waiters
+        .lock()
+        .map_err(|error| error.to_string())?
+        .remove(&id);
+    if let Some(waiter) = waiter {
+        let _ = waiter.send(decision);
     }
 
     let snapshot = snapshot_from(&requests);
@@ -124,6 +138,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
             requests: Mutex::new(seed_requests()),
+            hook_waiters: Mutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -132,6 +147,7 @@ pub fn run() {
         ])
         .setup(|app| {
             build_tray(app.handle())?;
+            hook_bridge::start_server(app.handle().clone());
 
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_always_on_top(true);
@@ -275,4 +291,66 @@ fn month_and_day(year: i32, day_of_year: u64) -> (u64, u64) {
 
 fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+#[cfg(test)]
+mod hook_bridge_tests {
+    use serde_json::json;
+
+    #[test]
+    fn maps_claude_pre_tool_use_payload_to_permission_request() {
+        let payload = json!({
+            "session_id": "session-123",
+            "cwd": "/tmp/project",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {
+                "command": "npm install",
+                "description": "Install dependencies"
+            },
+            "tool_use_id": "tool-123"
+        });
+
+        let request = crate::hook_bridge::permission_request_from_claude_payload(
+            "request-123".into(),
+            payload,
+            "2026-06-09T09:00:00Z".into(),
+        )
+        .expect("payload should map to a request");
+
+        assert_eq!(request.id, "request-123");
+        assert!(matches!(request.agent, crate::AgentKind::Claude));
+        assert_eq!(request.session, "session-123");
+        assert_eq!(request.command, "Bash: npm install");
+        assert_eq!(request.detail, "Install dependencies");
+        assert_eq!(request.cwd, "/tmp/project");
+        assert_eq!(request.status, crate::PermissionStatus::Pending);
+    }
+
+    #[test]
+    fn encodes_hook_decision_for_claude_pre_tool_use() {
+        let approved = crate::hook_bridge::claude_pre_tool_response(crate::Decision::Approved);
+        assert_eq!(
+            approved,
+            json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "permissionDecisionReason": "Approved from Atoll"
+                }
+            })
+        );
+
+        let denied = crate::hook_bridge::claude_pre_tool_response(crate::Decision::Denied);
+        assert_eq!(
+            denied,
+            json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": "Denied from Atoll"
+                }
+            })
+        );
+    }
 }
