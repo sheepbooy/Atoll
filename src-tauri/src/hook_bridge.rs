@@ -43,7 +43,7 @@ pub(crate) fn permission_request_from_claude_payload(
     requested_at: String,
 ) -> Option<PermissionRequest> {
     let event_name = payload.get("hook_event_name")?.as_str()?;
-    if event_name != "PreToolUse" {
+    if !matches!(event_name, "PreToolUse" | "PermissionRequest") {
         return None;
     }
 
@@ -72,25 +72,41 @@ pub(crate) fn permission_request_from_claude_payload(
     })
 }
 
-pub(crate) fn claude_pre_tool_response(decision: Decision) -> Value {
+pub(crate) fn claude_hook_response(hook_event_name: &str, decision: Decision) -> Value {
+    if hook_event_name == "PermissionRequest" {
+        let decision = match decision {
+            Decision::Approved => json!({ "behavior": "allow" }),
+            Decision::Denied => json!({
+                "behavior": "deny",
+                "message": "Denied from Atoll"
+            }),
+        };
+
+        return json!({
+            "hookSpecificOutput": {
+                "hookEventName": hook_event_name,
+                "decision": decision
+            }
+        });
+    }
+
     let (permission_decision, reason) = match decision {
         Decision::Approved => ("allow", "Approved from Atoll"),
         Decision::Denied => ("deny", "Denied from Atoll"),
     };
-
     json!({
         "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
+            "hookEventName": hook_event_name,
             "permissionDecision": permission_decision,
             "permissionDecisionReason": reason
         }
     })
 }
 
-fn claude_pre_tool_ask_response(reason: &str) -> Value {
+fn claude_hook_ask_response(hook_event_name: &str, reason: &str) -> Value {
     json!({
         "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
+            "hookEventName": hook_event_name,
             "permissionDecision": "ask",
             "permissionDecisionReason": reason
         }
@@ -100,7 +116,7 @@ fn claude_pre_tool_ask_response(reason: &str) -> Value {
 fn handle_connection(app: AppHandle, mut stream: TcpStream) {
     let result = read_http_request(&mut stream)
         .and_then(|request| route_request(app, request))
-        .unwrap_or_else(|error| claude_pre_tool_ask_response(&error));
+        .unwrap_or_else(|error| claude_hook_ask_response("PreToolUse", &error));
 
     let _ = write_json_response(&mut stream, result);
 }
@@ -118,6 +134,11 @@ fn route_request(app: AppHandle, request: HttpRequest) -> Result<Value, String> 
 
 fn submit_claude_pre_tool_request(app: AppHandle, payload: Value) -> Result<Value, String> {
     let request_id = uuid::Uuid::new_v4().to_string();
+    let hook_event_name = payload
+        .get("hook_event_name")
+        .and_then(Value::as_str)
+        .unwrap_or("PreToolUse")
+        .to_string();
     let request =
         permission_request_from_claude_payload(request_id.clone(), payload, iso_timestamp_now())
             .ok_or_else(|| "Unsupported Claude hook event".to_string())?;
@@ -143,7 +164,7 @@ fn submit_claude_pre_tool_request(app: AppHandle, payload: Value) -> Result<Valu
     show_main_window(&app);
 
     match receiver.recv_timeout(HOOK_RESPONSE_TIMEOUT) {
-        Ok(decision) => Ok(claude_pre_tool_response(decision)),
+        Ok(decision) => Ok(claude_hook_response(&hook_event_name, decision)),
         Err(_) => {
             remove_pending_waiter(&state, &request_id);
             mark_request_denied(
@@ -152,7 +173,10 @@ fn submit_claude_pre_tool_request(app: AppHandle, payload: Value) -> Result<Valu
                 &request_id,
                 "Timed out waiting for Atoll approval.",
             );
-            Ok(claude_pre_tool_ask_response("Atoll approval timed out"))
+            Ok(claude_hook_ask_response(
+                &hook_event_name,
+                "Atoll approval timed out",
+            ))
         }
     }
 }

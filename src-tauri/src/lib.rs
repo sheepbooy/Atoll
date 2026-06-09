@@ -328,8 +328,66 @@ mod hook_bridge_tests {
     }
 
     #[test]
+    fn maps_claude_permission_request_payload_to_permission_request() {
+        let payload = json!({
+            "session_id": "session-123",
+            "cwd": "/tmp/project",
+            "hook_event_name": "PermissionRequest",
+            "tool_name": "Bash",
+            "tool_input": {
+                "command": "npm install",
+                "description": "Install dependencies"
+            },
+            "tool_use_id": "tool-123"
+        });
+
+        let request = crate::hook_bridge::permission_request_from_claude_payload(
+            "request-123".into(),
+            payload,
+            "2026-06-09T09:00:00Z".into(),
+        )
+        .expect("payload should map to a request");
+
+        assert_eq!(request.command, "Bash: npm install");
+        assert_eq!(request.detail, "Install dependencies");
+    }
+
+    #[test]
+    fn encodes_hook_decision_for_claude_hook_event() {
+        let approved =
+            crate::hook_bridge::claude_hook_response("PermissionRequest", crate::Decision::Approved);
+        assert_eq!(
+            approved,
+            json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "PermissionRequest",
+                    "decision": {
+                        "behavior": "allow"
+                    }
+                }
+            })
+        );
+
+        let denied =
+            crate::hook_bridge::claude_hook_response("PermissionRequest", crate::Decision::Denied);
+        assert_eq!(
+            denied,
+            json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "PermissionRequest",
+                    "decision": {
+                        "behavior": "deny",
+                        "message": "Denied from Atoll"
+                    }
+                }
+            })
+        );
+    }
+
+    #[test]
     fn encodes_hook_decision_for_claude_pre_tool_use() {
-        let approved = crate::hook_bridge::claude_pre_tool_response(crate::Decision::Approved);
+        let approved =
+            crate::hook_bridge::claude_hook_response("PreToolUse", crate::Decision::Approved);
         assert_eq!(
             approved,
             json!({
@@ -337,18 +395,6 @@ mod hook_bridge_tests {
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "allow",
                     "permissionDecisionReason": "Approved from Atoll"
-                }
-            })
-        );
-
-        let denied = crate::hook_bridge::claude_pre_tool_response(crate::Decision::Denied);
-        assert_eq!(
-            denied,
-            json!({
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": "Denied from Atoll"
                 }
             })
         );
