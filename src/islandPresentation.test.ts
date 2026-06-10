@@ -41,9 +41,17 @@ describe("finishExpand", () => {
   it("finishes opening as expanded", () => {
     expect(finishExpand("opening")).toBe("expanded");
   });
+
+  it("ignores a late opening completion after reversing to closing", () => {
+    expect(finishExpand("closing")).toBe("closing");
+  });
 });
 
 describe("beginCollapse", () => {
+  it("does not start closing from compact", () => {
+    expect(beginCollapse("compact")).toBe("compact");
+  });
+
   it("reverses opening into closing", () => {
     expect(beginCollapse("opening")).toBe("closing");
   });
@@ -60,5 +68,9 @@ describe("beginCollapse", () => {
 describe("finishCollapse", () => {
   it("finishes closing as compact", () => {
     expect(finishCollapse("closing")).toBe("compact");
+  });
+
+  it("ignores a late closing completion after reopening", () => {
+    expect(finishCollapse("opening")).toBe("opening");
   });
 });
