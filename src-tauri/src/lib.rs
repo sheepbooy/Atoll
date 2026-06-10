@@ -9,14 +9,13 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::utils::config::Color;
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, State};
-use uuid::Uuid;
 
 mod hook_bridge;
 
 const COMPACT_WINDOW_WIDTH: f64 = 132.0;
 const COMPACT_WINDOW_HEIGHT: f64 = 28.0;
-const EXPANDED_WINDOW_WIDTH: f64 = 620.0;
-const EXPANDED_WINDOW_HEIGHT: f64 = 360.0;
+const EXPANDED_WINDOW_WIDTH: f64 = 560.0;
+const EXPANDED_WINDOW_HEIGHT: f64 = 320.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -127,42 +126,17 @@ fn resolve_permission_request(
 }
 
 #[tauri::command]
-fn simulate_permission_request(
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> Result<IslandSnapshot, String> {
-    let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
-    requests.insert(
-        0,
-        PermissionRequest {
-            id: Uuid::new_v4().to_string(),
-            tool_use_id: None,
-            agent: AgentKind::Claude,
-            session: "local-demo".into(),
-            command: "Bash: git status --short".into(),
-            detail: "A demo approval request is waiting for confirmation.".into(),
-            cwd: std::env::current_dir()
-                .map(|path| path.display().to_string())
-                .unwrap_or_else(|_| ".".into()),
-            requested_at: iso_timestamp_now(),
-            status: PermissionStatus::Pending,
-        },
-    );
-
-    let snapshot = snapshot_from(&requests);
-    app.emit("snapshot-changed", &snapshot)
-        .map_err(|error| error.to_string())?;
-    show_main_window(&app);
-    Ok(snapshot)
-}
-
-#[tauri::command]
 fn set_island_presentation(app: AppHandle, mode: IslandWindowMode) -> Result<(), String> {
     let Some(window) = app.get_webview_window("main") else {
         return Ok(());
     };
 
     apply_island_window_mode(&window, mode).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn quit_atoll(app: AppHandle) {
+    exit_atoll(&app);
 }
 
 pub fn run() {
@@ -175,8 +149,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
             resolve_permission_request,
-            simulate_permission_request,
-            set_island_presentation
+            set_island_presentation,
+            quit_atoll
         ])
         .setup(|app| {
             build_tray(app.handle())?;
@@ -200,21 +174,17 @@ pub fn run() {
 }
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, "show", "Show Atoll", true, None::<&str>)?;
-    let demo = MenuItem::with_id(app, "demo", "Create Demo Request", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &demo, &quit])?;
+    let [(show_id, show_label), (quit_id, quit_label)] = tray_menu_entries();
+    let show = MenuItem::with_id(app, show_id, show_label, true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, quit_id, quit_label, true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
 
     TrayIconBuilder::new()
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => show_main_window(app),
-            "demo" => {
-                let state = app.state::<AppState>();
-                let _ = simulate_permission_request(app.clone(), state);
-            }
-            "quit" => app.exit(0),
+            "quit" => exit_atoll(app),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -236,6 +206,14 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .build(app)?;
 
     Ok(())
+}
+
+fn tray_menu_entries() -> [(&'static str, &'static str); 2] {
+    [("show", "Show Atoll"), ("quit", "Quit")]
+}
+
+fn exit_atoll(app: &AppHandle) {
+    app.exit(0);
 }
 
 fn show_main_window(app: &AppHandle) {
@@ -496,6 +474,26 @@ fn month_and_day(year: i32, day_of_year: u64) -> (u64, u64) {
 
 fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+#[cfg(test)]
+mod core_tests {
+    use super::*;
+
+    #[test]
+    fn expanded_window_is_560_by_320() {
+        let size = island_window_logical_size(IslandWindowMode::Expanded);
+
+        assert_eq!(size, LogicalSize::new(560.0, 320.0));
+    }
+
+    #[test]
+    fn tray_contains_only_show_and_quit() {
+        assert_eq!(
+            tray_menu_entries(),
+            [("show", "Show Atoll"), ("quit", "Quit")]
+        );
+    }
 }
 
 #[cfg(test)]

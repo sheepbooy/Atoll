@@ -6,7 +6,7 @@ The first version focuses on the desktop shell:
 
 - Tauri v2 window, tray, and Rust command core.
 - React + TypeScript island UI for pending approvals.
-- Demo event flow that mirrors Claude/Codex permission requests.
+- Live permission flow from Claude Code hooks into the approval island.
 
 ## Development
 

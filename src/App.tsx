@@ -6,7 +6,6 @@ import {
   Circle,
   ClipboardCheck,
   Code2,
-  Play,
   ShieldAlert,
   TerminalSquare,
   X,
@@ -19,7 +18,6 @@ import {
   PermissionRequest,
   resolvePermissionRequest,
   setIslandPresentation,
-  simulatePermissionRequest,
   onSnapshotChanged,
 } from "./tauri";
 
@@ -112,11 +110,6 @@ export function App() {
     } finally {
       setBusyDecision(null);
     }
-  }
-
-  async function createDemoRequest() {
-    applySnapshot(await simulatePermissionRequest());
-    expandIsland();
   }
 
   function applySnapshot(nextSnapshot: IslandSnapshot) {
@@ -292,7 +285,7 @@ export function App() {
               onDeny={() => resolveActive("denied")}
             />
           ) : (
-            <IdleView onCreateDemo={createDemoRequest} />
+            <IdleView />
           )}
 
           <footer className="queue-strip" aria-label="Pending request queue">
@@ -307,10 +300,6 @@ export function App() {
                 <span>{agentLabels[request.agent]}</span>
               </button>
             ))}
-            <button className="queue-chip ghost" type="button" onClick={createDemoRequest}>
-              <Play size={14} />
-              <span>Demo</span>
-            </button>
           </footer>
         </div>
       </section>
@@ -369,7 +358,7 @@ function ApprovalView({ request, busyDecision, onApprove, onDeny }: ApprovalView
   );
 }
 
-function IdleView({ onCreateDemo }: { onCreateDemo: () => void }) {
+function IdleView() {
   return (
     <div className="idle-view">
       <div className="idle-icon">
@@ -379,9 +368,6 @@ function IdleView({ onCreateDemo }: { onCreateDemo: () => void }) {
         <h1>All clear</h1>
         <p>Agent approvals will surface here.</p>
       </div>
-      <button className="icon-button prominent" type="button" onClick={onCreateDemo} aria-label="Create demo request">
-        <Play size={16} />
-      </button>
     </div>
   );
 }
