@@ -6,6 +6,7 @@ export type AgentKind = "claude" | "codex" | "gemini" | "other";
 
 export interface PermissionRequest {
   id: string;
+  toolUseId?: string | null;
   agent: AgentKind;
   session: string;
   command: string;
@@ -20,6 +21,10 @@ export interface IslandSnapshot {
   pendingCount: number;
   activeRequest: PermissionRequest | null;
   recent: PermissionRequest[];
+}
+
+export interface IslandHoverChanged {
+  hovering: boolean;
 }
 
 const isTauriRuntime = "__TAURI_INTERNALS__" in window;
@@ -101,10 +106,34 @@ export async function simulatePermissionRequest(): Promise<IslandSnapshot> {
   return getSnapshot();
 }
 
+export async function setIslandPresentation(mode: "compact" | "expanded") {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  return invoke<void>("set_island_presentation", { mode });
+}
+
 export async function onSnapshotChanged(callback: (snapshot: IslandSnapshot) => void) {
   if (!isTauriRuntime) {
     return () => undefined;
   }
 
   return listen<IslandSnapshot>("snapshot-changed", (event) => callback(event.payload));
+}
+
+export async function onIslandHoverChanged(callback: (state: IslandHoverChanged) => void) {
+  if (!isTauriRuntime) {
+    return () => undefined;
+  }
+
+  return listen<IslandHoverChanged>("island-hover-changed", (event) => callback(event.payload));
+}
+
+export async function onIslandOpenRequested(callback: () => void) {
+  if (!isTauriRuntime) {
+    return () => undefined;
+  }
+
+  return listen<void>("island-open-requested", () => callback());
 }

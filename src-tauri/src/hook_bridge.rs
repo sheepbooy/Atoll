@@ -54,6 +54,10 @@ pub(crate) fn permission_request_from_claude_payload(
 
     Some(PermissionRequest {
         id,
+        tool_use_id: payload
+            .get("tool_use_id")
+            .and_then(Value::as_str)
+            .map(str::to_string),
         agent: AgentKind::Claude,
         session: payload
             .get("session_id")
@@ -103,7 +107,14 @@ pub(crate) fn claude_hook_response(hook_event_name: &str, decision: Decision) ->
     })
 }
 
-fn claude_hook_ask_response(hook_event_name: &str, reason: &str) -> Value {
+pub(crate) fn claude_hook_ask_response(hook_event_name: &str, reason: &str) -> Value {
+    if matches!(
+        hook_event_name,
+        "PermissionRequest" | "PostToolUse" | "PostToolUseFailure"
+    ) {
+        return json!({});
+    }
+
     json!({
         "hookSpecificOutput": {
             "hookEventName": hook_event_name,
@@ -116,7 +127,7 @@ fn claude_hook_ask_response(hook_event_name: &str, reason: &str) -> Value {
 fn handle_connection(app: AppHandle, mut stream: TcpStream) {
     let result = read_http_request(&mut stream)
         .and_then(|request| route_request(app, request))
-        .unwrap_or_else(|error| claude_hook_ask_response("PreToolUse", &error));
+        .unwrap_or_else(|error| fallback_hook_response("PreToolUse", &error));
 
     let _ = write_json_response(&mut stream, result);
 }
@@ -129,7 +140,21 @@ fn route_request(app: AppHandle, request: HttpRequest) -> Result<Value, String> 
     let payload: Value = serde_json::from_slice(&request.body)
         .map_err(|error| format!("Invalid Claude hook payload: {error}"))?;
 
-    submit_claude_pre_tool_request(app, payload)
+    let hook_event_name = payload
+        .get("hook_event_name")
+        .and_then(Value::as_str)
+        .unwrap_or("PreToolUse")
+        .to_string();
+
+    match hook_event_name.as_str() {
+        "PreToolUse" | "PermissionRequest" => submit_claude_pre_tool_request(app, payload)
+            .or_else(|error| Ok(fallback_hook_response(&hook_event_name, &error))),
+        "PostToolUse" | "PostToolUseFailure" => {
+            sync_claude_tool_completion(app, payload)?;
+            Ok(json!({}))
+        }
+        _ => Ok(json!({})),
+    }
 }
 
 fn submit_claude_pre_tool_request(app: AppHandle, payload: Value) -> Result<Value, String> {
@@ -199,6 +224,99 @@ fn mark_request_denied(state: &AppState, app: &AppHandle, request_id: &str, note
 
     let snapshot = snapshot_from(&requests);
     let _ = app.emit("snapshot-changed", &snapshot);
+}
+
+fn sync_claude_tool_completion(app: AppHandle, payload: Value) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let snapshot = {
+        let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
+        let Some(request_id) = mark_matching_pending_request_complete(&mut requests, &payload)
+        else {
+            return Ok(());
+        };
+
+        if let Ok(mut waiters) = state.hook_waiters.lock() {
+            if let Some(waiter) = waiters.remove(&request_id) {
+                let _ = waiter.send(Decision::Approved);
+            }
+        }
+
+        snapshot_from(&requests)
+    };
+
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+pub(crate) fn mark_matching_pending_request_complete(
+    requests: &mut [PermissionRequest],
+    payload: &Value,
+) -> Option<String> {
+    let payload_tool_use_id = payload.get("tool_use_id").and_then(Value::as_str);
+    let payload_session = payload.get("session_id").and_then(Value::as_str);
+    let payload_tool_name = payload.get("tool_name").and_then(Value::as_str);
+    let payload_tool_input = payload.get("tool_input").cloned().unwrap_or(Value::Null);
+    let payload_command =
+        payload_tool_name.map(|tool_name| command_label(tool_name, &payload_tool_input));
+
+    let matched_index = requests.iter().position(|request| {
+        if request.status != PermissionStatus::Pending {
+            return false;
+        }
+
+        if let (Some(request_tool_use_id), Some(payload_tool_use_id)) =
+            (request.tool_use_id.as_deref(), payload_tool_use_id)
+        {
+            return request_tool_use_id == payload_tool_use_id;
+        }
+
+        let session_matches = payload_session
+            .map(|session| request.session == session)
+            .unwrap_or(false);
+        let command_matches = payload_command
+            .as_ref()
+            .map(|command| request.command == *command)
+            .unwrap_or(false);
+
+        session_matches && command_matches
+    });
+
+    let fallback_index =
+        matched_index.or_else(|| unique_pending_request_index(requests, payload_session));
+    let request = requests.get_mut(fallback_index?)?;
+
+    request.status = PermissionStatus::Approved;
+    if !request.detail.contains("Completed in Claude.") {
+        request.detail = format!("{} Completed in Claude.", request.detail);
+    }
+    Some(request.id.clone())
+}
+
+fn unique_pending_request_index(
+    requests: &[PermissionRequest],
+    payload_session: Option<&str>,
+) -> Option<usize> {
+    let mut candidates = requests
+        .iter()
+        .enumerate()
+        .filter(|(_, request)| request.status == PermissionStatus::Pending)
+        .filter(|(_, request)| {
+            payload_session
+                .map(|session| request.session == session)
+                .unwrap_or(true)
+        });
+
+    let (index, _) = candidates.next()?;
+    if candidates.next().is_some() {
+        return None;
+    }
+
+    Some(index)
+}
+
+fn fallback_hook_response(hook_event_name: &str, reason: &str) -> Value {
+    claude_hook_ask_response(hook_event_name, reason)
 }
 
 struct HttpRequest {

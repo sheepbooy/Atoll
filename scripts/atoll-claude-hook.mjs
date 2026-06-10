@@ -19,15 +19,7 @@ try {
   JSON.parse(text);
   process.stdout.write(text);
 } catch (error) {
-  process.stdout.write(
-    JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "ask",
-        permissionDecisionReason: `Atoll unavailable: ${error.message}`,
-      },
-    }),
-  );
+  process.stdout.write(fallbackResponse(hookEventNameFromPayload(globalThis.__ATOLL_LAST_PAYLOAD__), error));
 }
 
 function readStdin() {
@@ -37,7 +29,34 @@ function readStdin() {
     process.stdin.on("data", (chunk) => {
       value += chunk;
     });
-    process.stdin.on("end", () => resolve(value));
+    process.stdin.on("end", () => {
+      globalThis.__ATOLL_LAST_PAYLOAD__ = value;
+      resolve(value);
+    });
     process.stdin.on("error", reject);
+  });
+}
+
+function hookEventNameFromPayload(payload) {
+  if (!payload) return "PreToolUse";
+
+  try {
+    return JSON.parse(payload).hook_event_name || "PreToolUse";
+  } catch {
+    return "PreToolUse";
+  }
+}
+
+function fallbackResponse(hookEventName, error) {
+  if (hookEventName === "PermissionRequest" || hookEventName === "PostToolUse") {
+    return "{}";
+  }
+
+  return JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName,
+      permissionDecision: "ask",
+      permissionDecisionReason: `Atoll unavailable: ${error.message}`,
+    },
   });
 }

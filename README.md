@@ -31,12 +31,12 @@ npm run tauri dev
 ## Claude Code hook smoke test
 
 Atoll currently exposes a local hook bridge on `127.0.0.1:47777`.
-Run Atoll first, then launch Claude Code with a temporary `PreToolUse` hook:
+Run Atoll first, then launch Claude Code with temporary hooks:
 
 ```bash
 claude --settings '{
   "hooks": {
-    "PreToolUse": [
+    "PermissionRequest": [
       {
         "matcher": "*",
         "hooks": [
@@ -47,14 +47,30 @@ claude --settings '{
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /Users/yangshuai/Documents/Atoll/scripts/atoll-claude-hook.mjs",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }'
 ```
 
 This does not persist anything into Claude Code settings. The hook forwards Claude
-tool-use requests into Atoll, waits for approval or denial, and prints Claude's
-expected hook response back to stdout.
+permission requests into Atoll, waits for approval or denial, and uses
+`PostToolUse` events to clear requests that were handled from Claude itself.
+
+For global capture from any Claude Code working directory, add the same
+`PermissionRequest` and `PostToolUse` hook command entries to
+`~/.claude/settings.json`.
 
 ## Architecture
 

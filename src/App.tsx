@@ -1,13 +1,11 @@
-import { MouseEvent, useEffect, useMemo, useState } from "react";
+import { FocusEvent, MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   Bell,
   Check,
-  ChevronDown,
   Circle,
   ClipboardCheck,
   Code2,
-  Minus,
   Play,
   ShieldAlert,
   TerminalSquare,
@@ -16,8 +14,11 @@ import {
 import {
   getSnapshot,
   IslandSnapshot,
+  onIslandHoverChanged,
+  onIslandOpenRequested,
   PermissionRequest,
   resolvePermissionRequest,
+  setIslandPresentation,
   simulatePermissionRequest,
   onSnapshotChanged,
 } from "./tauri";
@@ -49,7 +50,12 @@ const isTauriRuntime = "__TAURI_INTERNALS__" in window;
 
 export function App() {
   const [snapshot, setSnapshot] = useState<IslandSnapshot>(initialSnapshot);
-  const [expanded, setExpanded] = useState(true);
+  const snapshotRef = useRef(initialSnapshot);
+  const [expanded, setExpanded] = useState(false);
+  const expandedRef = useRef(false);
+  const hoveringRef = useRef(false);
+  const collapseTimerRef = useRef<number | null>(null);
+  const openTimerRef = useRef<number | null>(null);
   const [busyDecision, setBusyDecision] = useState<Decision | null>(null);
 
   const activeRequest = snapshot.activeRequest;
@@ -60,14 +66,40 @@ export function App() {
 
   useEffect(() => {
     let unsubscribe: () => void = () => undefined;
+    let unsubscribeHover: () => void = () => undefined;
+    let unsubscribeOpen: () => void = () => undefined;
 
-    getSnapshot().then(setSnapshot).catch(() => undefined);
-    onSnapshotChanged(setSnapshot).then((cleanup) => {
+    getSnapshot()
+      .then((nextSnapshot) => {
+        applySnapshot(nextSnapshot);
+      })
+      .catch(() => undefined);
+    onSnapshotChanged(applySnapshot).then((cleanup) => {
       unsubscribe = cleanup;
+    });
+    onIslandHoverChanged(({ hovering }) => {
+      hoveringRef.current = hovering;
+      if (hovering) {
+        expandIsland();
+      } else {
+        collapseIdleIsland();
+      }
+    }).then((cleanup) => {
+      unsubscribeHover = cleanup;
+    });
+    onIslandOpenRequested(() => {
+      expandIsland();
+      scheduleIdleCollapse();
+    }).then((cleanup) => {
+      unsubscribeOpen = cleanup;
     });
 
     return () => {
       unsubscribe();
+      unsubscribeHover();
+      unsubscribeOpen();
+      clearCollapseTimer();
+      clearOpenTimer();
     };
   }, []);
 
@@ -76,15 +108,103 @@ export function App() {
 
     setBusyDecision(decision);
     try {
-      setSnapshot(await resolvePermissionRequest(activeRequest.id, decision));
+      applySnapshot(await resolvePermissionRequest(activeRequest.id, decision));
     } finally {
       setBusyDecision(null);
     }
   }
 
   async function createDemoRequest() {
-    setSnapshot(await simulatePermissionRequest());
-    setExpanded(true);
+    applySnapshot(await simulatePermissionRequest());
+    expandIsland();
+  }
+
+  function applySnapshot(nextSnapshot: IslandSnapshot) {
+    snapshotRef.current = nextSnapshot;
+    setSnapshot(nextSnapshot);
+
+    if (nextSnapshot.pendingCount > 0) {
+      expandIsland();
+      return;
+    }
+
+    if (hoveringRef.current) {
+      return;
+    }
+
+    collapseIsland();
+  }
+
+  function expandIsland() {
+    clearCollapseTimer();
+    if (expandedRef.current) return;
+    expandedRef.current = true;
+    setIslandPresentation("expanded")
+      .catch(() => undefined)
+      .finally(() => {
+        if (expandedRef.current) {
+          setExpanded(true);
+        }
+      });
+  }
+
+  function collapseIsland() {
+    clearCollapseTimer();
+    if (!expandedRef.current) {
+      setExpanded(false);
+      setIslandPresentation("compact").catch(() => undefined);
+      return;
+    }
+    expandedRef.current = false;
+    setExpanded(false);
+    collapseTimerRef.current = window.setTimeout(() => {
+      collapseTimerRef.current = null;
+      if (!expandedRef.current) {
+        setIslandPresentation("compact").catch(() => undefined);
+      }
+    }, 360);
+  }
+
+  function collapseIdleIsland() {
+    if (snapshotRef.current.pendingCount === 0) {
+      collapseIsland();
+    }
+  }
+
+  function clearCollapseTimer() {
+    if (collapseTimerRef.current === null) return;
+    window.clearTimeout(collapseTimerRef.current);
+    collapseTimerRef.current = null;
+  }
+
+  function clearOpenTimer() {
+    if (openTimerRef.current === null) return;
+    window.clearTimeout(openTimerRef.current);
+    openTimerRef.current = null;
+  }
+
+  function scheduleIdleCollapse() {
+    clearOpenTimer();
+    openTimerRef.current = window.setTimeout(() => {
+      openTimerRef.current = null;
+      if (!hoveringRef.current && snapshotRef.current.pendingCount === 0) {
+        collapseIsland();
+      }
+    }, 1600);
+  }
+
+  function handleIslandBlur(event: FocusEvent<HTMLElement>) {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      collapseIdleIsland();
+    }
+  }
+
+  function compactIslandNow() {
+    clearCollapseTimer();
+    clearOpenTimer();
+    expandedRef.current = false;
+    setExpanded(false);
+    return setIslandPresentation("compact").catch(() => undefined);
   }
 
   async function startWindowDrag(event: MouseEvent<HTMLElement>) {
@@ -100,12 +220,22 @@ export function App() {
     event.stopPropagation();
     if (!isTauriRuntime) return;
 
+    await compactIslandNow();
     await getCurrentWindow().hide().catch(() => undefined);
   }
 
   return (
     <main className="stage">
-      <section className={`island ${expanded ? "is-expanded" : ""}`} aria-label="Atoll">
+      <section
+        className={`island ${expanded ? "is-expanded" : ""}`}
+        aria-label="Atoll"
+        onMouseEnter={expandIsland}
+        onPointerEnter={expandIsland}
+        onPointerMove={expandIsland}
+        onMouseLeave={collapseIdleIsland}
+        onFocusCapture={expandIsland}
+        onBlurCapture={handleIslandBlur}
+      >
         <header
           className="island-compact"
           onMouseDown={startWindowDrag}
@@ -122,18 +252,11 @@ export function App() {
               {activeRequest ? activeRequest.command : "No pending approvals"}
             </span>
           </span>
-          <span className="pending-badge" aria-label={`${snapshot.pendingCount} pending`}>
-            {snapshot.pendingCount}
-          </span>
-          <button
-            className="compact-action"
-            type="button"
-            onClick={() => setExpanded((value) => !value)}
-            aria-label={expanded ? "Collapse Atoll" : "Expand Atoll"}
-            data-no-drag
-          >
-            <ChevronDown className="chevron" size={17} />
-          </button>
+          {snapshot.pendingCount > 0 ? (
+            <span className="pending-badge" aria-label={`${snapshot.pendingCount} pending`}>
+              {snapshot.pendingCount}
+            </span>
+          ) : null}
           <button
             className="compact-action close-action"
             type="button"
@@ -155,9 +278,6 @@ export function App() {
               <span>{pendingRequests.length} pending</span>
             </div>
             <div className="window-actions" data-no-drag>
-              <button className="icon-button" type="button" onClick={() => setExpanded(false)} aria-label="Collapse">
-                <Minus size={16} />
-              </button>
               <button className="icon-button" type="button" onClick={hideWindow} aria-label="Hide Atoll">
                 <X size={16} />
               </button>
