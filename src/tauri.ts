@@ -29,30 +29,7 @@ export interface IslandHoverChanged {
 
 const isTauriRuntime = "__TAURI_INTERNALS__" in window;
 
-const fallbackRequests: PermissionRequest[] = [
-  {
-    id: "demo-claude-shell",
-    agent: "claude",
-    session: "marketing-site-fix",
-    command: "Bash: npm install",
-    detail: "Claude wants to install packages for the local project.",
-    cwd: "/Users/yangshuai/Documents/Atoll",
-    requestedAt: new Date(Date.now() - 1000 * 75).toISOString(),
-    status: "pending",
-  },
-  {
-    id: "demo-codex-write",
-    agent: "codex",
-    session: "agent-permission-bridge",
-    command: "Edit: src-tauri/src/main.rs",
-    detail: "Codex is waiting before changing the Rust event adapter.",
-    cwd: "/Users/yangshuai/Documents/Atoll",
-    requestedAt: new Date(Date.now() - 1000 * 240).toISOString(),
-    status: "pending",
-  },
-];
-
-let localRequests = [...fallbackRequests];
+let localRequests: PermissionRequest[] = [];
 
 export async function getSnapshot(): Promise<IslandSnapshot> {
   if (isTauriRuntime) {
@@ -83,27 +60,12 @@ export async function resolvePermissionRequest(
   return getSnapshot();
 }
 
-export async function simulatePermissionRequest(): Promise<IslandSnapshot> {
-  if (isTauriRuntime) {
-    return invoke<IslandSnapshot>("simulate_permission_request");
+export async function quitAtoll() {
+  if (!isTauriRuntime) {
+    return;
   }
 
-  const createdAt = new Date();
-  localRequests = [
-    {
-      id: `demo-${createdAt.getTime()}`,
-      agent: "claude",
-      session: "local-demo",
-      command: "Bash: git status --short",
-      detail: "A local demo request is waiting for confirmation.",
-      cwd: "/Users/yangshuai/Documents/Atoll",
-      requestedAt: createdAt.toISOString(),
-      status: "pending",
-    },
-    ...localRequests,
-  ];
-
-  return getSnapshot();
+  return invoke<void>("quit_atoll");
 }
 
 export async function setIslandPresentation(mode: "compact" | "expanded") {
