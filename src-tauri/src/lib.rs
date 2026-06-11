@@ -264,7 +264,8 @@ fn tray_menu_entries() -> [(&'static str, &'static str); 2] {
 }
 
 fn exit_atoll(app: &AppHandle) {
-    app.exit(0);
+    app.cleanup_before_exit();
+    std::process::exit(0);
 }
 
 fn show_main_window(app: &AppHandle) {
