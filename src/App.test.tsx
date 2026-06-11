@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -36,6 +37,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 
 describe("App", () => {
   beforeEach(() => {
+    vi.useRealTimers();
     bridge.getSnapshot.mockResolvedValue({
       online: true,
       pendingCount: 1,
@@ -73,7 +75,9 @@ describe("App", () => {
     const collapseButton = await screen.findByRole("button", { name: "Collapse Atoll" });
 
     vi.useFakeTimers();
+    expect(fireEvent.mouseDown(collapseButton)).toBe(false);
     fireEvent.click(collapseButton);
+    expect(collapseButton).not.toHaveFocus();
     expect(container.querySelector(".is-closing")).not.toBeNull();
 
     await vi.advanceTimersByTimeAsync(420);
@@ -85,6 +89,31 @@ describe("App", () => {
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith("expanded");
     expect(container.querySelector(".is-expanded")).not.toBeNull();
     vi.useRealTimers();
+  });
+
+  it("still auto-collapses after the more button is clicked with a pointer", async () => {
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+    });
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+    const island = screen.getByLabelText("Atoll");
+
+    fireEvent.pointerEnter(island);
+    await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+
+    const moreButton = screen.getByRole("button", { name: "More options" });
+    await user.click(moreButton);
+    expect(moreButton).not.toHaveFocus();
+
+    fireEvent.pointerLeave(island);
+    await waitFor(
+      () => expect(container.querySelector(".is-compact")).not.toBeNull(),
+      { timeout: 1500 },
+    );
   });
 
   it("does not reopen from a stale hover event after manual collapse", async () => {
@@ -113,6 +142,26 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Quit Atoll" }));
 
     expect(bridge.quitAtoll).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the full window-control surfaces out of the drag handler", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {},
+    });
+    render(<App />);
+
+    const collapseButton = await screen.findByRole("button", { name: "Collapse Atoll" });
+    const moreButton = screen.getByRole("button", { name: "More options" });
+
+    expect(fireEvent.mouseDown(collapseButton, { button: 0 })).toBe(false);
+    expect(fireEvent.mouseDown(moreButton, { button: 0 })).toBe(false);
+    fireEvent.click(moreButton);
+
+    const quitButton = screen.getByRole("menuitem", { name: "Quit Atoll" });
+    expect(fireEvent.mouseDown(quitButton, { button: 0 })).toBe(false);
+    expect(windowBridge.startDragging).not.toHaveBeenCalled();
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   });
 
   it("closes the more menu with Escape", async () => {

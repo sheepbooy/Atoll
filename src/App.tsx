@@ -289,6 +289,11 @@ export function App() {
     }
   }
 
+  function handleControlMouseDown(event: MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
   async function startWindowDrag(event: MouseEvent<HTMLElement>) {
     if (!("__TAURI_INTERNALS__" in window) || event.button !== 0) return;
 
@@ -358,7 +363,12 @@ export function App() {
             </span>
           ) : null}
 
-          <div className="header-actions" data-no-drag ref={menuRef}>
+          <div
+            className="header-actions"
+            data-no-drag
+            ref={menuRef}
+            onMouseDown={handleControlMouseDown}
+          >
             <button
               className="icon-button"
               type="button"
@@ -380,7 +390,11 @@ export function App() {
             </button>
             {menuOpen ? (
               <div className="more-menu" role="menu">
-                <button type="button" role="menuitem" onClick={handleQuit}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleQuit}
+                >
                   <Power size={15} />
                   Quit Atoll
                 </button>

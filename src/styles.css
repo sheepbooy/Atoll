@@ -287,11 +287,13 @@ button {
   position: absolute;
   top: 14px;
   right: 14px;
+  z-index: 2;
   display: inline-flex;
   width: 65px;
   align-items: center;
   gap: 5px;
   opacity: 1;
+  pointer-events: auto;
   transform: translate3d(0, 0, 0) scale(1);
   transform-origin: right center;
   backface-visibility: hidden;
@@ -315,26 +317,45 @@ button {
 }
 
 .icon-button {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   width: 30px;
   height: 30px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: 0;
   color: #bbb8af;
-  background: rgba(255, 255, 255, 0.055);
+  background: transparent;
   cursor: pointer;
   transition:
     color 160ms ease,
-    background 160ms ease,
     transform 160ms ease;
+}
+
+.icon-button::before {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.055);
+  content: "";
+  pointer-events: none;
+  transition: background 160ms ease;
+}
+
+.icon-button > svg,
+.more-menu button > svg {
+  pointer-events: none;
 }
 
 .icon-button:hover {
   color: #fffdf7;
-  background: rgba(255, 255, 255, 0.11);
   transform: translateY(-1px);
+}
+
+.icon-button:hover::before {
+  background: rgba(255, 255, 255, 0.11);
 }
 
 .icon-button:focus-visible,
@@ -358,12 +379,13 @@ button {
 }
 
 .more-menu button {
+  position: relative;
   display: flex;
   width: 100%;
   height: 34px;
   align-items: center;
   gap: 8px;
-  border-radius: 8px;
+  border-radius: 0;
   padding: 0 9px;
   color: #ffb0a7;
   background: transparent;
@@ -372,7 +394,16 @@ button {
   cursor: pointer;
 }
 
-.more-menu button:hover {
+.more-menu button::before {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background: transparent;
+  content: "";
+  pointer-events: none;
+}
+
+.more-menu button:hover::before {
   background: rgba(255, 127, 115, 0.12);
 }
 
