@@ -1,0 +1,206 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { App } from "./App";
+
+const request = {
+  id: "request-1",
+  agent: "claude" as const,
+  session: "session-1",
+  command: "Bash: npm install --save-dev a-very-long-package-name",
+  detail: "Install development dependencies.",
+  cwd: "/tmp/project",
+  requestedAt: "2026-06-10T08:00:00Z",
+  status: "pending" as const,
+};
+
+const bridge = vi.hoisted(() => ({
+  getSnapshot: vi.fn(),
+  onSnapshotChanged: vi.fn(),
+  onIslandHoverChanged: vi.fn(),
+  onIslandOpenRequested: vi.fn(),
+  quitAtoll: vi.fn(),
+  resolvePermissionRequest: vi.fn(),
+  setIslandPresentation: vi.fn(),
+}));
+
+const windowBridge = vi.hoisted(() => ({
+  startDragging: vi.fn(),
+}));
+
+let emitIslandHover: ((state: { hovering: boolean }) => void) | null = null;
+
+vi.mock("./tauri", () => bridge);
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => windowBridge,
+}));
+
+describe("App", () => {
+  beforeEach(() => {
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 1,
+      activeRequest: request,
+      recent: [request],
+    });
+    bridge.onSnapshotChanged.mockResolvedValue(() => undefined);
+    emitIslandHover = null;
+    bridge.onIslandHoverChanged.mockImplementation(async (callback) => {
+      emitIslandHover = callback;
+      return () => undefined;
+    });
+    bridge.onIslandOpenRequested.mockResolvedValue(() => undefined);
+    bridge.setIslandPresentation.mockResolvedValue(undefined);
+    bridge.quitAtoll.mockResolvedValue(undefined);
+    bridge.resolvePermissionRequest.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [{ ...request, status: "approved" }],
+    });
+    windowBridge.startDragging.mockResolvedValue(undefined);
+  });
+
+  it("renders the command as compact code and contains no demo control", async () => {
+    render(<App />);
+
+    expect(await screen.findByText(request.command)).toHaveProperty("tagName", "CODE");
+    expect(screen.queryByText("Demo")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/demo/i)).not.toBeInTheDocument();
+  });
+
+  it("collapses to a persistent capsule that can be reopened", async () => {
+    const { container } = render(<App />);
+    const collapseButton = await screen.findByRole("button", { name: "Collapse Atoll" });
+
+    vi.useFakeTimers();
+    fireEvent.click(collapseButton);
+    expect(container.querySelector(".is-closing")).not.toBeNull();
+
+    await vi.advanceTimersByTimeAsync(420);
+    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith("compact");
+    expect(container.querySelector(".is-compact")).not.toBeNull();
+
+    fireEvent.click(screen.getByLabelText("Atoll"));
+    await vi.advanceTimersByTimeAsync(420);
+    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith("expanded");
+    expect(container.querySelector(".is-expanded")).not.toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("does not reopen from a stale hover event after manual collapse", async () => {
+    const { container } = render(<App />);
+    const collapseButton = await screen.findByRole("button", { name: "Collapse Atoll" });
+
+    vi.useFakeTimers();
+    fireEvent.click(collapseButton);
+    emitIslandHover?.({ hovering: true });
+    await vi.advanceTimersByTimeAsync(420);
+
+    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith("compact");
+    expect(container.querySelector(".is-compact")).not.toBeNull();
+
+    emitIslandHover?.({ hovering: false });
+    emitIslandHover?.({ hovering: true });
+    await vi.advanceTimersByTimeAsync(420);
+    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith("expanded");
+    vi.useRealTimers();
+  });
+
+  it("puts Quit Atoll in the more menu", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "More options" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Quit Atoll" }));
+
+    expect(bridge.quitAtoll).toHaveBeenCalledOnce();
+  });
+
+  it("closes the more menu with Escape", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "More options" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("closes the more menu on an outside pointer press", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "More options" }));
+    fireEvent.pointerDown(document.body);
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("uses one shared header instead of duplicate close buttons", async () => {
+    const { container } = render(<App />);
+
+    await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+    expect(container.querySelectorAll(".island-header")).toHaveLength(1);
+    expect(screen.queryByLabelText("Hide Atoll")).not.toBeInTheDocument();
+  });
+
+  it("automatically collapses after the final approval while still focused and hovered", async () => {
+    const { container } = render(<App />);
+    const island = screen.getByLabelText("Atoll");
+    const approveButton = await screen.findByRole("button", { name: "Approve" });
+
+    fireEvent.pointerEnter(island);
+    fireEvent.focus(approveButton);
+    fireEvent.click(approveButton);
+
+    await waitFor(() => {
+      expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith("compact");
+    });
+    await waitFor(
+      () => expect(container.querySelector(".is-compact")).not.toBeNull(),
+      { timeout: 1000 },
+    );
+  });
+
+  it("does not cancel opening when hover, focus, and click arrive together", async () => {
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+    });
+    const { container } = render(<App />);
+    const island = screen.getByLabelText("Atoll");
+
+    fireEvent.pointerEnter(island);
+    fireEvent.focus(island);
+    fireEvent.click(island);
+
+    await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+  });
+
+  it("releases focus after dragging so leaving can collapse the island", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {},
+    });
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+    });
+    render(<App />);
+    const island = screen.getByLabelText("Atoll");
+    const header = screen.getByTitle("Hover to open Atoll");
+
+    fireEvent.focus(island);
+    await waitFor(() => expect(screen.getByTitle("Drag Atoll")).toBeInTheDocument());
+    fireEvent.mouseDown(header, { button: 0 });
+    await waitFor(() => expect(windowBridge.startDragging).toHaveBeenCalledOnce());
+
+    vi.useFakeTimers();
+    fireEvent.pointerLeave(island);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith("compact");
+    vi.useRealTimers();
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+  });
+});

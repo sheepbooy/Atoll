@@ -20,4 +20,6 @@ tauri-plugin-opener = "2"
 uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
 objc2-app-kit = { version = "0.3.2", features = ["NSColor", "NSScreen", "NSWindow"] }
+objc2-foundation = "0.3.2"
