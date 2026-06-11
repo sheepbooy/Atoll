@@ -1,24 +1,35 @@
-import { FocusEvent, MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FocusEvent, MouseEvent, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  Bell,
   Check,
+  ChevronUp,
   Circle,
   ClipboardCheck,
   Code2,
+  Ellipsis,
+  Power,
   ShieldAlert,
-  TerminalSquare,
   X,
 } from "lucide-react";
+import {
+  beginCollapse,
+  beginExpand,
+  COLLAPSE_ANIMATION_MS,
+  finishCollapse,
+  finishExpand,
+  IDLE_COLLAPSE_DELAY_MS,
+  PresentationPhase,
+} from "./islandPresentation";
 import {
   getSnapshot,
   IslandSnapshot,
   onIslandHoverChanged,
   onIslandOpenRequested,
+  onSnapshotChanged,
   PermissionRequest,
+  quitAtoll,
   resolvePermissionRequest,
   setIslandPresentation,
-  onSnapshotChanged,
 } from "./tauri";
 
 type Decision = "approved" | "denied";
@@ -44,23 +55,21 @@ const agentTone: Record<PermissionRequest["agent"], string> = {
   other: "neutral",
 };
 
-const isTauriRuntime = "__TAURI_INTERNALS__" in window;
-
 export function App() {
   const [snapshot, setSnapshot] = useState<IslandSnapshot>(initialSnapshot);
   const snapshotRef = useRef(initialSnapshot);
-  const [expanded, setExpanded] = useState(false);
-  const expandedRef = useRef(false);
+  const [phase, setPhase] = useState<PresentationPhase>("compact");
+  const phaseRef = useRef<PresentationPhase>("compact");
   const hoveringRef = useRef(false);
-  const collapseTimerRef = useRef<number | null>(null);
-  const openTimerRef = useRef<number | null>(null);
+  const focusedRef = useRef(false);
+  const suppressHoverExpandRef = useRef(false);
+  const transitionTimerRef = useRef<number | null>(null);
+  const idleTimerRef = useRef<number | null>(null);
   const [busyDecision, setBusyDecision] = useState<Decision | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const activeRequest = snapshot.activeRequest;
-  const pendingRequests = useMemo(
-    () => snapshot.recent.filter((request) => request.status === "pending"),
-    [snapshot.recent],
-  );
 
   useEffect(() => {
     let unsubscribe: () => void = () => undefined;
@@ -68,9 +77,7 @@ export function App() {
     let unsubscribeOpen: () => void = () => undefined;
 
     getSnapshot()
-      .then((nextSnapshot) => {
-        applySnapshot(nextSnapshot);
-      })
+      .then(applySnapshot)
       .catch(() => undefined);
     onSnapshotChanged(applySnapshot).then((cleanup) => {
       unsubscribe = cleanup;
@@ -78,14 +85,18 @@ export function App() {
     onIslandHoverChanged(({ hovering }) => {
       hoveringRef.current = hovering;
       if (hovering) {
-        expandIsland();
+        if (!suppressHoverExpandRef.current) {
+          expandIsland();
+        }
       } else {
-        collapseIdleIsland();
+        suppressHoverExpandRef.current = false;
+        scheduleIdleCollapse();
       }
     }).then((cleanup) => {
       unsubscribeHover = cleanup;
     });
     onIslandOpenRequested(() => {
+      suppressHoverExpandRef.current = false;
       expandIsland();
       scheduleIdleCollapse();
     }).then((cleanup) => {
@@ -96,17 +107,44 @@ export function App() {
       unsubscribe();
       unsubscribeHover();
       unsubscribeOpen();
-      clearCollapseTimer();
-      clearOpenTimer();
+      clearTransitionWork();
+      clearIdleTimer();
     };
   }, []);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    function closeOnPointerDown(event: PointerEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", closeOnPointerDown);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnPointerDown);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menuOpen]);
 
   async function resolveActive(decision: Decision) {
     if (!activeRequest) return;
 
     setBusyDecision(decision);
     try {
-      applySnapshot(await resolvePermissionRequest(activeRequest.id, decision));
+      const nextSnapshot = await resolvePermissionRequest(activeRequest.id, decision);
+      applySnapshot(nextSnapshot);
+      if (nextSnapshot.pendingCount === 0) {
+        collapseIsland(true);
+      }
     } finally {
       setBusyDecision(null);
     }
@@ -118,165 +156,237 @@ export function App() {
 
     if (nextSnapshot.pendingCount > 0) {
       expandIsland();
-      return;
+    } else {
+      scheduleIdleCollapse();
     }
-
-    if (hoveringRef.current) {
-      return;
-    }
-
-    collapseIsland();
   }
 
-  function expandIsland() {
-    clearCollapseTimer();
-    if (expandedRef.current) return;
-    expandedRef.current = true;
-    setIslandPresentation("expanded")
-      .catch(() => undefined)
-      .finally(() => {
-        if (expandedRef.current) {
-          setExpanded(true);
+  function setPresentationPhase(next: PresentationPhase) {
+    phaseRef.current = next;
+    setPhase(next);
+  }
+
+  function clearTransitionWork() {
+    if (transitionTimerRef.current !== null) {
+      window.clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = null;
+    }
+  }
+
+  function clearIdleTimer() {
+    if (idleTimerRef.current === null) return;
+    window.clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = null;
+  }
+
+  async function expandIsland() {
+    clearIdleTimer();
+    const next = beginExpand(phaseRef.current);
+    if (next === phaseRef.current) return;
+    clearTransitionWork();
+    setPresentationPhase(next);
+
+    const nativeTransition = setIslandPresentation("expanded");
+    transitionTimerRef.current = window.setTimeout(async () => {
+      transitionTimerRef.current = null;
+      if (phaseRef.current !== "opening") return;
+
+      try {
+        await nativeTransition;
+        if (phaseRef.current === "opening") {
+          setPresentationPhase(finishExpand("opening"));
         }
-      });
-  }
-
-  function collapseIsland() {
-    clearCollapseTimer();
-    if (!expandedRef.current) {
-      setExpanded(false);
-      setIslandPresentation("compact").catch(() => undefined);
-      return;
-    }
-    expandedRef.current = false;
-    setExpanded(false);
-    collapseTimerRef.current = window.setTimeout(() => {
-      collapseTimerRef.current = null;
-      if (!expandedRef.current) {
-        setIslandPresentation("compact").catch(() => undefined);
+      } catch {
+        setPresentationPhase("compact");
       }
-    }, 360);
+    }, COLLAPSE_ANIMATION_MS);
   }
 
-  function collapseIdleIsland() {
-    if (snapshotRef.current.pendingCount === 0) {
-      collapseIsland();
+  function collapseIsland(releaseFocus = false) {
+    clearIdleTimer();
+    setMenuOpen(false);
+    if (releaseFocus) {
+      suppressHoverExpandRef.current = true;
+      focusedRef.current = false;
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
     }
-  }
 
-  function clearCollapseTimer() {
-    if (collapseTimerRef.current === null) return;
-    window.clearTimeout(collapseTimerRef.current);
-    collapseTimerRef.current = null;
-  }
+    const next = beginCollapse(phaseRef.current);
+    if (next === phaseRef.current) return;
+    clearTransitionWork();
+    setPresentationPhase(next);
 
-  function clearOpenTimer() {
-    if (openTimerRef.current === null) return;
-    window.clearTimeout(openTimerRef.current);
-    openTimerRef.current = null;
+    const nativeTransition = setIslandPresentation("compact");
+    transitionTimerRef.current = window.setTimeout(async () => {
+      transitionTimerRef.current = null;
+      if (phaseRef.current !== "closing") return;
+
+      try {
+        await nativeTransition;
+        if (phaseRef.current === "closing") {
+          setPresentationPhase(finishCollapse("closing"));
+        }
+      } catch {
+        setPresentationPhase("expanded");
+      }
+    }, COLLAPSE_ANIMATION_MS);
   }
 
   function scheduleIdleCollapse() {
-    clearOpenTimer();
-    openTimerRef.current = window.setTimeout(() => {
-      openTimerRef.current = null;
-      if (!hoveringRef.current && snapshotRef.current.pendingCount === 0) {
+    clearIdleTimer();
+    if (
+      hoveringRef.current ||
+      focusedRef.current ||
+      snapshotRef.current.pendingCount > 0
+    ) {
+      return;
+    }
+
+    idleTimerRef.current = window.setTimeout(() => {
+      idleTimerRef.current = null;
+      if (
+        !hoveringRef.current &&
+        !focusedRef.current &&
+        snapshotRef.current.pendingCount === 0
+      ) {
         collapseIsland();
       }
-    }, 1600);
+    }, IDLE_COLLAPSE_DELAY_MS);
+  }
+
+  function handlePointerEnter() {
+    hoveringRef.current = true;
+    if (!suppressHoverExpandRef.current) {
+      expandIsland();
+    }
+  }
+
+  function handlePointerLeave() {
+    hoveringRef.current = false;
+    suppressHoverExpandRef.current = false;
+    scheduleIdleCollapse();
+  }
+
+  function handleIslandClick(event: MouseEvent<HTMLElement>) {
+    if ((event.target as HTMLElement).closest("button")) return;
+    suppressHoverExpandRef.current = false;
+    focusedRef.current = true;
+    event.currentTarget.focus({ preventScroll: true });
+    expandIsland();
+  }
+
+  function handleIslandFocus() {
+    focusedRef.current = true;
+    expandIsland();
   }
 
   function handleIslandBlur(event: FocusEvent<HTMLElement>) {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-      collapseIdleIsland();
+      focusedRef.current = false;
+      scheduleIdleCollapse();
     }
   }
 
-  function compactIslandNow() {
-    clearCollapseTimer();
-    clearOpenTimer();
-    expandedRef.current = false;
-    setExpanded(false);
-    return setIslandPresentation("compact").catch(() => undefined);
-  }
-
   async function startWindowDrag(event: MouseEvent<HTMLElement>) {
-    if (!isTauriRuntime || event.button !== 0) return;
+    if (!("__TAURI_INTERNALS__" in window) || event.button !== 0) return;
 
     const target = event.target as HTMLElement;
     if (target.closest("[data-no-drag]")) return;
 
     await getCurrentWindow().startDragging().catch(() => undefined);
+    focusedRef.current = false;
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    scheduleIdleCollapse();
   }
 
-  async function hideWindow(event: MouseEvent<HTMLButtonElement>) {
-    event.stopPropagation();
-    if (!isTauriRuntime) return;
-
-    await compactIslandNow();
-    await getCurrentWindow().hide().catch(() => undefined);
+  async function handleQuit() {
+    setMenuOpen(false);
+    await quitAtoll().catch(() => undefined);
   }
+
+  const isExpanded = phase === "opening" || phase === "expanded";
+  const showExpandedActions = phase !== "compact";
+  const agent = activeRequest?.agent;
 
   return (
     <main className="stage">
       <section
-        className={`island ${expanded ? "is-expanded" : ""}`}
+        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""}`}
         aria-label="Atoll"
-        onMouseEnter={expandIsland}
-        onPointerEnter={expandIsland}
-        onPointerMove={expandIsland}
-        onMouseLeave={collapseIdleIsland}
-        onFocusCapture={expandIsland}
+        tabIndex={0}
+        onClick={handleIslandClick}
+        onPointerEnter={handlePointerEnter}
+        onPointerLeave={handlePointerLeave}
+        onFocusCapture={handleIslandFocus}
         onBlurCapture={handleIslandBlur}
       >
         <header
-          className="island-compact"
+          className="island-header"
           onMouseDown={startWindowDrag}
-          title="Drag Atoll"
+          title={isExpanded ? "Drag Atoll" : "Hover to open Atoll"}
         >
-          <span className={`agent-dot ${activeRequest ? agentTone[activeRequest.agent] : "idle"}`}>
-            {activeRequest ? <ShieldAlert size={16} /> : <Circle size={12} />}
+          <span className={`agent-dot ${agent ? agentTone[agent] : "idle"}`}>
+            {activeRequest ? <ShieldAlert size={15} /> : <Circle size={11} />}
           </span>
-          <span className="compact-copy">
-            <span className="compact-title">
-              {activeRequest ? `${agentLabels[activeRequest.agent]} waiting` : "Atoll"}
+
+          <span className="header-copy">
+            <span className="header-title">
+              {activeRequest ? `${agentLabels[activeRequest.agent]} approval` : "Atoll"}
             </span>
-            <span className="compact-meta">
-              {activeRequest ? activeRequest.command : "No pending approvals"}
+            <span className="header-meta">
+              <span className={`listener-dot ${snapshot.online ? "online" : ""}`} />
+              {snapshot.online ? "Listening" : "Offline"}
+              {activeRequest ? (
+                <>
+                  <span className="meta-divider">·</span>
+                  {timeAgo(activeRequest.requestedAt)}
+                </>
+              ) : null}
             </span>
           </span>
+
           {snapshot.pendingCount > 0 ? (
             <span className="pending-badge" aria-label={`${snapshot.pendingCount} pending`}>
               {snapshot.pendingCount}
             </span>
           ) : null}
-          <button
-            className="compact-action close-action"
-            type="button"
-            onClick={hideWindow}
-            aria-label="Hide Atoll"
-            data-no-drag
-          >
-            <X size={16} />
-          </button>
+
+          {showExpandedActions ? (
+            <div className="header-actions" data-no-drag ref={menuRef}>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() => collapseIsland(true)}
+                aria-label="Collapse Atoll"
+              >
+                <ChevronUp size={16} />
+              </button>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() => setMenuOpen((open) => !open)}
+                aria-label="More options"
+                aria-expanded={menuOpen}
+              >
+                <Ellipsis size={17} />
+              </button>
+              {menuOpen ? (
+                <div className="more-menu" role="menu">
+                  <button type="button" role="menuitem" onClick={handleQuit}>
+                    <Power size={15} />
+                    Quit Atoll
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </header>
 
         <div className="island-panel">
-          <header className="panel-header" onMouseDown={startWindowDrag}>
-            <div className="session-line">
-              <span className="status-pill">
-                <Bell size={14} />
-                {snapshot.online ? "Listening" : "Offline"}
-              </span>
-              <span>{pendingRequests.length} pending</span>
-            </div>
-            <div className="window-actions" data-no-drag>
-              <button className="icon-button" type="button" onClick={hideWindow} aria-label="Hide Atoll">
-                <X size={16} />
-              </button>
-            </div>
-          </header>
-
           {activeRequest ? (
             <ApprovalView
               request={activeRequest}
@@ -287,20 +397,6 @@ export function App() {
           ) : (
             <IdleView />
           )}
-
-          <footer className="queue-strip" aria-label="Pending request queue">
-            {pendingRequests.slice(0, 4).map((request) => (
-              <button
-                key={request.id}
-                className={`queue-chip ${agentTone[request.agent]}`}
-                type="button"
-                title={`${agentLabels[request.agent]}: ${request.command}`}
-              >
-                <TerminalSquare size={14} />
-                <span>{agentLabels[request.agent]}</span>
-              </button>
-            ))}
-          </footer>
         </div>
       </section>
     </main>
@@ -318,19 +414,17 @@ function ApprovalView({ request, busyDecision, onApprove, onDeny }: ApprovalView
   return (
     <div className="approval-view">
       <div className="request-main">
-        <div className={`request-icon ${agentTone[request.agent]}`}>
-          <Code2 size={20} />
+        <div className="request-kicker">
+          <span>
+            <Code2 size={13} />
+            Command request
+          </span>
+          <span>{agentLabels[request.agent]}</span>
         </div>
-        <div className="request-copy">
-          <div className="request-kicker">
-            <span>{agentLabels[request.agent]}</span>
-            <span>{timeAgo(request.requestedAt)}</span>
-          </div>
-          <h1>{request.command}</h1>
-          <p>{request.detail}</p>
-          <div className="cwd-line" title={request.cwd}>
-            {request.cwd}
-          </div>
+        <code className="command-block">{request.command}</code>
+        {request.detail ? <p className="request-detail">{request.detail}</p> : null}
+        <div className="cwd-line" title={request.cwd}>
+          {request.cwd}
         </div>
       </div>
 
@@ -341,7 +435,7 @@ function ApprovalView({ request, busyDecision, onApprove, onDeny }: ApprovalView
           onClick={onDeny}
           disabled={busyDecision !== null}
         >
-          <X size={18} />
+          <X size={17} />
           <span>{busyDecision === "denied" ? "Denying" : "Deny"}</span>
         </button>
         <button
@@ -350,7 +444,7 @@ function ApprovalView({ request, busyDecision, onApprove, onDeny }: ApprovalView
           onClick={onApprove}
           disabled={busyDecision !== null}
         >
-          <Check size={18} />
+          <Check size={17} />
           <span>{busyDecision === "approved" ? "Approving" : "Approve"}</span>
         </button>
       </div>
@@ -362,11 +456,11 @@ function IdleView() {
   return (
     <div className="idle-view">
       <div className="idle-icon">
-        <ClipboardCheck size={22} />
+        <ClipboardCheck size={21} />
       </div>
       <div>
         <h1>All clear</h1>
-        <p>Agent approvals will surface here.</p>
+        <p>Agent approvals will appear here when they need your attention.</p>
       </div>
     </div>
   );

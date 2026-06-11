@@ -1,14 +1,15 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::SyncSender;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::utils::config::Color;
-use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, State};
+use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalSize, State};
 
 mod hook_bridge;
 
@@ -16,6 +17,8 @@ const COMPACT_WINDOW_WIDTH: f64 = 132.0;
 const COMPACT_WINDOW_HEIGHT: f64 = 28.0;
 const EXPANDED_WINDOW_WIDTH: f64 = 560.0;
 const EXPANDED_WINDOW_HEIGHT: f64 = 320.0;
+const WINDOW_ANIMATION_DURATION: Duration = Duration::from_millis(420);
+const WINDOW_ANIMATION_FRAME: Duration = Duration::from_micros(16_667);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -80,6 +83,24 @@ struct IslandHoverChanged {
 struct AppState {
     requests: Mutex<Vec<PermissionRequest>>,
     hook_waiters: Mutex<HashMap<String, SyncSender<Decision>>>,
+    presentation_generation: Arc<AtomicU64>,
+    home_bounds: Mutex<Option<HomeWindowBounds>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct HomeWindowBounds {
+    position: LogicalPosition<f64>,
+    compact_size: PhysicalSize<u32>,
+    monitor_top_y: f64,
+    #[cfg(target_os = "macos")]
+    screen_geometry: Option<MacosScreenGeometry>,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, Copy)]
+struct MacosScreenGeometry {
+    origin_y: f64,
+    height: f64,
 }
 
 #[tauri::command]
@@ -126,12 +147,34 @@ fn resolve_permission_request(
 }
 
 #[tauri::command]
-fn set_island_presentation(app: AppHandle, mode: IslandWindowMode) -> Result<(), String> {
+async fn set_island_presentation(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    mode: IslandWindowMode,
+) -> Result<(), String> {
     let Some(window) = app.get_webview_window("main") else {
         return Ok(());
     };
 
-    apply_island_window_mode(&window, mode).map_err(|error| error.to_string())
+    let generation = state.presentation_generation.fetch_add(1, Ordering::SeqCst) + 1;
+    let presentation_generation = Arc::clone(&state.presentation_generation);
+    let home_bounds = *state
+        .home_bounds
+        .lock()
+        .map_err(|error| error.to_string())?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        animate_island_window_mode(
+            &window,
+            mode,
+            generation,
+            &presentation_generation,
+            home_bounds,
+        )
+        .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -143,8 +186,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
-            requests: Mutex::new(seed_requests()),
+            requests: Mutex::new(Vec::new()),
             hook_waiters: Mutex::new(HashMap::new()),
+            presentation_generation: Arc::new(AtomicU64::new(0)),
+            home_bounds: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -163,8 +208,14 @@ pub fn run() {
                 let _ = window.set_skip_taskbar(true);
                 let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
                 apply_macos_island_window_style(&window);
-                let _ = apply_island_window_mode(&window, IslandWindowMode::Compact);
                 let _ = window.show();
+                if let Ok(Some(home)) = apply_island_window_mode(&window, IslandWindowMode::Compact)
+                {
+                    let state = app.state::<AppState>();
+                    if let Ok(mut home_bounds) = state.home_bounds.lock() {
+                        *home_bounds = Some(home);
+                    };
+                }
             }
 
             Ok(())
@@ -218,7 +269,6 @@ fn exit_atoll(app: &AppHandle) {
 
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
-        let _ = apply_island_window_mode(&window, IslandWindowMode::Expanded);
         let _ = window.show();
         let _ = window.set_focus();
         let _ = app.emit("island-open-requested", ());
@@ -268,14 +318,14 @@ fn is_cursor_over_window(window: &tauri::WebviewWindow) -> tauri::Result<bool> {
 fn apply_island_window_mode(
     window: &tauri::WebviewWindow,
     mode: IslandWindowMode,
-) -> tauri::Result<()> {
+) -> tauri::Result<Option<HomeWindowBounds>> {
     let monitor = window
         .primary_monitor()
         .ok()
         .flatten()
         .or_else(|| window.current_monitor().ok().flatten());
     let Some(monitor) = monitor else {
-        return Ok(());
+        return Ok(None);
     };
 
     apply_macos_island_window_style(window);
@@ -283,15 +333,108 @@ fn apply_island_window_mode(
     window.set_size(island_window_logical_size(mode))?;
     let _ = window.set_ignore_cursor_events(matches!(mode, IslandWindowMode::Compact));
 
-    let monitor_position = monitor.position();
-    let monitor_size = monitor.size();
+    let scale_factor = monitor.scale_factor();
+    let monitor_position = monitor.position().to_logical::<f64>(scale_factor);
+    let monitor_size = monitor.size().to_logical::<f64>(scale_factor);
     let window_size = island_window_physical_size(mode, monitor.scale_factor());
-    let centered_x =
-        monitor_position.x + (monitor_size.width as i32 - window_size.width as i32).max(0) / 2;
+    let logical_window_size = window_size.to_logical::<f64>(scale_factor);
+    let centered_x = monitor_position.x + (monitor_size.width - logical_window_size.width) / 2.0;
     let centered_y = island_top_y(window, monitor_position.y, monitor.work_area().position.y);
+    let position = LogicalPosition::new(centered_x, centered_y);
+    let home = HomeWindowBounds {
+        position,
+        compact_size: island_window_physical_size(
+            IslandWindowMode::Compact,
+            monitor.scale_factor(),
+        ),
+        monitor_top_y: monitor_position.y,
+        #[cfg(target_os = "macos")]
+        screen_geometry: macos_screen_geometry(window, monitor_position.x, monitor_size.width),
+    };
 
-    window.set_position(PhysicalPosition::new(centered_x, centered_y))?;
+    set_island_window_frame_now(window, position, window_size, scale_factor, home)?;
+    Ok(Some(home))
+}
+
+fn animate_island_window_mode(
+    window: &tauri::WebviewWindow,
+    mode: IslandWindowMode,
+    generation: u64,
+    presentation_generation: &AtomicU64,
+    home_bounds: Option<HomeWindowBounds>,
+) -> tauri::Result<()> {
+    let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
+    if matches!(mode, IslandWindowMode::Expanded) {
+        let _ = window.set_ignore_cursor_events(false);
+    }
+
+    let scale_factor = home_bounds
+        .map(|home| home.compact_size.width as f64 / COMPACT_WINDOW_WIDTH)
+        .unwrap_or_else(|| window.scale_factor().unwrap_or(1.0));
+    let start_position = window.outer_position()?.to_logical::<f64>(scale_factor);
+    let start_size = window.outer_size()?;
+    let target_size = island_window_physical_size(mode, scale_factor);
+    let target_logical_size = target_size.to_logical::<f64>(scale_factor);
+    let (target_x, target_y) = home_bounds
+        .map(|home| {
+            (
+                home.position.x + (COMPACT_WINDOW_WIDTH - target_logical_size.width) / 2.0,
+                home.position.y,
+            )
+        })
+        .unwrap_or_else(|| {
+            (
+                start_position.x
+                    + (start_size.width as f64 / scale_factor - target_logical_size.width) / 2.0,
+                start_position.y,
+            )
+        });
+    let started_at = Instant::now();
+    let mut next_frame_at = started_at;
+
+    loop {
+        if presentation_generation.load(Ordering::SeqCst) != generation {
+            return Ok(());
+        }
+
+        let progress =
+            (started_at.elapsed().as_secs_f64() / WINDOW_ANIMATION_DURATION.as_secs_f64()).min(1.0);
+        let eased = ease_out_cubic(progress);
+        let size = PhysicalSize::new(
+            interpolate_u32(start_size.width, target_size.width, eased),
+            interpolate_u32(start_size.height, target_size.height, eased),
+        );
+        let position = LogicalPosition::new(
+            interpolate_f64(start_position.x, target_x, eased),
+            interpolate_f64(start_position.y, target_y, eased),
+        );
+
+        set_island_window_frame(window, position, size, scale_factor, home_bounds)?;
+
+        if progress >= 1.0 {
+            break;
+        }
+
+        next_frame_at += WINDOW_ANIMATION_FRAME;
+        if let Some(delay) = next_frame_at.checked_duration_since(Instant::now()) {
+            thread::sleep(delay);
+        }
+    }
+
+    let _ = window.set_ignore_cursor_events(matches!(mode, IslandWindowMode::Compact));
     Ok(())
+}
+
+fn ease_out_cubic(progress: f64) -> f64 {
+    1.0 - (1.0 - progress).powi(3)
+}
+
+fn interpolate_u32(start: u32, end: u32, progress: f64) -> u32 {
+    (start as f64 + (end as f64 - start as f64) * progress).round() as u32
+}
+
+fn interpolate_f64(start: f64, end: f64, progress: f64) -> f64 {
+    start + (end - start) * progress
 }
 
 fn island_window_logical_size(mode: IslandWindowMode) -> LogicalSize<f64> {
@@ -312,11 +455,157 @@ fn island_window_physical_size(mode: IslandWindowMode, scale_factor: f64) -> Phy
     )
 }
 
-fn island_top_y(window: &tauri::WebviewWindow, monitor_y: i32, work_area_y: i32) -> i32 {
-    let visible_offset = (work_area_y - monitor_y).max(0);
-    let menu_offset = macos_menu_bar_offset_physical(window).unwrap_or(0);
+fn island_top_y(window: &tauri::WebviewWindow, monitor_y: f64, work_area_y: i32) -> f64 {
+    let scale_factor = window.scale_factor().unwrap_or(1.0);
+    let work_area_y = work_area_y as f64 / scale_factor;
+    let visible_offset = (work_area_y - monitor_y).max(0.0);
+    let menu_offset = macos_menu_bar_offset_physical(window).unwrap_or(0) as f64 / scale_factor;
 
-    monitor_y - menu_offset.saturating_sub(visible_offset)
+    island_top_y_from_offsets(monitor_y, visible_offset, menu_offset)
+}
+
+fn island_top_y_from_offsets(monitor_y: f64, visible_offset: f64, menu_offset: f64) -> f64 {
+    monitor_y - (menu_offset.max(0.0) - visible_offset.max(0.0)).max(0.0)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_screen_geometry(
+    window: &tauri::WebviewWindow,
+    monitor_x: f64,
+    monitor_width: f64,
+) -> Option<MacosScreenGeometry> {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSScreen, NSWindow};
+
+    if let Some(main_thread_marker) = MainThreadMarker::new() {
+        let screens = NSScreen::screens(main_thread_marker);
+        if let Some(screen) = screens.iter().find(|screen| {
+            let frame = screen.frame();
+            (frame.origin.x - monitor_x).abs() < 1.0
+                && (frame.size.width - monitor_width).abs() < 1.0
+        }) {
+            let frame = screen.frame();
+            return Some(MacosScreenGeometry {
+                origin_y: frame.origin.y,
+                height: frame.size.height,
+            });
+        }
+    }
+
+    let ns_window = window.ns_window().ok()?;
+    if ns_window.is_null() {
+        return None;
+    }
+
+    unsafe {
+        let ns_window = &*(ns_window.cast::<NSWindow>());
+        let frame = ns_window.screen()?.frame();
+
+        Some(MacosScreenGeometry {
+            origin_y: frame.origin.y,
+            height: frame.size.height,
+        })
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn set_island_window_frame_now(
+    window: &tauri::WebviewWindow,
+    position: LogicalPosition<f64>,
+    size: PhysicalSize<u32>,
+    scale_factor: f64,
+    home: HomeWindowBounds,
+) -> tauri::Result<()> {
+    use objc2_app_kit::NSWindow;
+
+    let Some(screen_geometry) = home.screen_geometry else {
+        window.set_size(size)?;
+        return window.set_position(position);
+    };
+    let ns_window = window.ns_window()?;
+    if ns_window.is_null() {
+        return Ok(());
+    }
+
+    let logical_size = size.to_logical::<f64>(scale_factor);
+    let origin_y = appkit_window_origin_y(
+        screen_geometry.origin_y,
+        screen_geometry.height,
+        logical_size.height,
+        position.y,
+        home.monitor_top_y,
+    );
+
+    unsafe {
+        let ns_window = &*(ns_window.cast::<NSWindow>());
+        let mut frame = ns_window.frame();
+        frame.origin.x = position.x;
+        frame.origin.y = origin_y;
+        frame.size.width = logical_size.width;
+        frame.size.height = logical_size.height;
+        ns_window.setFrame_display(frame, true);
+    }
+
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_island_window_frame_now(
+    window: &tauri::WebviewWindow,
+    position: LogicalPosition<f64>,
+    size: PhysicalSize<u32>,
+    _scale_factor: f64,
+    _home: HomeWindowBounds,
+) -> tauri::Result<()> {
+    window.set_size(size)?;
+    window.set_position(position)
+}
+
+#[cfg(target_os = "macos")]
+fn set_island_window_frame(
+    window: &tauri::WebviewWindow,
+    position: LogicalPosition<f64>,
+    size: PhysicalSize<u32>,
+    scale_factor: f64,
+    home: Option<HomeWindowBounds>,
+) -> tauri::Result<()> {
+    let Some(home) = home else {
+        window.set_size(size)?;
+        return window.set_position(position);
+    };
+
+    let (completed_tx, completed_rx) = std::sync::mpsc::sync_channel(0);
+    let window = window.clone();
+    let frame_window = window.clone();
+    window.run_on_main_thread(move || {
+        let _ = set_island_window_frame_now(&frame_window, position, size, scale_factor, home);
+        let _ = completed_tx.send(());
+    })?;
+    let _ = completed_rx.recv();
+
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_island_window_frame(
+    window: &tauri::WebviewWindow,
+    position: LogicalPosition<f64>,
+    size: PhysicalSize<u32>,
+    _scale_factor: f64,
+    _home: Option<HomeWindowBounds>,
+) -> tauri::Result<()> {
+    window.set_size(size)?;
+    window.set_position(position)
+}
+
+fn appkit_window_origin_y(
+    screen_origin_y: f64,
+    screen_height: f64,
+    window_height: f64,
+    desired_top_y: f64,
+    monitor_top_y: f64,
+) -> f64 {
+    screen_origin_y + screen_height - (desired_top_y - monitor_top_y) - window_height
 }
 
 #[cfg(target_os = "macos")]
@@ -335,6 +624,7 @@ fn apply_macos_island_window_style(window: &tauri::WebviewWindow) {
 
     unsafe {
         let ns_window = &*(ns_window.cast::<NSWindow>());
+        apply_macos_unconstrained_window_class(ns_window);
         let clear = NSColor::clearColor();
         ns_window.setOpaque(false);
         ns_window.setBackgroundColor(Some(&clear));
@@ -352,6 +642,46 @@ fn apply_macos_island_window_style(window: &tauri::WebviewWindow) {
         );
         ns_window.setLevel(NSMainMenuWindowLevel + 3);
     }
+}
+
+#[cfg(target_os = "macos")]
+fn apply_macos_unconstrained_window_class(ns_window: &objc2_app_kit::NSWindow) {
+    use std::sync::OnceLock;
+
+    use objc2::runtime::{AnyClass, Imp, Sel};
+    use objc2::sel;
+    use objc2_app_kit::{NSScreen, NSWindow};
+    use objc2_foundation::NSRect;
+
+    extern "C-unwind" fn unconstrained_frame(
+        _window: *mut NSWindow,
+        _selector: Sel,
+        frame: NSRect,
+        _screen: *mut NSScreen,
+    ) -> NSRect {
+        frame
+    }
+
+    static WINDOW_CLASS_PATCHED: OnceLock<()> = OnceLock::new();
+    WINDOW_CLASS_PATCHED.get_or_init(|| {
+        let selector = sel!(constrainFrameRect:toScreen:);
+        let class = ns_window.class();
+        let method = class
+            .instance_method(selector)
+            .expect("NSWindow constrainFrameRect:toScreen: should exist");
+        unsafe {
+            let implementation: Imp = std::mem::transmute(
+                unconstrained_frame
+                    as extern "C-unwind" fn(*mut NSWindow, Sel, NSRect, *mut NSScreen) -> NSRect,
+            );
+            objc2::ffi::class_replaceMethod(
+                class as *const AnyClass as *mut AnyClass,
+                selector,
+                implementation,
+                objc2::ffi::method_getTypeEncoding(method),
+            );
+        }
+    });
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -400,10 +730,6 @@ fn snapshot_from(requests: &[PermissionRequest]) -> IslandSnapshot {
         active_request,
         recent: requests.iter().take(12).cloned().collect(),
     }
-}
-
-fn seed_requests() -> Vec<PermissionRequest> {
-    Vec::new()
 }
 
 fn iso_timestamp_now() -> String {
@@ -493,6 +819,26 @@ mod core_tests {
             tray_menu_entries(),
             [("show", "Show Atoll"), ("quit", "Quit")]
         );
+    }
+
+    #[test]
+    fn window_animation_interpolates_to_exact_endpoints() {
+        assert_eq!(interpolate_u32(132, 560, ease_out_cubic(0.0)), 132);
+        assert_eq!(interpolate_u32(132, 560, ease_out_cubic(1.0)), 560);
+        assert_eq!(interpolate_f64(100.0, -20.0, ease_out_cubic(0.0)), 100.0);
+        assert_eq!(interpolate_f64(100.0, -20.0, ease_out_cubic(1.0)), -20.0);
+    }
+
+    #[test]
+    fn island_uses_the_historical_menu_bar_anchor() {
+        assert_eq!(island_top_y_from_offsets(0.0, 30.0, 30.0), 0.0);
+        assert_eq!(island_top_y_from_offsets(-180.0, 30.0, 30.0), -180.0);
+    }
+
+    #[test]
+    fn appkit_frame_places_the_window_at_the_screen_top() {
+        assert_eq!(appkit_window_origin_y(0.0, 1260.0, 28.0, 0.0, 0.0), 1232.0);
+        assert_eq!(appkit_window_origin_y(0.0, 1260.0, 320.0, 0.0, 0.0), 940.0);
     }
 }
 
