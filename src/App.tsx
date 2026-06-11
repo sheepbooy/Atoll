@@ -309,7 +309,6 @@ export function App() {
   }
 
   const isExpanded = phase === "opening" || phase === "expanded";
-  const showExpandedActions = phase !== "compact";
   const agent = activeRequest?.agent;
 
   return (
@@ -329,8 +328,10 @@ export function App() {
           onMouseDown={startWindowDrag}
           title={isExpanded ? "Drag Atoll" : "Hover to open Atoll"}
         >
-          <span className={`agent-dot ${agent ? agentTone[agent] : "idle"}`}>
-            {activeRequest ? <ShieldAlert size={15} /> : <Circle size={11} />}
+          <span className="agent-slot">
+            <span className={`agent-dot ${agent ? agentTone[agent] : "idle"}`}>
+              {activeRequest ? <ShieldAlert size={15} /> : <Circle size={11} />}
+            </span>
           </span>
 
           <span className="header-copy">
@@ -350,40 +351,42 @@ export function App() {
           </span>
 
           {snapshot.pendingCount > 0 ? (
-            <span className="pending-badge" aria-label={`${snapshot.pendingCount} pending`}>
-              {snapshot.pendingCount}
+            <span className="pending-badge-slot">
+              <span className="pending-badge" aria-label={`${snapshot.pendingCount} pending`}>
+                {snapshot.pendingCount}
+              </span>
             </span>
           ) : null}
 
-          {showExpandedActions ? (
-            <div className="header-actions" data-no-drag ref={menuRef}>
-              <button
-                className="icon-button"
-                type="button"
-                onClick={() => collapseIsland(true)}
-                aria-label="Collapse Atoll"
-              >
-                <ChevronUp size={16} />
-              </button>
-              <button
-                className="icon-button"
-                type="button"
-                onClick={() => setMenuOpen((open) => !open)}
-                aria-label="More options"
-                aria-expanded={menuOpen}
-              >
-                <Ellipsis size={17} />
-              </button>
-              {menuOpen ? (
-                <div className="more-menu" role="menu">
-                  <button type="button" role="menuitem" onClick={handleQuit}>
-                    <Power size={15} />
-                    Quit Atoll
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+          <div className="header-actions" data-no-drag ref={menuRef}>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => collapseIsland(true)}
+              aria-label="Collapse Atoll"
+              tabIndex={isExpanded ? 0 : -1}
+            >
+              <ChevronUp size={16} />
+            </button>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => setMenuOpen((open) => !open)}
+              aria-label="More options"
+              aria-expanded={menuOpen}
+              tabIndex={isExpanded ? 0 : -1}
+            >
+              <Ellipsis size={17} />
+            </button>
+            {menuOpen ? (
+              <div className="more-menu" role="menu">
+                <button type="button" role="menuitem" onClick={handleQuit}>
+                  <Power size={15} />
+                  Quit Atoll
+                </button>
+              </div>
+            ) : null}
+          </div>
         </header>
 
         <div className="island-panel">
