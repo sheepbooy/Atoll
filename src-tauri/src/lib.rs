@@ -32,6 +32,8 @@ struct PermissionRequest {
     cwd: String,
     requested_at: String,
     status: PermissionStatus,
+    #[serde(default)]
+    archived: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +41,7 @@ struct PermissionRequest {
 struct IslandSnapshot {
     online: bool,
     pending_count: usize,
+    archived_count: usize,
     active_request: Option<PermissionRequest>,
     recent: Vec<PermissionRequest>,
 }
@@ -197,6 +200,39 @@ fn set_session_auto_approve(
 }
 
 #[tauri::command]
+fn archive_request(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<IslandSnapshot, String> {
+    let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
+    if let Some(request) = requests.iter_mut().find(|r| r.id == id) {
+        request.archived = true;
+    }
+    let snapshot = snapshot_from(&requests);
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+    Ok(snapshot)
+}
+
+#[tauri::command]
+fn archive_all_resolved(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<IslandSnapshot, String> {
+    let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
+    for request in requests.iter_mut() {
+        if request.status != PermissionStatus::Pending && !request.archived {
+            request.archived = true;
+        }
+    }
+    let snapshot = snapshot_from(&requests);
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+    Ok(snapshot)
+}
+
+#[tauri::command]
 fn quit_atoll(app: AppHandle) {
     exit_atoll(&app);
 }
@@ -215,6 +251,8 @@ pub fn run() {
             get_snapshot,
             resolve_permission_request,
             set_session_auto_approve,
+            archive_request,
+            archive_all_resolved,
             set_island_presentation,
             quit_atoll
         ])
@@ -222,6 +260,7 @@ pub fn run() {
             build_tray(app.handle())?;
             hook_bridge::start_server(app.handle().clone());
             start_island_hover_monitor(app.handle().clone());
+            start_auto_archive_timer(app.handle().clone());
 
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_always_on_top(true);
@@ -282,6 +321,84 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 
 fn tray_menu_entries() -> [(&'static str, &'static str); 2] {
     [("show", "Show Atoll"), ("quit", "Quit")]
+}
+
+const AUTO_ARCHIVE_INTERVAL: Duration = Duration::from_secs(10);
+const AUTO_ARCHIVE_AGE: Duration = Duration::from_secs(60);
+
+fn start_auto_archive_timer(app: AppHandle) {
+    thread::spawn(move || loop {
+        thread::sleep(AUTO_ARCHIVE_INTERVAL);
+
+        let state = app.state::<AppState>();
+        let changed = {
+            let Ok(mut requests) = state.requests.lock() else {
+                continue;
+            };
+
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+
+            let mut changed = false;
+            for request in requests.iter_mut() {
+                if request.archived || request.status == PermissionStatus::Pending {
+                    continue;
+                }
+                let requested_at_secs = parse_iso_timestamp_secs(&request.requested_at);
+                if now.saturating_sub(requested_at_secs) >= AUTO_ARCHIVE_AGE.as_secs() {
+                    request.archived = true;
+                    changed = true;
+                }
+            }
+
+            if changed {
+                let snapshot = snapshot_from(&requests);
+                let _ = app.emit("snapshot-changed", &snapshot);
+            }
+            changed
+        };
+        let _ = changed;
+    });
+}
+
+fn parse_iso_timestamp_secs(iso: &str) -> u64 {
+    // Parse "YYYY-MM-DDTHH:MM:SSZ" to unix seconds (simplified)
+    let parts: Vec<&str> = iso.split('T').collect();
+    if parts.len() != 2 {
+        return 0;
+    }
+    let date_parts: Vec<u64> = parts[0].split('-').filter_map(|s| s.parse().ok()).collect();
+    let time_str = parts[1].trim_end_matches('Z');
+    let time_parts: Vec<u64> = time_str.split(':').filter_map(|s| s.parse().ok()).collect();
+
+    if date_parts.len() != 3 || time_parts.len() < 3 {
+        return 0;
+    }
+
+    let (year, month, day) = (date_parts[0], date_parts[1], date_parts[2]);
+    let (hour, min, sec) = (time_parts[0], time_parts[1], time_parts[2]);
+
+    // Approximate days-from-epoch calculation
+    let mut days: u64 = 0;
+    for y in 1970..year {
+        days += if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) {
+            366
+        } else {
+            365
+        };
+    }
+    let month_days = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+    if month >= 1 && month <= 12 {
+        days += month_days[(month - 1) as usize];
+        if month > 2 && year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) {
+            days += 1;
+        }
+    }
+    days += day.saturating_sub(1);
+
+    days * 86400 + hour * 3600 + min * 60 + sec
 }
 
 fn exit_atoll(app: &AppHandle) {
@@ -819,20 +936,27 @@ fn macos_menu_bar_offset_physical(_window: &tauri::WebviewWindow) -> Option<i32>
 }
 
 fn snapshot_from(requests: &[PermissionRequest]) -> IslandSnapshot {
-    let pending_count = requests
+    let visible: Vec<&PermissionRequest> = requests
+        .iter()
+        .filter(|request| !request.archived)
+        .collect();
+    let pending_count = visible
         .iter()
         .filter(|request| request.status == PermissionStatus::Pending)
         .count();
-    let active_request = requests
+    let active_request = visible
         .iter()
         .find(|request| request.status == PermissionStatus::Pending)
+        .cloned()
         .cloned();
+    let archived_count = requests.iter().filter(|r| r.archived).count();
 
     IslandSnapshot {
         online: true,
         pending_count,
+        archived_count,
         active_request,
-        recent: requests.iter().take(12).cloned().collect(),
+        recent: visible.into_iter().take(12).cloned().collect(),
     }
 }
 
@@ -1051,6 +1175,7 @@ mod hook_bridge_tests {
             cwd: "/tmp/project".into(),
             requested_at: "2026-06-09T09:00:00Z".into(),
             status: crate::PermissionStatus::Pending,
+            archived: false,
         }];
 
         let payload = json!({
@@ -1083,6 +1208,7 @@ mod hook_bridge_tests {
             cwd: "/tmp/project".into(),
             requested_at: "2026-06-09T09:00:00Z".into(),
             status: crate::PermissionStatus::Pending,
+            archived: false,
         }];
 
         let payload = json!({
@@ -1110,6 +1236,7 @@ mod hook_bridge_tests {
                 cwd: "/tmp/project".into(),
                 requested_at: "2026-06-09T09:00:00Z".into(),
                 status: crate::PermissionStatus::Pending,
+                archived: false,
             },
             crate::PermissionRequest {
                 id: "request-2".into(),
@@ -1121,6 +1248,7 @@ mod hook_bridge_tests {
                 cwd: "/tmp/project".into(),
                 requested_at: "2026-06-09T09:00:01Z".into(),
                 status: crate::PermissionStatus::Pending,
+                archived: false,
             },
         ];
 

@@ -73,6 +73,7 @@ pub(crate) fn permission_request_from_claude_payload(
             .to_string(),
         requested_at,
         status: PermissionStatus::Pending,
+        archived: false,
     })
 }
 
