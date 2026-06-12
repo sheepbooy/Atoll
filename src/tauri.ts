@@ -14,11 +14,13 @@ export interface PermissionRequest {
   cwd: string;
   requestedAt: string;
   status: PermissionStatus;
+  archived?: boolean;
 }
 
 export interface IslandSnapshot {
   online: boolean;
   pendingCount: number;
+  archivedCount: number;
   activeRequest: PermissionRequest | null;
   recent: PermissionRequest[];
 }
@@ -39,6 +41,7 @@ export async function getSnapshot(): Promise<IslandSnapshot> {
   return {
     online: true,
     pendingCount: localRequests.filter((request) => request.status === "pending").length,
+    archivedCount: localRequests.filter((request) => request.archived).length,
     activeRequest: localRequests.find((request) => request.status === "pending") ?? null,
     recent: localRequests,
   };
@@ -66,6 +69,28 @@ export async function setSessionAutoApprove(session: string, enabled: boolean) {
   }
 
   return invoke<void>("set_session_auto_approve", { session, enabled });
+}
+
+export async function archiveRequest(id: string): Promise<IslandSnapshot> {
+  if (isTauriRuntime) {
+    return invoke<IslandSnapshot>("archive_request", { id });
+  }
+
+  localRequests = localRequests.map((request) =>
+    request.id === id ? { ...request, archived: true } : request,
+  );
+  return getSnapshot();
+}
+
+export async function archiveAllResolved(): Promise<IslandSnapshot> {
+  if (isTauriRuntime) {
+    return invoke<IslandSnapshot>("archive_all_resolved");
+  }
+
+  localRequests = localRequests.map((request) =>
+    request.status !== "pending" ? { ...request, archived: true } : request,
+  );
+  return getSnapshot();
 }
 
 export async function quitAtoll() {
