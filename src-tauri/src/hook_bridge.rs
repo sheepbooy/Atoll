@@ -74,6 +74,7 @@ pub(crate) fn permission_request_from_claude_payload(
         requested_at,
         status: PermissionStatus::Pending,
         archived: false,
+        supports_always: event_name == "PermissionRequest",
     })
 }
 

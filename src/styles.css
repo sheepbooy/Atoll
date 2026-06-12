@@ -542,8 +542,12 @@ button {
 .decision-row {
   display: grid;
   flex: 0 0 auto;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 9px;
+}
+
+.decision-row.has-always {
+  grid-template-columns: 1fr 1fr 1fr;
 }
 
 .decision-button {
@@ -585,81 +589,6 @@ button {
 .decision-button.always-approve {
   color: #071009;
   background: linear-gradient(180deg, #7ad4f0, #5ec4e4);
-}
-
-.reply-section {
-  display: grid;
-  flex: 0 0 auto;
-  gap: 8px;
-}
-
-.quick-replies {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.quick-reply-chip {
-  display: inline-flex;
-  height: 28px;
-  align-items: center;
-  border-radius: 8px;
-  padding: 0 10px;
-  color: #e8e5dc;
-  background: rgba(255, 255, 255, 0.06);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    background 140ms ease,
-    transform 140ms ease;
-}
-
-.quick-reply-chip:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
-  transform: translateY(-1px);
-}
-
-.quick-reply-chip:disabled {
-  opacity: 0.5;
-  cursor: wait;
-}
-
-.reply-input-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.reply-input {
-  width: 100%;
-  height: 36px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  padding: 0 12px;
-  color: #f5f1e8;
-  background: rgba(255, 255, 255, 0.04);
-  font-family: inherit;
-  font-size: 12px;
-  outline: none;
-  transition: border-color 140ms ease;
-}
-
-.reply-input:focus {
-  border-color: rgba(255, 200, 180, 0.4);
-}
-
-.reply-input::placeholder {
-  color: #716f69;
-}
-
-.decision-button.reply-send {
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
-  padding: 0;
-  border-radius: 10px;
 }
 
 .idle-view {

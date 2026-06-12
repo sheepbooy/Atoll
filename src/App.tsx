@@ -165,7 +165,7 @@ export function App() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  async function resolveActive(decision: Decision, alwaysApprove = false, note = "") {
+  async function resolveActive(decision: Decision, alwaysApprove = false) {
     if (!activeRequest) return;
 
     setBusyDecision(decision);
@@ -173,7 +173,7 @@ export function App() {
       if (alwaysApprove) {
         await setSessionAutoApprove(activeRequest.session, true);
       }
-      const nextSnapshot = await resolvePermissionRequest(activeRequest.id, decision, note);
+      const nextSnapshot = await resolvePermissionRequest(activeRequest.id, decision);
       applySnapshot(nextSnapshot);
       if (nextSnapshot.pendingCount === 0) {
         collapseIsland(true);
@@ -460,7 +460,7 @@ export function App() {
               busyDecision={busyDecision}
               onApprove={() => resolveActive("approved")}
               onAlwaysApprove={() => resolveActive("approved", true)}
-              onDeny={(note) => resolveActive("denied", false, note)}
+              onDeny={() => resolveActive("denied")}
             />
           ) : (
             <IdleView />
@@ -476,35 +476,10 @@ interface ApprovalViewProps {
   busyDecision: Decision | null;
   onApprove: () => void;
   onAlwaysApprove: () => void;
-  onDeny: (note: string) => void;
+  onDeny: () => void;
 }
 
-const quickReplies = [
-  "Too risky",
-  "Try another approach",
-  "Not now",
-];
-
 function ApprovalView({ request, busyDecision, onApprove, onAlwaysApprove, onDeny }: ApprovalViewProps) {
-  const [showReply, setShowReply] = useState(false);
-  const [replyText, setReplyText] = useState("");
-
-  function handleDeny() {
-    if (showReply) {
-      onDeny(replyText);
-      setReplyText("");
-      setShowReply(false);
-    } else {
-      setShowReply(true);
-    }
-  }
-
-  function handleQuickReply(text: string) {
-    onDeny(text);
-    setReplyText("");
-    setShowReply(false);
-  }
-
   return (
     <div className="approval-view">
       <div className="request-main">
@@ -522,67 +497,26 @@ function ApprovalView({ request, busyDecision, onApprove, onAlwaysApprove, onDen
         </div>
       </div>
 
-      {showReply ? (
-        <div className="reply-section">
-          <div className="quick-replies">
-            {quickReplies.map((text) => (
-              <button
-                key={text}
-                className="quick-reply-chip"
-                type="button"
-                onClick={() => handleQuickReply(text)}
-                disabled={busyDecision !== null}
-              >
-                {text}
-              </button>
-            ))}
-          </div>
-          <div className="reply-input-row">
-            <input
-              className="reply-input"
-              type="text"
-              placeholder="Custom reason..."
-              value={replyText}
-              onChange={(e) => setReplyText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.stopPropagation();
-                  handleDeny();
-                }
-              }}
-              autoFocus
-              data-no-drag
-            />
-            <button
-              className="decision-button deny reply-send"
-              type="button"
-              onClick={handleDeny}
-              disabled={busyDecision !== null}
-            >
-              <X size={15} />
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="decision-row">
-          <button
-            className="decision-button deny"
-            type="button"
-            onClick={handleDeny}
-            disabled={busyDecision !== null}
-          >
-            <X size={17} />
-            <span>{busyDecision === "denied" ? "Denying" : "Deny"}</span>
-          </button>
-          <button
-            className="decision-button approve"
-            type="button"
-            onClick={onApprove}
-            disabled={busyDecision !== null}
-          >
-            <Check size={17} />
-            <span>{busyDecision === "approved" ? "Approving" : "Approve"}</span>
-          </button>
+      <div className={`decision-row ${request.supportsAlways ? "has-always" : ""}`}>
+        <button
+          className="decision-button deny"
+          type="button"
+          onClick={onDeny}
+          disabled={busyDecision !== null}
+        >
+          <X size={17} />
+          <span>{busyDecision === "denied" ? "Denying" : "Deny"}</span>
+        </button>
+        <button
+          className="decision-button approve"
+          type="button"
+          onClick={onApprove}
+          disabled={busyDecision !== null}
+        >
+          <Check size={17} />
+          <span>{busyDecision === "approved" ? "Approving" : "Approve"}</span>
+        </button>
+        {request.supportsAlways ? (
           <button
             className="decision-button always-approve"
             type="button"
@@ -593,8 +527,8 @@ function ApprovalView({ request, busyDecision, onApprove, onAlwaysApprove, onDen
             <CheckCheck size={17} />
             <span>Always</span>
           </button>
-        </div>
-      )}
+        ) : null}
+      </div>
     </div>
   );
 }
