@@ -2,6 +2,7 @@ import { FocusEvent, MouseEvent, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   Check,
+  CheckCheck,
   ChevronUp,
   Circle,
   ClipboardCheck,
@@ -30,6 +31,7 @@ import {
   quitAtoll,
   resolvePermissionRequest,
   setIslandPresentation,
+  setSessionAutoApprove,
 } from "./tauri";
 
 type Decision = "approved" | "denied";
@@ -68,6 +70,10 @@ export function App() {
   const [busyDecision, setBusyDecision] = useState<Decision | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const busyRef = useRef<Decision | null>(null);
+  busyRef.current = busyDecision;
+  const menuOpenRef = useRef(false);
+  menuOpenRef.current = menuOpen;
 
   const activeRequest = snapshot.activeRequest;
 
@@ -135,11 +141,35 @@ export function App() {
     };
   }, [menuOpen]);
 
-  async function resolveActive(decision: Decision) {
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!snapshotRef.current.activeRequest || busyRef.current) return;
+      if (menuOpenRef.current) return;
+
+      if (event.key === "Enter" && event.shiftKey) {
+        event.preventDefault();
+        resolveActive("approved", true);
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        resolveActive("approved");
+      } else if (event.key === "Backspace" || event.key === "Delete") {
+        event.preventDefault();
+        resolveActive("denied");
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  async function resolveActive(decision: Decision, alwaysApprove = false) {
     if (!activeRequest) return;
 
     setBusyDecision(decision);
     try {
+      if (alwaysApprove) {
+        await setSessionAutoApprove(activeRequest.session, true);
+      }
       const nextSnapshot = await resolvePermissionRequest(activeRequest.id, decision);
       applySnapshot(nextSnapshot);
       if (nextSnapshot.pendingCount === 0) {
@@ -409,6 +439,7 @@ export function App() {
               request={activeRequest}
               busyDecision={busyDecision}
               onApprove={() => resolveActive("approved")}
+              onAlwaysApprove={() => resolveActive("approved", true)}
               onDeny={() => resolveActive("denied")}
             />
           ) : (
@@ -424,10 +455,11 @@ interface ApprovalViewProps {
   request: PermissionRequest;
   busyDecision: Decision | null;
   onApprove: () => void;
+  onAlwaysApprove: () => void;
   onDeny: () => void;
 }
 
-function ApprovalView({ request, busyDecision, onApprove, onDeny }: ApprovalViewProps) {
+function ApprovalView({ request, busyDecision, onApprove, onAlwaysApprove, onDeny }: ApprovalViewProps) {
   return (
     <div className="approval-view">
       <div className="request-main">
@@ -463,6 +495,16 @@ function ApprovalView({ request, busyDecision, onApprove, onDeny }: ApprovalView
         >
           <Check size={17} />
           <span>{busyDecision === "approved" ? "Approving" : "Approve"}</span>
+        </button>
+        <button
+          className="decision-button always-approve"
+          type="button"
+          onClick={onAlwaysApprove}
+          disabled={busyDecision !== null}
+          title="Approve this and all future requests for this session"
+        >
+          <CheckCheck size={17} />
+          <span>Always</span>
         </button>
       </div>
     </div>

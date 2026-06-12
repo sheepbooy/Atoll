@@ -60,6 +60,14 @@ export async function resolvePermissionRequest(
   return getSnapshot();
 }
 
+export async function setSessionAutoApprove(session: string, enabled: boolean) {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  return invoke<void>("set_session_auto_approve", { session, enabled });
+}
+
 export async function quitAtoll() {
   if (!isTauriRuntime) {
     return;
