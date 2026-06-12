@@ -15,6 +15,7 @@ export interface PermissionRequest {
   requestedAt: string;
   status: PermissionStatus;
   archived?: boolean;
+  supportsAlways?: boolean;
 }
 
 export interface IslandSnapshot {

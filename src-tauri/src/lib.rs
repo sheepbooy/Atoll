@@ -34,6 +34,8 @@ struct PermissionRequest {
     status: PermissionStatus,
     #[serde(default)]
     archived: bool,
+    #[serde(default)]
+    supports_always: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1176,6 +1178,7 @@ mod hook_bridge_tests {
             requested_at: "2026-06-09T09:00:00Z".into(),
             status: crate::PermissionStatus::Pending,
             archived: false,
+            supports_always: false,
         }];
 
         let payload = json!({
@@ -1209,6 +1212,7 @@ mod hook_bridge_tests {
             requested_at: "2026-06-09T09:00:00Z".into(),
             status: crate::PermissionStatus::Pending,
             archived: false,
+            supports_always: false,
         }];
 
         let payload = json!({
@@ -1237,6 +1241,7 @@ mod hook_bridge_tests {
                 requested_at: "2026-06-09T09:00:00Z".into(),
                 status: crate::PermissionStatus::Pending,
                 archived: false,
+                supports_always: false,
             },
             crate::PermissionRequest {
                 id: "request-2".into(),
@@ -1249,6 +1254,7 @@ mod hook_bridge_tests {
                 requested_at: "2026-06-09T09:00:01Z".into(),
                 status: crate::PermissionStatus::Pending,
                 archived: false,
+                supports_always: false,
             },
         ];
 
