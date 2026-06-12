@@ -2,7 +2,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
@@ -126,13 +126,13 @@ pub(crate) fn claude_hook_ask_response(hook_event_name: &str, reason: &str) -> V
 
 fn handle_connection(app: AppHandle, mut stream: TcpStream) {
     let result = read_http_request(&mut stream)
-        .and_then(|request| route_request(app, request))
+        .and_then(|request| route_request(app, request, &stream))
         .unwrap_or_else(|error| fallback_hook_response("PreToolUse", &error));
 
     let _ = write_json_response(&mut stream, result);
 }
 
-fn route_request(app: AppHandle, request: HttpRequest) -> Result<Value, String> {
+fn route_request(app: AppHandle, request: HttpRequest, stream: &TcpStream) -> Result<Value, String> {
     if request.method != "POST" || request.path != "/claude/pre-tool-use" {
         return Err("Unsupported Atoll hook endpoint".into());
     }
@@ -147,8 +147,10 @@ fn route_request(app: AppHandle, request: HttpRequest) -> Result<Value, String> 
         .to_string();
 
     match hook_event_name.as_str() {
-        "PreToolUse" | "PermissionRequest" => submit_claude_pre_tool_request(app, payload)
-            .or_else(|error| Ok(fallback_hook_response(&hook_event_name, &error))),
+        "PreToolUse" | "PermissionRequest" => {
+            submit_claude_pre_tool_request(app, payload, stream)
+                .or_else(|error| Ok(fallback_hook_response(&hook_event_name, &error)))
+        }
         "PostToolUse" | "PostToolUseFailure" => {
             sync_claude_tool_completion(app, payload)?;
             Ok(json!({}))
@@ -157,7 +159,13 @@ fn route_request(app: AppHandle, request: HttpRequest) -> Result<Value, String> 
     }
 }
 
-fn submit_claude_pre_tool_request(app: AppHandle, payload: Value) -> Result<Value, String> {
+const HOOK_POLL_INTERVAL: Duration = Duration::from_secs(1);
+
+fn submit_claude_pre_tool_request(
+    app: AppHandle,
+    payload: Value,
+    stream: &TcpStream,
+) -> Result<Value, String> {
     let request_id = uuid::Uuid::new_v4().to_string();
     let hook_event_name = payload
         .get("hook_event_name")
@@ -167,8 +175,26 @@ fn submit_claude_pre_tool_request(app: AppHandle, payload: Value) -> Result<Valu
     let request =
         permission_request_from_claude_payload(request_id.clone(), payload, iso_timestamp_now())
             .ok_or_else(|| "Unsupported Claude hook event".to_string())?;
-    let (sender, receiver) = mpsc::sync_channel(1);
     let state = app.state::<AppState>();
+
+    let is_auto_approved = state
+        .auto_approve_sessions
+        .lock()
+        .map(|sessions| sessions.contains(&request.session))
+        .unwrap_or(false);
+
+    if is_auto_approved {
+        let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
+        let mut auto_request = request;
+        auto_request.status = PermissionStatus::Approved;
+        auto_request.detail = format!("{} Auto-approved.", auto_request.detail);
+        requests.insert(0, auto_request);
+        let snapshot = snapshot_from(&requests);
+        let _ = app.emit("snapshot-changed", &snapshot);
+        return Ok(claude_hook_response(&hook_event_name, Decision::Approved));
+    }
+
+    let (sender, receiver) = mpsc::sync_channel(1);
 
     {
         let mut waiters = state
@@ -188,20 +214,37 @@ fn submit_claude_pre_tool_request(app: AppHandle, payload: Value) -> Result<Valu
 
     show_main_window(&app);
 
-    match receiver.recv_timeout(HOOK_RESPONSE_TIMEOUT) {
-        Ok(decision) => Ok(claude_hook_response(&hook_event_name, decision)),
-        Err(_) => {
-            remove_pending_waiter(&state, &request_id);
-            mark_request_denied(
-                &state,
-                &app,
-                &request_id,
-                "Timed out waiting for Atoll approval.",
-            );
-            Ok(claude_hook_ask_response(
-                &hook_event_name,
-                "Atoll approval timed out",
-            ))
+    let deadline = Instant::now() + HOOK_RESPONSE_TIMEOUT;
+    loop {
+        match receiver.recv_timeout(HOOK_POLL_INTERVAL) {
+            Ok(decision) => return Ok(claude_hook_response(&hook_event_name, decision)),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                remove_pending_waiter(&state, &request_id);
+                return Ok(claude_hook_ask_response(
+                    &hook_event_name,
+                    "Atoll internal error",
+                ));
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if is_peer_disconnected(stream) {
+                    remove_pending_waiter(&state, &request_id);
+                    mark_request_completed_externally(&state, &app, &request_id);
+                    return Ok(json!({}));
+                }
+                if Instant::now() >= deadline {
+                    remove_pending_waiter(&state, &request_id);
+                    mark_request_denied(
+                        &state,
+                        &app,
+                        &request_id,
+                        "Timed out waiting for Atoll approval.",
+                    );
+                    return Ok(claude_hook_ask_response(
+                        &hook_event_name,
+                        "Atoll approval timed out",
+                    ));
+                }
+            }
         }
     }
 }
@@ -210,6 +253,41 @@ fn remove_pending_waiter(state: &AppState, request_id: &str) {
     if let Ok(mut waiters) = state.hook_waiters.lock() {
         waiters.remove(request_id);
     }
+}
+
+fn is_peer_disconnected(stream: &TcpStream) -> bool {
+    let _ = stream.set_nonblocking(true);
+    let mut buf = [0u8; 1];
+    let disconnected = match stream.peek(&mut buf) {
+        Ok(0) => true,
+        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => false,
+        Err(_) => true,
+        Ok(_) => false,
+    };
+    let _ = stream.set_nonblocking(false);
+    disconnected
+}
+
+fn mark_request_completed_externally(
+    state: &AppState,
+    app: &AppHandle,
+    request_id: &str,
+) {
+    let Ok(mut requests) = state.requests.lock() else {
+        return;
+    };
+
+    if let Some(request) = requests.iter_mut().find(|r| r.id == request_id) {
+        if request.status == PermissionStatus::Pending {
+            request.status = PermissionStatus::Approved;
+            if !request.detail.contains("Resolved in Claude.") {
+                request.detail = format!("{} Resolved in Claude.", request.detail);
+            }
+        }
+    }
+
+    let snapshot = snapshot_from(&requests);
+    let _ = app.emit("snapshot-changed", &snapshot);
 }
 
 fn mark_request_denied(state: &AppState, app: &AppHandle, request_id: &str, note: &str) {

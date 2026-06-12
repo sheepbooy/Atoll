@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
@@ -83,6 +83,7 @@ struct IslandHoverChanged {
 struct AppState {
     requests: Mutex<Vec<PermissionRequest>>,
     hook_waiters: Mutex<HashMap<String, SyncSender<Decision>>>,
+    auto_approve_sessions: Mutex<HashSet<String>>,
     presentation_generation: Arc<AtomicU64>,
     home_bounds: Mutex<Option<HomeWindowBounds>>,
 }
@@ -178,6 +179,24 @@ async fn set_island_presentation(
 }
 
 #[tauri::command]
+fn set_session_auto_approve(
+    state: State<'_, AppState>,
+    session: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut sessions = state
+        .auto_approve_sessions
+        .lock()
+        .map_err(|error| error.to_string())?;
+    if enabled {
+        sessions.insert(session);
+    } else {
+        sessions.remove(&session);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn quit_atoll(app: AppHandle) {
     exit_atoll(&app);
 }
@@ -188,12 +207,14 @@ pub fn run() {
         .manage(AppState {
             requests: Mutex::new(Vec::new()),
             hook_waiters: Mutex::new(HashMap::new()),
+            auto_approve_sessions: Mutex::new(HashSet::new()),
             presentation_generation: Arc::new(AtomicU64::new(0)),
             home_bounds: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
             resolve_permission_request,
+            set_session_auto_approve,
             set_island_presentation,
             quit_atoll
         ])

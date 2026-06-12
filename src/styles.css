@@ -66,6 +66,11 @@ button {
     box-shadow 300ms ease;
 }
 
+.tauri-runtime .island.is-closing {
+  border-radius: 0 0 15px 15px;
+  transition: box-shadow 300ms ease;
+}
+
 .island.is-expanded {
   width: min(560px, 100vw);
   height: min(320px, 100vh);
@@ -529,7 +534,7 @@ button {
 .decision-row {
   display: grid;
   flex: 0 0 auto;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 9px;
 }
 
@@ -567,6 +572,11 @@ button {
 .decision-button.approve {
   color: #071009;
   background: #9be8b4;
+}
+
+.decision-button.always-approve {
+  color: #071009;
+  background: linear-gradient(180deg, #7ad4f0, #5ec4e4);
 }
 
 .idle-view {
@@ -618,7 +628,11 @@ button {
   }
 
   .decision-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .decision-button.always-approve {
+    grid-column: 1 / -1;
   }
 }
 
