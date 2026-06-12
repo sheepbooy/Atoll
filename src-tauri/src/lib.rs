@@ -340,7 +340,14 @@ fn apply_island_window_mode(
     let window_size = island_window_physical_size(mode, monitor.scale_factor());
     let logical_window_size = window_size.to_logical::<f64>(scale_factor);
     let centered_x = monitor_position.x + (monitor_size.width - logical_window_size.width) / 2.0;
-    let centered_y = island_top_y(window, monitor_position.y, monitor.work_area().position.y);
+    let mut centered_y = island_top_y(window, monitor_position.y, monitor.work_area().position.y);
+    centered_y += macos_camera_housing_top_clearance(
+        window,
+        monitor_position.x,
+        monitor_size.width,
+        centered_x,
+        logical_window_size.width,
+    );
     let position = LogicalPosition::new(centered_x, centered_y);
     let home = HomeWindowBounds {
         position,
@@ -469,12 +476,39 @@ fn island_top_y_from_offsets(monitor_y: f64, visible_offset: f64, menu_offset: f
     monitor_y - (menu_offset.max(0.0) - visible_offset.max(0.0)).max(0.0)
 }
 
+fn has_camera_housing(frame_width: f64, aux_left_width: f64, aux_right_width: f64) -> bool {
+    aux_left_width + aux_right_width < frame_width - 1.0
+}
+
+fn island_overlaps_camera_housing(
+    island_x: f64,
+    island_width: f64,
+    housing_left: f64,
+    housing_right: f64,
+) -> bool {
+    let island_right = island_x + island_width;
+    island_right > housing_left && island_x < housing_right
+}
+
+fn camera_housing_top_clearance(
+    has_camera_housing: bool,
+    island_overlaps_housing: bool,
+    safe_area_top: f64,
+) -> f64 {
+    if has_camera_housing && island_overlaps_housing {
+        safe_area_top.max(0.0)
+    } else {
+        0.0
+    }
+}
+
 #[cfg(target_os = "macos")]
-fn macos_screen_geometry(
+fn with_nsscreen_for_monitor<R>(
     window: &tauri::WebviewWindow,
     monitor_x: f64,
     monitor_width: f64,
-) -> Option<MacosScreenGeometry> {
+    inspect: impl FnOnce(&objc2_app_kit::NSScreen) -> R,
+) -> Option<R> {
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSScreen, NSWindow};
 
@@ -485,11 +519,7 @@ fn macos_screen_geometry(
             (frame.origin.x - monitor_x).abs() < 1.0
                 && (frame.size.width - monitor_width).abs() < 1.0
         }) {
-            let frame = screen.frame();
-            return Some(MacosScreenGeometry {
-                origin_y: frame.origin.y,
-                height: frame.size.height,
-            });
+            return Some(inspect(&screen));
         }
     }
 
@@ -500,13 +530,65 @@ fn macos_screen_geometry(
 
     unsafe {
         let ns_window = &*(ns_window.cast::<NSWindow>());
-        let frame = ns_window.screen()?.frame();
+        ns_window.screen().map(|screen| inspect(&screen))
+    }
+}
 
-        Some(MacosScreenGeometry {
+#[cfg(target_os = "macos")]
+fn macos_camera_housing_top_clearance(
+    window: &tauri::WebviewWindow,
+    monitor_x: f64,
+    monitor_width: f64,
+    island_x: f64,
+    island_width: f64,
+) -> f64 {
+    with_nsscreen_for_monitor(window, monitor_x, monitor_width, |screen| {
+        let frame = screen.frame();
+        let aux_left = screen.auxiliaryTopLeftArea();
+        let aux_right = screen.auxiliaryTopRightArea();
+        let has_housing = has_camera_housing(
+            frame.size.width,
+            aux_left.size.width,
+            aux_right.size.width,
+        );
+        let housing_left = aux_left.origin.x + aux_left.size.width;
+        let housing_right = aux_right.origin.x;
+        let overlaps = island_overlaps_camera_housing(
+            island_x,
+            island_width,
+            housing_left,
+            housing_right,
+        );
+
+        camera_housing_top_clearance(has_housing, overlaps, screen.safeAreaInsets().top)
+    })
+    .unwrap_or(0.0)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn macos_camera_housing_top_clearance(
+    _window: &tauri::WebviewWindow,
+    _monitor_x: f64,
+    _monitor_width: f64,
+    _island_x: f64,
+    _island_width: f64,
+) -> f64 {
+    0.0
+}
+
+#[cfg(target_os = "macos")]
+fn macos_screen_geometry(
+    window: &tauri::WebviewWindow,
+    monitor_x: f64,
+    monitor_width: f64,
+) -> Option<MacosScreenGeometry> {
+    with_nsscreen_for_monitor(window, monitor_x, monitor_width, |screen| {
+        let frame = screen.frame();
+        MacosScreenGeometry {
             origin_y: frame.origin.y,
             height: frame.size.height,
-        })
-    }
+        }
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -834,6 +916,38 @@ mod core_tests {
     fn island_uses_the_historical_menu_bar_anchor() {
         assert_eq!(island_top_y_from_offsets(0.0, 30.0, 30.0), 0.0);
         assert_eq!(island_top_y_from_offsets(-180.0, 30.0, 30.0), -180.0);
+    }
+
+    #[test]
+    fn camera_housing_clearance_applies_only_when_centered_island_overlaps() {
+        assert_eq!(camera_housing_top_clearance(true, true, 38.0), 38.0);
+        assert_eq!(camera_housing_top_clearance(true, false, 38.0), 0.0);
+        assert_eq!(camera_housing_top_clearance(false, true, 38.0), 0.0);
+        assert_eq!(camera_housing_top_clearance(true, true, -4.0), 0.0);
+    }
+
+    #[test]
+    fn camera_housing_is_detected_from_auxiliary_top_areas() {
+        assert!(has_camera_housing(1512.0, 700.0, 700.0));
+        assert!(!has_camera_housing(1512.0, 756.0, 756.0));
+    }
+
+    #[test]
+    fn centered_island_overlaps_camera_housing() {
+        let housing_left = 700.0;
+        let housing_right = 812.0;
+        assert!(island_overlaps_camera_housing(
+            690.0,
+            132.0,
+            housing_left,
+            housing_right
+        ));
+        assert!(!island_overlaps_camera_housing(
+            500.0,
+            132.0,
+            housing_left,
+            housing_right
+        ));
     }
 
     #[test]
