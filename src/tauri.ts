@@ -127,6 +127,37 @@ export async function archiveAllResolved(): Promise<IslandSnapshot> {
   return getSnapshot();
 }
 
+export interface HookStatus {
+  installed: boolean;
+  scriptFound: boolean;
+  settingsPath: string;
+  scriptPath: string;
+}
+
+export async function getClaudeHookStatus(): Promise<HookStatus> {
+  if (isTauriRuntime) {
+    return invoke<HookStatus>("get_claude_hook_status");
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
+export async function installClaudeHooks(): Promise<HookStatus> {
+  if (isTauriRuntime) {
+    return invoke<HookStatus>("install_claude_hooks");
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
+export async function uninstallClaudeHooks(): Promise<HookStatus> {
+  if (isTauriRuntime) {
+    return invoke<HookStatus>("uninstall_claude_hooks");
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
 export async function quitAtoll() {
   if (!isTauriRuntime) {
     return;

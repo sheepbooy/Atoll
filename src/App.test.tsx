@@ -22,6 +22,14 @@ const bridge = vi.hoisted(() => ({
   quitAtoll: vi.fn(),
   resolvePermissionRequest: vi.fn(),
   setIslandPresentation: vi.fn(),
+  getClaudeHookStatus: vi.fn(),
+  installClaudeHooks: vi.fn(),
+  uninstallClaudeHooks: vi.fn(),
+  setSessionAutoApprove: vi.fn(),
+  archiveAllResolved: vi.fn(),
+  archiveRequest: vi.fn(),
+  getSessionRequests: vi.fn(),
+  getSessionTranscript: vi.fn(),
 }));
 
 const windowBridge = vi.hoisted(() => ({
@@ -43,6 +51,7 @@ describe("App", () => {
       pendingCount: 1,
       activeRequest: request,
       recent: [request],
+      sessions: [],
     });
     bridge.onSnapshotChanged.mockResolvedValue(() => undefined);
     emitIslandHover = null;
@@ -58,6 +67,33 @@ describe("App", () => {
       pendingCount: 0,
       activeRequest: null,
       recent: [{ ...request, status: "approved" }],
+      sessions: [],
+    });
+    bridge.getClaudeHookStatus.mockResolvedValue({
+      installed: true,
+      scriptFound: true,
+      settingsPath: "",
+      scriptPath: "",
+    });
+    bridge.installClaudeHooks.mockResolvedValue({
+      installed: true,
+      scriptFound: true,
+      settingsPath: "",
+      scriptPath: "",
+    });
+    bridge.uninstallClaudeHooks.mockResolvedValue({
+      installed: false,
+      scriptFound: false,
+      settingsPath: "",
+      scriptPath: "",
+    });
+    bridge.setSessionAutoApprove.mockResolvedValue(undefined);
+    bridge.archiveAllResolved.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
     });
     windowBridge.startDragging.mockResolvedValue(undefined);
   });
@@ -97,6 +133,7 @@ describe("App", () => {
       pendingCount: 0,
       activeRequest: null,
       recent: [],
+      sessions: [],
     });
     const user = userEvent.setup();
     const { container } = render(<App />);
@@ -214,6 +251,7 @@ describe("App", () => {
       pendingCount: 0,
       activeRequest: null,
       recent: [],
+      sessions: [],
     });
     const { container } = render(<App />);
     const island = screen.getByLabelText("Atoll");
@@ -235,6 +273,7 @@ describe("App", () => {
       pendingCount: 0,
       activeRequest: null,
       recent: [],
+      sessions: [],
     });
     render(<App />);
     const island = screen.getByLabelText("Atoll");

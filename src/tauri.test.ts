@@ -37,6 +37,7 @@ describe("Tauri bridge", () => {
       archivedCount: 0,
       activeRequest: null,
       recent: [],
+      sessions: [],
     });
   });
 

@@ -10,11 +10,13 @@ import {
   Circle,
   ClipboardCheck,
   Code2,
+  Download,
   Ellipsis,
   Layers,
   Power,
   SendHorizonal,
   ShieldAlert,
+  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -37,11 +39,15 @@ import {
   PermissionRequest,
   SessionSummary,
   ChatMessage,
+  HookStatus,
   archiveAllResolved,
   quitAtoll,
   resolvePermissionRequest,
   setIslandPresentation,
   setSessionAutoApprove,
+  getClaudeHookStatus,
+  installClaudeHooks,
+  uninstallClaudeHooks,
 } from "./tauri";
 
 type Decision = "approved" | "denied";
@@ -90,6 +96,8 @@ export function App() {
 
   const [panelView, setPanelView] = useState<PanelView>({ kind: "home" });
   const [sessionRequests, setSessionRequests] = useState<PermissionRequest[]>([]);
+  const [hookStatus, setHookStatus] = useState<HookStatus | null>(null);
+  const [hookBusy, setHookBusy] = useState(false);
 
   const activeRequest = snapshot.activeRequest;
   const sessions = snapshot.sessions;
@@ -102,6 +110,9 @@ export function App() {
     getSnapshot()
       .then(applySnapshot)
       .catch(() => undefined);
+    getClaudeHookStatus()
+      .then(setHookStatus)
+      .catch(() => undefined);
     onSnapshotChanged(applySnapshot).then((cleanup) => {
       unsubscribe = cleanup;
     });
@@ -112,7 +123,9 @@ export function App() {
           expandIsland();
         }
       } else {
-        suppressHoverExpandRef.current = false;
+        if (phaseRef.current !== "closing") {
+          suppressHoverExpandRef.current = false;
+        }
         scheduleIdleCollapse();
       }
     }).then((cleanup) => {
@@ -191,7 +204,7 @@ export function App() {
       const nextSnapshot = await resolvePermissionRequest(activeRequest.id, decision, note);
       applySnapshot(nextSnapshot);
       if (nextSnapshot.pendingCount === 0) {
-        scheduleIdleCollapse();
+        collapseIsland(true);
       }
     } finally {
       setBusyDecision(null);
@@ -341,7 +354,9 @@ export function App() {
 
   function handlePointerLeave() {
     hoveringRef.current = false;
-    suppressHoverExpandRef.current = false;
+    if (phaseRef.current !== "closing") {
+      suppressHoverExpandRef.current = false;
+    }
     scheduleIdleCollapse();
   }
 
@@ -383,6 +398,34 @@ export function App() {
       document.activeElement.blur();
     }
     scheduleIdleCollapse();
+  }
+
+  async function handleInstallHooks() {
+    setHookBusy(true);
+    try {
+      const status = await installClaudeHooks();
+      setHookStatus(status);
+      if (status.installed) {
+        collapseIsland(true);
+      }
+    } catch {
+      // keep previous status
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
+  async function handleUninstallHooks() {
+    setMenuOpen(false);
+    setHookBusy(true);
+    try {
+      const status = await uninstallClaudeHooks();
+      setHookStatus(status);
+    } catch {
+      // keep previous status
+    } finally {
+      setHookBusy(false);
+    }
   }
 
   async function handleQuit() {
@@ -444,7 +487,13 @@ export function App() {
       );
     }
 
-    return <IdleView />;
+    return (
+      <IdleView
+        hookStatus={hookStatus}
+        hookBusy={hookBusy}
+        onInstall={handleInstallHooks}
+      />
+    );
   }
 
   return (
@@ -528,6 +577,27 @@ export function App() {
             </button>
             {menuOpen ? (
               <div className="more-menu" role="menu">
+                {hookStatus?.installed ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleUninstallHooks}
+                    disabled={hookBusy}
+                  >
+                    <Trash2 size={15} />
+                    Uninstall hooks
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); handleInstallHooks(); }}
+                    disabled={hookBusy}
+                  >
+                    <Download size={15} />
+                    Install hooks
+                  </button>
+                )}
                 <button
                   type="button"
                   role="menuitem"
@@ -769,7 +839,37 @@ function SessionChatView({ sessionId, transcriptPath, requests, busyDecision, on
   );
 }
 
-function IdleView() {
+interface IdleViewProps {
+  hookStatus: HookStatus | null;
+  hookBusy: boolean;
+  onInstall: () => void;
+}
+
+function IdleView({ hookStatus, hookBusy, onInstall }: IdleViewProps) {
+  if (hookStatus && !hookStatus.installed) {
+    return (
+      <div className="idle-view setup-view">
+        <div className="idle-icon setup-icon">
+          <Download size={21} />
+        </div>
+        <div>
+          <h1>Setup required</h1>
+          <p>Install Claude Code hooks to forward approval requests to Atoll.</p>
+        </div>
+        <button
+          type="button"
+          className="install-button"
+          onClick={onInstall}
+          disabled={hookBusy}
+          data-no-drag
+        >
+          <Download size={15} />
+          <span>{hookBusy ? "Installing..." : "Install hooks"}</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="idle-view">
       <div className="idle-icon">

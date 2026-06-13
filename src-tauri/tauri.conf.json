@@ -34,6 +34,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all"
+    "targets": "all",
+    "resources": {
+      "../scripts/atoll-claude-hook.mjs": "scripts/atoll-claude-hook.mjs"
+    }
   }
 }
