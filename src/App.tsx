@@ -1,5 +1,6 @@
-import { FocusEvent, MouseEvent, useEffect, useRef, useState } from "react";
+import { FocusEvent, MouseEvent, useEffect, useRef, useState, useMemo } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import ReactMarkdown from "react-markdown";
 import {
   Archive,
   ArrowLeft,
@@ -800,12 +801,7 @@ function SessionChatView({ sessionId, transcriptPath, requests, busyDecision, on
           <div className="chat-empty">No conversation history.</div>
         ) : null}
         {messages.map((msg, i) => (
-          <div key={i} className={`chat-bubble ${msg.role}`}>
-            {msg.toolName ? (
-              <span className="chat-tool-badge">{msg.toolName}</span>
-            ) : null}
-            <span className="chat-bubble-text">{msg.content || (msg.toolName ? `Using ${msg.toolName}...` : "")}</span>
-          </div>
+          <ChatBubble key={i} message={msg} />
         ))}
       </div>
 
@@ -886,6 +882,26 @@ function IdleView({ hookStatus, hookBusy, onInstall }: IdleViewProps) {
 function sessionDisplayName(cwd: string) {
   const parts = cwd.split("/").filter(Boolean);
   return parts[parts.length - 1] || cwd;
+}
+
+function ChatBubble({ message }: { message: ChatMessage }) {
+  const text = message.content || (message.toolName ? `Using ${message.toolName}...` : "");
+  const hasMarkdown = useMemo(() => /[*_`#\[\]!\n>-]/.test(text), [text]);
+
+  return (
+    <div className={`chat-bubble ${message.role}`}>
+      {message.toolName ? (
+        <span className="chat-tool-badge">{message.toolName}</span>
+      ) : null}
+      {hasMarkdown ? (
+        <div className="chat-bubble-md">
+          <ReactMarkdown>{text}</ReactMarkdown>
+        </div>
+      ) : (
+        <span className="chat-bubble-text">{text}</span>
+      )}
+    </div>
+  );
 }
 
 function timeAgo(isoDate: string) {
