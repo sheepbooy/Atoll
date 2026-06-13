@@ -2,14 +2,18 @@ import { FocusEvent, MouseEvent, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   Archive,
+  ArrowLeft,
   Check,
   CheckCheck,
+  ChevronRight,
   ChevronUp,
   Circle,
   ClipboardCheck,
   Code2,
   Ellipsis,
+  Layers,
   Power,
+  SendHorizonal,
   ShieldAlert,
   X,
 } from "lucide-react";
@@ -24,11 +28,15 @@ import {
 } from "./islandPresentation";
 import {
   getSnapshot,
+  getSessionRequests,
+  getSessionTranscript,
   IslandSnapshot,
   onIslandHoverChanged,
   onIslandOpenRequested,
   onSnapshotChanged,
   PermissionRequest,
+  SessionSummary,
+  ChatMessage,
   archiveAllResolved,
   quitAtoll,
   resolvePermissionRequest,
@@ -37,6 +45,7 @@ import {
 } from "./tauri";
 
 type Decision = "approved" | "denied";
+type PanelView = { kind: "home" } | { kind: "session"; sessionId: string };
 
 const initialSnapshot: IslandSnapshot = {
   online: false,
@@ -44,6 +53,7 @@ const initialSnapshot: IslandSnapshot = {
   archivedCount: 0,
   activeRequest: null,
   recent: [],
+  sessions: [],
 };
 
 const agentLabels: Record<PermissionRequest["agent"], string> = {
@@ -78,7 +88,11 @@ export function App() {
   const menuOpenRef = useRef(false);
   menuOpenRef.current = menuOpen;
 
+  const [panelView, setPanelView] = useState<PanelView>({ kind: "home" });
+  const [sessionRequests, setSessionRequests] = useState<PermissionRequest[]>([]);
+
   const activeRequest = snapshot.activeRequest;
+  const sessions = snapshot.sessions;
 
   useEffect(() => {
     let unsubscribe: () => void = () => undefined;
@@ -148,6 +162,7 @@ export function App() {
     function handleKeyDown(event: KeyboardEvent) {
       if (!snapshotRef.current.activeRequest || busyRef.current) return;
       if (menuOpenRef.current) return;
+      if ((event.target as HTMLElement).tagName === "INPUT" || (event.target as HTMLElement).tagName === "TEXTAREA") return;
 
       if (event.key === "Enter" && event.shiftKey) {
         event.preventDefault();
@@ -165,7 +180,7 @@ export function App() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  async function resolveActive(decision: Decision, alwaysApprove = false) {
+  async function resolveActive(decision: Decision, alwaysApprove = false, note = "") {
     if (!activeRequest) return;
 
     setBusyDecision(decision);
@@ -173,10 +188,27 @@ export function App() {
       if (alwaysApprove) {
         await setSessionAutoApprove(activeRequest.session, true);
       }
-      const nextSnapshot = await resolvePermissionRequest(activeRequest.id, decision);
+      const nextSnapshot = await resolvePermissionRequest(activeRequest.id, decision, note);
       applySnapshot(nextSnapshot);
       if (nextSnapshot.pendingCount === 0) {
-        collapseIsland(true);
+        scheduleIdleCollapse();
+      }
+    } finally {
+      setBusyDecision(null);
+    }
+  }
+
+  async function resolveRequest(id: string, decision: Decision, note = "") {
+    setBusyDecision(decision);
+    try {
+      const nextSnapshot = await resolvePermissionRequest(id, decision, note);
+      applySnapshot(nextSnapshot);
+      if (panelView.kind === "session") {
+        const requests = await getSessionRequests(panelView.sessionId);
+        setSessionRequests(requests);
+      }
+      if (nextSnapshot.pendingCount === 0) {
+        scheduleIdleCollapse();
       }
     } finally {
       setBusyDecision(null);
@@ -192,6 +224,16 @@ export function App() {
     } else {
       scheduleIdleCollapse();
     }
+  }
+
+  async function navigateToSession(sessionId: string) {
+    setPanelView({ kind: "session", sessionId });
+    const requests = await getSessionRequests(sessionId);
+    setSessionRequests(requests);
+  }
+
+  function navigateBack() {
+    setPanelView({ kind: "home" });
   }
 
   function setPresentationPhase(next: PresentationPhase) {
@@ -250,6 +292,7 @@ export function App() {
     if (next === phaseRef.current) return;
     clearTransitionWork();
     setPresentationPhase(next);
+    setPanelView({ kind: "home" });
 
     const nativeTransition = setIslandPresentation("compact");
     transitionTimerRef.current = window.setTimeout(async () => {
@@ -304,6 +347,7 @@ export function App() {
 
   function handleIslandClick(event: MouseEvent<HTMLElement>) {
     if ((event.target as HTMLElement).closest("button")) return;
+    if ((event.target as HTMLElement).closest("input")) return;
     suppressHoverExpandRef.current = false;
     focusedRef.current = true;
     event.currentTarget.focus({ preventScroll: true });
@@ -357,6 +401,52 @@ export function App() {
   const isExpanded = phase === "opening" || phase === "expanded";
   const agent = activeRequest?.agent;
 
+  function renderPanel() {
+    if (panelView.kind === "session") {
+      const session = sessions.find((s) => s.sessionId === panelView.sessionId);
+      return (
+        <SessionChatView
+          sessionId={panelView.sessionId}
+          transcriptPath={session?.transcriptPath ?? null}
+          requests={sessionRequests}
+          busyDecision={busyDecision}
+          onReply={(note) => {
+            const pending = sessionRequests.find((r) => r.status === "pending");
+            if (pending) {
+              resolveRequest(pending.id, "denied", note);
+            }
+          }}
+          onBack={navigateBack}
+        />
+      );
+    }
+
+    if (activeRequest) {
+      return (
+        <ApprovalCard
+          request={activeRequest}
+          busyDecision={busyDecision}
+          sessions={sessions}
+          onApprove={() => resolveActive("approved")}
+          onDeny={() => resolveActive("denied")}
+          onAlwaysApprove={() => resolveActive("approved", true)}
+          onViewSession={navigateToSession}
+        />
+      );
+    }
+
+    if (sessions.length > 0) {
+      return (
+        <SessionListView
+          sessions={sessions}
+          onSelectSession={navigateToSession}
+        />
+      );
+    }
+
+    return <IdleView />;
+  }
+
   return (
     <main className="stage">
       <section
@@ -382,12 +472,19 @@ export function App() {
 
           <span className="header-copy">
             <span className="header-title">
-              {activeRequest ? `${agentLabels[activeRequest.agent]} approval` : "Atoll"}
+              {activeRequest
+                ? `${agentLabels[activeRequest.agent]} approval`
+                : "Atoll"}
             </span>
             <span className="header-meta">
               <span className={`listener-dot ${snapshot.online ? "online" : ""}`} />
               {snapshot.online ? "Listening" : "Offline"}
-              {activeRequest ? (
+              {sessions.length > 0 ? (
+                <>
+                  <span className="meta-divider">·</span>
+                  {sessions.length} session{sessions.length > 1 ? "s" : ""}
+                </>
+              ) : activeRequest ? (
                 <>
                   <span className="meta-divider">·</span>
                   {timeAgo(activeRequest.requestedAt)}
@@ -454,32 +551,69 @@ export function App() {
         </header>
 
         <div className="island-panel">
-          {activeRequest ? (
-            <ApprovalView
-              request={activeRequest}
-              busyDecision={busyDecision}
-              onApprove={() => resolveActive("approved")}
-              onAlwaysApprove={() => resolveActive("approved", true)}
-              onDeny={() => resolveActive("denied")}
-            />
-          ) : (
-            <IdleView />
-          )}
+          {renderPanel()}
         </div>
       </section>
     </main>
   );
 }
 
-interface ApprovalViewProps {
-  request: PermissionRequest;
-  busyDecision: Decision | null;
-  onApprove: () => void;
-  onAlwaysApprove: () => void;
-  onDeny: () => void;
+interface SessionListViewProps {
+  sessions: SessionSummary[];
+  onSelectSession: (sessionId: string) => void;
 }
 
-function ApprovalView({ request, busyDecision, onApprove, onAlwaysApprove, onDeny }: ApprovalViewProps) {
+function SessionListView({ sessions, onSelectSession }: SessionListViewProps) {
+  return (
+    <div className="session-list-view">
+      <div className="session-list-header">
+        <Layers size={13} />
+        <span>{sessions.length} session{sessions.length > 1 ? "s" : ""}</span>
+      </div>
+      <div className="session-list">
+        {sessions.map((session) => (
+          <button
+            key={session.sessionId}
+            className="session-item"
+            type="button"
+            onClick={() => onSelectSession(session.sessionId)}
+          >
+            <div className="session-item-info">
+              <span className="session-item-name">
+                {sessionDisplayName(session.cwd)}
+              </span>
+              <span className="session-item-meta">
+                {session.cwd}
+                <span className="meta-divider">·</span>
+                {timeAgo(session.lastActivity)}
+              </span>
+            </div>
+            <div className="session-item-trail">
+              {session.pendingCount > 0 ? (
+                <span className="session-pending-badge">{session.pendingCount}</span>
+              ) : null}
+              <ChevronRight size={14} />
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+interface ApprovalCardProps {
+  request: PermissionRequest;
+  busyDecision: Decision | null;
+  sessions: SessionSummary[];
+  onApprove: () => void;
+  onDeny: () => void;
+  onAlwaysApprove: () => void;
+  onViewSession: (sessionId: string) => void;
+}
+
+function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAlwaysApprove, onViewSession }: ApprovalCardProps) {
+  const session = sessions.find((s) => s.sessionId === request.session);
+
   return (
     <div className="approval-view">
       <div className="request-main">
@@ -497,37 +631,139 @@ function ApprovalView({ request, busyDecision, onApprove, onAlwaysApprove, onDen
         </div>
       </div>
 
-      <div className={`decision-row ${request.supportsAlways ? "has-always" : ""}`}>
-        <button
-          className="decision-button deny"
-          type="button"
-          onClick={onDeny}
-          disabled={busyDecision !== null}
-        >
-          <X size={17} />
-          <span>{busyDecision === "denied" ? "Denying" : "Deny"}</span>
-        </button>
-        <button
-          className="decision-button approve"
-          type="button"
-          onClick={onApprove}
-          disabled={busyDecision !== null}
-        >
-          <Check size={17} />
-          <span>{busyDecision === "approved" ? "Approving" : "Approve"}</span>
-        </button>
-        {request.supportsAlways ? (
+      <div className="approval-footer">
+        <div className={`decision-row ${request.supportsAlways ? "has-always" : ""}`}>
           <button
-            className="decision-button always-approve"
+            className="decision-button deny"
             type="button"
-            onClick={onAlwaysApprove}
+            onClick={onDeny}
             disabled={busyDecision !== null}
-            title="Approve this and all future requests for this session"
           >
-            <CheckCheck size={17} />
-            <span>Always</span>
+            <X size={17} />
+            <span>{busyDecision === "denied" ? "Denying" : "Deny"}</span>
+          </button>
+          <button
+            className="decision-button approve"
+            type="button"
+            onClick={onApprove}
+            disabled={busyDecision !== null}
+          >
+            <Check size={17} />
+            <span>{busyDecision === "approved" ? "Approving" : "Approve"}</span>
+          </button>
+          {request.supportsAlways ? (
+            <button
+              className="decision-button always-approve"
+              type="button"
+              onClick={onAlwaysApprove}
+              disabled={busyDecision !== null}
+              title="Approve this and all future requests for this session"
+            >
+              <CheckCheck size={17} />
+              <span>Always</span>
+            </button>
+          ) : null}
+        </div>
+        {session ? (
+          <button
+            type="button"
+            className="view-session-link"
+            onClick={() => onViewSession(request.session)}
+          >
+            View session
+            <ChevronRight size={12} />
           </button>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+interface SessionChatViewProps {
+  sessionId: string;
+  transcriptPath: string | null;
+  requests: PermissionRequest[];
+  busyDecision: Decision | null;
+  onReply: (note: string) => void;
+  onBack: () => void;
+}
+
+function SessionChatView({ sessionId, transcriptPath, requests, busyDecision, onReply, onBack }: SessionChatViewProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [replyText, setReplyText] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const pendingRequest = requests.find((r) => r.status === "pending") ?? null;
+
+  useEffect(() => {
+    if (transcriptPath) {
+      getSessionTranscript(transcriptPath)
+        .then(setMessages)
+        .catch(() => setMessages([]));
+    }
+  }, [transcriptPath]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  function handleSendReply() {
+    const text = replyText.trim();
+    if (!text || !pendingRequest) return;
+    setReplyText("");
+    onReply(text);
+  }
+
+  return (
+    <div className="session-chat">
+      <div className="session-detail-nav">
+        <button type="button" className="back-button" onClick={onBack}>
+          <ArrowLeft size={14} />
+          <span>Back</span>
+        </button>
+        <span className="session-chat-title">{sessionDisplayName(requests[0]?.cwd || sessionId)}</span>
+      </div>
+
+      <div className="chat-messages" ref={scrollRef}>
+        {messages.length === 0 && requests.length === 0 ? (
+          <div className="chat-empty">No conversation history.</div>
+        ) : null}
+        {messages.map((msg, i) => (
+          <div key={i} className={`chat-bubble ${msg.role}`}>
+            {msg.toolName ? (
+              <span className="chat-tool-badge">{msg.toolName}</span>
+            ) : null}
+            <span className="chat-bubble-text">{msg.content || (msg.toolName ? `Using ${msg.toolName}...` : "")}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="conversation-reply" data-no-drag>
+        <input
+          type="text"
+          className="reply-input"
+          placeholder={pendingRequest ? "Reply to agent..." : "No pending request"}
+          value={replyText}
+          disabled={!pendingRequest || busyDecision !== null}
+          onChange={(e) => setReplyText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && replyText.trim()) {
+              e.preventDefault();
+              e.stopPropagation();
+              handleSendReply();
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="reply-send-button"
+          disabled={!replyText.trim() || !pendingRequest || busyDecision !== null}
+          onClick={handleSendReply}
+          title="Send reply (deny with message)"
+        >
+          <SendHorizonal size={14} />
+        </button>
       </div>
     </div>
   );
@@ -545,6 +781,11 @@ function IdleView() {
       </div>
     </div>
   );
+}
+
+function sessionDisplayName(cwd: string) {
+  const parts = cwd.split("/").filter(Boolean);
+  return parts[parts.length - 1] || cwd;
 }
 
 function timeAgo(isoDate: string) {

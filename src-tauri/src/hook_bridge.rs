@@ -9,7 +9,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
     iso_timestamp_now, show_main_window, snapshot_from, AgentKind, AppState, Decision,
-    PermissionRequest, PermissionStatus,
+    DecisionWithNote, PermissionRequest, PermissionStatus,
 };
 
 const HOOK_BIND_ADDR: &str = "127.0.0.1:47777";
@@ -74,18 +74,33 @@ pub(crate) fn permission_request_from_claude_payload(
         requested_at,
         status: PermissionStatus::Pending,
         archived: false,
-        supports_always: event_name == "PermissionRequest",
+        supports_always: payload
+            .get("permission_suggestions")
+            .and_then(Value::as_array)
+            .map(|arr| !arr.is_empty())
+            .unwrap_or(false),
+        transcript_path: payload
+            .get("transcript_path")
+            .and_then(Value::as_str)
+            .map(str::to_string),
     })
 }
 
-pub(crate) fn claude_hook_response(hook_event_name: &str, decision: Decision) -> Value {
+pub(crate) fn claude_hook_response(hook_event_name: &str, decision: Decision, note: &str) -> Value {
     if hook_event_name == "PermissionRequest" {
         let decision = match decision {
             Decision::Approved => json!({ "behavior": "allow" }),
-            Decision::Denied => json!({
-                "behavior": "deny",
-                "message": "Denied from Atoll"
-            }),
+            Decision::Denied => {
+                let message = if note.is_empty() {
+                    "Denied from Atoll".to_string()
+                } else {
+                    format!("Denied from Atoll: {note}")
+                };
+                json!({
+                    "behavior": "deny",
+                    "message": message
+                })
+            }
         };
 
         return json!({
@@ -97,8 +112,15 @@ pub(crate) fn claude_hook_response(hook_event_name: &str, decision: Decision) ->
     }
 
     let (permission_decision, reason) = match decision {
-        Decision::Approved => ("allow", "Approved from Atoll"),
-        Decision::Denied => ("deny", "Denied from Atoll"),
+        Decision::Approved => ("allow", "Approved from Atoll".to_string()),
+        Decision::Denied => {
+            let reason = if note.is_empty() {
+                "Denied from Atoll".to_string()
+            } else {
+                format!("Denied from Atoll: {note}")
+            };
+            ("deny", reason)
+        }
     };
     json!({
         "hookSpecificOutput": {
@@ -193,7 +215,7 @@ fn submit_claude_pre_tool_request(
         requests.insert(0, auto_request);
         let snapshot = snapshot_from(&requests);
         let _ = app.emit("snapshot-changed", &snapshot);
-        return Ok(claude_hook_response(&hook_event_name, Decision::Approved));
+        return Ok(claude_hook_response(&hook_event_name, Decision::Approved, ""));
     }
 
     let (sender, receiver) = mpsc::sync_channel(1);
@@ -219,7 +241,9 @@ fn submit_claude_pre_tool_request(
     let deadline = Instant::now() + HOOK_RESPONSE_TIMEOUT;
     loop {
         match receiver.recv_timeout(HOOK_POLL_INTERVAL) {
-            Ok(decision) => return Ok(claude_hook_response(&hook_event_name, decision)),
+            Ok(DecisionWithNote { decision, note }) => {
+                return Ok(claude_hook_response(&hook_event_name, decision, &note))
+            }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 remove_pending_waiter(&state, &request_id);
                 return Ok(claude_hook_ask_response(
@@ -317,7 +341,10 @@ fn sync_claude_tool_completion(app: AppHandle, payload: Value) -> Result<(), Str
 
         if let Ok(mut waiters) = state.hook_waiters.lock() {
             if let Some(waiter) = waiters.remove(&request_id) {
-                let _ = waiter.send(Decision::Approved);
+                let _ = waiter.send(DecisionWithNote {
+                    decision: Decision::Approved,
+                    note: String::new(),
+                });
             }
         }
 

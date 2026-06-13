@@ -634,6 +634,324 @@ button {
   line-height: 1.45;
 }
 
+.session-list-view {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+}
+
+.session-list-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #8f8c83;
+  font-size: 10px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.session-list {
+  display: grid;
+  min-height: 0;
+  align-content: start;
+  gap: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.session-item {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 0;
+  padding: 10px 12px;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-item::before {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  content: "";
+  pointer-events: none;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.session-item:hover::before {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.065);
+}
+
+.session-item-info {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.session-item-name {
+  overflow: hidden;
+  color: #fffaf2;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  color: #7a786f;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-item-trail {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  color: #8f8c83;
+}
+
+.session-pending-badge {
+  display: inline-flex;
+  min-width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0 5px;
+  color: #17150e;
+  background: #f8dda0;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.session-detail-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 0;
+  padding: 4px 8px 4px 4px;
+  color: #bbb8af;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+.back-button:hover {
+  color: #fffdf7;
+}
+
+.session-detail-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #f8dda0;
+  background: rgba(248, 221, 160, 0.1);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.session-conversation {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.session-chat {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.session-chat-title {
+  overflow: hidden;
+  color: #fffaf2;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-messages {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 2px 2px 0;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.chat-empty {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  color: #6f6d67;
+  font-size: 12px;
+}
+
+.chat-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 85%;
+  padding: 7px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.chat-bubble.assistant {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: #d4d1c8;
+}
+
+.chat-bubble.user {
+  align-self: flex-end;
+  background: rgba(155, 232, 180, 0.15);
+  border: 1px solid rgba(155, 232, 180, 0.12);
+  color: #c8f0d5;
+}
+
+.chat-tool-badge {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #8f8c83;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.chat-bubble-text {
+  white-space: pre-wrap;
+}
+
+.approval-footer {
+  display: grid;
+  gap: 8px;
+}
+
+.view-session-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border-radius: 0;
+  padding: 4px 0;
+  color: #8f8c83;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+.view-session-link:hover {
+  color: #fffdf7;
+}
+
+.conversation-reply {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.reply-input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0 12px;
+  color: #f5f1e8;
+  background: rgba(255, 255, 255, 0.04);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.reply-input::placeholder {
+  color: #6f6d67;
+}
+
+.reply-input:focus {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.reply-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.reply-send-button {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  color: #bbb8af;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: color 140ms ease, background 140ms ease;
+}
+
+.reply-send-button:hover:not(:disabled) {
+  color: #fffdf7;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.reply-send-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 @media (max-width: 520px) {
   .island.is-expanded {
     width: min(100vw, 420px);
