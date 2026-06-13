@@ -10,15 +10,20 @@ import {
   ChevronUp,
   Circle,
   ClipboardCheck,
-  Code2,
   Download,
   Ellipsis,
+  FolderClosed,
   Layers,
   Power,
   SendHorizonal,
   ShieldAlert,
+  TriangleAlert,
   Trash2,
   X,
+  Zap,
+  Terminal,
+  Bot,
+  Sparkles,
 } from "lucide-react";
 import {
   beginCollapse,
@@ -75,6 +80,54 @@ const agentTone: Record<PermissionRequest["agent"], string> = {
   codex: "cyan",
   gemini: "lime",
   other: "neutral",
+};
+
+const agentIcons: Record<PermissionRequest["agent"], typeof Bot> = {
+  claude: Sparkles,
+  codex: Terminal,
+  gemini: Zap,
+  other: Bot,
+};
+
+type RiskLevel = "danger" | "caution";
+
+const DANGER_PATTERNS: RegExp[] = [
+  /\brm\s+(-\w*\s+)*-?\w*[rf]\w*[rf]/i,
+  /\bsudo\b/i,
+  /git\s+push\b[^\n]*(--force\b|\s-f\b|--force-with-lease\b)/i,
+  /git\s+reset\s+--hard\b/i,
+  /\bdd\s+if=/i,
+  /\bmkfs\b/i,
+  /:\(\)\s*\{[^}]*\}\s*;\s*:/,
+  /chmod\s+-?\w*\s*777\b/i,
+  /(curl|wget)[^|]*\|\s*(sudo\s+)?(ba|z|fi)?sh\b/i,
+  />\s*\/dev\/(sd|disk|null|zero)/i,
+  /\bkill(all)?\b|\bkill\s+-9\b/i,
+  /\b(shutdown|reboot|halt|poweroff)\b/i,
+  /\bDROP\s+(TABLE|DATABASE)\b/i,
+  /\bTRUNCATE\s+TABLE\b/i,
+];
+
+const CAUTION_PATTERNS: RegExp[] = [
+  /\brm\s+-/i,
+  /\bgit\s+clean\b/i,
+  /\bgit\s+checkout\s+--\s/i,
+  /\b(npm|pnpm|yarn|bun)\s+(install|i|ci|add|remove)\b/i,
+  /\b(mv|chmod|chown|ln)\b/i,
+  /\bdocker\b[^\n]*\b(rm|rmi|prune|down|stop)\b/i,
+  /\b(brew|apt|apt-get|yum|dnf|pacman)\s+(install|remove|uninstall)\b/i,
+  />>?\s*[^\s|&]/,
+];
+
+function assessRisk(command: string): RiskLevel | null {
+  if (DANGER_PATTERNS.some((pattern) => pattern.test(command))) return "danger";
+  if (CAUTION_PATTERNS.some((pattern) => pattern.test(command))) return "caution";
+  return null;
+}
+
+const riskLabels: Record<RiskLevel, string> = {
+  danger: "High risk",
+  caution: "Review",
 };
 
 export function App() {
@@ -444,6 +497,7 @@ export function App() {
 
   const isExpanded = phase === "opening" || phase === "expanded";
   const agent = activeRequest?.agent;
+  const AgentIcon = agent ? agentIcons[agent] : Circle;
 
   function renderPanel() {
     if (panelView.kind === "session") {
@@ -500,7 +554,7 @@ export function App() {
   return (
     <main className="stage">
       <section
-        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""}`}
+        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""}`}
         aria-label="Atoll"
         tabIndex={0}
         onClick={handleIslandClick}
@@ -516,7 +570,7 @@ export function App() {
         >
           <span className="agent-slot">
             <span className={`agent-dot ${agent ? agentTone[agent] : "idle"}`}>
-              {activeRequest ? <ShieldAlert size={15} /> : <Circle size={11} />}
+              {activeRequest ? <ShieldAlert size={15} /> : <AgentIcon size={agent ? 15 : 11} />}
             </span>
           </span>
 
@@ -585,7 +639,7 @@ export function App() {
                     onClick={handleUninstallHooks}
                     disabled={hookBusy}
                   >
-                    <Trash2 size={15} />
+                    <Trash2 size={14} />
                     Uninstall hooks
                   </button>
                 ) : (
@@ -595,7 +649,7 @@ export function App() {
                     onClick={() => { setMenuOpen(false); handleInstallHooks(); }}
                     disabled={hookBusy}
                   >
-                    <Download size={15} />
+                    <Download size={14} />
                     Install hooks
                   </button>
                 )}
@@ -604,16 +658,17 @@ export function App() {
                   role="menuitem"
                   onClick={handleArchiveAll}
                 >
-                  <Archive size={15} />
+                  <Archive size={14} />
                   Archive all
                 </button>
+                <div className="menu-separator" />
                 <button
                   type="button"
                   role="menuitem"
                   className="danger"
                   onClick={handleQuit}
                 >
-                  <Power size={15} />
+                  <Power size={14} />
                   Quit Atoll
                 </button>
               </div>
@@ -629,6 +684,8 @@ export function App() {
   );
 }
 
+/* ─── Session List View ───────────────────────────────────────── */
+
 interface SessionListViewProps {
   sessions: SessionSummary[];
   onSelectSession: (sessionId: string) => void;
@@ -638,7 +695,7 @@ function SessionListView({ sessions, onSelectSession }: SessionListViewProps) {
   return (
     <div className="session-list-view">
       <div className="session-list-header">
-        <Layers size={13} />
+        <Layers size={12} />
         <span>{sessions.length} session{sessions.length > 1 ? "s" : ""}</span>
       </div>
       <div className="session-list">
@@ -649,15 +706,18 @@ function SessionListView({ sessions, onSelectSession }: SessionListViewProps) {
             type="button"
             onClick={() => onSelectSession(session.sessionId)}
           >
-            <div className="session-item-info">
-              <span className="session-item-name">
-                {sessionDisplayName(session.cwd)}
-              </span>
-              <span className="session-item-meta">
-                {session.cwd}
-                <span className="meta-divider">·</span>
-                {timeAgo(session.lastActivity)}
-              </span>
+            <div className="session-item-left">
+              <span className="session-agent-indicator idle" />
+              <div className="session-item-info">
+                <span className="session-item-name">
+                  {sessionDisplayName(session.cwd)}
+                </span>
+                <span className="session-item-meta">
+                  {session.cwd}
+                  <span className="meta-divider">·</span>
+                  {timeAgo(session.lastActivity)}
+                </span>
+              </div>
             </div>
             <div className="session-item-trail">
               {session.pendingCount > 0 ? (
@@ -672,6 +732,8 @@ function SessionListView({ sessions, onSelectSession }: SessionListViewProps) {
   );
 }
 
+/* ─── Approval Card ───────────────────────────────────────────── */
+
 interface ApprovalCardProps {
   request: PermissionRequest;
   busyDecision: Decision | null;
@@ -684,21 +746,32 @@ interface ApprovalCardProps {
 
 function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAlwaysApprove, onViewSession }: ApprovalCardProps) {
   const session = sessions.find((s) => s.sessionId === request.session);
+  const tone = agentTone[request.agent];
+  const risk = useMemo(() => assessRisk(request.command), [request.command]);
 
   return (
-    <div className="approval-view">
+    <div className={`approval-view ${risk ? `is-${risk}` : ""}`}>
       <div className="request-main">
         <div className="request-kicker">
-          <span>
-            <Code2 size={13} />
+          <span className="kicker-label">
+            <Terminal size={12} />
             Command request
           </span>
-          <span>{agentLabels[request.agent]}</span>
+          <span className="kicker-tags">
+            {risk ? (
+              <span className={`risk-pill ${risk}`}>
+                <TriangleAlert size={11} />
+                {riskLabels[risk]}
+              </span>
+            ) : null}
+            <span className={`agent-label ${tone}`}>{agentLabels[request.agent]}</span>
+          </span>
         </div>
-        <code className="command-block">{request.command}</code>
+        <code className={`command-block ${risk ? `risk-${risk}` : ""}`}>{request.command}</code>
         {request.detail ? <p className="request-detail">{request.detail}</p> : null}
         <div className="cwd-line" title={request.cwd}>
-          {request.cwd}
+          <FolderClosed size={11} />
+          <span className="cwd-path">{request.cwd}</span>
         </div>
       </div>
 
@@ -710,8 +783,9 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
             onClick={onDeny}
             disabled={busyDecision !== null}
           >
-            <X size={17} />
-            <span>{busyDecision === "denied" ? "Denying" : "Deny"}</span>
+            <X size={16} />
+            <span>{busyDecision === "denied" ? "Denying..." : "Deny"}</span>
+            <kbd className="decision-kbd" aria-hidden="true">⌫</kbd>
           </button>
           <button
             className="decision-button approve"
@@ -719,8 +793,9 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
             onClick={onApprove}
             disabled={busyDecision !== null}
           >
-            <Check size={17} />
-            <span>{busyDecision === "approved" ? "Approving" : "Approve"}</span>
+            <Check size={16} />
+            <span>{busyDecision === "approved" ? "Approving..." : "Approve"}</span>
+            <kbd className="decision-kbd" aria-hidden="true">↵</kbd>
           </button>
           {request.supportsAlways ? (
             <button
@@ -730,8 +805,9 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
               disabled={busyDecision !== null}
               title="Approve this and all future requests for this session"
             >
-              <CheckCheck size={17} />
+              <CheckCheck size={16} />
               <span>Always</span>
+              <kbd className="decision-kbd" aria-hidden="true">⇧↵</kbd>
             </button>
           ) : null}
         </div>
@@ -749,6 +825,8 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
     </div>
   );
 }
+
+/* ─── Session Chat View ───────────────────────────────────────── */
 
 interface SessionChatViewProps {
   sessionId: string;
@@ -790,7 +868,7 @@ function SessionChatView({ sessionId, transcriptPath, requests, busyDecision, on
     <div className="session-chat">
       <div className="session-detail-nav">
         <button type="button" className="back-button" onClick={onBack}>
-          <ArrowLeft size={14} />
+          <ArrowLeft size={13} />
           <span>Back</span>
         </button>
         <span className="session-chat-title">{sessionDisplayName(requests[0]?.cwd || sessionId)}</span>
@@ -835,6 +913,8 @@ function SessionChatView({ sessionId, transcriptPath, requests, busyDecision, on
   );
 }
 
+/* ─── Idle View ───────────────────────────────────────────────── */
+
 interface IdleViewProps {
   hookStatus: HookStatus | null;
   hookBusy: boolean;
@@ -846,7 +926,7 @@ function IdleView({ hookStatus, hookBusy, onInstall }: IdleViewProps) {
     return (
       <div className="idle-view setup-view">
         <div className="idle-icon setup-icon">
-          <Download size={21} />
+          <Download size={22} />
         </div>
         <div>
           <h1>Setup required</h1>
@@ -869,7 +949,7 @@ function IdleView({ hookStatus, hookBusy, onInstall }: IdleViewProps) {
   return (
     <div className="idle-view">
       <div className="idle-icon">
-        <ClipboardCheck size={21} />
+        <ClipboardCheck size={22} />
       </div>
       <div>
         <h1>All clear</h1>
@@ -878,6 +958,8 @@ function IdleView({ hookStatus, hookBusy, onInstall }: IdleViewProps) {
     </div>
   );
 }
+
+/* ─── Helpers ─────────────────────────────────────────────────── */
 
 function sessionDisplayName(cwd: string) {
   const parts = cwd.split("/").filter(Boolean);
