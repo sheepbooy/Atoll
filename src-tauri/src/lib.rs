@@ -374,6 +374,211 @@ fn archive_all_resolved(
     Ok(snapshot)
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HookStatus {
+    installed: bool,
+    script_found: bool,
+    settings_path: String,
+    script_path: String,
+}
+
+#[tauri::command]
+fn get_claude_hook_status(app: AppHandle) -> Result<HookStatus, String> {
+    let script_path = resolve_hook_script_path(&app);
+    let script_found = script_path
+        .as_ref()
+        .map(|p| std::path::Path::new(p).exists())
+        .unwrap_or(false);
+
+    let settings_path = claude_settings_path()
+        .ok_or_else(|| "Cannot determine home directory".to_string())?;
+
+    let installed = if settings_path.exists() {
+        let content = std::fs::read_to_string(&settings_path)
+            .map_err(|e| format!("Cannot read settings: {e}"))?;
+        let settings: Value = serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()));
+        has_atoll_hooks(&settings)
+    } else {
+        false
+    };
+
+    Ok(HookStatus {
+        installed,
+        script_found,
+        settings_path: settings_path.to_string_lossy().into(),
+        script_path: script_path.unwrap_or_default(),
+    })
+}
+
+#[tauri::command]
+fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
+    let script_path = resolve_hook_script_path(&app)
+        .ok_or_else(|| "Cannot locate hook script".to_string())?;
+
+    if !std::path::Path::new(&script_path).exists() {
+        return Err(format!("Hook script not found at: {script_path}"));
+    }
+
+    let settings_path = claude_settings_path()
+        .ok_or_else(|| "Cannot determine home directory".to_string())?;
+
+    if let Some(parent) = settings_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Cannot create ~/.claude directory: {e}"))?;
+    }
+
+    let mut settings: Value = if settings_path.exists() {
+        let content = std::fs::read_to_string(&settings_path)
+            .map_err(|e| format!("Cannot read settings: {e}"))?;
+        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()))
+    } else {
+        Value::Object(Default::default())
+    };
+
+    let hook_command = format!("node {script_path}");
+    let hooks = serde_json::json!({
+        "PermissionRequest": [
+            {
+                "matcher": "*",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": hook_command,
+                        "timeout": 1800
+                    }
+                ]
+            }
+        ],
+        "PostToolUse": [
+            {
+                "matcher": "*",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": hook_command,
+                        "timeout": 30
+                    }
+                ]
+            }
+        ]
+    });
+
+    settings
+        .as_object_mut()
+        .ok_or_else(|| "Settings file is not a JSON object".to_string())?
+        .insert("hooks".into(), hooks);
+
+    let formatted = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Cannot serialize settings: {e}"))?;
+    std::fs::write(&settings_path, formatted)
+        .map_err(|e| format!("Cannot write settings: {e}"))?;
+
+    Ok(HookStatus {
+        installed: true,
+        script_found: true,
+        settings_path: settings_path.to_string_lossy().into(),
+        script_path,
+    })
+}
+
+#[tauri::command]
+fn uninstall_claude_hooks() -> Result<HookStatus, String> {
+    let settings_path = claude_settings_path()
+        .ok_or_else(|| "Cannot determine home directory".to_string())?;
+
+    if !settings_path.exists() {
+        return Ok(HookStatus {
+            installed: false,
+            script_found: false,
+            settings_path: settings_path.to_string_lossy().into(),
+            script_path: String::new(),
+        });
+    }
+
+    let content = std::fs::read_to_string(&settings_path)
+        .map_err(|e| format!("Cannot read settings: {e}"))?;
+    let mut settings: Value =
+        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()));
+
+    if let Some(obj) = settings.as_object_mut() {
+        obj.remove("hooks");
+    }
+
+    let formatted = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Cannot serialize settings: {e}"))?;
+    std::fs::write(&settings_path, formatted)
+        .map_err(|e| format!("Cannot write settings: {e}"))?;
+
+    Ok(HookStatus {
+        installed: false,
+        script_found: false,
+        settings_path: settings_path.to_string_lossy().into(),
+        script_path: String::new(),
+    })
+}
+
+fn claude_settings_path() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|home| home.join(".claude").join("settings.json"))
+}
+
+fn resolve_hook_script_path(app: &AppHandle) -> Option<String> {
+    let resource_path = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|dir| dir.join("scripts").join("atoll-claude-hook.mjs"));
+    if let Some(ref path) = resource_path {
+        if path.exists() {
+            return Some(path.to_string_lossy().into());
+        }
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        for ancestor in exe.ancestors().skip(1) {
+            let candidate = ancestor.join("scripts").join("atoll-claude-hook.mjs");
+            if candidate.exists() {
+                return Some(candidate.to_string_lossy().into());
+            }
+            if ancestor.join("src-tauri").exists() {
+                return Some(candidate.to_string_lossy().into());
+            }
+        }
+    }
+
+    None
+}
+
+fn has_atoll_hooks(settings: &Value) -> bool {
+    settings
+        .get("hooks")
+        .and_then(Value::as_object)
+        .map(|hooks| {
+            hooks.values().any(|matchers| {
+                matchers
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter().any(|matcher| {
+                            matcher
+                                .get("hooks")
+                                .and_then(Value::as_array)
+                                .map(|hook_arr| {
+                                    hook_arr.iter().any(|hook| {
+                                        hook.get("command")
+                                            .and_then(Value::as_str)
+                                            .map(|cmd| cmd.contains("atoll-claude-hook"))
+                                            .unwrap_or(false)
+                                    })
+                                })
+                                .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
+
 #[tauri::command]
 fn quit_atoll(app: AppHandle) {
     exit_atoll(&app);
@@ -398,6 +603,9 @@ pub fn run() {
             archive_request,
             archive_all_resolved,
             set_island_presentation,
+            get_claude_hook_status,
+            install_claude_hooks,
+            uninstall_claude_hooks,
             quit_atoll
         ])
         .setup(|app| {
