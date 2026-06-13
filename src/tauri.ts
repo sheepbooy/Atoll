@@ -24,6 +24,22 @@ export interface IslandSnapshot {
   archivedCount: number;
   activeRequest: PermissionRequest | null;
   recent: PermissionRequest[];
+  sessions: SessionSummary[];
+}
+
+export interface SessionSummary {
+  sessionId: string;
+  cwd: string;
+  pendingCount: number;
+  totalCount: number;
+  lastActivity: string;
+  transcriptPath: string | null;
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+  toolName?: string | null;
 }
 
 export interface IslandHoverChanged {
@@ -45,7 +61,24 @@ export async function getSnapshot(): Promise<IslandSnapshot> {
     archivedCount: localRequests.filter((request) => request.archived).length,
     activeRequest: localRequests.find((request) => request.status === "pending") ?? null,
     recent: localRequests,
+    sessions: [],
   };
+}
+
+export async function getSessionRequests(sessionId: string): Promise<PermissionRequest[]> {
+  if (isTauriRuntime) {
+    return invoke<PermissionRequest[]>("get_session_requests", { sessionId });
+  }
+
+  return localRequests.filter((request) => request.session === sessionId);
+}
+
+export async function getSessionTranscript(transcriptPath: string): Promise<ChatMessage[]> {
+  if (isTauriRuntime) {
+    return invoke<ChatMessage[]>("get_session_transcript", { transcriptPath });
+  }
+
+  return [];
 }
 
 export async function resolvePermissionRequest(

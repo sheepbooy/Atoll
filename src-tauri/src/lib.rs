@@ -6,6 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::utils::config::Color;
@@ -36,6 +37,8 @@ struct PermissionRequest {
     archived: bool,
     #[serde(default)]
     supports_always: bool,
+    #[serde(default)]
+    transcript_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,6 +49,18 @@ struct IslandSnapshot {
     archived_count: usize,
     active_request: Option<PermissionRequest>,
     recent: Vec<PermissionRequest>,
+    sessions: Vec<SessionSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionSummary {
+    session_id: String,
+    cwd: String,
+    pending_count: usize,
+    total_count: usize,
+    last_activity: String,
+    transcript_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,9 +100,14 @@ struct IslandHoverChanged {
     hovering: bool,
 }
 
+struct DecisionWithNote {
+    decision: Decision,
+    note: String,
+}
+
 struct AppState {
     requests: Mutex<Vec<PermissionRequest>>,
-    hook_waiters: Mutex<HashMap<String, SyncSender<Decision>>>,
+    hook_waiters: Mutex<HashMap<String, SyncSender<DecisionWithNote>>>,
     auto_approve_sessions: Mutex<HashSet<String>>,
     presentation_generation: Arc<AtomicU64>,
     home_bounds: Mutex<Option<HomeWindowBounds>>,
@@ -143,7 +163,10 @@ fn resolve_permission_request(
         .map_err(|error| error.to_string())?
         .remove(&id);
     if let Some(waiter) = waiter {
-        let _ = waiter.send(decision);
+        let _ = waiter.send(DecisionWithNote {
+            decision,
+            note: note.clone(),
+        });
     }
 
     let snapshot = snapshot_from(&requests);
@@ -218,6 +241,123 @@ fn archive_request(
 }
 
 #[tauri::command]
+fn get_session_requests(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Vec<PermissionRequest> {
+    let requests = state.requests.lock().expect("state mutex poisoned");
+    requests
+        .iter()
+        .filter(|r| !r.archived && r.session == session_id)
+        .cloned()
+        .collect()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChatMessage {
+    role: String,
+    content: String,
+    #[serde(default)]
+    tool_name: Option<String>,
+}
+
+const TRANSCRIPT_MAX_MESSAGES: usize = 50;
+
+#[tauri::command]
+fn get_session_transcript(transcript_path: String) -> Result<Vec<ChatMessage>, String> {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+
+    let file = File::open(&transcript_path)
+        .map_err(|e| format!("Cannot open transcript: {e}"))?;
+    let reader = BufReader::new(file);
+
+    let mut messages: Vec<ChatMessage> = Vec::new();
+
+    for line in reader.lines() {
+        let line = line.map_err(|e| format!("Read error: {e}"))?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let entry: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let Some(msg_type) = entry.get("type").and_then(Value::as_str) else {
+            continue;
+        };
+
+        match msg_type {
+            "human" | "user" => {
+                let content = extract_transcript_text(&entry);
+                if !content.is_empty() {
+                    messages.push(ChatMessage {
+                        role: "user".into(),
+                        content,
+                        tool_name: None,
+                    });
+                }
+            }
+            "assistant" => {
+                let content = extract_transcript_text(&entry);
+                let tool_name = entry
+                    .get("message")
+                    .and_then(|m| m.get("content"))
+                    .and_then(Value::as_array)
+                    .and_then(|arr| {
+                        arr.iter().find_map(|block| {
+                            if block.get("type")?.as_str()? == "tool_use" {
+                                block.get("name").and_then(Value::as_str).map(String::from)
+                            } else {
+                                None
+                            }
+                        })
+                    });
+                if !content.is_empty() || tool_name.is_some() {
+                    messages.push(ChatMessage {
+                        role: "assistant".into(),
+                        content,
+                        tool_name,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let start = messages.len().saturating_sub(TRANSCRIPT_MAX_MESSAGES);
+    Ok(messages[start..].to_vec())
+}
+
+fn extract_transcript_text(entry: &Value) -> String {
+    if let Some(message) = entry.get("message") {
+        if let Some(content) = message.get("content") {
+            if let Some(text) = content.as_str() {
+                return text.to_string();
+            }
+            if let Some(arr) = content.as_array() {
+                let parts: Vec<&str> = arr
+                    .iter()
+                    .filter_map(|block| {
+                        if block.get("type")?.as_str()? == "text" {
+                            block.get("text").and_then(Value::as_str)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                return parts.join("\n");
+            }
+        }
+    }
+    String::new()
+}
+
+#[tauri::command]
 fn archive_all_resolved(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -251,6 +391,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
+            get_session_requests,
+            get_session_transcript,
             resolve_permission_request,
             set_session_auto_approve,
             archive_request,
@@ -952,6 +1094,7 @@ fn snapshot_from(requests: &[PermissionRequest]) -> IslandSnapshot {
         .cloned()
         .cloned();
     let archived_count = requests.iter().filter(|r| r.archived).count();
+    let sessions = build_session_summaries(&visible);
 
     IslandSnapshot {
         online: true,
@@ -959,7 +1102,44 @@ fn snapshot_from(requests: &[PermissionRequest]) -> IslandSnapshot {
         archived_count,
         active_request,
         recent: visible.into_iter().take(12).cloned().collect(),
+        sessions,
     }
+}
+
+fn build_session_summaries(visible: &[&PermissionRequest]) -> Vec<SessionSummary> {
+    let mut session_map: HashMap<&str, (String, usize, usize, String, Option<String>)> = HashMap::new();
+
+    for request in visible {
+        let entry = session_map.entry(&request.session).or_insert_with(|| {
+            (request.cwd.clone(), 0, 0, request.requested_at.clone(), request.transcript_path.clone())
+        });
+        entry.2 += 1;
+        if request.status == PermissionStatus::Pending {
+            entry.1 += 1;
+        }
+        if request.requested_at > entry.3 {
+            entry.0 = request.cwd.clone();
+            entry.3 = request.requested_at.clone();
+        }
+        if entry.4.is_none() && request.transcript_path.is_some() {
+            entry.4 = request.transcript_path.clone();
+        }
+    }
+
+    let mut summaries: Vec<SessionSummary> = session_map
+        .into_iter()
+        .map(|(session_id, (cwd, pending_count, total_count, last_activity, transcript_path))| SessionSummary {
+            session_id: session_id.to_string(),
+            cwd,
+            pending_count,
+            total_count,
+            last_activity,
+            transcript_path,
+        })
+        .collect();
+
+    summaries.sort_by(|a, b| b.pending_count.cmp(&a.pending_count).then(b.last_activity.cmp(&a.last_activity)));
+    summaries
 }
 
 fn iso_timestamp_now() -> String {
@@ -1163,6 +1343,38 @@ mod hook_bridge_tests {
         assert_eq!(request.command, "Bash: npm install");
         assert_eq!(request.detail, "Install dependencies");
         assert_eq!(request.tool_use_id.as_deref(), Some("tool-123"));
+        assert!(!request.supports_always);
+    }
+
+    #[test]
+    fn supports_always_from_permission_suggestions() {
+        let payload = json!({
+            "session_id": "session-123",
+            "cwd": "/tmp/project",
+            "hook_event_name": "PermissionRequest",
+            "tool_name": "Bash",
+            "tool_input": {
+                "command": "npm install",
+                "description": "Install dependencies"
+            },
+            "permission_suggestions": [
+                {
+                    "type": "addRules",
+                    "rules": [{"toolName": "Bash", "ruleContent": "npm install"}],
+                    "behavior": "allow",
+                    "destination": "localSettings"
+                }
+            ]
+        });
+
+        let request = crate::hook_bridge::permission_request_from_claude_payload(
+            "request-456".into(),
+            payload,
+            "2026-06-09T09:00:00Z".into(),
+        )
+        .expect("payload should map to a request");
+
+        assert!(request.supports_always);
     }
 
     #[test]
@@ -1179,6 +1391,7 @@ mod hook_bridge_tests {
             status: crate::PermissionStatus::Pending,
             archived: false,
             supports_always: false,
+            transcript_path: None,
         }];
 
         let payload = json!({
@@ -1213,6 +1426,7 @@ mod hook_bridge_tests {
             status: crate::PermissionStatus::Pending,
             archived: false,
             supports_always: false,
+            transcript_path: None,
         }];
 
         let payload = json!({
@@ -1242,6 +1456,7 @@ mod hook_bridge_tests {
                 status: crate::PermissionStatus::Pending,
                 archived: false,
                 supports_always: false,
+                transcript_path: None,
             },
             crate::PermissionRequest {
                 id: "request-2".into(),
@@ -1255,6 +1470,7 @@ mod hook_bridge_tests {
                 status: crate::PermissionStatus::Pending,
                 archived: false,
                 supports_always: false,
+                transcript_path: None,
             },
         ];
 
@@ -1276,6 +1492,7 @@ mod hook_bridge_tests {
         let approved = crate::hook_bridge::claude_hook_response(
             "PermissionRequest",
             crate::Decision::Approved,
+            "",
         );
         assert_eq!(
             approved,
@@ -1290,7 +1507,7 @@ mod hook_bridge_tests {
         );
 
         let denied =
-            crate::hook_bridge::claude_hook_response("PermissionRequest", crate::Decision::Denied);
+            crate::hook_bridge::claude_hook_response("PermissionRequest", crate::Decision::Denied, "");
         assert_eq!(
             denied,
             json!({
@@ -1306,9 +1523,30 @@ mod hook_bridge_tests {
     }
 
     #[test]
+    fn encodes_hook_decision_with_note_for_claude_hook_event() {
+        let denied = crate::hook_bridge::claude_hook_response(
+            "PermissionRequest",
+            crate::Decision::Denied,
+            "Please use a safer command",
+        );
+        assert_eq!(
+            denied,
+            json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "PermissionRequest",
+                    "decision": {
+                        "behavior": "deny",
+                        "message": "Denied from Atoll: Please use a safer command"
+                    }
+                }
+            })
+        );
+    }
+
+    #[test]
     fn encodes_hook_decision_for_claude_pre_tool_use() {
         let approved =
-            crate::hook_bridge::claude_hook_response("PreToolUse", crate::Decision::Approved);
+            crate::hook_bridge::claude_hook_response("PreToolUse", crate::Decision::Approved, "");
         assert_eq!(
             approved,
             json!({
