@@ -296,10 +296,8 @@ describe("App", () => {
     vi.useFakeTimers();
     fireEvent.pointerLeave(island);
     await vi.advanceTimersByTimeAsync(500);
-    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
-      "compact",
-      expect.any(Number),
-    );
+    // No active sessions → super-collapses into the dormant drawer.
+    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith("dormant");
     vi.useRealTimers();
     Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   });
