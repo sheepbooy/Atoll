@@ -18,6 +18,7 @@ const COMPACT_WINDOW_WIDTH: f64 = 132.0;
 const COMPACT_WINDOW_HEIGHT: f64 = 28.0;
 const EXPANDED_WINDOW_WIDTH: f64 = 560.0;
 const EXPANDED_WINDOW_HEIGHT: f64 = 320.0;
+const MIN_COMPACT_WINDOW_WIDTH: f64 = 72.0;
 const WINDOW_ANIMATION_DURATION: Duration = Duration::from_millis(420);
 const WINDOW_ANIMATION_FRAME: Duration = Duration::from_micros(16_667);
 
@@ -56,6 +57,7 @@ struct IslandSnapshot {
 #[serde(rename_all = "camelCase")]
 struct SessionSummary {
     session_id: String,
+    agent: AgentKind,
     cwd: String,
     pending_count: usize,
     total_count: usize,
@@ -109,6 +111,7 @@ struct AppState {
     requests: Mutex<Vec<PermissionRequest>>,
     hook_waiters: Mutex<HashMap<String, SyncSender<DecisionWithNote>>>,
     auto_approve_sessions: Mutex<HashSet<String>>,
+    compact_width: Mutex<f64>,
     presentation_generation: Arc<AtomicU64>,
     home_bounds: Mutex<Option<HomeWindowBounds>>,
 }
@@ -180,13 +183,26 @@ async fn set_island_presentation(
     app: AppHandle,
     state: State<'_, AppState>,
     mode: IslandWindowMode,
+    compact_width: Option<f64>,
 ) -> Result<(), String> {
     let Some(window) = app.get_webview_window("main") else {
         return Ok(());
     };
 
+    if let Some(width) = compact_width {
+        let mut saved_width = state
+            .compact_width
+            .lock()
+            .map_err(|error| error.to_string())?;
+        *saved_width = sanitize_compact_width(width);
+    }
+
     let generation = state.presentation_generation.fetch_add(1, Ordering::SeqCst) + 1;
     let presentation_generation = Arc::clone(&state.presentation_generation);
+    let compact_width = *state
+        .compact_width
+        .lock()
+        .map_err(|error| error.to_string())?;
     let home_bounds = *state
         .home_bounds
         .lock()
@@ -199,6 +215,7 @@ async fn set_island_presentation(
             generation,
             &presentation_generation,
             home_bounds,
+            compact_width,
         )
         .map_err(|error| error.to_string())
     })
@@ -591,6 +608,7 @@ pub fn run() {
             requests: Mutex::new(Vec::new()),
             hook_waiters: Mutex::new(HashMap::new()),
             auto_approve_sessions: Mutex::new(HashSet::new()),
+            compact_width: Mutex::new(COMPACT_WINDOW_WIDTH),
             presentation_generation: Arc::new(AtomicU64::new(0)),
             home_bounds: Mutex::new(None),
         })
@@ -621,7 +639,8 @@ pub fn run() {
                 let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
                 apply_macos_island_window_style(&window);
                 let _ = window.show();
-                if let Ok(Some(home)) = apply_island_window_mode(&window, IslandWindowMode::Compact)
+                if let Ok(Some(home)) =
+                    apply_island_window_mode(&window, IslandWindowMode::Compact, COMPACT_WINDOW_WIDTH)
                 {
                     let state = app.state::<AppState>();
                     if let Ok(mut home_bounds) = state.home_bounds.lock() {
@@ -809,6 +828,7 @@ fn is_cursor_over_window(window: &tauri::WebviewWindow) -> tauri::Result<bool> {
 fn apply_island_window_mode(
     window: &tauri::WebviewWindow,
     mode: IslandWindowMode,
+    compact_width: f64,
 ) -> tauri::Result<Option<HomeWindowBounds>> {
     let monitor = window
         .primary_monitor()
@@ -821,13 +841,13 @@ fn apply_island_window_mode(
 
     apply_macos_island_window_style(window);
     let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
-    window.set_size(island_window_logical_size(mode))?;
+    window.set_size(island_window_logical_size(mode, compact_width))?;
     let _ = window.set_ignore_cursor_events(matches!(mode, IslandWindowMode::Compact));
 
     let scale_factor = monitor.scale_factor();
     let monitor_position = monitor.position().to_logical::<f64>(scale_factor);
     let monitor_size = monitor.size().to_logical::<f64>(scale_factor);
-    let window_size = island_window_physical_size(mode, monitor.scale_factor());
+    let window_size = island_window_physical_size(mode, monitor.scale_factor(), compact_width);
     let logical_window_size = window_size.to_logical::<f64>(scale_factor);
     let centered_x = monitor_position.x + (monitor_size.width - logical_window_size.width) / 2.0;
     let mut centered_y = island_top_y(window, monitor_position.y, monitor.work_area().position.y);
@@ -844,6 +864,7 @@ fn apply_island_window_mode(
         compact_size: island_window_physical_size(
             IslandWindowMode::Compact,
             monitor.scale_factor(),
+            COMPACT_WINDOW_WIDTH,
         ),
         monitor_top_y: monitor_position.y,
         #[cfg(target_os = "macos")]
@@ -860,6 +881,7 @@ fn animate_island_window_mode(
     generation: u64,
     presentation_generation: &AtomicU64,
     home_bounds: Option<HomeWindowBounds>,
+    compact_width: f64,
 ) -> tauri::Result<()> {
     let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
     if matches!(mode, IslandWindowMode::Expanded) {
@@ -871,7 +893,7 @@ fn animate_island_window_mode(
         .unwrap_or_else(|| window.scale_factor().unwrap_or(1.0));
     let start_position = window.outer_position()?.to_logical::<f64>(scale_factor);
     let start_size = window.outer_size()?;
-    let target_size = island_window_physical_size(mode, scale_factor);
+    let target_size = island_window_physical_size(mode, scale_factor, compact_width);
     let target_logical_size = target_size.to_logical::<f64>(scale_factor);
     let (target_x, target_y) = home_bounds
         .map(|home| {
@@ -919,6 +941,12 @@ fn animate_island_window_mode(
         }
     }
 
+    let (sync_tx, sync_rx) = std::sync::mpsc::sync_channel::<()>(0);
+    let _ = window.run_on_main_thread(move || {
+        let _ = sync_tx.send(());
+    });
+    let _ = sync_rx.recv();
+
     let _ = window.set_ignore_cursor_events(matches!(mode, IslandWindowMode::Compact));
     Ok(())
 }
@@ -935,22 +963,34 @@ fn interpolate_f64(start: f64, end: f64, progress: f64) -> f64 {
     start + (end - start) * progress
 }
 
-fn island_window_logical_size(mode: IslandWindowMode) -> LogicalSize<f64> {
+fn island_window_logical_size(mode: IslandWindowMode, compact_width: f64) -> LogicalSize<f64> {
+    let compact_width = sanitize_compact_width(compact_width);
     match mode {
-        IslandWindowMode::Compact => LogicalSize::new(COMPACT_WINDOW_WIDTH, COMPACT_WINDOW_HEIGHT),
+        IslandWindowMode::Compact => LogicalSize::new(compact_width, COMPACT_WINDOW_HEIGHT),
         IslandWindowMode::Expanded => {
             LogicalSize::new(EXPANDED_WINDOW_WIDTH, EXPANDED_WINDOW_HEIGHT)
         }
     }
 }
 
-fn island_window_physical_size(mode: IslandWindowMode, scale_factor: f64) -> PhysicalSize<u32> {
-    let logical_size = island_window_logical_size(mode);
+fn island_window_physical_size(
+    mode: IslandWindowMode,
+    scale_factor: f64,
+    compact_width: f64,
+) -> PhysicalSize<u32> {
+    let logical_size = island_window_logical_size(mode, compact_width);
 
     PhysicalSize::new(
         (logical_size.width * scale_factor).round() as u32,
         (logical_size.height * scale_factor).round() as u32,
     )
+}
+
+fn sanitize_compact_width(width: f64) -> f64 {
+    if !width.is_finite() {
+        return COMPACT_WINDOW_WIDTH;
+    }
+    width.clamp(MIN_COMPACT_WINDOW_WIDTH, EXPANDED_WINDOW_WIDTH)
 }
 
 fn island_top_y(window: &tauri::WebviewWindow, monitor_y: f64, work_area_y: i32) -> f64 {
@@ -1117,6 +1157,12 @@ fn set_island_window_frame_now(
         frame.size.width = logical_size.width;
         frame.size.height = logical_size.height;
         ns_window.setFrame_display(frame, true);
+
+        let height_progress = ((logical_size.height - COMPACT_WINDOW_HEIGHT)
+            / (EXPANDED_WINDOW_HEIGHT - COMPACT_WINDOW_HEIGHT))
+            .clamp(0.0, 1.0);
+        let corner_radius = 15.0 + 7.0 * height_progress;
+        apply_content_view_corner_mask(ns_window, corner_radius);
     }
 
     Ok(())
@@ -1147,14 +1193,10 @@ fn set_island_window_frame(
         return window.set_position(position);
     };
 
-    let (completed_tx, completed_rx) = std::sync::mpsc::sync_channel(0);
-    let window = window.clone();
     let frame_window = window.clone();
     window.run_on_main_thread(move || {
         let _ = set_island_window_frame_now(&frame_window, position, size, scale_factor, home);
-        let _ = completed_tx.send(());
     })?;
-    let _ = completed_rx.recv();
 
     Ok(())
 }
@@ -1214,6 +1256,8 @@ fn apply_macos_island_window_style(window: &tauri::WebviewWindow) {
                 | NSWindowCollectionBehavior::IgnoresCycle,
         );
         ns_window.setLevel(NSMainMenuWindowLevel + 3);
+
+        apply_content_view_corner_mask(ns_window, 15.0);
     }
 }
 
@@ -1259,6 +1303,25 @@ fn apply_macos_unconstrained_window_class(ns_window: &objc2_app_kit::NSWindow) {
 
 #[cfg(not(target_os = "macos"))]
 fn apply_macos_island_window_style(_window: &tauri::WebviewWindow) {}
+
+#[cfg(target_os = "macos")]
+unsafe fn apply_content_view_corner_mask(ns_window: &objc2_app_kit::NSWindow, radius: f64) {
+    use objc2::runtime::AnyObject;
+
+    let cv: *mut AnyObject = objc2::msg_send![ns_window, contentView];
+    if cv.is_null() {
+        return;
+    }
+    let _: () = objc2::msg_send![cv, setWantsLayer: true];
+    let layer: *mut AnyObject = objc2::msg_send![cv, layer];
+    if layer.is_null() {
+        return;
+    }
+    let _: () = objc2::msg_send![layer, setCornerRadius: radius];
+    let _: () = objc2::msg_send![layer, setMasksToBounds: true];
+    // kCALayerMinXMinYCorner(1) | kCALayerMaxXMinYCorner(2) = bottom corners in CG coords
+    let _: () = objc2::msg_send![layer, setMaskedCorners: 3_usize];
+}
 
 #[cfg(target_os = "macos")]
 fn macos_menu_bar_offset_physical(window: &tauri::WebviewWindow) -> Option<i32> {
@@ -1315,11 +1378,19 @@ fn snapshot_from(requests: &[PermissionRequest]) -> IslandSnapshot {
 }
 
 fn build_session_summaries(visible: &[&PermissionRequest]) -> Vec<SessionSummary> {
-    let mut session_map: HashMap<&str, (String, usize, usize, String, Option<String>)> = HashMap::new();
+    let mut session_map: HashMap<&str, (String, usize, usize, String, Option<String>, AgentKind)> =
+        HashMap::new();
 
     for request in visible {
         let entry = session_map.entry(&request.session).or_insert_with(|| {
-            (request.cwd.clone(), 0, 0, request.requested_at.clone(), request.transcript_path.clone())
+            (
+                request.cwd.clone(),
+                0,
+                0,
+                request.requested_at.clone(),
+                request.transcript_path.clone(),
+                request.agent.clone(),
+            )
         });
         entry.2 += 1;
         if request.status == PermissionStatus::Pending {
@@ -1328,6 +1399,7 @@ fn build_session_summaries(visible: &[&PermissionRequest]) -> Vec<SessionSummary
         if request.requested_at > entry.3 {
             entry.0 = request.cwd.clone();
             entry.3 = request.requested_at.clone();
+            entry.5 = request.agent.clone();
         }
         if entry.4.is_none() && request.transcript_path.is_some() {
             entry.4 = request.transcript_path.clone();
@@ -1336,14 +1408,20 @@ fn build_session_summaries(visible: &[&PermissionRequest]) -> Vec<SessionSummary
 
     let mut summaries: Vec<SessionSummary> = session_map
         .into_iter()
-        .map(|(session_id, (cwd, pending_count, total_count, last_activity, transcript_path))| SessionSummary {
-            session_id: session_id.to_string(),
-            cwd,
-            pending_count,
-            total_count,
-            last_activity,
-            transcript_path,
-        })
+        .map(
+            |(
+                session_id,
+                (cwd, pending_count, total_count, last_activity, transcript_path, agent),
+            )| SessionSummary {
+                session_id: session_id.to_string(),
+                agent,
+                cwd,
+                pending_count,
+                total_count,
+                last_activity,
+                transcript_path,
+            },
+        )
         .collect();
 
     summaries.sort_by(|a, b| b.pending_count.cmp(&a.pending_count).then(b.last_activity.cmp(&a.last_activity)));
@@ -1426,7 +1504,7 @@ mod core_tests {
 
     #[test]
     fn expanded_window_is_560_by_320() {
-        let size = island_window_logical_size(IslandWindowMode::Expanded);
+        let size = island_window_logical_size(IslandWindowMode::Expanded, COMPACT_WINDOW_WIDTH);
 
         assert_eq!(size, LogicalSize::new(560.0, 320.0));
     }

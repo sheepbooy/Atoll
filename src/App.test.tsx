@@ -117,7 +117,10 @@ describe("App", () => {
     expect(container.querySelector(".is-closing")).not.toBeNull();
 
     await vi.advanceTimersByTimeAsync(420);
-    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith("compact");
+    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
+      "compact",
+      expect.any(Number),
+    );
     expect(container.querySelector(".is-compact")).not.toBeNull();
 
     fireEvent.click(screen.getByLabelText("Atoll"));
@@ -162,7 +165,10 @@ describe("App", () => {
     emitIslandHover?.({ hovering: true });
     await vi.advanceTimersByTimeAsync(420);
 
-    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith("compact");
+    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
+      "compact",
+      expect.any(Number),
+    );
     expect(container.querySelector(".is-compact")).not.toBeNull();
 
     emitIslandHover?.({ hovering: false });
@@ -237,7 +243,10 @@ describe("App", () => {
     fireEvent.click(approveButton);
 
     await waitFor(() => {
-      expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith("compact");
+      expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
+        "compact",
+        expect.any(Number),
+      );
     });
     await waitFor(
       () => expect(container.querySelector(".is-compact")).not.toBeNull(),
@@ -277,17 +286,20 @@ describe("App", () => {
     });
     render(<App />);
     const island = screen.getByLabelText("Atoll");
-    const header = screen.getByTitle("Hover to open Atoll");
+    const header = screen.getByTitle("Hover to open");
 
     fireEvent.focus(island);
-    await waitFor(() => expect(screen.getByTitle("Drag Atoll")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTitle("Drag window")).toBeInTheDocument());
     fireEvent.mouseDown(header, { button: 0 });
     await waitFor(() => expect(windowBridge.startDragging).toHaveBeenCalledOnce());
 
     vi.useFakeTimers();
     fireEvent.pointerLeave(island);
     await vi.advanceTimersByTimeAsync(500);
-    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith("compact");
+    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
+      "compact",
+      expect.any(Number),
+    );
     vi.useRealTimers();
     Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   });

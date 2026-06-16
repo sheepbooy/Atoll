@@ -8,14 +8,16 @@ import {
   CheckCheck,
   ChevronRight,
   ChevronUp,
-  Circle,
   Download,
   Ellipsis,
   FolderClosed,
   Layers,
+  Minus,
   Power,
+  Settings2,
   SendHorizonal,
   ShieldAlert,
+  Plus,
   TriangleAlert,
   Trash2,
   X,
@@ -57,7 +59,63 @@ import {
 } from "./tauri";
 
 type Decision = "approved" | "denied";
-type PanelView = { kind: "home" } | { kind: "session"; sessionId: string };
+type AgentKind = PermissionRequest["agent"];
+type PanelView =
+  | { kind: "home" }
+  | { kind: "session"; sessionId: string }
+  | { kind: "settings" };
+
+const COMPACT_ICON_SETTING_KEY = "atoll.maxCompactIcons";
+const DEFAULT_MAX_COMPACT_ICONS = 4;
+const MIN_MAX_COMPACT_ICONS = 1;
+const MAX_MAX_COMPACT_ICONS = 8;
+const COMPACT_WIDTH_MIN = 96;
+const COMPACT_WIDTH_BASE = 52;
+const COMPACT_WIDTH_ICON_SIZE = 18;
+const COMPACT_WIDTH_ICON_GAP = 4;
+const COMPACT_WIDTH_OVERFLOW = 32;
+const COMPACT_WIDTH_PENDING = 28;
+const COMPACT_WIDTH_EMPTY = 78;
+
+function clampCompactIconLimit(value: number) {
+  return Math.min(
+    MAX_MAX_COMPACT_ICONS,
+    Math.max(MIN_MAX_COMPACT_ICONS, Math.round(value)),
+  );
+}
+
+function readCompactIconLimit() {
+  if (typeof window === "undefined") return DEFAULT_MAX_COMPACT_ICONS;
+  try {
+    const raw = Number(window.localStorage.getItem(COMPACT_ICON_SETTING_KEY));
+    if (!Number.isFinite(raw)) return DEFAULT_MAX_COMPACT_ICONS;
+    return clampCompactIconLimit(raw);
+  } catch {
+    return DEFAULT_MAX_COMPACT_ICONS;
+  }
+}
+
+function computeCompactWindowWidth(
+  sessionCount: number,
+  maxCompactIcons: number,
+  pendingCount: number,
+) {
+  if (sessionCount === 0) {
+    return COMPACT_WIDTH_EMPTY;
+  }
+  const shown = Math.min(sessionCount, maxCompactIcons);
+  const iconWidth =
+    shown > 0
+      ? shown * COMPACT_WIDTH_ICON_SIZE +
+        Math.max(0, shown - 1) * COMPACT_WIDTH_ICON_GAP
+      : COMPACT_WIDTH_ICON_SIZE;
+  const overflowWidth = sessionCount > shown ? COMPACT_WIDTH_OVERFLOW : 0;
+  const pendingWidth = pendingCount > 0 ? COMPACT_WIDTH_PENDING : 0;
+  return Math.max(
+    COMPACT_WIDTH_MIN,
+    Math.ceil(COMPACT_WIDTH_BASE + iconWidth + overflowWidth + pendingWidth),
+  );
+}
 
 const initialSnapshot: IslandSnapshot = {
   online: false,
@@ -68,25 +126,44 @@ const initialSnapshot: IslandSnapshot = {
   sessions: [],
 };
 
-const agentLabels: Record<PermissionRequest["agent"], string> = {
+const agentLabels: Record<AgentKind, string> = {
   claude: "Claude",
   codex: "Codex",
   gemini: "Gemini",
   other: "Agent",
 };
 
-const agentTone: Record<PermissionRequest["agent"], string> = {
+const agentTone: Record<AgentKind, string> = {
   claude: "coral",
   codex: "cyan",
   gemini: "lime",
   other: "neutral",
 };
 
-const agentIcons: Record<PermissionRequest["agent"], typeof Bot> = {
+const agentIcons: Record<AgentKind, typeof Bot> = {
   claude: Sparkles,
   codex: Terminal,
   gemini: Zap,
   other: Bot,
+};
+
+const agentSortRank: Record<AgentKind, number> = {
+  claude: 0,
+  codex: 1,
+  gemini: 2,
+  other: 3,
+};
+const agentMascotAccent: Record<AgentKind, string | undefined> = {
+  claude: undefined,
+  codex: "#61d8f7",
+  gemini: "#b2e578",
+  other: "#c9bcff",
+};
+const agentMascotDark: Record<AgentKind, string | undefined> = {
+  claude: undefined,
+  codex: "#3d9fb8",
+  gemini: "#7aa44d",
+  other: "#9182d1",
 };
 
 type RiskLevel = "danger" | "caution";
@@ -130,16 +207,6 @@ const riskLabels: Record<RiskLevel, string> = {
   caution: "Review",
 };
 
-function deriveClawdMood(snapshot: IslandSnapshot, justResolved: boolean): ClawdMood {
-  if (justResolved) return "happy";
-  const active = snapshot.activeRequest;
-  if (active) {
-    return assessRisk(active.command) === "danger" ? "worried" : "alert";
-  }
-  if (snapshot.online && snapshot.sessions.length > 0) return "calm";
-  return "sleeping";
-}
-
 function deriveSessionMood(
   session: SessionSummary,
   activeRequest: PermissionRequest | null,
@@ -175,12 +242,63 @@ export function App() {
   const [sessionRequests, setSessionRequests] = useState<PermissionRequest[]>([]);
   const [hookStatus, setHookStatus] = useState<HookStatus | null>(null);
   const [hookBusy, setHookBusy] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState<AgentKind | null>(null);
+  const [maxCompactIcons, setMaxCompactIcons] = useState<number>(() => readCompactIconLimit());
   const [justResolved, setJustResolved] = useState(false);
   const prevPendingRef = useRef(0);
+  const selectedAgentRef = useRef<AgentKind | null>(null);
+  selectedAgentRef.current = selectedAgent;
 
   const activeRequest = snapshot.activeRequest;
   const sessions = snapshot.sessions;
-  const clawdMood = deriveClawdMood(snapshot, justResolved);
+  const compactWindowWidth = useMemo(
+    () =>
+      computeCompactWindowWidth(
+        sessions.length,
+        maxCompactIcons,
+        snapshot.pendingCount,
+      ),
+    [sessions.length, maxCompactIcons, snapshot.pendingCount],
+  );
+  const tabAgents = useMemo(() => {
+    const seen = new Set<AgentKind>();
+    sessions.forEach((session) => seen.add(session.agent));
+    if (activeRequest) {
+      seen.add(activeRequest.agent);
+    }
+    return Array.from(seen).sort(
+      (a, b) => agentSortRank[a] - agentSortRank[b],
+    );
+  }, [sessions, activeRequest]);
+
+  const selectedAgentRequest = useMemo(() => {
+    if (!selectedAgent) return activeRequest;
+    const fromRecent = snapshot.recent.find(
+      (request) =>
+        request.status === "pending" && request.agent === selectedAgent,
+    );
+    if (fromRecent) return fromRecent;
+    if (activeRequest?.agent === selectedAgent) return activeRequest;
+    return null;
+  }, [selectedAgent, snapshot.recent, activeRequest]);
+
+  const filteredSessions = useMemo(() => {
+    if (!selectedAgent) return sessions;
+    return sessions.filter((session) => session.agent === selectedAgent);
+  }, [sessions, selectedAgent]);
+
+  const pendingCountByAgent = useMemo(() => {
+    const counts: Record<AgentKind, number> = {
+      claude: 0,
+      codex: 0,
+      gemini: 0,
+      other: 0,
+    };
+    for (const session of sessions) {
+      counts[session.agent] += session.pendingCount;
+    }
+    return counts;
+  }, [sessions]);
 
   useEffect(() => {
     let unsubscribe: () => void = () => undefined;
@@ -253,19 +371,28 @@ export function App() {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (!snapshotRef.current.activeRequest || busyRef.current) return;
+      if (busyRef.current) return;
       if (menuOpenRef.current) return;
       if ((event.target as HTMLElement).tagName === "INPUT" || (event.target as HTMLElement).tagName === "TEXTAREA") return;
 
+      const snapshot = snapshotRef.current;
+      const agent = selectedAgentRef.current;
+      const targetRequest = agent
+        ? snapshot.recent.find(
+            (request) => request.status === "pending" && request.agent === agent,
+          ) ?? (snapshot.activeRequest?.agent === agent ? snapshot.activeRequest : null)
+        : snapshot.activeRequest;
+      if (!targetRequest) return;
+
       if (event.key === "Enter" && event.shiftKey) {
         event.preventDefault();
-        resolveActive("approved", true);
+        resolveActive(targetRequest, "approved", true);
       } else if (event.key === "Enter") {
         event.preventDefault();
-        resolveActive("approved");
+        resolveActive(targetRequest, "approved");
       } else if (event.key === "Backspace" || event.key === "Delete") {
         event.preventDefault();
-        resolveActive("denied");
+        resolveActive(targetRequest, "denied");
       }
     }
 
@@ -283,15 +410,54 @@ export function App() {
     }
   }, [snapshot.pendingCount]);
 
-  async function resolveActive(decision: Decision, alwaysApprove = false, note = "") {
-    if (!activeRequest) return;
+  useEffect(() => {
+    if (tabAgents.length === 0) {
+      setSelectedAgent(null);
+      return;
+    }
+    if (selectedAgent && tabAgents.includes(selectedAgent)) {
+      return;
+    }
+    setSelectedAgent(activeRequest?.agent ?? tabAgents[0]);
+  }, [tabAgents, selectedAgent, activeRequest?.agent]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        COMPACT_ICON_SETTING_KEY,
+        String(maxCompactIcons),
+      );
+    } catch {
+      // ignore local storage errors
+    }
+  }, [maxCompactIcons]);
+
+  useEffect(() => {
+    if (panelView.kind !== "session") return;
+    if (sessions.some((session) => session.sessionId === panelView.sessionId)) return;
+    setPanelView({ kind: "home" });
+    setSessionRequests([]);
+  }, [panelView, sessions]);
+
+  useEffect(() => {
+    if (phase !== "compact") return;
+    setIslandPresentation("compact", compactWindowWidth).catch(() => undefined);
+  }, [phase, compactWindowWidth]);
+
+  async function resolveActive(
+    request: PermissionRequest | null,
+    decision: Decision,
+    alwaysApprove = false,
+    note = "",
+  ) {
+    if (!request) return;
 
     setBusyDecision(decision);
     try {
       if (alwaysApprove) {
-        await setSessionAutoApprove(activeRequest.session, true);
+        await setSessionAutoApprove(request.session, true);
       }
-      const nextSnapshot = await resolvePermissionRequest(activeRequest.id, decision, note);
+      const nextSnapshot = await resolvePermissionRequest(request.id, decision, note);
       applySnapshot(nextSnapshot);
       if (nextSnapshot.pendingCount === 0) {
         collapseIsland(true);
@@ -397,7 +563,7 @@ export function App() {
     setPresentationPhase(next);
     setPanelView({ kind: "home" });
 
-    const nativeTransition = setIslandPresentation("compact");
+    const nativeTransition = setIslandPresentation("compact", compactWindowWidth);
     transitionTimerRef.current = window.setTimeout(async () => {
       transitionTimerRef.current = null;
       if (phaseRef.current !== "closing") return;
@@ -531,9 +697,13 @@ export function App() {
     }
   }
 
+  function handleOpenSettings() {
+    setMenuOpen(false);
+    setPanelView({ kind: "settings" });
+  }
+
   const isExpanded = phase === "opening" || phase === "expanded";
-  const agent = activeRequest?.agent;
-  const AgentIcon = agent ? agentIcons[agent] : Circle;
+  const showAgentTabs = isExpanded && tabAgents.length > 1;
 
   function renderPanel() {
     if (panelView.kind === "session") {
@@ -555,25 +725,36 @@ export function App() {
       );
     }
 
-    if (activeRequest) {
+    if (panelView.kind === "settings") {
+      return (
+        <SettingsView
+          maxCompactIcons={maxCompactIcons}
+          onChangeMaxCompactIcons={(nextValue) =>
+            setMaxCompactIcons(clampCompactIconLimit(nextValue))
+          }
+        />
+      );
+    }
+
+    if (selectedAgentRequest) {
       return (
         <ApprovalCard
-          request={activeRequest}
+          request={selectedAgentRequest}
           busyDecision={busyDecision}
-          sessions={sessions}
-          onApprove={() => resolveActive("approved")}
-          onDeny={() => resolveActive("denied")}
-          onAlwaysApprove={() => resolveActive("approved", true)}
+          sessions={filteredSessions}
+          onApprove={() => resolveActive(selectedAgentRequest, "approved")}
+          onDeny={() => resolveActive(selectedAgentRequest, "denied")}
+          onAlwaysApprove={() => resolveActive(selectedAgentRequest, "approved", true)}
           onViewSession={navigateToSession}
         />
       );
     }
 
-    if (sessions.length > 0) {
+    if (filteredSessions.length > 0) {
       return (
         <SessionListView
-          sessions={sessions}
-          activeRequest={activeRequest}
+          sessions={filteredSessions}
+          activeRequest={selectedAgentRequest}
           justResolved={justResolved}
           onSelectSession={navigateToSession}
         />
@@ -602,48 +783,37 @@ export function App() {
         onBlurCapture={handleIslandBlur}
       >
         <header
-          className={`island-header ${!isExpanded && sessions.length > 0 ? "compact-stack" : ""}`}
+          className="island-header"
           onMouseDown={startWindowDrag}
-          title={isExpanded ? "Drag Atoll" : "Hover to open Atoll"}
+          title={isExpanded ? "Drag window" : "Hover to open"}
         >
-          <span className="agent-slot">
-            {agent && agent !== "claude" ? (
-              <span className={`agent-dot ${agentTone[agent]}`}>
-                {activeRequest ? <ShieldAlert size={15} /> : <AgentIcon size={15} />}
-              </span>
-            ) : !isExpanded && sessions.length > 0 ? (
-              <ClawdStack
-                sessions={sessions}
-                activeRequest={activeRequest}
-                justResolved={justResolved}
+          <div className="header-main">
+            <span
+              className={`listener-dot ${snapshot.online ? "online" : ""}`}
+              title={snapshot.online ? "Listening" : "Offline"}
+            />
+            {isExpanded ? (
+              <AgentTabBar
+                agents={tabAgents}
+                selectedAgent={selectedAgent}
+                pendingCountByAgent={pendingCountByAgent}
+                showTabs={showAgentTabs}
+                online={snapshot.online}
+                onSelectAgent={(agent) => {
+                  setSelectedAgent(agent);
+                  if (panelView.kind !== "home") {
+                    setPanelView({ kind: "home" });
+                  }
+                }}
               />
             ) : (
-              <ClawdMascot mood={clawdMood} className="header-clawd" />
+              <CompactSessionStack
+                sessions={sessions}
+                maxCompactIcons={maxCompactIcons}
+                online={snapshot.online}
+              />
             )}
-          </span>
-
-          <span className="header-copy">
-            <span className="header-title">
-              {activeRequest
-                ? `${agentLabels[activeRequest.agent]} approval`
-                : "Atoll"}
-            </span>
-            <span className="header-meta">
-              <span className={`listener-dot ${snapshot.online ? "online" : ""}`} />
-              {snapshot.online ? "Listening" : "Offline"}
-              {sessions.length > 0 ? (
-                <>
-                  <span className="meta-divider">·</span>
-                  {sessions.length} session{sessions.length > 1 ? "s" : ""}
-                </>
-              ) : activeRequest ? (
-                <>
-                  <span className="meta-divider">·</span>
-                  {timeAgo(activeRequest.requestedAt)}
-                </>
-              ) : null}
-            </span>
-          </span>
+          </div>
 
           {snapshot.pendingCount > 0 ? (
             <span className="pending-badge-slot">
@@ -709,6 +879,14 @@ export function App() {
                   <Archive size={14} />
                   Archive all
                 </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleOpenSettings}
+                >
+                  <Settings2 size={14} />
+                  Settings
+                </button>
                 <div className="menu-separator" />
                 <button
                   type="button"
@@ -732,28 +910,111 @@ export function App() {
   );
 }
 
-/* ─── Clawd Stack (folded multi-session avatars) ──────────────── */
+/* ─── Compact Header ───────────────────────────────────────────── */
 
-const MAX_STACK_CLAWDS = 4;
-
-interface ClawdStackProps {
+interface CompactSessionStackProps {
   sessions: SessionSummary[];
-  activeRequest: PermissionRequest | null;
-  justResolved: boolean;
+  maxCompactIcons: number;
+  online: boolean;
 }
 
-function ClawdStack({ sessions, activeRequest, justResolved }: ClawdStackProps) {
-  const shown = sessions.slice(0, MAX_STACK_CLAWDS);
+function CompactSessionStack({
+  sessions,
+  maxCompactIcons,
+  online,
+}: CompactSessionStackProps) {
+  const shown = sessions.slice(0, maxCompactIcons);
   const overflow = sessions.length - shown.length;
+  if (shown.length === 0) {
+    return (
+      <span className="compact-session-stack is-empty" aria-hidden="true">
+        <span className="compact-empty-clawd">
+          <ClawdMascot mood={online ? "calm" : "sleeping"} size={18} />
+        </span>
+      </span>
+    );
+  }
+
   return (
-    <span className="clawd-stack" aria-hidden="true">
+    <span className="compact-session-stack" aria-hidden="true">
       {shown.map((session) => (
-        <span key={session.sessionId} className="clawd-stack-item">
-          <ClawdMascot mood={deriveSessionMood(session, activeRequest, justResolved)} />
+        <span
+          key={session.sessionId}
+          className={`compact-session-dot ${agentTone[session.agent]} ${
+            session.pendingCount > 0 ? "has-pending" : ""
+          }`}
+          title={`${agentLabels[session.agent]} · ${sessionDisplayName(
+            session.cwd,
+          )}`}
+        >
+          {renderCompactSessionGlyph(session)}
         </span>
       ))}
-      {overflow > 0 ? <span className="clawd-stack-more">+{overflow}</span> : null}
+      {overflow > 0 ? (
+        <span className="compact-session-overflow">✖️{overflow}</span>
+      ) : null}
     </span>
+  );
+}
+
+interface AgentTabBarProps {
+  agents: AgentKind[];
+  selectedAgent: AgentKind | null;
+  pendingCountByAgent: Record<AgentKind, number>;
+  showTabs: boolean;
+  online: boolean;
+  onSelectAgent: (agent: AgentKind) => void;
+}
+
+function AgentTabBar({
+  agents,
+  selectedAgent,
+  pendingCountByAgent,
+  showTabs,
+  online,
+  onSelectAgent,
+}: AgentTabBarProps) {
+  if (agents.length === 0) {
+    return (
+      <span className="agent-tabs-empty">
+        {online ? "Listening for agents" : "Offline"}
+      </span>
+    );
+  }
+
+  const active = selectedAgent ?? agents[0];
+  if (!showTabs) {
+    const Icon = agentIcons[active];
+    const pending = pendingCountByAgent[active] ?? 0;
+    return (
+      <span className={`agent-tab is-static ${agentTone[active]}`} data-no-drag>
+        <Icon size={13} />
+        <span>{agentLabels[active]}</span>
+        {pending > 0 ? <span className="agent-tab-pending">{pending}</span> : null}
+      </span>
+    );
+  }
+
+  return (
+    <div className="agent-tabbar" data-no-drag>
+      {agents.map((agent) => {
+        const Icon = agentIcons[agent];
+        const pending = pendingCountByAgent[agent] ?? 0;
+        const isActive = agent === active;
+        return (
+          <button
+            key={agent}
+            type="button"
+            className={`agent-tab ${isActive ? "is-active" : ""} ${agentTone[agent]}`}
+            onClick={() => onSelectAgent(agent)}
+          >
+            <Icon size={13} />
+            <span>{agentLabels[agent]}</span>
+            {pending > 0 ? <span className="agent-tab-pending">{pending}</span> : null}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -783,7 +1044,11 @@ function SessionListView({ sessions, activeRequest, justResolved, onSelectSessio
           >
             <div className="session-item-left">
               <span className="session-clawd">
-                <ClawdMascot mood={deriveSessionMood(session, activeRequest, justResolved)} />
+                <ClawdMascot
+                  mood={deriveSessionMood(session, activeRequest, justResolved)}
+                  accent={agentMascotAccent[session.agent]}
+                  accentDark={agentMascotDark[session.agent]}
+                />
               </span>
               <div className="session-item-info">
                 <span className="session-item-name">
@@ -791,6 +1056,10 @@ function SessionListView({ sessions, activeRequest, justResolved, onSelectSessio
                 </span>
                 <span className="session-item-meta">
                   {session.cwd}
+                  <span className="meta-divider">·</span>
+                  <span className={`session-agent-pill ${agentTone[session.agent]}`}>
+                    {agentLabels[session.agent]}
+                  </span>
                   <span className="meta-divider">·</span>
                   {timeAgo(session.lastActivity)}
                 </span>
@@ -804,6 +1073,70 @@ function SessionListView({ sessions, activeRequest, justResolved, onSelectSessio
             </div>
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Settings View ────────────────────────────────────────────── */
+
+interface SettingsViewProps {
+  maxCompactIcons: number;
+  onChangeMaxCompactIcons: (value: number) => void;
+}
+
+function SettingsView({
+  maxCompactIcons,
+  onChangeMaxCompactIcons,
+}: SettingsViewProps) {
+  const canDecrease = maxCompactIcons > MIN_MAX_COMPACT_ICONS;
+  const canIncrease = maxCompactIcons < MAX_MAX_COMPACT_ICONS;
+
+  return (
+    <div className="settings-view" data-no-drag>
+      <div className="settings-header">
+        <Settings2 size={14} />
+        <span>Display settings</span>
+      </div>
+      <div className="settings-item">
+        <div className="settings-item-text">
+          <span className="settings-item-title">Folded icon limit</span>
+          <span className="settings-item-desc">
+            Max session icons in compact mode, overflow shows as ✖️N.
+          </span>
+        </div>
+        <div className="settings-stepper">
+          <button
+            type="button"
+            className="settings-stepper-btn"
+            onClick={() => onChangeMaxCompactIcons(maxCompactIcons - 1)}
+            disabled={!canDecrease}
+            aria-label="Decrease compact icon limit"
+          >
+            <Minus size={12} />
+          </button>
+          <input
+            type="number"
+            min={MIN_MAX_COMPACT_ICONS}
+            max={MAX_MAX_COMPACT_ICONS}
+            value={maxCompactIcons}
+            className="settings-stepper-input"
+            onChange={(event) => {
+              const parsed = Number(event.target.value);
+              if (!Number.isFinite(parsed)) return;
+              onChangeMaxCompactIcons(parsed);
+            }}
+          />
+          <button
+            type="button"
+            className="settings-stepper-btn"
+            onClick={() => onChangeMaxCompactIcons(maxCompactIcons + 1)}
+            disabled={!canIncrease}
+            aria-label="Increase compact icon limit"
+          >
+            <Plus size={12} />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1041,6 +1374,11 @@ function IdleView({ hookStatus, hookBusy, onInstall }: IdleViewProps) {
 function sessionDisplayName(cwd: string) {
   const parts = cwd.split("/").filter(Boolean);
   return parts[parts.length - 1] || cwd;
+}
+
+function renderCompactSessionGlyph(session: SessionSummary) {
+  const Icon = session.pendingCount > 0 ? ShieldAlert : agentIcons[session.agent];
+  return <Icon size={10} />;
 }
 
 function ChatBubble({ message }: { message: ChatMessage }) {
