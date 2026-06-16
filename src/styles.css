@@ -616,7 +616,6 @@ kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.42));
 }
 
 /* ─── Clawd Stack (folded multi-session avatars) ──────────────── */
@@ -1305,26 +1304,24 @@ kbd {
 }
 
 .decision-kbd {
-  position: absolute;
-  top: 5px;
-  right: 6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 15px;
-  height: 14px;
-  padding: 0 3px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.16);
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.18);
   color: inherit;
-  font-size: 9px;
+  font-family: var(--font-sans);
+  font-size: 10px;
   font-weight: 700;
   line-height: 1;
   opacity: 0.55;
 }
 
-.decision-row.has-always .decision-kbd {
-  display: none;
+.decision-button:hover .decision-kbd {
+  opacity: 1;
 }
 
 .view-session-link {
@@ -1567,6 +1564,12 @@ kbd {
 }
 
 .settings-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-header-title {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1656,8 +1659,17 @@ kbd {
 .session-detail-nav {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
+}
+
+.session-detail-nav .session-chat-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-detail-nav .open-terminal-button {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .back-button {
@@ -1684,8 +1696,9 @@ kbd {
 .session-chat {
   display: grid;
   height: 100%;
+  max-height: 100%;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
 }
 
@@ -1702,10 +1715,12 @@ kbd {
 
 .chat-messages {
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   padding: 2px 2px 2px 0;
   scrollbar-width: thin;
@@ -1725,6 +1740,7 @@ kbd {
 .chat-bubble {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   gap: 3px;
   max-width: 85%;
   padding: 8px 12px;
@@ -1779,6 +1795,7 @@ kbd {
 .chat-bubble-md {
   min-width: 0;
   overflow-wrap: anywhere;
+  overflow-x: auto;
 }
 
 .chat-bubble-md > :first-child { margin-top: 0; }
@@ -1854,6 +1871,42 @@ kbd {
   border-top: 1px solid var(--border-subtle);
 }
 
+.chat-bubble-md table {
+  width: 100%;
+  margin: 0.4em 0;
+  border-collapse: collapse;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.chat-bubble-md th,
+.chat-bubble-md td {
+  padding: 4px 8px;
+  border: 1px solid var(--border-subtle);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.chat-bubble-md th {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  font-weight: 650;
+}
+
+.chat-bubble-md tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.chat-bubble.user .chat-bubble-md th {
+  background: rgba(158, 233, 184, 0.08);
+  color: #d8f5e1;
+}
+
+.chat-bubble.user .chat-bubble-md th,
+.chat-bubble.user .chat-bubble-md td {
+  border-color: rgba(158, 233, 184, 0.12);
+}
+
 .chat-bubble.user .chat-bubble-md strong { color: #d8f5e1; }
 .chat-bubble.user .chat-bubble-md code { background: rgba(158, 233, 184, 0.15); }
 .chat-bubble.user .chat-bubble-md pre {
@@ -1863,73 +1916,30 @@ kbd {
 .chat-bubble.user .chat-bubble-md blockquote { border-left-color: rgba(158, 233, 184, 0.2); }
 .chat-bubble.user .chat-bubble-md a { color: #a5ebc0; }
 
-/* ─── Reply Input ─────────────────────────────────────────────── */
+/* ─── Open Terminal Button ─────────────────────────────────────── */
 
-.conversation-reply {
-  display: flex;
+.open-terminal-button {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  flex: 0 0 auto;
-}
-
-.reply-input {
-  flex: 1;
-  min-width: 0;
-  height: 38px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: 0 14px;
-  color: #f3efe5;
-  background: var(--surface-raised);
-  font-family: var(--font-sans);
-  font-size: 12px;
-  outline: none;
-  transition:
-    border-color var(--duration-fast) ease,
-    background var(--duration-fast) ease,
-    box-shadow var(--duration-fast) ease;
-}
-
-.reply-input::placeholder { color: var(--text-muted); }
-
-.reply-input:focus {
-  border-color: rgba(158, 233, 184, 0.32);
-  background: var(--surface-overlay);
-  box-shadow: 0 0 0 3px rgba(158, 233, 184, 0.09);
-}
-
-.reply-input:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.reply-send-button {
-  display: inline-flex;
-  width: 38px;
-  height: 38px;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
+  padding: 7px 14px;
   border-radius: var(--radius-md);
   color: var(--text-secondary);
   background: var(--surface-raised);
   box-shadow: inset 0 0 0 1px var(--border-subtle);
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
   transition:
     color var(--duration-fast) ease,
     background var(--duration-fast) ease,
-    transform var(--duration-fast) ease;
+    box-shadow var(--duration-fast) ease;
 }
 
-.reply-send-button:hover:not(:disabled) {
-  color: var(--color-approve);
-  background: rgba(158, 233, 184, 0.1);
-  transform: translateX(1px);
-}
-
-.reply-send-button:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
+.open-terminal-button:hover {
+  color: var(--text-primary);
+  background: var(--surface-overlay);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
 /* ─── Idle View ───────────────────────────────────────────────── */
@@ -1940,7 +1950,6 @@ kbd {
   min-height: 0;
   align-items: center;
   justify-content: center;
-  gap: 16px;
   padding-bottom: 12px;
 }
 
@@ -1968,25 +1977,31 @@ kbd {
   pointer-events: none;
 }
 
-.idle-view > div:last-child {
-  display: grid;
-  max-width: 280px;
-  gap: 5px;
+.idle-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.idle-view h1 {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.2;
+.idle-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.5;
+  animation: idle-pulse 3s ease-in-out infinite;
 }
 
-.idle-view p {
-  margin: 0;
-  color: var(--text-tertiary);
+.idle-text {
+  color: var(--text-muted);
   font-size: 12px;
-  line-height: 1.5;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+@keyframes idle-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.8; }
 }
 
 /* Setup variant */

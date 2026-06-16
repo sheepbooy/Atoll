@@ -192,6 +192,23 @@ export async function setSessionRetention(minutes: number): Promise<number> {
   return minutes * 60;
 }
 
+export async function openInTerminal(cwd: string): Promise<void> {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  return invoke<void>("open_in_terminal", { cwd });
+}
+
+export async function openUrl(url: string): Promise<void> {
+  if (!isTauriRuntime) {
+    window.open(url, "_blank");
+    return;
+  }
+
+  return invoke<void>("open_url", { url });
+}
+
 export async function onSnapshotChanged(callback: (snapshot: IslandSnapshot) => void) {
   if (!isTauriRuntime) {
     return () => undefined;
