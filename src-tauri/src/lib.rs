@@ -19,6 +19,10 @@ const COMPACT_WINDOW_HEIGHT: f64 = 28.0;
 const EXPANDED_WINDOW_WIDTH: f64 = 560.0;
 const EXPANDED_WINDOW_HEIGHT: f64 = 320.0;
 const MIN_COMPACT_WINDOW_WIDTH: f64 = 72.0;
+// "Super-collapsed" drawer shown when there are no active sessions: a tiny
+// handle peeking from the top edge of the screen.
+const DORMANT_WINDOW_WIDTH: f64 = 80.0;
+const DORMANT_WINDOW_HEIGHT: f64 = 10.0;
 const WINDOW_ANIMATION_DURATION: Duration = Duration::from_millis(420);
 const WINDOW_ANIMATION_FRAME: Duration = Duration::from_micros(16_667);
 
@@ -92,6 +96,7 @@ enum Decision {
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum IslandWindowMode {
+    Dormant,
     Compact,
     Expanded,
 }
@@ -842,7 +847,10 @@ fn apply_island_window_mode(
     apply_macos_island_window_style(window);
     let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
     window.set_size(island_window_logical_size(mode, compact_width))?;
-    let _ = window.set_ignore_cursor_events(matches!(mode, IslandWindowMode::Compact));
+    let _ = window.set_ignore_cursor_events(matches!(
+        mode,
+        IslandWindowMode::Compact | IslandWindowMode::Dormant
+    ));
 
     let scale_factor = monitor.scale_factor();
     let monitor_position = monitor.position().to_logical::<f64>(scale_factor);
@@ -947,7 +955,10 @@ fn animate_island_window_mode(
     });
     let _ = sync_rx.recv();
 
-    let _ = window.set_ignore_cursor_events(matches!(mode, IslandWindowMode::Compact));
+    let _ = window.set_ignore_cursor_events(matches!(
+        mode,
+        IslandWindowMode::Compact | IslandWindowMode::Dormant
+    ));
     Ok(())
 }
 
@@ -966,6 +977,9 @@ fn interpolate_f64(start: f64, end: f64, progress: f64) -> f64 {
 fn island_window_logical_size(mode: IslandWindowMode, compact_width: f64) -> LogicalSize<f64> {
     let compact_width = sanitize_compact_width(compact_width);
     match mode {
+        IslandWindowMode::Dormant => {
+            LogicalSize::new(DORMANT_WINDOW_WIDTH, DORMANT_WINDOW_HEIGHT)
+        }
         IslandWindowMode::Compact => LogicalSize::new(compact_width, COMPACT_WINDOW_HEIGHT),
         IslandWindowMode::Expanded => {
             LogicalSize::new(EXPANDED_WINDOW_WIDTH, EXPANDED_WINDOW_HEIGHT)

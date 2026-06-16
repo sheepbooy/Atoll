@@ -310,6 +310,45 @@ kbd {
   align-items: center;
 }
 
+/* ─── Dormant drawer (no active sessions) ─────────────────────── */
+.island.is-dormant {
+  width: 80px;
+  height: 10px;
+  border-radius: 0 0 5px 5px;
+}
+
+.tauri-runtime .island.is-dormant {
+  width: 100%;
+  height: 100%;
+}
+
+.is-dormant .island-header {
+  height: 100%;
+  padding: 0;
+  gap: 0;
+  grid-template-columns: 1fr;
+}
+
+.is-dormant .header-main {
+  width: 100%;
+  height: 100%;
+  justify-content: center;
+}
+
+.is-dormant .header-actions,
+.is-dormant .pending-badge-slot {
+  display: none;
+}
+
+.dormant-handle {
+  width: 30px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.18);
+  transition: background var(--duration-expand) var(--ease-spring);
+}
+
 .is-expanded .header-main {
   gap: 10px;
 }
@@ -333,11 +372,33 @@ kbd {
   overflow: visible;
 }
 
-.compact-empty-clawd {
+.compact-empty-logo {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
+}
+
+.compact-empty-logo.is-online {
+  animation: atoll-breathe 3.2s ease-in-out infinite;
+}
+
+.compact-empty-logo.is-offline {
+  opacity: 0.5;
+  filter: grayscale(0.8) brightness(0.85) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
+}
+
+@keyframes atoll-breathe {
+  0%,
+  100% {
+    transform: scale(0.96);
+    filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
+  }
+  50% {
+    transform: scale(1.04);
+    filter: drop-shadow(0 0 6px rgba(255, 150, 110, 0.5))
+      drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
+  }
 }
 
 .compact-session-dot {
@@ -537,11 +598,11 @@ kbd {
   height: 32px;
 }
 
-.idle-clawd {
+.idle-logo {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.4));
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.42));
 }
 
 /* ─── Clawd Stack (folded multi-session avatars) ──────────────── */
@@ -1999,6 +2060,7 @@ kbd {
   .risk-pill.danger > svg,
   .idle-icon,
   .install-button::before,
+  .compact-empty-logo,
   .clawd,
   .clawd * {
     animation: none !important;

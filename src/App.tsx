@@ -36,6 +36,7 @@ import {
   PresentationPhase,
 } from "./islandPresentation";
 import { ClawdMascot, type ClawdMood } from "./ClawdMascot";
+import { AtollLogo } from "./AtollLogo";
 import {
   getSnapshot,
   getSessionRequests,
@@ -75,7 +76,7 @@ const COMPACT_WIDTH_ICON_SIZE = 18;
 const COMPACT_WIDTH_ICON_GAP = 4;
 const COMPACT_WIDTH_OVERFLOW = 32;
 const COMPACT_WIDTH_PENDING = 28;
-const COMPACT_WIDTH_EMPTY = 78;
+const COMPACT_WIDTH_EMPTY = 72;
 
 function clampCompactIconLimit(value: number) {
   return Math.min(
@@ -260,6 +261,12 @@ export function App() {
       ),
     [sessions.length, maxCompactIcons, snapshot.pendingCount],
   );
+  // With no active sessions the island super-collapses into a tiny top-edge
+  // drawer handle instead of showing a capsule.
+  const collapsedMode: "compact" | "dormant" =
+    sessions.length === 0 && snapshot.pendingCount === 0 ? "dormant" : "compact";
+  const collapsedModeRef = useRef<"compact" | "dormant">("compact");
+  collapsedModeRef.current = collapsedMode;
   const tabAgents = useMemo(() => {
     const seen = new Set<AgentKind>();
     sessions.forEach((session) => seen.add(session.agent));
@@ -441,8 +448,12 @@ export function App() {
 
   useEffect(() => {
     if (phase !== "compact") return;
-    setIslandPresentation("compact", compactWindowWidth).catch(() => undefined);
-  }, [phase, compactWindowWidth]);
+    if (collapsedMode === "dormant") {
+      setIslandPresentation("dormant").catch(() => undefined);
+    } else {
+      setIslandPresentation("compact", compactWindowWidth).catch(() => undefined);
+    }
+  }, [phase, compactWindowWidth, collapsedMode]);
 
   async function resolveActive(
     request: PermissionRequest | null,
@@ -563,7 +574,10 @@ export function App() {
     setPresentationPhase(next);
     setPanelView({ kind: "home" });
 
-    const nativeTransition = setIslandPresentation("compact", compactWindowWidth);
+    const nativeTransition =
+      collapsedModeRef.current === "dormant"
+        ? setIslandPresentation("dormant")
+        : setIslandPresentation("compact", compactWindowWidth);
     transitionTimerRef.current = window.setTimeout(async () => {
       transitionTimerRef.current = null;
       if (phaseRef.current !== "closing") return;
@@ -704,6 +718,7 @@ export function App() {
 
   const isExpanded = phase === "opening" || phase === "expanded";
   const showAgentTabs = isExpanded && tabAgents.length > 1;
+  const isDormant = !isExpanded && collapsedMode === "dormant";
 
   function renderPanel() {
     if (panelView.kind === "session") {
@@ -773,7 +788,7 @@ export function App() {
   return (
     <main className="stage">
       <section
-        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""}`}
+        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""}`}
         aria-label="Atoll"
         tabIndex={0}
         onClick={handleIslandClick}
@@ -788,30 +803,36 @@ export function App() {
           title={isExpanded ? "Drag window" : "Hover to open"}
         >
           <div className="header-main">
-            <span
-              className={`listener-dot ${snapshot.online ? "online" : ""}`}
-              title={snapshot.online ? "Listening" : "Offline"}
-            />
-            {isExpanded ? (
-              <AgentTabBar
-                agents={tabAgents}
-                selectedAgent={selectedAgent}
-                pendingCountByAgent={pendingCountByAgent}
-                showTabs={showAgentTabs}
-                online={snapshot.online}
-                onSelectAgent={(agent) => {
-                  setSelectedAgent(agent);
-                  if (panelView.kind !== "home") {
-                    setPanelView({ kind: "home" });
-                  }
-                }}
-              />
+            {isDormant ? (
+              <span className="dormant-handle" aria-hidden="true" />
             ) : (
-              <CompactSessionStack
-                sessions={sessions}
-                maxCompactIcons={maxCompactIcons}
-                online={snapshot.online}
-              />
+              <>
+                <span
+                  className={`listener-dot ${snapshot.online ? "online" : ""}`}
+                  title={snapshot.online ? "Listening" : "Offline"}
+                />
+                {isExpanded ? (
+                  <AgentTabBar
+                    agents={tabAgents}
+                    selectedAgent={selectedAgent}
+                    pendingCountByAgent={pendingCountByAgent}
+                    showTabs={showAgentTabs}
+                    online={snapshot.online}
+                    onSelectAgent={(agent) => {
+                      setSelectedAgent(agent);
+                      if (panelView.kind !== "home") {
+                        setPanelView({ kind: "home" });
+                      }
+                    }}
+                  />
+                ) : (
+                  <CompactSessionStack
+                    sessions={sessions}
+                    maxCompactIcons={maxCompactIcons}
+                    online={snapshot.online}
+                  />
+                )}
+              </>
             )}
           </div>
 
@@ -928,8 +949,10 @@ function CompactSessionStack({
   if (shown.length === 0) {
     return (
       <span className="compact-session-stack is-empty" aria-hidden="true">
-        <span className="compact-empty-clawd">
-          <ClawdMascot mood={online ? "calm" : "sleeping"} size={18} />
+        <span
+          className={`compact-empty-logo ${online ? "is-online" : "is-offline"}`}
+        >
+          <AtollLogo size={22} />
         </span>
       </span>
     );
@@ -1358,8 +1381,8 @@ function IdleView({ hookStatus, hookBusy, onInstall }: IdleViewProps) {
 
   return (
     <div className="idle-view">
-      <div className="idle-clawd">
-        <ClawdMascot mood="sleeping" size={72} />
+      <div className="idle-logo">
+        <AtollLogo size={72} />
       </div>
       <div>
         <h1>All clear</h1>

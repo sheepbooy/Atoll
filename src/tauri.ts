@@ -168,7 +168,7 @@ export async function quitAtoll() {
 }
 
 export async function setIslandPresentation(
-  mode: "compact" | "expanded",
+  mode: "compact" | "expanded" | "dormant",
   compactWidth?: number,
 ) {
   if (!isTauriRuntime) {
