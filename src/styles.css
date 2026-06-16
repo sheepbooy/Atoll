@@ -265,7 +265,7 @@ kbd {
   display: grid;
   width: 100%;
   height: 28px;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
   gap: 6px;
   align-items: center;
   padding: 3px 8px 4px;
@@ -281,7 +281,7 @@ kbd {
 
 .is-expanded .island-header {
   height: 60px;
-  grid-template-columns: 36px minmax(0, 1fr) auto;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
   gap: 12px;
   padding: 12px 92px 10px 16px;
   cursor: grab;
@@ -395,6 +395,145 @@ kbd {
 .is-expanded .agent-dot.cyan::after { border-color: var(--accent-cyan); animation: pulse-ring 2.6s ease-out infinite; }
 .is-expanded .agent-dot.lime::after { border-color: var(--accent-lime); animation: pulse-ring 2.6s ease-out infinite; }
 .is-expanded .agent-dot.neutral::after { border-color: var(--accent-violet); animation: pulse-ring 2.6s ease-out infinite; }
+
+/* ─── Clawd Mascot ────────────────────────────────────────────── */
+
+@keyframes clawd-float { 0%, 100% { transform: translateY(6%); } 50% { transform: translateY(-6%); } }
+@keyframes clawd-float-slow { 0%, 100% { transform: translateY(2%); } 50% { transform: translateY(9%); } }
+@keyframes clawd-alert-hop { 0%, 100% { transform: translateY(0); } 30% { transform: translateY(-13%); } 60% { transform: translateY(0); } }
+@keyframes clawd-bounce { 0%, 100% { transform: translateY(9%) scale(1); } 40% { transform: translateY(-16%) scale(1.04); } 70% { transform: translateY(0) scale(0.99); } }
+@keyframes clawd-tremble { 0%, 100% { transform: translate(-3%, 2%); } 50% { transform: translate(3%, 2%); } }
+@keyframes clawd-claw-wave-l { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-24deg); } }
+@keyframes clawd-claw-wave-r { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(24deg); } }
+@keyframes clawd-leg-step { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-16%); } }
+@keyframes clawd-twinkle { 0%, 100% { opacity: 0; transform: scale(0.3); } 50% { opacity: 1; transform: scale(1); } }
+@keyframes clawd-heart-rise { 0% { opacity: 0; transform: translateY(10%) scale(0.6); } 25% { opacity: 1; } 100% { opacity: 0; transform: translateY(-45%) scale(1.1); } }
+@keyframes clawd-zzz-rise { 0% { opacity: 0; transform: translate(0, 10%); } 40% { opacity: 1; } 100% { opacity: 0; transform: translate(30%, -70%); } }
+@keyframes clawd-sweat-fall { 0% { opacity: 0; transform: translateY(-40%); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(160%); } }
+@keyframes clawd-bang-pop { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-14%) scale(1.14); } }
+
+.clawd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  will-change: transform;
+}
+
+.clawd-svg { overflow: visible; }
+
+.clawd-claw,
+.clawd-leg,
+.clawd-star,
+.clawd-heart,
+.clawd-z,
+.clawd-sweat,
+.clawd-bang {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.clawd.is-calm { animation: clawd-float 2.8s ease-in-out infinite; }
+.clawd.is-sleeping { animation: clawd-float-slow 3.6s ease-in-out infinite; }
+.clawd.is-alert { animation: clawd-alert-hop 0.85s ease-in-out infinite; }
+.clawd.is-happy { animation: clawd-bounce 0.6s ease-in-out infinite; }
+.clawd.is-worried { animation: clawd-tremble 0.5s ease-in-out infinite; }
+.clawd.is-sad { transform: translateY(8%); }
+
+.clawd.is-alert .clawd-claw-left,
+.clawd.is-happy .clawd-claw-left { transform-origin: right center; animation: clawd-claw-wave-l 0.5s ease-in-out infinite; }
+.clawd.is-alert .clawd-claw-right,
+.clawd.is-happy .clawd-claw-right { transform-origin: left center; animation: clawd-claw-wave-r 0.5s ease-in-out infinite; }
+
+.clawd.is-happy .clawd-leg-0 { animation: clawd-leg-step 0.3s ease-in-out infinite; }
+.clawd.is-happy .clawd-leg-1 { animation: clawd-leg-step 0.3s ease-in-out infinite 0.07s; }
+.clawd.is-happy .clawd-leg-2 { animation: clawd-leg-step 0.3s ease-in-out infinite 0.14s; }
+.clawd.is-happy .clawd-leg-3 { animation: clawd-leg-step 0.3s ease-in-out infinite 0.21s; }
+
+.clawd-star { opacity: 0; }
+.clawd-star-0 { animation: clawd-twinkle 1.2s ease-in-out infinite; }
+.clawd-star-1 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.4s; }
+.clawd-star-2 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.8s; }
+.clawd-heart { animation: clawd-heart-rise 1.8s ease-out infinite; }
+.clawd-z { opacity: 0; }
+.clawd-z-0 { animation: clawd-zzz-rise 2.4s ease-in-out infinite; }
+.clawd-z-1 { animation: clawd-zzz-rise 2.4s ease-in-out infinite 0.5s; }
+.clawd-z-2 { animation: clawd-zzz-rise 2.4s ease-in-out infinite 1s; }
+.clawd-sweat { animation: clawd-sweat-fall 1.3s ease-in-out infinite; }
+.clawd-bang { animation: clawd-bang-pop 0.7s ease-in-out infinite; }
+
+.agent-slot .clawd {
+  width: 19px;
+  height: 17px;
+  transition:
+    width var(--duration-expand) var(--ease-spring),
+    height var(--duration-expand) var(--ease-spring);
+}
+
+.is-expanded .agent-slot .clawd {
+  width: 36px;
+  height: 32px;
+}
+
+.idle-clawd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.4));
+}
+
+/* ─── Clawd Stack (folded multi-session avatars) ──────────────── */
+
+.clawd-stack {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clawd-stack-item {
+  display: inline-flex;
+  width: 18px;
+  height: 16px;
+  margin-left: -5px;
+}
+
+.clawd-stack-item:first-child {
+  margin-left: 0;
+}
+
+.clawd-stack-item .clawd {
+  width: 18px;
+  height: 16px;
+}
+
+.clawd-stack-more {
+  margin-left: 3px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* Folded header with sessions: avatar column auto-sizes to the stack */
+.island-header.compact-stack {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+/* ─── Session List Clawd ──────────────────────────────────────── */
+
+.session-clawd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 26px;
+  flex: 0 0 auto;
+}
+
+.session-clawd .clawd {
+  width: 30px;
+  height: 26px;
+}
 
 /* ─── Header Copy ─────────────────────────────────────────────── */
 
@@ -1666,7 +1805,9 @@ kbd {
   .island.has-pending::after,
   .risk-pill.danger > svg,
   .idle-icon,
-  .install-button::before {
+  .install-button::before,
+  .clawd,
+  .clawd * {
     animation: none !important;
   }
 }

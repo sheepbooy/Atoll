@@ -9,7 +9,6 @@ import {
   ChevronRight,
   ChevronUp,
   Circle,
-  ClipboardCheck,
   Download,
   Ellipsis,
   FolderClosed,
@@ -34,6 +33,7 @@ import {
   IDLE_COLLAPSE_DELAY_MS,
   PresentationPhase,
 } from "./islandPresentation";
+import { ClawdMascot, type ClawdMood } from "./ClawdMascot";
 import {
   getSnapshot,
   getSessionRequests,
@@ -130,6 +130,29 @@ const riskLabels: Record<RiskLevel, string> = {
   caution: "Review",
 };
 
+function deriveClawdMood(snapshot: IslandSnapshot, justResolved: boolean): ClawdMood {
+  if (justResolved) return "happy";
+  const active = snapshot.activeRequest;
+  if (active) {
+    return assessRisk(active.command) === "danger" ? "worried" : "alert";
+  }
+  if (snapshot.online && snapshot.sessions.length > 0) return "calm";
+  return "sleeping";
+}
+
+function deriveSessionMood(
+  session: SessionSummary,
+  activeRequest: PermissionRequest | null,
+  justResolved: boolean,
+): ClawdMood {
+  if (activeRequest && activeRequest.session === session.sessionId) {
+    return assessRisk(activeRequest.command) === "danger" ? "worried" : "alert";
+  }
+  if (session.pendingCount > 0) return "alert";
+  if (justResolved) return "happy";
+  return "calm";
+}
+
 export function App() {
   const [snapshot, setSnapshot] = useState<IslandSnapshot>(initialSnapshot);
   const snapshotRef = useRef(initialSnapshot);
@@ -152,9 +175,12 @@ export function App() {
   const [sessionRequests, setSessionRequests] = useState<PermissionRequest[]>([]);
   const [hookStatus, setHookStatus] = useState<HookStatus | null>(null);
   const [hookBusy, setHookBusy] = useState(false);
+  const [justResolved, setJustResolved] = useState(false);
+  const prevPendingRef = useRef(0);
 
   const activeRequest = snapshot.activeRequest;
   const sessions = snapshot.sessions;
+  const clawdMood = deriveClawdMood(snapshot, justResolved);
 
   useEffect(() => {
     let unsubscribe: () => void = () => undefined;
@@ -246,6 +272,16 @@ export function App() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  useEffect(() => {
+    const prev = prevPendingRef.current;
+    prevPendingRef.current = snapshot.pendingCount;
+    if (prev > 0 && snapshot.pendingCount === 0) {
+      setJustResolved(true);
+      const timer = window.setTimeout(() => setJustResolved(false), 1300);
+      return () => window.clearTimeout(timer);
+    }
+  }, [snapshot.pendingCount]);
 
   async function resolveActive(decision: Decision, alwaysApprove = false, note = "") {
     if (!activeRequest) return;
@@ -537,6 +573,8 @@ export function App() {
       return (
         <SessionListView
           sessions={sessions}
+          activeRequest={activeRequest}
+          justResolved={justResolved}
           onSelectSession={navigateToSession}
         />
       );
@@ -564,14 +602,24 @@ export function App() {
         onBlurCapture={handleIslandBlur}
       >
         <header
-          className="island-header"
+          className={`island-header ${!isExpanded && sessions.length > 0 ? "compact-stack" : ""}`}
           onMouseDown={startWindowDrag}
           title={isExpanded ? "Drag Atoll" : "Hover to open Atoll"}
         >
           <span className="agent-slot">
-            <span className={`agent-dot ${agent ? agentTone[agent] : "idle"}`}>
-              {activeRequest ? <ShieldAlert size={15} /> : <AgentIcon size={agent ? 15 : 11} />}
-            </span>
+            {agent && agent !== "claude" ? (
+              <span className={`agent-dot ${agentTone[agent]}`}>
+                {activeRequest ? <ShieldAlert size={15} /> : <AgentIcon size={15} />}
+              </span>
+            ) : !isExpanded && sessions.length > 0 ? (
+              <ClawdStack
+                sessions={sessions}
+                activeRequest={activeRequest}
+                justResolved={justResolved}
+              />
+            ) : (
+              <ClawdMascot mood={clawdMood} className="header-clawd" />
+            )}
           </span>
 
           <span className="header-copy">
@@ -684,14 +732,41 @@ export function App() {
   );
 }
 
+/* ─── Clawd Stack (folded multi-session avatars) ──────────────── */
+
+const MAX_STACK_CLAWDS = 4;
+
+interface ClawdStackProps {
+  sessions: SessionSummary[];
+  activeRequest: PermissionRequest | null;
+  justResolved: boolean;
+}
+
+function ClawdStack({ sessions, activeRequest, justResolved }: ClawdStackProps) {
+  const shown = sessions.slice(0, MAX_STACK_CLAWDS);
+  const overflow = sessions.length - shown.length;
+  return (
+    <span className="clawd-stack" aria-hidden="true">
+      {shown.map((session) => (
+        <span key={session.sessionId} className="clawd-stack-item">
+          <ClawdMascot mood={deriveSessionMood(session, activeRequest, justResolved)} />
+        </span>
+      ))}
+      {overflow > 0 ? <span className="clawd-stack-more">+{overflow}</span> : null}
+    </span>
+  );
+}
+
 /* ─── Session List View ───────────────────────────────────────── */
 
 interface SessionListViewProps {
   sessions: SessionSummary[];
+  activeRequest: PermissionRequest | null;
+  justResolved: boolean;
   onSelectSession: (sessionId: string) => void;
 }
 
-function SessionListView({ sessions, onSelectSession }: SessionListViewProps) {
+function SessionListView({ sessions, activeRequest, justResolved, onSelectSession }: SessionListViewProps) {
   return (
     <div className="session-list-view">
       <div className="session-list-header">
@@ -707,7 +782,9 @@ function SessionListView({ sessions, onSelectSession }: SessionListViewProps) {
             onClick={() => onSelectSession(session.sessionId)}
           >
             <div className="session-item-left">
-              <span className="session-agent-indicator idle" />
+              <span className="session-clawd">
+                <ClawdMascot mood={deriveSessionMood(session, activeRequest, justResolved)} />
+              </span>
               <div className="session-item-info">
                 <span className="session-item-name">
                   {sessionDisplayName(session.cwd)}
@@ -948,8 +1025,8 @@ function IdleView({ hookStatus, hookBusy, onInstall }: IdleViewProps) {
 
   return (
     <div className="idle-view">
-      <div className="idle-icon">
-        <ClipboardCheck size={22} />
+      <div className="idle-clawd">
+        <ClawdMascot mood="sleeping" size={72} />
       </div>
       <div>
         <h1>All clear</h1>
