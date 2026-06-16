@@ -1315,19 +1315,24 @@ fn exit_atoll(app: &AppHandle) {
 
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        #[cfg(target_os = "macos")]
-        {
-            let panel_ptr = panel_store::get_raw();
-            if !panel_ptr.is_null() {
-                unsafe {
-                    let _: () = objc2::msg_send![
-                        panel_ptr as *mut objc2::runtime::AnyObject,
-                        orderFrontRegardless
-                    ];
+        let window_for_main_thread = window.clone();
+        // Permission hooks arrive on a background thread; AppKit window APIs
+        // must run on the main thread to avoid macOS crashes.
+        let _ = window.run_on_main_thread(move || {
+            let _ = window_for_main_thread.show();
+            #[cfg(target_os = "macos")]
+            {
+                let panel_ptr = panel_store::get_raw();
+                if !panel_ptr.is_null() {
+                    unsafe {
+                        let _: () = objc2::msg_send![
+                            panel_ptr as *mut objc2::runtime::AnyObject,
+                            orderFrontRegardless
+                        ];
+                    }
                 }
             }
-        }
+        });
         let _ = app.emit("island-open-requested", ());
     }
 }
