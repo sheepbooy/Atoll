@@ -9,7 +9,8 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
     iso_timestamp_now, refresh_session_token_usage, register_known_session,
-    roll_over_token_usage_if_needed, show_main_window, snapshot_from, touch_session_last_seen,
+    roll_over_token_usage_if_needed, show_main_window_for_approval, snapshot_from,
+    touch_session_last_seen,
     AgentKind, AppState, Decision, DecisionWithNote, PermissionRequest, PermissionStatus,
 };
 
@@ -193,7 +194,7 @@ fn route_request(app: AppHandle, request: HttpRequest, stream: &TcpStream) -> Re
     }
 }
 
-const HOOK_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const HOOK_POLL_INTERVAL: Duration = Duration::from_millis(180);
 
 fn submit_claude_pre_tool_request(
     app: AppHandle,
@@ -270,7 +271,7 @@ fn submit_claude_pre_tool_request(
             .map_err(|error| error.to_string())?;
     }
 
-    show_main_window(&app);
+    show_main_window_for_approval(&app);
 
     let deadline = Instant::now() + HOOK_RESPONSE_TIMEOUT;
     loop {
@@ -337,6 +338,8 @@ fn mark_request_completed_externally(
         return;
     };
 
+    let mut resolved_session_id: Option<String> = None;
+    let mut resolved_transcript_path: Option<String> = None;
     if let Some(request) = requests.iter_mut().find(|r| r.id == request_id) {
         if request.status == PermissionStatus::Pending {
             request.status = PermissionStatus::Approved;
@@ -344,6 +347,16 @@ fn mark_request_completed_externally(
                 request.detail = format!("{} Resolved in Claude.", request.detail);
             }
             touch_session_last_seen(state, &request.session);
+            resolved_session_id = Some(request.session.clone());
+            resolved_transcript_path = request.transcript_path.clone();
+        }
+    }
+
+    if let Some(session_id) = resolved_session_id.as_deref() {
+        if let Err(error) =
+            refresh_session_token_usage(state, session_id, resolved_transcript_path.as_deref())
+        {
+            eprintln!("Atoll token usage refresh failed: {error}");
         }
     }
 
@@ -484,8 +497,23 @@ fn sync_claude_turn_completion(app: AppHandle, payload: Value) -> Result<(), Str
         .get("cwd")
         .and_then(Value::as_str)
         .unwrap_or(".");
+    let mut completed_request_id: Option<String> = None;
 
     if let Some(session_id) = session_id.as_deref() {
+        {
+            let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
+            if let Some(index) = latest_pending_request_index(&requests, Some(session_id)) {
+                let request = requests
+                    .get_mut(index)
+                    .expect("index from latest_pending_request_index should be valid");
+                request.status = PermissionStatus::Approved;
+                if !request.detail.contains("Completed in Claude.") {
+                    request.detail = format!("{} Completed in Claude.", request.detail);
+                }
+                completed_request_id = Some(request.id.clone());
+            }
+        }
+
         touch_session_last_seen(&state, session_id);
         register_known_session(
             &state,
@@ -498,6 +526,17 @@ fn sync_claude_turn_completion(app: AppHandle, payload: Value) -> Result<(), Str
             refresh_session_token_usage(&state, session_id, transcript_path.as_deref())
         {
             eprintln!("Atoll token usage refresh failed: {error}");
+        }
+    }
+
+    if let Some(request_id) = completed_request_id.as_deref() {
+        if let Ok(mut waiters) = state.hook_waiters.lock() {
+            if let Some(waiter) = waiters.remove(request_id) {
+                let _ = waiter.send(DecisionWithNote {
+                    decision: Decision::Approved,
+                    note: String::new(),
+                });
+            }
         }
     }
 
@@ -572,8 +611,9 @@ pub(crate) fn mark_matching_pending_request_complete(
         session_matches && command_matches
     });
 
-    let fallback_index =
-        matched_index.or_else(|| unique_pending_request_index(requests, payload_session));
+    let fallback_index = matched_index
+        .or_else(|| unique_pending_request_index(requests, payload_session))
+        .or_else(|| latest_pending_request_index(requests, payload_session));
     let request = requests.get_mut(fallback_index?)?;
 
     request.status = PermissionStatus::Approved;
@@ -603,6 +643,18 @@ fn unique_pending_request_index(
     }
 
     Some(index)
+}
+
+fn latest_pending_request_index(
+    requests: &[PermissionRequest],
+    payload_session: Option<&str>,
+) -> Option<usize> {
+    let session = payload_session?;
+    requests
+        .iter()
+        .enumerate()
+        .find(|(_, request)| request.status == PermissionStatus::Pending && request.session == session)
+        .map(|(index, _)| index)
 }
 
 fn fallback_hook_response(hook_event_name: &str, reason: &str) -> Value {

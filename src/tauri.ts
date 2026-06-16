@@ -200,6 +200,20 @@ export async function setIslandPresentation(
   return invoke<void>("set_island_presentation", { mode, compactWidth });
 }
 
+export interface NotchMetrics {
+  hasNotch: boolean;
+  width: number;
+  height: number;
+}
+
+export async function getNotchMetrics(): Promise<NotchMetrics> {
+  if (isTauriRuntime) {
+    return invoke<NotchMetrics>("get_notch_metrics");
+  }
+
+  return { hasNotch: false, width: 0, height: 0 };
+}
+
 export async function getSessionRetention(): Promise<number> {
   if (isTauriRuntime) {
     return invoke<number>("get_session_retention");

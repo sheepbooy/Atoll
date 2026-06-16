@@ -52,6 +52,8 @@ import {
   resolvePermissionRequest,
   setIslandPresentation,
   setSessionAutoApprove,
+  getNotchMetrics,
+  NotchMetrics,
   getClaudeHookStatus,
   installClaudeHooks,
   uninstallClaudeHooks,
@@ -292,6 +294,14 @@ function deriveSessionMood(
   return "calm";
 }
 
+function applyNotchMetrics(notch: NotchMetrics) {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  root.style.setProperty("--notch-height", `${Math.max(0, notch.height)}px`);
+  root.style.setProperty("--notch-width", `${Math.max(0, notch.width)}px`);
+  root.classList.toggle("has-notch", notch.hasNotch);
+}
+
 export function App() {
   const [snapshot, setSnapshot] = useState<IslandSnapshot>(initialSnapshot);
   const snapshotRef = useRef(initialSnapshot);
@@ -392,6 +402,9 @@ export function App() {
       .catch(() => undefined);
     getClaudeHookStatus()
       .then(setHookStatus)
+      .catch(() => undefined);
+    getNotchMetrics()
+      .then(applyNotchMetrics)
       .catch(() => undefined);
     setSessionRetention(readRetentionMinutes()).catch(() => undefined);
     onSnapshotChanged(applySnapshot).then((cleanup) => {
@@ -1068,73 +1081,88 @@ function TokenCounter({ value, usage }: TokenCounterProps) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [deltaText, setDeltaText] = useState<string | null>(null);
   const displayRef = useRef(value);
+  const animatedValueRef = useRef(value);
+  const targetRef = useRef(value);
+  const lastFrameAtRef = useRef<number | null>(null);
   const frameRef = useRef<number | null>(null);
   const pulseTimerRef = useRef<number | null>(null);
   const deltaTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (frameRef.current !== null) {
-      window.cancelAnimationFrame(frameRef.current);
-      frameRef.current = null;
-    }
-    if (pulseTimerRef.current !== null) {
-      window.clearTimeout(pulseTimerRef.current);
-      pulseTimerRef.current = null;
-    }
     if (deltaTimerRef.current !== null) {
       window.clearTimeout(deltaTimerRef.current);
       deltaTimerRef.current = null;
     }
 
-    const startValue = displayRef.current;
-    if (startValue === value) {
-      setIsUpdating(false);
-      setDeltaText(null);
-      return;
-    }
-
-    const delta = value - startValue;
-    const duration = Math.max(200, Math.min(700, Math.abs(delta) * 0.2));
-    const startAt = performance.now();
-    setIsUpdating(true);
-    if (delta > 0) {
-      setDeltaText(`+${formatCompactTokenCount(delta)}`);
+    const incomingDelta = value - targetRef.current;
+    targetRef.current = value;
+    if (incomingDelta > 0) {
+      setDeltaText(`+${formatCompactTokenCount(incomingDelta)}`);
       deltaTimerRef.current = window.setTimeout(() => {
         setDeltaText(null);
         deltaTimerRef.current = null;
-      }, 680);
+      }, 920);
     } else {
       setDeltaText(null);
     }
 
+    if (pulseTimerRef.current !== null) {
+      window.clearTimeout(pulseTimerRef.current);
+      pulseTimerRef.current = null;
+    }
+    setIsUpdating(true);
+
     const animate = (now: number) => {
-      const progress = Math.min(1, (now - startAt) / duration);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      const nextValue = Math.round(startValue + delta * eased);
+      const previousFrameAt = lastFrameAtRef.current ?? now;
+      lastFrameAtRef.current = now;
+      const dt = Math.min(0.06, Math.max(0.001, (now - previousFrameAt) / 1000));
+      const current = animatedValueRef.current;
+      const target = targetRef.current;
+      const diff = target - current;
+      const distance = Math.abs(diff);
 
-      if (nextValue !== displayRef.current) {
-        displayRef.current = nextValue;
-        setDisplayValue(nextValue);
-      }
-
-      if (progress < 1) {
-        frameRef.current = window.requestAnimationFrame(animate);
+      if (distance < 0.5) {
+        const settled = target;
+        animatedValueRef.current = settled;
+        const settledInt = Math.round(settled);
+        if (settledInt !== displayRef.current) {
+          displayRef.current = settledInt;
+          setDisplayValue(settledInt);
+        }
+        frameRef.current = null;
+        lastFrameAtRef.current = null;
+        pulseTimerRef.current = window.setTimeout(() => {
+          setIsUpdating(false);
+          pulseTimerRef.current = null;
+        }, 220);
         return;
       }
 
-      frameRef.current = null;
+      // Keep the counter feeling "alive": larger gaps roll faster but still
+      // increment smoothly instead of jumping straight to the final value.
+      const speedPerSecond = Math.min(22_000, Math.max(240, distance * 3.8));
+      const step = Math.max(1, speedPerSecond * dt);
+      const next = current + Math.sign(diff) * Math.min(distance, step);
+
+      animatedValueRef.current = next;
+      const nextInt = Math.round(next);
+      if (nextInt !== displayRef.current) {
+        displayRef.current = nextInt;
+        setDisplayValue(nextInt);
+      }
+
+      frameRef.current = window.requestAnimationFrame(animate);
     };
 
-    frameRef.current = window.requestAnimationFrame(animate);
-    pulseTimerRef.current = window.setTimeout(() => {
-      setIsUpdating(false);
-      pulseTimerRef.current = null;
-    }, 320);
+    if (frameRef.current === null) {
+      frameRef.current = window.requestAnimationFrame(animate);
+    }
 
     return () => {
       if (frameRef.current !== null) {
         window.cancelAnimationFrame(frameRef.current);
         frameRef.current = null;
+        lastFrameAtRef.current = null;
       }
       if (pulseTimerRef.current !== null) {
         window.clearTimeout(pulseTimerRef.current);
