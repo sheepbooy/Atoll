@@ -40,6 +40,9 @@ const DORMANT_WINDOW_WIDTH: f64 = 80.0;
 const DORMANT_WINDOW_HEIGHT: f64 = 10.0;
 const WINDOW_ANIMATION_DURATION: Duration = Duration::from_millis(420);
 const WINDOW_ANIMATION_FRAME: Duration = Duration::from_micros(16_667);
+// Fallback notch width (logical pt) used when the auxiliary menu-bar areas
+// can't be read but a notch height is reported.
+const FALLBACK_NOTCH_WIDTH: f64 = 200.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -85,7 +88,7 @@ struct SessionSummary {
     transcript_path: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct TokenUsage {
     input_tokens: u64,
@@ -164,12 +167,16 @@ struct AppState {
     compact_width: Mutex<f64>,
     presentation_generation: Arc<AtomicU64>,
     home_bounds: Mutex<Option<HomeWindowBounds>>,
+    notch_metrics: Mutex<NotchMetrics>,
     session_last_seen: Mutex<HashMap<String, u64>>,
     session_retention_secs: Mutex<u64>,
     session_token_usage: Mutex<HashMap<String, TokenUsage>>,
     token_usage_file_offsets: Mutex<HashMap<String, u64>>,
     token_usage_day: Mutex<String>,
     known_sessions: Mutex<HashMap<String, KnownSession>>,
+    /// pid of the app that was frontmost before Atoll grabbed focus for an
+    /// approval, so focus can be handed back when the user is done (macOS).
+    previous_app_pid: Mutex<Option<i32>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -177,8 +184,20 @@ struct HomeWindowBounds {
     position: LogicalPosition<f64>,
     compact_size: PhysicalSize<u32>,
     monitor_top_y: f64,
+    notch: NotchMetrics,
     #[cfg(target_os = "macos")]
     screen_geometry: Option<MacosScreenGeometry>,
+}
+
+/// Camera-housing ("notch") geometry for the display the island lives on, in
+/// logical points. On non-notched displays `has_notch` is false and the island
+/// keeps its original top-edge layout.
+#[derive(Debug, Clone, Copy, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NotchMetrics {
+    has_notch: bool,
+    width: f64,
+    height: f64,
 }
 
 #[cfg(target_os = "macos")]
@@ -193,7 +212,8 @@ fn get_snapshot(state: State<'_, AppState>) -> IslandSnapshot {
     roll_over_token_usage_if_needed(&state);
     let tracked_sessions = {
         let requests = state.requests.lock().expect("state mutex poisoned");
-        collect_session_transcript_paths(&requests)
+        let known_sessions = state.known_sessions.lock().expect("state mutex poisoned");
+        collect_session_transcript_paths(&requests, &known_sessions)
     };
     for (session_id, transcript_path) in tracked_sessions {
         let _ = refresh_session_token_usage(&state, &session_id, Some(transcript_path.as_str()));
@@ -311,6 +331,11 @@ async fn set_island_presentation(
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+fn get_notch_metrics(state: State<'_, AppState>) -> NotchMetrics {
+    *state.notch_metrics.lock().expect("state mutex poisoned")
 }
 
 #[tauri::command]
@@ -475,7 +500,10 @@ fn extract_transcript_text(entry: &Value) -> String {
     String::new()
 }
 
-fn collect_session_transcript_paths(requests: &[PermissionRequest]) -> Vec<(String, String)> {
+fn collect_session_transcript_paths(
+    requests: &[PermissionRequest],
+    known_sessions: &HashMap<String, KnownSession>,
+) -> Vec<(String, String)> {
     let mut session_paths: HashMap<String, String> = HashMap::new();
     for request in requests {
         let Some(transcript_path) = request.transcript_path.as_deref() else {
@@ -483,6 +511,14 @@ fn collect_session_transcript_paths(requests: &[PermissionRequest]) -> Vec<(Stri
         };
         session_paths
             .entry(request.session.clone())
+            .or_insert_with(|| transcript_path.to_string());
+    }
+    for (session_id, known_session) in known_sessions {
+        let Some(transcript_path) = known_session.transcript_path.as_deref() else {
+            continue;
+        };
+        session_paths
+            .entry(session_id.clone())
             .or_insert_with(|| transcript_path.to_string());
     }
     session_paths.into_iter().collect()
@@ -1095,11 +1131,70 @@ fn quit_atoll(app: AppHandle) {
     exit_atoll(&app);
 }
 
+/// Record the currently frontmost application so focus can be restored to it
+/// once Atoll is done with an approval interaction.
+#[cfg(target_os = "macos")]
+fn remember_frontmost_app(app: &AppHandle) {
+    let own_pid = std::process::id() as i32;
+    unsafe {
+        let Some(ws_class) = objc2::runtime::AnyClass::get(c"NSWorkspace") else {
+            return;
+        };
+        let workspace: *mut objc2::runtime::AnyObject =
+            objc2::msg_send![ws_class, sharedWorkspace];
+        if workspace.is_null() {
+            return;
+        }
+        let front: *mut objc2::runtime::AnyObject =
+            objc2::msg_send![workspace, frontmostApplication];
+        if front.is_null() {
+            return;
+        }
+        let pid: i32 = objc2::msg_send![front, processIdentifier];
+        if pid <= 0 || pid == own_pid {
+            return;
+        }
+        if let Ok(mut guard) = app.state::<AppState>().previous_app_pid.lock() {
+            *guard = Some(pid);
+        }
+    }
+}
+
+/// Activate the app with the given pid (used to hand focus back). Returns
+/// whether activation was issued successfully.
+#[cfg(target_os = "macos")]
+unsafe fn activate_app_by_pid(pid: i32) -> bool {
+    let Some(cls) = objc2::runtime::AnyClass::get(c"NSRunningApplication") else {
+        return false;
+    };
+    let running: *mut objc2::runtime::AnyObject =
+        objc2::msg_send![cls, runningApplicationWithProcessIdentifier: pid];
+    if running.is_null() {
+        return false;
+    }
+    // NSApplicationActivateIgnoringOtherApps = 1 << 1
+    let options: usize = 1 << 1;
+    let ok: objc2::runtime::Bool = objc2::msg_send![running, activateWithOptions: options];
+    ok.as_bool()
+}
+
 #[tauri::command]
-fn deactivate_atoll() {
+fn deactivate_atoll(state: State<'_, AppState>) {
     #[cfg(target_os = "macos")]
     {
+        let previous = state
+            .previous_app_pid
+            .lock()
+            .ok()
+            .and_then(|mut guard| guard.take());
         unsafe {
+            // Prefer handing focus back to the app the user came from.
+            if let Some(pid) = previous {
+                if activate_app_by_pid(pid) {
+                    return;
+                }
+            }
+            // Fallback: just resign our own activation.
             let cls =
                 objc2::runtime::AnyClass::get(c"NSApplication").expect("NSApplication class");
             let ns_app: *mut objc2::runtime::AnyObject =
@@ -1108,6 +1203,10 @@ fn deactivate_atoll() {
                 let _: () = objc2::msg_send![ns_app, deactivate];
             }
         }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = state;
     }
 }
 
@@ -1121,12 +1220,14 @@ pub fn run() {
             compact_width: Mutex::new(COMPACT_WINDOW_WIDTH),
             presentation_generation: Arc::new(AtomicU64::new(0)),
             home_bounds: Mutex::new(None),
+            notch_metrics: Mutex::new(NotchMetrics::default()),
             session_last_seen: Mutex::new(HashMap::new()),
             session_retention_secs: Mutex::new(DEFAULT_SESSION_RETENTION_SECS),
             session_token_usage: Mutex::new(HashMap::new()),
             token_usage_file_offsets: Mutex::new(HashMap::new()),
             token_usage_day: Mutex::new(current_utc_day_key()),
             known_sessions: Mutex::new(HashMap::new()),
+            previous_app_pid: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -1137,6 +1238,7 @@ pub fn run() {
             archive_request,
             archive_all_resolved,
             set_island_presentation,
+            get_notch_metrics,
             get_claude_hook_status,
             install_claude_hooks,
             uninstall_claude_hooks,
@@ -1152,6 +1254,7 @@ pub fn run() {
             hook_bridge::start_server(app.handle().clone());
             start_island_hover_monitor(app.handle().clone());
             start_auto_archive_timer(app.handle().clone());
+            start_token_refresh_timer(app.handle().clone());
 
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_shadow(false);
@@ -1169,6 +1272,9 @@ pub fn run() {
                     let state = app.state::<AppState>();
                     if let Ok(mut home_bounds) = state.home_bounds.lock() {
                         *home_bounds = Some(home);
+                    };
+                    if let Ok(mut notch_metrics) = state.notch_metrics.lock() {
+                        *notch_metrics = home.notch;
                     };
                 }
                 eprintln!("[Atoll] step: setup window complete");
@@ -1221,6 +1327,7 @@ fn tray_menu_entries() -> [(&'static str, &'static str); 2] {
 
 const AUTO_ARCHIVE_INTERVAL: Duration = Duration::from_secs(10);
 const AUTO_ARCHIVE_AGE: Duration = Duration::from_secs(60);
+const TOKEN_REFRESH_INTERVAL: Duration = Duration::from_millis(900);
 
 fn start_auto_archive_timer(app: AppHandle) {
     thread::spawn(move || loop {
@@ -1270,6 +1377,58 @@ fn start_auto_archive_timer(app: AppHandle) {
     });
 }
 
+fn start_token_refresh_timer(app: AppHandle) {
+    thread::spawn(move || loop {
+        thread::sleep(TOKEN_REFRESH_INTERVAL);
+
+        let state = app.state::<AppState>();
+        let tracked_sessions = {
+            let requests = state.requests.lock().unwrap_or_else(|e| e.into_inner());
+            let known_sessions = state.known_sessions.lock().unwrap_or_else(|e| e.into_inner());
+            collect_session_transcript_paths(&requests, &known_sessions)
+        };
+        if tracked_sessions.is_empty() {
+            continue;
+        }
+
+        let usage_before = state
+            .session_token_usage
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+
+        for (session_id, transcript_path) in tracked_sessions {
+            if let Err(error) =
+                refresh_session_token_usage(&state, &session_id, Some(transcript_path.as_str()))
+            {
+                eprintln!("Atoll token usage refresh failed: {error}");
+            }
+        }
+
+        let usage_after = state
+            .session_token_usage
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        if usage_after == usage_before {
+            // Avoid noisy snapshot events when token usage has not changed.
+            continue;
+        }
+
+        roll_over_token_usage_if_needed(&state);
+        let requests = state.requests.lock().unwrap_or_else(|e| e.into_inner());
+        let last_seen = state.session_last_seen.lock().unwrap_or_else(|e| e.into_inner());
+        let retention = *state.session_retention_secs.lock().unwrap_or_else(|e| e.into_inner());
+        let token_usage = state
+            .session_token_usage
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let known_sessions = state.known_sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
+        let _ = app.emit("snapshot-changed", &snapshot);
+    });
+}
+
 fn parse_iso_timestamp_secs(iso: &str) -> u64 {
     // Parse "YYYY-MM-DDTHH:MM:SSZ" to unix seconds (simplified)
     let parts: Vec<&str> = iso.split('T').collect();
@@ -1313,28 +1472,62 @@ fn exit_atoll(app: &AppHandle) {
     std::process::exit(0);
 }
 
-fn show_main_window(app: &AppHandle) {
+fn show_main_window_with_focus(app: &AppHandle, request_focus: bool) {
     if let Some(window) = app.get_webview_window("main") {
         let window_for_main_thread = window.clone();
+        #[cfg(target_os = "macos")]
+        let app_for_focus = app.clone();
         // Permission hooks arrive on a background thread; AppKit window APIs
         // must run on the main thread to avoid macOS crashes.
         let _ = window.run_on_main_thread(move || {
             let _ = window_for_main_thread.show();
+            if request_focus {
+                // Capture who was frontmost *before* we steal focus so we can
+                // restore it after the user resolves the approval.
+                #[cfg(target_os = "macos")]
+                remember_frontmost_app(&app_for_focus);
+                let _ = window_for_main_thread.set_focus();
+            }
             #[cfg(target_os = "macos")]
             {
                 let panel_ptr = panel_store::get_raw();
                 if !panel_ptr.is_null() {
                     unsafe {
+                        let panel_ptr = panel_ptr as *mut objc2::runtime::AnyObject;
                         let _: () = objc2::msg_send![
-                            panel_ptr as *mut objc2::runtime::AnyObject,
+                            panel_ptr,
                             orderFrontRegardless
                         ];
+                        if request_focus {
+                            if let Some(ns_app_class) = objc2::runtime::AnyClass::get(c"NSApplication") {
+                                let ns_app: *mut objc2::runtime::AnyObject =
+                                    objc2::msg_send![ns_app_class, sharedApplication];
+                                if !ns_app.is_null() {
+                                    let _: () = objc2::msg_send![
+                                        ns_app,
+                                        activateIgnoringOtherApps: objc2::runtime::Bool::YES
+                                    ];
+                                }
+                            }
+                            let _: () = objc2::msg_send![
+                                panel_ptr,
+                                makeKeyAndOrderFront: std::ptr::null_mut::<objc2::runtime::AnyObject>()
+                            ];
+                        }
                     }
                 }
             }
         });
         let _ = app.emit("island-open-requested", ());
     }
+}
+
+fn show_main_window(app: &AppHandle) {
+    show_main_window_with_focus(app, false);
+}
+
+pub(crate) fn show_main_window_for_approval(app: &AppHandle) {
+    show_main_window_with_focus(app, true);
 }
 
 fn start_island_hover_monitor(app: AppHandle) {
@@ -1393,31 +1586,38 @@ fn apply_island_window_mode(
 
     apply_macos_island_window_style(window);
     let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
-    window.set_size(island_window_logical_size(mode, compact_width))?;
+
+    let scale_factor = monitor.scale_factor();
+    let monitor_position = monitor.position().to_logical::<f64>(scale_factor);
+    let monitor_size = monitor.size().to_logical::<f64>(scale_factor);
+    let notch = detect_notch_metrics(window, monitor_position.x, monitor_size.width);
+
+    window.set_size(island_window_logical_size(mode, compact_width, notch))?;
     set_island_cursor_events_ignored(window, matches!(
         mode,
         IslandWindowMode::Compact | IslandWindowMode::Dormant
     ));
 
-    let scale_factor = monitor.scale_factor();
-    let monitor_position = monitor.position().to_logical::<f64>(scale_factor);
-    let monitor_size = monitor.size().to_logical::<f64>(scale_factor);
-    let window_size = island_window_physical_size(mode, monitor.scale_factor(), compact_width);
+    let window_size = island_window_physical_size(mode, scale_factor, compact_width, notch);
     let logical_window_size = window_size.to_logical::<f64>(scale_factor);
     let centered_x = monitor_position.x + (monitor_size.width - logical_window_size.width) / 2.0;
-    // Position flush with the top edge of the screen – identical to how iPhone
-    // Dynamic Island sits at the very top.  No camera-housing clearance so the
-    // pill overlaps the notch / menu-bar area.
+    // Keep the window flush with the physical top edge so the capsule overlaps
+    // the notch / menu-bar band; the actual content is pushed below the notch
+    // height inside the web view. On non-notched screens this is unchanged.
     let centered_y = monitor_position.y;
     let position = LogicalPosition::new(centered_x, centered_y);
     let home = HomeWindowBounds {
         position,
+        // Un-notched compact size keeps the animation's scale-factor recovery
+        // (compact_size.width / COMPACT_WINDOW_WIDTH) correct.
         compact_size: island_window_physical_size(
             IslandWindowMode::Compact,
-            monitor.scale_factor(),
+            scale_factor,
             COMPACT_WINDOW_WIDTH,
+            NotchMetrics::default(),
         ),
         monitor_top_y: monitor_position.y,
+        notch,
         #[cfg(target_os = "macos")]
         screen_geometry: macos_screen_geometry(window, monitor_position.x, monitor_size.width),
     };
@@ -1444,12 +1644,17 @@ fn animate_island_window_mode(
         .unwrap_or_else(|| window.scale_factor().unwrap_or(1.0));
     let start_position = window.outer_position()?.to_logical::<f64>(scale_factor);
     let start_size = window.outer_size()?;
-    let target_size = island_window_physical_size(mode, scale_factor, compact_width);
+    let notch = home_bounds.map(|home| home.notch).unwrap_or_default();
+    let target_size = island_window_physical_size(mode, scale_factor, compact_width, notch);
     let target_logical_size = target_size.to_logical::<f64>(scale_factor);
+    // Center every mode on the same axis as the compact capsule (which may be
+    // widened to straddle the notch).
+    let compact_logical_width =
+        island_window_logical_size(IslandWindowMode::Compact, compact_width, notch).width;
     let (target_x, target_y) = home_bounds
         .map(|home| {
             (
-                home.position.x + (COMPACT_WINDOW_WIDTH - target_logical_size.width) / 2.0,
+                home.position.x + (compact_logical_width - target_logical_size.width) / 2.0,
                 home.position.y,
             )
         })
@@ -1517,15 +1722,26 @@ fn interpolate_f64(start: f64, end: f64, progress: f64) -> f64 {
     start + (end - start) * progress
 }
 
-fn island_window_logical_size(mode: IslandWindowMode, compact_width: f64) -> LogicalSize<f64> {
+fn island_window_logical_size(
+    mode: IslandWindowMode,
+    compact_width: f64,
+    notch: NotchMetrics,
+) -> LogicalSize<f64> {
     let compact_width = sanitize_compact_width(compact_width);
+    // Reserve the notch height at the top of the window so the content can sit
+    // *below* the camera housing (the cutout itself has no pixels). The width
+    // keeps following the content so the capsule grows and shrinks with the
+    // number of agents instead of being forced to the notch width.
+    let extra_top = if notch.has_notch { notch.height } else { 0.0 };
     match mode {
         IslandWindowMode::Dormant => {
-            LogicalSize::new(DORMANT_WINDOW_WIDTH, DORMANT_WINDOW_HEIGHT)
+            LogicalSize::new(DORMANT_WINDOW_WIDTH, DORMANT_WINDOW_HEIGHT + extra_top)
         }
-        IslandWindowMode::Compact => LogicalSize::new(compact_width, COMPACT_WINDOW_HEIGHT),
+        IslandWindowMode::Compact => {
+            LogicalSize::new(compact_width, COMPACT_WINDOW_HEIGHT + extra_top)
+        }
         IslandWindowMode::Expanded => {
-            LogicalSize::new(EXPANDED_WINDOW_WIDTH, EXPANDED_WINDOW_HEIGHT)
+            LogicalSize::new(EXPANDED_WINDOW_WIDTH, EXPANDED_WINDOW_HEIGHT + extra_top)
         }
     }
 }
@@ -1534,8 +1750,9 @@ fn island_window_physical_size(
     mode: IslandWindowMode,
     scale_factor: f64,
     compact_width: f64,
+    notch: NotchMetrics,
 ) -> PhysicalSize<u32> {
-    let logical_size = island_window_logical_size(mode, compact_width);
+    let logical_size = island_window_logical_size(mode, compact_width, notch);
 
     PhysicalSize::new(
         (logical_size.width * scale_factor).round() as u32,
@@ -1548,6 +1765,32 @@ fn sanitize_compact_width(width: f64) -> f64 {
         return COMPACT_WINDOW_WIDTH;
     }
     width.clamp(MIN_COMPACT_WINDOW_WIDTH, EXPANDED_WINDOW_WIDTH)
+}
+
+/// A display has a camera housing ("notch") when the two menu-bar halves
+/// (auxiliary top areas) don't span the full screen width — the gap between
+/// them is the notch.
+fn has_camera_housing(frame_width: f64, aux_left_width: f64, aux_right_width: f64) -> bool {
+    aux_left_width > 0.0
+        && aux_right_width > 0.0
+        && aux_left_width + aux_right_width < frame_width - 1.0
+}
+
+/// Notch width in logical points, derived from the gap between the auxiliary
+/// menu-bar areas (matches ping-island's detection). Falls back when the
+/// auxiliary areas are unavailable.
+fn notch_logical_width(
+    frame_width: f64,
+    aux_left_width: f64,
+    aux_right_width: f64,
+    fallback: f64,
+) -> f64 {
+    if aux_left_width > 0.0 && aux_right_width > 0.0 {
+        let detected = (frame_width - aux_left_width - aux_right_width + 4.0).ceil();
+        detected.max(fallback)
+    } else {
+        fallback
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -1595,6 +1838,48 @@ fn macos_screen_geometry(
             height: frame.size.height,
         }
     })
+}
+
+#[cfg(target_os = "macos")]
+fn detect_notch_metrics(
+    window: &tauri::WebviewWindow,
+    monitor_x: f64,
+    monitor_width: f64,
+) -> NotchMetrics {
+    with_nsscreen_for_monitor(window, monitor_x, monitor_width, |screen| {
+        let safe_top = screen.safeAreaInsets().top;
+        if safe_top <= 0.0 {
+            return NotchMetrics::default();
+        }
+        let frame = screen.frame();
+        // `auxiliaryTop*Area` returns NSZeroRect (width 0) when there is no
+        // notch / menu bar on this screen.
+        let aux_left_width = screen.auxiliaryTopLeftArea().size.width;
+        let aux_right_width = screen.auxiliaryTopRightArea().size.width;
+        if !has_camera_housing(frame.size.width, aux_left_width, aux_right_width) {
+            return NotchMetrics::default();
+        }
+        NotchMetrics {
+            has_notch: true,
+            width: notch_logical_width(
+                frame.size.width,
+                aux_left_width,
+                aux_right_width,
+                FALLBACK_NOTCH_WIDTH,
+            ),
+            height: safe_top.ceil(),
+        }
+    })
+    .unwrap_or_default()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn detect_notch_metrics(
+    _window: &tauri::WebviewWindow,
+    _monitor_x: f64,
+    _monitor_width: f64,
+) -> NotchMetrics {
+    NotchMetrics::default()
 }
 
 fn set_island_cursor_events_ignored(window: &tauri::WebviewWindow, ignore: bool) {
@@ -1856,6 +2141,27 @@ fn promote_to_floating_panel(ns_window: &objc2_app_kit::NSWindow) {
                 imp,
                 objc2::ffi::method_getTypeEncoding(m),
             );
+        }
+
+        // A borderless non-activating NSPanel reports canBecomeKeyWindow == NO
+        // by default, which silently swallows makeKeyAndOrderFront and leaves
+        // the WKWebView unable to receive keyboard input. Force it to YES so
+        // approval shortcuts work whenever we explicitly request focus.
+        extern "C-unwind" fn always_yes(_w: *mut NSWindow, _s: Sel) -> Bool {
+            Bool::YES
+        }
+        for key_sel in [sel!(canBecomeKeyWindow), sel!(canBecomeMainWindow)] {
+            if let Some(m) = panel_class.instance_method(key_sel) {
+                let imp: Imp = std::mem::transmute(
+                    always_yes as extern "C-unwind" fn(*mut NSWindow, Sel) -> Bool,
+                );
+                objc2::ffi::class_replaceMethod(
+                    panel_class as *const AnyClass as *mut AnyClass,
+                    key_sel,
+                    imp,
+                    objc2::ffi::method_getTypeEncoding(m),
+                );
+            }
         }
 
         // ── Move the WKWebView from the Tauri window into the panel ──
@@ -2293,7 +2599,11 @@ mod core_tests {
 
     #[test]
     fn expanded_window_is_560_by_320() {
-        let size = island_window_logical_size(IslandWindowMode::Expanded, COMPACT_WINDOW_WIDTH);
+        let size = island_window_logical_size(
+            IslandWindowMode::Expanded,
+            COMPACT_WINDOW_WIDTH,
+            NotchMetrics::default(),
+        );
 
         assert_eq!(size, LogicalSize::new(560.0, 320.0));
     }
@@ -2315,41 +2625,51 @@ mod core_tests {
     }
 
     #[test]
-    fn island_uses_the_historical_menu_bar_anchor() {
-        assert_eq!(island_top_y_from_offsets(0.0, 30.0, 30.0), 0.0);
-        assert_eq!(island_top_y_from_offsets(-180.0, 30.0, 30.0), -180.0);
-    }
-
-    #[test]
-    fn camera_housing_clearance_applies_only_when_centered_island_overlaps() {
-        assert_eq!(camera_housing_top_clearance(true, true, 38.0), 38.0);
-        assert_eq!(camera_housing_top_clearance(true, false, 38.0), 0.0);
-        assert_eq!(camera_housing_top_clearance(false, true, 38.0), 0.0);
-        assert_eq!(camera_housing_top_clearance(true, true, -4.0), 0.0);
-    }
-
-    #[test]
     fn camera_housing_is_detected_from_auxiliary_top_areas() {
+        // Notch present: the menu-bar halves leave a gap (the housing).
         assert!(has_camera_housing(1512.0, 700.0, 700.0));
+        // No notch: the halves span the full width.
         assert!(!has_camera_housing(1512.0, 756.0, 756.0));
+        // Missing auxiliary areas are treated as "no notch".
+        assert!(!has_camera_housing(1512.0, 0.0, 0.0));
     }
 
     #[test]
-    fn centered_island_overlaps_camera_housing() {
-        let housing_left = 700.0;
-        let housing_right = 812.0;
-        assert!(island_overlaps_camera_housing(
-            690.0,
+    fn notch_width_never_drops_below_the_fallback_floor() {
+        // 1512 - 700 - 700 + 4 = 116, clamped up to the fallback floor.
+        assert_eq!(
+            notch_logical_width(1512.0, 700.0, 700.0, FALLBACK_NOTCH_WIDTH),
+            FALLBACK_NOTCH_WIDTH
+        );
+        // A wider gap is reported verbatim once it exceeds the floor.
+        assert_eq!(notch_logical_width(1512.0, 600.0, 600.0, 200.0), 316.0);
+        // Without auxiliary areas we fall back.
+        assert_eq!(notch_logical_width(1512.0, 0.0, 0.0, 200.0), 200.0);
+    }
+
+    #[test]
+    fn notched_display_reserves_top_inset_without_widening() {
+        let notch = NotchMetrics {
+            has_notch: true,
+            width: 200.0,
+            height: 38.0,
+        };
+        let compact = island_window_logical_size(IslandWindowMode::Compact, 132.0, notch);
+        // Height grows by the notch height so content can sit below the cutout.
+        assert_eq!(compact.height, COMPACT_WINDOW_HEIGHT + 38.0);
+        // Width keeps following the content (the capsule stays centered under
+        // the notch) instead of being inflated to the notch width.
+        assert_eq!(compact.width, 132.0);
+    }
+
+    #[test]
+    fn non_notched_display_keeps_original_compact_size() {
+        let compact = island_window_logical_size(
+            IslandWindowMode::Compact,
             132.0,
-            housing_left,
-            housing_right
-        ));
-        assert!(!island_overlaps_camera_housing(
-            500.0,
-            132.0,
-            housing_left,
-            housing_right
-        ));
+            NotchMetrics::default(),
+        );
+        assert_eq!(compact, LogicalSize::new(132.0, COMPACT_WINDOW_HEIGHT));
     }
 
     #[test]
@@ -2517,24 +2837,13 @@ mod hook_bridge_tests {
     }
 
     #[test]
-    fn leaves_ambiguous_pending_requests_when_post_tool_use_has_no_match_fields() {
+    fn falls_back_to_newest_session_pending_when_post_tool_use_has_no_match_fields() {
+        // Requests are stored newest-first (see `requests.insert(0, …)`), so a
+        // PostToolUse that carries no match fields falls back to completing the
+        // session's newest pending request and leaves the older ones pending.
         let mut requests = vec![
             crate::PermissionRequest {
-                id: "request-1".into(),
-                tool_use_id: None,
-                agent: crate::AgentKind::Claude,
-                session: "session-123".into(),
-                command: "Bash: echo one".into(),
-                detail: "one".into(),
-                cwd: "/tmp/project".into(),
-                requested_at: "2026-06-09T09:00:00Z".into(),
-                status: crate::PermissionStatus::Pending,
-                archived: false,
-                supports_always: false,
-                transcript_path: None,
-            },
-            crate::PermissionRequest {
-                id: "request-2".into(),
+                id: "request-newer".into(),
                 tool_use_id: None,
                 agent: crate::AgentKind::Claude,
                 session: "session-123".into(),
@@ -2542,6 +2851,20 @@ mod hook_bridge_tests {
                 detail: "two".into(),
                 cwd: "/tmp/project".into(),
                 requested_at: "2026-06-09T09:00:01Z".into(),
+                status: crate::PermissionStatus::Pending,
+                archived: false,
+                supports_always: false,
+                transcript_path: None,
+            },
+            crate::PermissionRequest {
+                id: "request-older".into(),
+                tool_use_id: None,
+                agent: crate::AgentKind::Claude,
+                session: "session-123".into(),
+                command: "Bash: echo one".into(),
+                detail: "one".into(),
+                cwd: "/tmp/project".into(),
+                requested_at: "2026-06-09T09:00:00Z".into(),
                 status: crate::PermissionStatus::Pending,
                 archived: false,
                 supports_always: false,
@@ -2557,8 +2880,8 @@ mod hook_bridge_tests {
         let completed_id =
             crate::hook_bridge::mark_matching_pending_request_complete(&mut requests, &payload);
 
-        assert_eq!(completed_id, None);
-        assert_eq!(requests[0].status, crate::PermissionStatus::Pending);
+        assert_eq!(completed_id.as_deref(), Some("request-newer"));
+        assert_eq!(requests[0].status, crate::PermissionStatus::Approved);
         assert_eq!(requests[1].status, crate::PermissionStatus::Pending);
     }
 

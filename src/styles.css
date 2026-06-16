@@ -783,6 +783,7 @@ kbd {
   position: relative;
   display: inline-flex;
   align-items: center;
+  isolation: isolate;
 }
 
 .token-counter {
@@ -821,29 +822,49 @@ kbd {
 
 .token-counter-delta {
   position: absolute;
-  right: -2px;
-  top: -11px;
-  color: #a8deff;
+  inset: 0;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  padding: 0 6px;
+  color: #042436;
+  background: linear-gradient(135deg, #9ee9b8, #7edbff);
+  box-shadow:
+    0 0 16px rgba(105, 202, 255, 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.42);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 10px rgba(158, 219, 255, 0.55);
+  letter-spacing: 0;
+  white-space: nowrap;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.28);
   pointer-events: none;
-  animation: token-delta-pop 640ms ease-out forwards;
+  will-change: transform, opacity, filter;
+  animation: token-delta-pop 860ms var(--ease-out) forwards;
 }
 
 @keyframes token-delta-pop {
   0% {
     opacity: 0;
-    transform: translateY(3px) scale(0.9);
+    transform: translate3d(0, 0, 0) scale(0.82);
+    filter: saturate(0.8) blur(0.3px);
   }
-  18% {
+  22% {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translate3d(0, 0, 0) scale(1.05);
+    filter: saturate(1.14) blur(0);
+  }
+  66% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: saturate(1.05) blur(0);
   }
   100% {
     opacity: 0;
-    transform: translateY(-11px) scale(1.02);
+    transform: translate3d(0, 0, 0) scale(0.95);
+    filter: saturate(0.92) blur(0);
   }
 }
 
@@ -1097,6 +1118,40 @@ kbd {
 
 .tauri-runtime .is-closing .island-panel {
   transform: translate3d(-50%, -8px, 0);
+}
+
+/* ─── Notch adaptation (MacBook camera housing) ───────────────── */
+/* On notched displays the window is flush with the physical top edge and the
+   capsule is wider/taller than the notch (sized in Rust). The black body
+   covers the camera-housing band so it fuses with the notch, while the actual
+   content is pushed below it. Driven by --notch-height / --notch-width, which
+   are set from NSScreen safe-area metrics; absent on non-notched screens. */
+
+.tauri-runtime.has-notch .island {
+  /* Pure black across the notch band so the capsule blends into the housing,
+     then the normal surface gradient below it. */
+  background:
+    linear-gradient(
+      180deg,
+      #000 0,
+      #000 var(--notch-height, 0px),
+      var(--surface-2) var(--notch-height, 0px),
+      var(--surface-base)
+    );
+}
+
+.tauri-runtime.has-notch .island-header {
+  margin-top: var(--notch-height, 0px);
+}
+
+.tauri-runtime.has-notch .island-panel {
+  top: calc(60px + var(--notch-height, 0px));
+}
+
+/* Dormant handle: keep the tiny grab handle just below the notch. */
+.tauri-runtime.has-notch .is-dormant .island-header {
+  margin-top: var(--notch-height, 0px);
+  height: calc(100% - var(--notch-height, 0px));
 }
 
 /* ─── Approval View ───────────────────────────────────────────── */
