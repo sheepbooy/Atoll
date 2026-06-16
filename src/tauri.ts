@@ -29,6 +29,7 @@ export interface IslandSnapshot {
 
 export interface SessionSummary {
   sessionId: string;
+  agent: AgentKind;
   cwd: string;
   pendingCount: number;
   totalCount: number;
@@ -166,12 +167,15 @@ export async function quitAtoll() {
   return invoke<void>("quit_atoll");
 }
 
-export async function setIslandPresentation(mode: "compact" | "expanded") {
+export async function setIslandPresentation(
+  mode: "compact" | "expanded",
+  compactWidth?: number,
+) {
   if (!isTauriRuntime) {
     return;
   }
 
-  return invoke<void>("set_island_presentation", { mode });
+  return invoke<void>("set_island_presentation", { mode, compactWidth });
 }
 
 export async function onSnapshotChanged(callback: (snapshot: IslandSnapshot) => void) {

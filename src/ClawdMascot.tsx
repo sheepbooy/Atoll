@@ -19,9 +19,17 @@ interface ClawdMascotProps {
   mood: ClawdMood;
   size?: number;
   className?: string;
+  accent?: string;
+  accentDark?: string;
 }
 
-export function ClawdMascot({ mood, size, className }: ClawdMascotProps) {
+export function ClawdMascot({
+  mood,
+  size,
+  className,
+  accent,
+  accentDark,
+}: ClawdMascotProps) {
   const [blinking, setBlinking] = useState(false);
 
   useEffect(() => {
@@ -37,8 +45,9 @@ export function ClawdMascot({ mood, size, className }: ClawdMascotProps) {
   }, [mood]);
 
   const isSick = mood === "worried";
-  const body = isSick ? SICK : BODY;
-  const dark = isSick ? SICK_DARK : DARK;
+  const body = isSick ? SICK : accent ?? BODY;
+  const bodyTop = isSick ? SICK : accent ?? BODY_TOP;
+  const dark = isSick ? SICK_DARK : accentDark ?? DARK;
   const eyeHeight = blinking ? 2.4 : 16;
 
   const wrapperStyle = size
@@ -66,7 +75,7 @@ export function ClawdMascot({ mood, size, className }: ClawdMascotProps) {
           <rect className="clawd-claw clawd-claw-right" x={104} y={25.6} width={12} height={14.4} fill={body} />
 
           <rect x={8} y={0} width={96} height={56} fill={body} />
-          <rect x={8} y={0} width={96} height={9} fill={BODY_TOP} />
+          <rect x={8} y={0} width={96} height={9} fill={bodyTop} />
 
           {mood === "sleeping" ? (
             <>
