@@ -178,6 +178,20 @@ export async function setIslandPresentation(
   return invoke<void>("set_island_presentation", { mode, compactWidth });
 }
 
+export async function getSessionRetention(): Promise<number> {
+  if (isTauriRuntime) {
+    return invoke<number>("get_session_retention");
+  }
+  return 300;
+}
+
+export async function setSessionRetention(minutes: number): Promise<number> {
+  if (isTauriRuntime) {
+    return invoke<number>("set_session_retention", { minutes });
+  }
+  return minutes * 60;
+}
+
 export async function onSnapshotChanged(callback: (snapshot: IslandSnapshot) => void) {
   if (!isTauriRuntime) {
     return () => undefined;

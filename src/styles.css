@@ -59,6 +59,10 @@
   /* Timing */
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Mirrors the Rust window-resize easing (ease_out_cubic). Everything that
+     must stay glued to the native window frame while it grows/shrinks uses
+     this curve + --duration-expand so the frame and DOM never drift apart. */
+  --ease-window: cubic-bezier(0.33, 1, 0.68, 1);
   --duration-fast: 150ms;
   --duration-normal: 280ms;
   --duration-expand: 420ms;
@@ -180,9 +184,9 @@ kbd {
   overflow: hidden;
   pointer-events: auto;
   transition:
-    width var(--duration-expand) var(--ease-spring),
-    height var(--duration-expand) var(--ease-spring),
-    border-radius var(--duration-expand) var(--ease-spring),
+    width var(--duration-expand) var(--ease-window),
+    height var(--duration-expand) var(--ease-window),
+    border-radius var(--duration-expand) var(--ease-window),
     box-shadow 300ms ease;
   will-change: width, height, border-radius;
 }
@@ -232,14 +236,14 @@ kbd {
   height: 100%;
   will-change: border-radius;
   transition:
-    border-radius var(--duration-expand) var(--ease-spring),
+    border-radius var(--duration-expand) var(--ease-window),
     box-shadow 300ms ease;
 }
 
 .tauri-runtime .island.is-closing {
   border-radius: 0 0 15px 15px;
   transition:
-    border-radius var(--duration-expand) var(--ease-spring),
+    border-radius var(--duration-expand) var(--ease-window),
     box-shadow 300ms ease;
 }
 
@@ -273,10 +277,9 @@ kbd {
   cursor: pointer;
   user-select: none;
   transition:
-    height var(--duration-expand) var(--ease-spring),
-    padding var(--duration-expand) var(--ease-spring),
-    gap var(--duration-expand) var(--ease-spring),
-    grid-template-columns var(--duration-expand) var(--ease-spring);
+    height var(--duration-expand) var(--ease-window),
+    padding var(--duration-expand) var(--ease-window),
+    gap var(--duration-expand) var(--ease-window);
 }
 
 .is-expanded .island-header {
@@ -403,31 +406,42 @@ kbd {
 
 .compact-session-dot {
   display: inline-flex;
-  width: 18px;
+  width: 20px;
   height: 18px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  color: #0d0e0b;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+  border-radius: 4px;
 }
 
 .compact-session-dot.coral {
-  background: linear-gradient(150deg, #ff9286, var(--accent-coral) 56%, #e56a5e);
+  background: none;
 }
 .compact-session-dot.cyan {
-  background: linear-gradient(150deg, #8ee6ff, var(--accent-cyan) 56%, #45c5ee);
+  background: none;
 }
 .compact-session-dot.lime {
-  background: linear-gradient(150deg, #c8f098, var(--accent-lime) 56%, #93d75e);
+  background: none;
 }
 .compact-session-dot.neutral {
-  background: linear-gradient(150deg, #ddd4ff, var(--accent-violet) 56%, #b6a8ff);
+  background: none;
+}
+.compact-session-dot.amber {
+  background: none;
+}
+.compact-session-dot.pink {
+  background: none;
+}
+.compact-session-dot.teal {
+  background: none;
+}
+.compact-session-dot.blue {
+  background: none;
 }
 
 .compact-session-dot.has-pending {
-  box-shadow: 0 0 0 1px rgba(248, 221, 160, 0.8);
+  background: rgba(248, 221, 160, 0.15);
+  box-shadow: 0 0 0 1px rgba(248, 221, 160, 0.6);
 }
 
 .compact-session-overflow {
@@ -589,8 +603,8 @@ kbd {
   width: 19px;
   height: 17px;
   transition:
-    width var(--duration-expand) var(--ease-spring),
-    height var(--duration-expand) var(--ease-spring);
+    width var(--duration-expand) var(--ease-window),
+    height var(--duration-expand) var(--ease-window);
 }
 
 .is-expanded .agent-slot .clawd {
@@ -681,7 +695,7 @@ kbd {
   transform-origin: left center;
   backface-visibility: hidden;
   will-change: transform;
-  transition: transform var(--duration-expand) var(--ease-spring);
+  transition: transform var(--duration-expand) var(--ease-window);
 }
 
 .is-expanded .header-title {
@@ -760,8 +774,8 @@ kbd {
   align-items: center;
   justify-content: center;
   transition:
-    width var(--duration-expand) var(--ease-spring),
-    height var(--duration-expand) var(--ease-spring);
+    width var(--duration-expand) var(--ease-window),
+    height var(--duration-expand) var(--ease-window);
 }
 
 .is-expanded .pending-badge-slot {
@@ -787,7 +801,7 @@ kbd {
   transform-origin: center;
   backface-visibility: hidden;
   will-change: transform;
-  transition: transform var(--duration-expand) var(--ease-spring);
+  transition: transform var(--duration-expand) var(--ease-window);
   --breathe-color: rgba(248, 221, 160, 0.5);
   --breathe-color-end: rgba(248, 221, 160, 0);
   animation: breathe 2.2s ease-in-out infinite;
@@ -969,8 +983,8 @@ kbd {
   backface-visibility: hidden;
   will-change: opacity, transform;
   transition:
-    opacity 260ms ease,
-    transform 360ms var(--ease-spring);
+    opacity var(--duration-normal) var(--ease-window),
+    transform var(--duration-expand) var(--ease-window);
 }
 
 .tauri-runtime .island-panel {
@@ -1085,6 +1099,10 @@ kbd {
 .agent-label.cyan { color: var(--accent-cyan); background: rgba(111, 220, 255, 0.13); }
 .agent-label.lime { color: var(--accent-lime); background: rgba(178, 234, 126, 0.13); }
 .agent-label.neutral { color: var(--accent-violet); background: rgba(205, 193, 255, 0.13); }
+.agent-label.amber { color: #f0c060; background: rgba(240, 192, 96, 0.14); }
+.agent-label.pink { color: #f7a0c8; background: rgba(247, 160, 200, 0.14); }
+.agent-label.teal { color: #70d8c8; background: rgba(112, 216, 200, 0.14); }
+.agent-label.blue { color: #80b0f8; background: rgba(128, 176, 248, 0.14); }
 
 /* Risk pill */
 .risk-pill {
@@ -1483,6 +1501,26 @@ kbd {
 .session-agent-pill.neutral {
   color: var(--accent-violet);
   background: rgba(205, 193, 255, 0.15);
+}
+
+.session-agent-pill.amber {
+  color: #f0c060;
+  background: rgba(240, 192, 96, 0.15);
+}
+
+.session-agent-pill.pink {
+  color: #f7a0c8;
+  background: rgba(247, 160, 200, 0.15);
+}
+
+.session-agent-pill.teal {
+  color: #70d8c8;
+  background: rgba(112, 216, 200, 0.15);
+}
+
+.session-agent-pill.blue {
+  color: #80b0f8;
+  background: rgba(128, 176, 248, 0.15);
 }
 
 .session-item-trail {

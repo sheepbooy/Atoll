@@ -16,15 +16,10 @@ import {
   Power,
   Settings2,
   SendHorizonal,
-  ShieldAlert,
   Plus,
   TriangleAlert,
   Trash2,
   X,
-  Zap,
-  Terminal,
-  Bot,
-  Sparkles,
 } from "lucide-react";
 import {
   beginCollapse,
@@ -57,6 +52,8 @@ import {
   getClaudeHookStatus,
   installClaudeHooks,
   uninstallClaudeHooks,
+  getSessionRetention,
+  setSessionRetention,
 } from "./tauri";
 
 type Decision = "approved" | "denied";
@@ -67,12 +64,16 @@ type PanelView =
   | { kind: "settings" };
 
 const COMPACT_ICON_SETTING_KEY = "atoll.maxCompactIcons";
+const RETENTION_SETTING_KEY = "atoll.sessionRetentionMinutes";
 const DEFAULT_MAX_COMPACT_ICONS = 4;
 const MIN_MAX_COMPACT_ICONS = 1;
 const MAX_MAX_COMPACT_ICONS = 8;
+const DEFAULT_RETENTION_MINUTES = 5;
+const MIN_RETENTION_MINUTES = 1;
+const MAX_RETENTION_MINUTES = 30;
 const COMPACT_WIDTH_MIN = 96;
 const COMPACT_WIDTH_BASE = 52;
-const COMPACT_WIDTH_ICON_SIZE = 18;
+const COMPACT_WIDTH_ICON_SIZE = 20;
 const COMPACT_WIDTH_ICON_GAP = 4;
 const COMPACT_WIDTH_OVERFLOW = 32;
 const COMPACT_WIDTH_PENDING = 28;
@@ -93,6 +94,24 @@ function readCompactIconLimit() {
     return clampCompactIconLimit(raw);
   } catch {
     return DEFAULT_MAX_COMPACT_ICONS;
+  }
+}
+
+function clampRetentionMinutes(value: number) {
+  return Math.min(
+    MAX_RETENTION_MINUTES,
+    Math.max(MIN_RETENTION_MINUTES, Math.round(value)),
+  );
+}
+
+function readRetentionMinutes() {
+  if (typeof window === "undefined") return DEFAULT_RETENTION_MINUTES;
+  try {
+    const raw = Number(window.localStorage.getItem(RETENTION_SETTING_KEY));
+    if (!Number.isFinite(raw)) return DEFAULT_RETENTION_MINUTES;
+    return clampRetentionMinutes(raw);
+  } catch {
+    return DEFAULT_RETENTION_MINUTES;
   }
 }
 
@@ -141,13 +160,6 @@ const agentTone: Record<AgentKind, string> = {
   other: "neutral",
 };
 
-const agentIcons: Record<AgentKind, typeof Bot> = {
-  claude: Sparkles,
-  codex: Terminal,
-  gemini: Zap,
-  other: Bot,
-};
-
 const agentSortRank: Record<AgentKind, number> = {
   claude: 0,
   codex: 1,
@@ -166,6 +178,46 @@ const agentMascotDark: Record<AgentKind, string | undefined> = {
   gemini: "#7aa44d",
   other: "#9182d1",
 };
+
+type SessionTone =
+  | "coral"
+  | "cyan"
+  | "lime"
+  | "neutral"
+  | "amber"
+  | "pink"
+  | "teal"
+  | "blue";
+
+interface SessionColor {
+  tone: SessionTone;
+  accent: string;
+  accentDark: string;
+}
+
+const SESSION_PALETTE: SessionColor[] = [
+  { tone: "coral", accent: "#e8765a", accentDark: "#b85a42" },
+  { tone: "cyan", accent: "#61d8f7", accentDark: "#3d9fb8" },
+  { tone: "lime", accent: "#b2e578", accentDark: "#7aa44d" },
+  { tone: "neutral", accent: "#c9bcff", accentDark: "#9182d1" },
+  { tone: "amber", accent: "#f0c060", accentDark: "#b89040" },
+  { tone: "pink", accent: "#f7a0c8", accentDark: "#c07098" },
+  { tone: "teal", accent: "#70d8c8", accentDark: "#48a898" },
+  { tone: "blue", accent: "#80b0f8", accentDark: "#5888d0" },
+];
+
+function sessionColorIndex(sessionId: string): number {
+  if (!sessionId) return 0;
+  let hash = 0;
+  for (let i = 0; i < sessionId.length; i += 1) {
+    hash = ((hash << 5) - hash + sessionId.charCodeAt(i)) | 0;
+  }
+  return ((hash % SESSION_PALETTE.length) + SESSION_PALETTE.length) % SESSION_PALETTE.length;
+}
+
+function getSessionColor(sessionId: string): SessionColor {
+  return SESSION_PALETTE[sessionColorIndex(sessionId)];
+}
 
 type RiskLevel = "danger" | "caution";
 
@@ -245,6 +297,7 @@ export function App() {
   const [hookBusy, setHookBusy] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<AgentKind | null>(null);
   const [maxCompactIcons, setMaxCompactIcons] = useState<number>(() => readCompactIconLimit());
+  const [retentionMinutes, setRetentionMinutes] = useState<number>(() => readRetentionMinutes());
   const [justResolved, setJustResolved] = useState(false);
   const prevPendingRef = useRef(0);
   const selectedAgentRef = useRef<AgentKind | null>(null);
@@ -318,6 +371,7 @@ export function App() {
     getClaudeHookStatus()
       .then(setHookStatus)
       .catch(() => undefined);
+    setSessionRetention(readRetentionMinutes()).catch(() => undefined);
     onSnapshotChanged(applySnapshot).then((cleanup) => {
       unsubscribe = cleanup;
     });
@@ -438,6 +492,18 @@ export function App() {
       // ignore local storage errors
     }
   }, [maxCompactIcons]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        RETENTION_SETTING_KEY,
+        String(retentionMinutes),
+      );
+    } catch {
+      // ignore local storage errors
+    }
+    setSessionRetention(retentionMinutes).catch(() => undefined);
+  }, [retentionMinutes]);
 
   useEffect(() => {
     if (panelView.kind !== "session") return;
@@ -595,10 +661,13 @@ export function App() {
 
   function scheduleIdleCollapse() {
     clearIdleTimer();
+    // Only an active text field (e.g. the reply input) should hold the island
+    // open once the pointer leaves. A lingering button focus — e.g. after
+    // tapping "View session" — must NOT block the idle collapse.
     if (
       hoveringRef.current ||
-      focusedRef.current ||
-      snapshotRef.current.pendingCount > 0
+      snapshotRef.current.pendingCount > 0 ||
+      isTextEntryActive()
     ) {
       return;
     }
@@ -607,8 +676,8 @@ export function App() {
       idleTimerRef.current = null;
       if (
         !hoveringRef.current &&
-        !focusedRef.current &&
-        snapshotRef.current.pendingCount === 0
+        snapshotRef.current.pendingCount === 0 &&
+        !isTextEntryActive()
       ) {
         collapseIsland();
       }
@@ -747,6 +816,10 @@ export function App() {
           onChangeMaxCompactIcons={(nextValue) =>
             setMaxCompactIcons(clampCompactIconLimit(nextValue))
           }
+          retentionMinutes={retentionMinutes}
+          onChangeRetentionMinutes={(nextValue) =>
+            setRetentionMinutes(clampRetentionMinutes(nextValue))
+          }
         />
       );
     }
@@ -830,6 +903,8 @@ export function App() {
                     sessions={sessions}
                     maxCompactIcons={maxCompactIcons}
                     online={snapshot.online}
+                    activeRequest={activeRequest}
+                    justResolved={justResolved}
                   />
                 )}
               </>
@@ -937,12 +1012,16 @@ interface CompactSessionStackProps {
   sessions: SessionSummary[];
   maxCompactIcons: number;
   online: boolean;
+  activeRequest: PermissionRequest | null;
+  justResolved: boolean;
 }
 
 function CompactSessionStack({
   sessions,
   maxCompactIcons,
   online,
+  activeRequest,
+  justResolved,
 }: CompactSessionStackProps) {
   const shown = sessions.slice(0, maxCompactIcons);
   const overflow = sessions.length - shown.length;
@@ -960,19 +1039,27 @@ function CompactSessionStack({
 
   return (
     <span className="compact-session-stack" aria-hidden="true">
-      {shown.map((session) => (
-        <span
-          key={session.sessionId}
-          className={`compact-session-dot ${agentTone[session.agent]} ${
-            session.pendingCount > 0 ? "has-pending" : ""
-          }`}
-          title={`${agentLabels[session.agent]} · ${sessionDisplayName(
-            session.cwd,
-          )}`}
-        >
-          {renderCompactSessionGlyph(session)}
-        </span>
-      ))}
+      {shown.map((session) => {
+        const sessionColor = getSessionColor(session.sessionId);
+        return (
+          <span
+            key={session.sessionId}
+            className={`compact-session-dot ${sessionColor.tone} ${
+              session.pendingCount > 0 ? "has-pending" : ""
+            }`}
+            title={`${agentLabels[session.agent]} · ${sessionDisplayName(
+              session.cwd,
+            )}`}
+          >
+            <ClawdMascot
+              mood={deriveSessionMood(session, activeRequest, justResolved)}
+              accent={sessionColor.accent}
+              accentDark={sessionColor.accentDark}
+              size={16}
+            />
+          </span>
+        );
+      })}
       {overflow > 0 ? (
         <span className="compact-session-overflow">✖️{overflow}</span>
       ) : null}
@@ -1007,11 +1094,16 @@ function AgentTabBar({
 
   const active = selectedAgent ?? agents[0];
   if (!showTabs) {
-    const Icon = agentIcons[active];
     const pending = pendingCountByAgent[active] ?? 0;
+    const mood: ClawdMood = pending > 0 ? "alert" : "calm";
     return (
       <span className={`agent-tab is-static ${agentTone[active]}`} data-no-drag>
-        <Icon size={13} />
+        <ClawdMascot
+          mood={mood}
+          accent={agentMascotAccent[active]}
+          accentDark={agentMascotDark[active]}
+          size={14}
+        />
         <span>{agentLabels[active]}</span>
         {pending > 0 ? <span className="agent-tab-pending">{pending}</span> : null}
       </span>
@@ -1021,9 +1113,9 @@ function AgentTabBar({
   return (
     <div className="agent-tabbar" data-no-drag>
       {agents.map((agent) => {
-        const Icon = agentIcons[agent];
         const pending = pendingCountByAgent[agent] ?? 0;
         const isActive = agent === active;
+        const mood: ClawdMood = pending > 0 ? "alert" : "calm";
         return (
           <button
             key={agent}
@@ -1031,7 +1123,12 @@ function AgentTabBar({
             className={`agent-tab ${isActive ? "is-active" : ""} ${agentTone[agent]}`}
             onClick={() => onSelectAgent(agent)}
           >
-            <Icon size={13} />
+            <ClawdMascot
+              mood={mood}
+              accent={agentMascotAccent[agent]}
+              accentDark={agentMascotDark[agent]}
+              size={14}
+            />
             <span>{agentLabels[agent]}</span>
             {pending > 0 ? <span className="agent-tab-pending">{pending}</span> : null}
           </button>
@@ -1058,44 +1155,47 @@ function SessionListView({ sessions, activeRequest, justResolved, onSelectSessio
         <span>{sessions.length} session{sessions.length > 1 ? "s" : ""}</span>
       </div>
       <div className="session-list">
-        {sessions.map((session) => (
-          <button
-            key={session.sessionId}
-            className="session-item"
-            type="button"
-            onClick={() => onSelectSession(session.sessionId)}
-          >
-            <div className="session-item-left">
-              <span className="session-clawd">
-                <ClawdMascot
-                  mood={deriveSessionMood(session, activeRequest, justResolved)}
-                  accent={agentMascotAccent[session.agent]}
-                  accentDark={agentMascotDark[session.agent]}
-                />
-              </span>
-              <div className="session-item-info">
-                <span className="session-item-name">
-                  {sessionDisplayName(session.cwd)}
+        {sessions.map((session) => {
+          const sessionColor = getSessionColor(session.sessionId);
+          return (
+            <button
+              key={session.sessionId}
+              className="session-item"
+              type="button"
+              onClick={() => onSelectSession(session.sessionId)}
+            >
+              <div className="session-item-left">
+                <span className="session-clawd">
+                  <ClawdMascot
+                    mood={deriveSessionMood(session, activeRequest, justResolved)}
+                    accent={sessionColor.accent}
+                    accentDark={sessionColor.accentDark}
+                  />
                 </span>
-                <span className="session-item-meta">
-                  {session.cwd}
-                  <span className="meta-divider">·</span>
-                  <span className={`session-agent-pill ${agentTone[session.agent]}`}>
-                    {agentLabels[session.agent]}
+                <div className="session-item-info">
+                  <span className="session-item-name">
+                    {sessionDisplayName(session.cwd)}
                   </span>
-                  <span className="meta-divider">·</span>
-                  {timeAgo(session.lastActivity)}
-                </span>
+                  <span className="session-item-meta">
+                    {session.cwd}
+                    <span className="meta-divider">·</span>
+                    <span className={`session-agent-pill ${sessionColor.tone}`}>
+                      {agentLabels[session.agent]}
+                    </span>
+                    <span className="meta-divider">·</span>
+                    {timeAgo(session.lastActivity)}
+                  </span>
+                </div>
               </div>
-            </div>
-            <div className="session-item-trail">
-              {session.pendingCount > 0 ? (
-                <span className="session-pending-badge">{session.pendingCount}</span>
-              ) : null}
-              <ChevronRight size={14} />
-            </div>
-          </button>
-        ))}
+              <div className="session-item-trail">
+                {session.pendingCount > 0 ? (
+                  <span className="session-pending-badge">{session.pendingCount}</span>
+                ) : null}
+                <ChevronRight size={14} />
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -1106,14 +1206,20 @@ function SessionListView({ sessions, activeRequest, justResolved, onSelectSessio
 interface SettingsViewProps {
   maxCompactIcons: number;
   onChangeMaxCompactIcons: (value: number) => void;
+  retentionMinutes: number;
+  onChangeRetentionMinutes: (value: number) => void;
 }
 
 function SettingsView({
   maxCompactIcons,
   onChangeMaxCompactIcons,
+  retentionMinutes,
+  onChangeRetentionMinutes,
 }: SettingsViewProps) {
   const canDecrease = maxCompactIcons > MIN_MAX_COMPACT_ICONS;
   const canIncrease = maxCompactIcons < MAX_MAX_COMPACT_ICONS;
+  const canDecreaseRetention = retentionMinutes > MIN_RETENTION_MINUTES;
+  const canIncreaseRetention = retentionMinutes < MAX_RETENTION_MINUTES;
 
   return (
     <div className="settings-view" data-no-drag>
@@ -1161,6 +1267,46 @@ function SettingsView({
           </button>
         </div>
       </div>
+      <div className="settings-item">
+        <div className="settings-item-text">
+          <span className="settings-item-title">Session retention</span>
+          <span className="settings-item-desc">
+            Minutes a session stays visible after all requests are resolved.
+          </span>
+        </div>
+        <div className="settings-stepper">
+          <button
+            type="button"
+            className="settings-stepper-btn"
+            onClick={() => onChangeRetentionMinutes(retentionMinutes - 1)}
+            disabled={!canDecreaseRetention}
+            aria-label="Decrease session retention"
+          >
+            <Minus size={12} />
+          </button>
+          <input
+            type="number"
+            min={MIN_RETENTION_MINUTES}
+            max={MAX_RETENTION_MINUTES}
+            value={retentionMinutes}
+            className="settings-stepper-input"
+            onChange={(event) => {
+              const parsed = Number(event.target.value);
+              if (!Number.isFinite(parsed)) return;
+              onChangeRetentionMinutes(parsed);
+            }}
+          />
+          <button
+            type="button"
+            className="settings-stepper-btn"
+            onClick={() => onChangeRetentionMinutes(retentionMinutes + 1)}
+            disabled={!canIncreaseRetention}
+            aria-label="Increase session retention"
+          >
+            <Plus size={12} />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1179,15 +1325,22 @@ interface ApprovalCardProps {
 
 function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAlwaysApprove, onViewSession }: ApprovalCardProps) {
   const session = sessions.find((s) => s.sessionId === request.session);
-  const tone = agentTone[request.agent];
+  const sessionColor = getSessionColor(request.session);
+  const tone = sessionColor.tone;
   const risk = useMemo(() => assessRisk(request.command), [request.command]);
+  const mascotMood: ClawdMood = risk === "danger" ? "worried" : "alert";
 
   return (
     <div className={`approval-view ${risk ? `is-${risk}` : ""}`}>
       <div className="request-main">
         <div className="request-kicker">
           <span className="kicker-label">
-            <Terminal size={12} />
+            <ClawdMascot
+              mood={mascotMood}
+              accent={sessionColor.accent}
+              accentDark={sessionColor.accentDark}
+              size={16}
+            />
             Command request
           </span>
           <span className="kicker-tags">
@@ -1394,14 +1547,19 @@ function IdleView({ hookStatus, hookBusy, onInstall }: IdleViewProps) {
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
 
+// True only while a real text field is focused (the reply input). Used to keep
+// the island open while typing, without letting a stray button focus pin it.
+function isTextEntryActive() {
+  if (typeof document === "undefined") return false;
+  const element = document.activeElement as HTMLElement | null;
+  if (!element) return false;
+  const tag = element.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || element.isContentEditable;
+}
+
 function sessionDisplayName(cwd: string) {
   const parts = cwd.split("/").filter(Boolean);
   return parts[parts.length - 1] || cwd;
-}
-
-function renderCompactSessionGlyph(session: SessionSummary) {
-  const Icon = session.pendingCount > 0 ? ShieldAlert : agentIcons[session.agent];
-  return <Icon size={10} />;
 }
 
 function ChatBubble({ message }: { message: ChatMessage }) {
