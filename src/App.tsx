@@ -1,6 +1,7 @@
 import { FocusEvent, MouseEvent, useEffect, useRef, useState, useMemo } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Archive,
   ArrowLeft,
@@ -10,12 +11,12 @@ import {
   ChevronUp,
   Download,
   Ellipsis,
+  ExternalLink,
   FolderClosed,
   Layers,
   Minus,
   Power,
   Settings2,
-  SendHorizonal,
   Plus,
   TriangleAlert,
   Trash2,
@@ -54,6 +55,8 @@ import {
   uninstallClaudeHooks,
   getSessionRetention,
   setSessionRetention,
+  openInTerminal,
+  openUrl,
 } from "./tauri";
 
 type Decision = "approved" | "denied";
@@ -795,15 +798,9 @@ export function App() {
       return (
         <SessionChatView
           sessionId={panelView.sessionId}
+          cwd={session?.cwd ?? ""}
           transcriptPath={session?.transcriptPath ?? null}
           requests={sessionRequests}
-          busyDecision={busyDecision}
-          onReply={(note) => {
-            const pending = sessionRequests.find((r) => r.status === "pending");
-            if (pending) {
-              resolveRequest(pending.id, "denied", note);
-            }
-          }}
           onBack={navigateBack}
         />
       );
@@ -820,6 +817,7 @@ export function App() {
           onChangeRetentionMinutes={(nextValue) =>
             setRetentionMinutes(clampRetentionMinutes(nextValue))
           }
+          onBack={navigateBack}
         />
       );
     }
@@ -1208,6 +1206,7 @@ interface SettingsViewProps {
   onChangeMaxCompactIcons: (value: number) => void;
   retentionMinutes: number;
   onChangeRetentionMinutes: (value: number) => void;
+  onBack: () => void;
 }
 
 function SettingsView({
@@ -1215,6 +1214,7 @@ function SettingsView({
   onChangeMaxCompactIcons,
   retentionMinutes,
   onChangeRetentionMinutes,
+  onBack,
 }: SettingsViewProps) {
   const canDecrease = maxCompactIcons > MIN_MAX_COMPACT_ICONS;
   const canIncrease = maxCompactIcons < MAX_MAX_COMPACT_ICONS;
@@ -1224,8 +1224,14 @@ function SettingsView({
   return (
     <div className="settings-view" data-no-drag>
       <div className="settings-header">
-        <Settings2 size={14} />
-        <span>Display settings</span>
+        <button type="button" className="back-button" onClick={onBack}>
+          <ArrowLeft size={13} />
+          <span>Back</span>
+        </button>
+        <span className="settings-header-title">
+          <Settings2 size={14} />
+          <span>Display settings</span>
+        </span>
       </div>
       <div className="settings-item">
         <div className="settings-item-text">
@@ -1416,18 +1422,15 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
 
 interface SessionChatViewProps {
   sessionId: string;
+  cwd: string;
   transcriptPath: string | null;
   requests: PermissionRequest[];
-  busyDecision: Decision | null;
-  onReply: (note: string) => void;
   onBack: () => void;
 }
 
-function SessionChatView({ sessionId, transcriptPath, requests, busyDecision, onReply, onBack }: SessionChatViewProps) {
+function SessionChatView({ sessionId, cwd, transcriptPath, requests, onBack }: SessionChatViewProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [replyText, setReplyText] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const pendingRequest = requests.find((r) => r.status === "pending") ?? null;
 
   useEffect(() => {
     if (transcriptPath) {
@@ -1443,13 +1446,6 @@ function SessionChatView({ sessionId, transcriptPath, requests, busyDecision, on
     }
   }, [messages]);
 
-  function handleSendReply() {
-    const text = replyText.trim();
-    if (!text || !pendingRequest) return;
-    setReplyText("");
-    onReply(text);
-  }
-
   return (
     <div className="session-chat">
       <div className="session-detail-nav">
@@ -1457,7 +1453,16 @@ function SessionChatView({ sessionId, transcriptPath, requests, busyDecision, on
           <ArrowLeft size={13} />
           <span>Back</span>
         </button>
-        <span className="session-chat-title">{sessionDisplayName(requests[0]?.cwd || sessionId)}</span>
+        <span className="session-chat-title">{sessionDisplayName(cwd || sessionId)}</span>
+        <button
+          type="button"
+          className="open-terminal-button"
+          onClick={() => openInTerminal(cwd)}
+          data-no-drag
+        >
+          <ExternalLink size={13} />
+          <span>Terminal</span>
+        </button>
       </div>
 
       <div className="chat-messages" ref={scrollRef}>
@@ -1467,33 +1472,6 @@ function SessionChatView({ sessionId, transcriptPath, requests, busyDecision, on
         {messages.map((msg, i) => (
           <ChatBubble key={i} message={msg} />
         ))}
-      </div>
-
-      <div className="conversation-reply" data-no-drag>
-        <input
-          type="text"
-          className="reply-input"
-          placeholder={pendingRequest ? "Reply to agent..." : "No pending request"}
-          value={replyText}
-          disabled={!pendingRequest || busyDecision !== null}
-          onChange={(e) => setReplyText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && replyText.trim()) {
-              e.preventDefault();
-              e.stopPropagation();
-              handleSendReply();
-            }
-          }}
-        />
-        <button
-          type="button"
-          className="reply-send-button"
-          disabled={!replyText.trim() || !pendingRequest || busyDecision !== null}
-          onClick={handleSendReply}
-          title="Send reply (deny with message)"
-        >
-          <SendHorizonal size={14} />
-        </button>
       </div>
     </div>
   );
@@ -1534,12 +1512,9 @@ function IdleView({ hookStatus, hookBusy, onInstall }: IdleViewProps) {
 
   return (
     <div className="idle-view">
-      <div className="idle-logo">
-        <AtollLogo size={72} />
-      </div>
-      <div>
-        <h1>All clear</h1>
-        <p>Agent approvals will appear here when they need your attention.</p>
+      <div className="idle-content">
+        <span className="idle-dot" />
+        <span className="idle-text">Waiting for requests…</span>
       </div>
     </div>
   );
@@ -1564,16 +1539,24 @@ function sessionDisplayName(cwd: string) {
 
 function ChatBubble({ message }: { message: ChatMessage }) {
   const text = message.content || (message.toolName ? `Using ${message.toolName}...` : "");
-  const hasMarkdown = useMemo(() => /[*_`#\[\]!\n>-]/.test(text), [text]);
+  const hasMarkdown = useMemo(() => /[*_`#\[\]!\n>|]/.test(text), [text]);
+
+  function handleClick(event: MouseEvent<HTMLDivElement>) {
+    const anchor = (event.target as HTMLElement).closest("a");
+    if (anchor?.href) {
+      event.preventDefault();
+      openUrl(anchor.href);
+    }
+  }
 
   return (
-    <div className={`chat-bubble ${message.role}`}>
+    <div className={`chat-bubble ${message.role}`} onClick={handleClick}>
       {message.toolName ? (
         <span className="chat-tool-badge">{message.toolName}</span>
       ) : null}
       {hasMarkdown ? (
         <div className="chat-bubble-md">
-          <ReactMarkdown>{text}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
         </div>
       ) : (
         <span className="chat-bubble-text">{text}</span>

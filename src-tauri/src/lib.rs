@@ -644,6 +644,113 @@ fn has_atoll_hooks(settings: &Value) -> bool {
 }
 
 #[tauri::command]
+fn open_in_terminal(cwd: String) -> Result<(), String> {
+    use std::process::Command;
+
+    if let Some(app) = detect_terminal_app_for_cwd(&cwd) {
+        Command::new("open")
+            .arg("-a")
+            .arg(&app)
+            .spawn()
+            .map_err(|e| format!("Failed to activate {}: {}", app, e))?;
+    } else {
+        Command::new("open")
+            .arg("-a")
+            .arg("Terminal")
+            .arg(&cwd)
+            .spawn()
+            .map_err(|e| format!("Failed to open terminal: {}", e))?;
+    }
+    Ok(())
+}
+
+fn detect_terminal_app_for_cwd(cwd: &str) -> Option<String> {
+    use std::process::Command;
+
+    let output = Command::new("lsof")
+        .args(["-d", "cwd", "+c", "0"])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+
+    let mut pids: Vec<u32> = Vec::new();
+    for line in text.lines().skip(1) {
+        if line.contains(cwd) {
+            let pid_str = line.split_whitespace().nth(1)?;
+            if let Ok(pid) = pid_str.parse::<u32>() {
+                pids.push(pid);
+            }
+        }
+    }
+
+    for pid in pids {
+        if let Some(app) = find_terminal_ancestor(pid) {
+            return Some(app);
+        }
+    }
+    None
+}
+
+const KNOWN_TERMINALS: &[(&str, &str)] = &[
+    ("ghostty", "Ghostty"),
+    ("Ghostty", "Ghostty"),
+    ("iTerm2", "iTerm2"),
+    ("iTerm2-Server", "iTerm2"),
+    ("Terminal", "Terminal"),
+    ("kitty", "kitty"),
+    ("alacritty", "Alacritty"),
+    ("Alacritty", "Alacritty"),
+    ("wezterm-gui", "WezTerm"),
+    ("WezTerm", "WezTerm"),
+    ("Hyper", "Hyper"),
+    ("tabby", "Tabby"),
+    ("rio", "Rio"),
+];
+
+fn find_terminal_ancestor(mut pid: u32) -> Option<String> {
+    use std::process::Command;
+
+    for _ in 0..20 {
+        if pid <= 1 {
+            return None;
+        }
+        let output = Command::new("ps")
+            .args(["-p", &pid.to_string(), "-o", "ppid=,comm="])
+            .output()
+            .ok()?;
+        let line = String::from_utf8_lossy(&output.stdout);
+        let line = line.trim();
+        if line.is_empty() {
+            return None;
+        }
+
+        let mut parts = line.splitn(2, char::is_whitespace);
+        let ppid_str = parts.next()?.trim();
+        let comm = parts.next()?.trim();
+
+        let basename = comm.rsplit('/').next().unwrap_or(comm);
+        for &(pattern, app_name) in KNOWN_TERMINALS {
+            if basename == pattern {
+                return Some(app_name.to_string());
+            }
+        }
+
+        pid = ppid_str.parse::<u32>().ok()?;
+    }
+    None
+}
+
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    use std::process::Command;
+    Command::new("open")
+        .arg(&url)
+        .spawn()
+        .map_err(|e| format!("Failed to open URL: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
 fn quit_atoll(app: AppHandle) {
     exit_atoll(&app);
 }
@@ -675,6 +782,8 @@ pub fn run() {
             uninstall_claude_hooks,
             get_session_retention,
             set_session_retention,
+            open_in_terminal,
+            open_url,
             quit_atoll
         ])
         .setup(|app| {
