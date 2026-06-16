@@ -14,6 +14,21 @@ use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalS
 
 mod hook_bridge;
 
+#[cfg(target_os = "macos")]
+mod panel_store {
+    use std::sync::atomic::{AtomicPtr, Ordering};
+
+    static PANEL: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
+
+    pub fn set(ptr: *mut std::ffi::c_void) {
+        PANEL.store(ptr, Ordering::Release);
+    }
+
+    pub fn get_raw() -> *mut std::ffi::c_void {
+        PANEL.load(Ordering::Acquire)
+    }
+}
+
 const COMPACT_WINDOW_WIDTH: f64 = 132.0;
 const COMPACT_WINDOW_HEIGHT: f64 = 28.0;
 const EXPANDED_WINDOW_WIDTH: f64 = 560.0;
@@ -55,6 +70,7 @@ struct IslandSnapshot {
     active_request: Option<PermissionRequest>,
     recent: Vec<PermissionRequest>,
     sessions: Vec<SessionSummary>,
+    daily_tokens: TokenUsage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +83,26 @@ struct SessionSummary {
     total_count: usize,
     last_activity: String,
     transcript_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct TokenUsage {
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_read_tokens: u64,
+    cache_creation_tokens: u64,
+}
+
+impl TokenUsage {
+    fn add_assign(&mut self, other: TokenUsage) {
+        self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
+        self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
+        self.cache_read_tokens = self.cache_read_tokens.saturating_add(other.cache_read_tokens);
+        self.cache_creation_tokens = self
+            .cache_creation_tokens
+            .saturating_add(other.cache_creation_tokens);
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +148,15 @@ struct DecisionWithNote {
     note: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct KnownSession {
+    agent: AgentKind,
+    cwd: String,
+    transcript_path: Option<String>,
+    last_activity: String,
+}
+
 struct AppState {
     requests: Mutex<Vec<PermissionRequest>>,
     hook_waiters: Mutex<HashMap<String, SyncSender<DecisionWithNote>>>,
@@ -121,6 +166,10 @@ struct AppState {
     home_bounds: Mutex<Option<HomeWindowBounds>>,
     session_last_seen: Mutex<HashMap<String, u64>>,
     session_retention_secs: Mutex<u64>,
+    session_token_usage: Mutex<HashMap<String, TokenUsage>>,
+    token_usage_file_offsets: Mutex<HashMap<String, u64>>,
+    token_usage_day: Mutex<String>,
+    known_sessions: Mutex<HashMap<String, KnownSession>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -141,10 +190,27 @@ struct MacosScreenGeometry {
 
 #[tauri::command]
 fn get_snapshot(state: State<'_, AppState>) -> IslandSnapshot {
+    roll_over_token_usage_if_needed(&state);
+    let tracked_sessions = {
+        let requests = state.requests.lock().expect("state mutex poisoned");
+        collect_session_transcript_paths(&requests)
+    };
+    for (session_id, transcript_path) in tracked_sessions {
+        let _ = refresh_session_token_usage(&state, &session_id, Some(transcript_path.as_str()));
+    }
+
     let requests = state.requests.lock().expect("state mutex poisoned");
     let last_seen = state.session_last_seen.lock().expect("state mutex poisoned");
     let retention = *state.session_retention_secs.lock().expect("state mutex poisoned");
-    snapshot_from(&requests, &last_seen, retention)
+    let token_usage = state
+        .session_token_usage
+        .lock()
+        .expect("state mutex poisoned");
+    let known_sessions = state
+        .known_sessions
+        .lock()
+        .expect("state mutex poisoned");
+    snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions)
 }
 
 #[tauri::command]
@@ -185,9 +251,18 @@ fn resolve_permission_request(
     }
 
     touch_session_last_seen(&state, &session_id);
+    roll_over_token_usage_if_needed(&state);
     let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
     let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
-    let snapshot = snapshot_from(&requests, &last_seen, retention);
+    let token_usage = state
+        .session_token_usage
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let known_sessions = state
+        .known_sessions
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
     Ok(snapshot)
@@ -266,9 +341,18 @@ fn archive_request(
     if let Some(request) = requests.iter_mut().find(|r| r.id == id) {
         request.archived = true;
     }
+    roll_over_token_usage_if_needed(&state);
     let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
     let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
-    let snapshot = snapshot_from(&requests, &last_seen, retention);
+    let token_usage = state
+        .session_token_usage
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let known_sessions = state
+        .known_sessions
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
     Ok(snapshot)
@@ -391,20 +475,199 @@ fn extract_transcript_text(entry: &Value) -> String {
     String::new()
 }
 
+fn collect_session_transcript_paths(requests: &[PermissionRequest]) -> Vec<(String, String)> {
+    let mut session_paths: HashMap<String, String> = HashMap::new();
+    for request in requests {
+        let Some(transcript_path) = request.transcript_path.as_deref() else {
+            continue;
+        };
+        session_paths
+            .entry(request.session.clone())
+            .or_insert_with(|| transcript_path.to_string());
+    }
+    session_paths.into_iter().collect()
+}
+
+fn current_utc_day_key() -> String {
+    iso_timestamp_now().chars().take(10).collect()
+}
+
+fn roll_over_token_usage_if_needed(state: &AppState) {
+    let today = current_utc_day_key();
+    let needs_rollover = {
+        let mut usage_day = state
+            .token_usage_day
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if *usage_day == today {
+            false
+        } else {
+            *usage_day = today;
+            true
+        }
+    };
+
+    if !needs_rollover {
+        return;
+    }
+
+    if let Ok(mut usage_by_session) = state.session_token_usage.lock() {
+        usage_by_session.clear();
+    }
+    if let Ok(mut offsets) = state.token_usage_file_offsets.lock() {
+        offsets.clear();
+    }
+}
+
+fn token_usage_from_transcript_entry(entry: &Value, today_key: &str) -> TokenUsage {
+    if entry.get("type").and_then(Value::as_str) != Some("assistant") {
+        return TokenUsage::default();
+    }
+
+    let Some(timestamp) = entry.get("timestamp").and_then(Value::as_str) else {
+        return TokenUsage::default();
+    };
+    if !timestamp.starts_with(today_key) {
+        return TokenUsage::default();
+    }
+
+    let usage = entry
+        .get("message")
+        .and_then(|message| message.get("usage"));
+    TokenUsage {
+        input_tokens: usage
+            .and_then(|value| value.get("input_tokens"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        output_tokens: usage
+            .and_then(|value| value.get("output_tokens"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        cache_read_tokens: usage
+            .and_then(|value| value.get("cache_read_input_tokens"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        cache_creation_tokens: usage
+            .and_then(|value| value.get("cache_creation_input_tokens"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+    }
+}
+
+fn parse_token_usage_from_transcript(
+    transcript_path: &str,
+    offset: u64,
+    today_key: &str,
+) -> Result<(TokenUsage, u64, bool), String> {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader, Seek, SeekFrom};
+
+    let mut file =
+        File::open(transcript_path).map_err(|error| format!("Cannot open transcript: {error}"))?;
+    let file_len = file
+        .metadata()
+        .map_err(|error| format!("Cannot read transcript metadata: {error}"))?
+        .len();
+    let start_offset = if offset > file_len { 0 } else { offset };
+    let is_full_scan = start_offset == 0;
+
+    file.seek(SeekFrom::Start(start_offset))
+        .map_err(|error| format!("Cannot seek transcript: {error}"))?;
+
+    let mut reader = BufReader::new(file);
+    let mut usage = TokenUsage::default();
+    let mut next_offset = start_offset;
+    let mut line = String::new();
+    loop {
+        line.clear();
+        let bytes = reader
+            .read_line(&mut line)
+            .map_err(|error| format!("Cannot read transcript: {error}"))?;
+        if bytes == 0 {
+            break;
+        }
+
+        next_offset = next_offset.saturating_add(bytes as u64);
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let entry: Value = match serde_json::from_str(trimmed) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        usage.add_assign(token_usage_from_transcript_entry(&entry, today_key));
+    }
+
+    Ok((usage, next_offset, is_full_scan))
+}
+
+pub(crate) fn refresh_session_token_usage(
+    state: &AppState,
+    session_id: &str,
+    transcript_path: Option<&str>,
+) -> Result<(), String> {
+    let Some(transcript_path) = transcript_path else {
+        return Ok(());
+    };
+
+    roll_over_token_usage_if_needed(state);
+    let today_key = current_utc_day_key();
+    let last_offset = state
+        .token_usage_file_offsets
+        .lock()
+        .map_err(|error| error.to_string())?
+        .get(transcript_path)
+        .copied()
+        .unwrap_or(0);
+
+    let (parsed_usage, next_offset, is_full_scan) =
+        parse_token_usage_from_transcript(transcript_path, last_offset, &today_key)?;
+
+    {
+        let mut offsets = state
+            .token_usage_file_offsets
+            .lock()
+            .map_err(|error| error.to_string())?;
+        offsets.insert(transcript_path.to_string(), next_offset);
+    }
+
+    let mut usage_by_session = state
+        .session_token_usage
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let usage_entry = usage_by_session.entry(session_id.to_string()).or_default();
+    if is_full_scan {
+        *usage_entry = parsed_usage;
+    } else {
+        usage_entry.add_assign(parsed_usage);
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 fn archive_all_resolved(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<IslandSnapshot, String> {
     let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
-    for request in requests.iter_mut() {
-        if request.status != PermissionStatus::Pending && !request.archived {
-            request.archived = true;
-        }
-    }
+    // Archive-all should feel immediate in UI: keep only pending requests and
+    // drop all resolved/archived items from in-memory list.
+    requests.retain(|request| request.status == PermissionStatus::Pending);
+    roll_over_token_usage_if_needed(&state);
     let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
     let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
-    let snapshot = snapshot_from(&requests, &last_seen, retention);
+    let token_usage = state
+        .session_token_usage
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let known_sessions = state
+        .known_sessions
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
     Ok(snapshot)
@@ -426,6 +689,32 @@ fn set_session_retention(
     let mut retention = state.session_retention_secs.lock().expect("state mutex poisoned");
     *retention = secs;
     secs
+}
+
+pub(crate) fn register_known_session(
+    state: &AppState,
+    session_id: &str,
+    agent: AgentKind,
+    cwd: &str,
+    transcript_path: Option<&str>,
+) {
+    if let Ok(mut known) = state.known_sessions.lock() {
+        let entry = known
+            .entry(session_id.to_string())
+            .or_insert_with(|| KnownSession {
+                agent: agent.clone(),
+                cwd: cwd.to_string(),
+                transcript_path: transcript_path.map(str::to_string),
+                last_activity: iso_timestamp_now(),
+            });
+        entry.last_activity = iso_timestamp_now();
+        if !cwd.is_empty() && cwd != "." {
+            entry.cwd = cwd.to_string();
+        }
+        if let Some(path) = transcript_path {
+            entry.transcript_path = Some(path.to_string());
+        }
+    }
 }
 
 pub(crate) fn touch_session_last_seen(state: &AppState, session_id: &str) {
@@ -525,6 +814,54 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
                     }
                 ]
             }
+        ],
+        "PostToolUseFailure": [
+            {
+                "matcher": "*",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": hook_command,
+                        "timeout": 30
+                    }
+                ]
+            }
+        ],
+        "Stop": [
+            {
+                "matcher": "*",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": hook_command,
+                        "timeout": 30
+                    }
+                ]
+            }
+        ],
+        "StopFailure": [
+            {
+                "matcher": "*",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": hook_command,
+                        "timeout": 30
+                    }
+                ]
+            }
+        ],
+        "SubagentStop": [
+            {
+                "matcher": "*",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": hook_command,
+                        "timeout": 30
+                    }
+                ]
+            }
         ]
     });
 
@@ -614,33 +951,36 @@ fn resolve_hook_script_path(app: &AppHandle) -> Option<String> {
 }
 
 fn has_atoll_hooks(settings: &Value) -> bool {
-    settings
-        .get("hooks")
-        .and_then(Value::as_object)
-        .map(|hooks| {
-            hooks.values().any(|matchers| {
-                matchers
-                    .as_array()
-                    .map(|arr| {
-                        arr.iter().any(|matcher| {
-                            matcher
-                                .get("hooks")
-                                .and_then(Value::as_array)
-                                .map(|hook_arr| {
-                                    hook_arr.iter().any(|hook| {
-                                        hook.get("command")
-                                            .and_then(Value::as_str)
-                                            .map(|cmd| cmd.contains("atoll-claude-hook"))
-                                            .unwrap_or(false)
-                                    })
-                                })
-                                .unwrap_or(false)
+    let Some(hooks) = settings.get("hooks").and_then(Value::as_object) else {
+        return false;
+    };
+
+    let has_atoll_command = |matchers: &Value| {
+        matchers
+            .as_array()
+            .map(|arr| {
+                arr.iter().any(|matcher| {
+                    matcher
+                        .get("hooks")
+                        .and_then(Value::as_array)
+                        .map(|hook_arr| {
+                            hook_arr.iter().any(|hook| {
+                                hook.get("command")
+                                    .and_then(Value::as_str)
+                                    .map(|cmd| cmd.contains("atoll-claude-hook"))
+                                    .unwrap_or(false)
+                            })
                         })
-                    })
-                    .unwrap_or(false)
+                        .unwrap_or(false)
+                })
             })
-        })
-        .unwrap_or(false)
+            .unwrap_or(false)
+    };
+
+    // "Stop" is required for token refresh on normal (no-tool) turns.
+    ["PermissionRequest", "PostToolUse", "Stop"]
+        .iter()
+        .all(|event| hooks.get(*event).map(has_atoll_command).unwrap_or(false))
 }
 
 #[tauri::command]
@@ -755,6 +1095,22 @@ fn quit_atoll(app: AppHandle) {
     exit_atoll(&app);
 }
 
+#[tauri::command]
+fn deactivate_atoll() {
+    #[cfg(target_os = "macos")]
+    {
+        unsafe {
+            let cls =
+                objc2::runtime::AnyClass::get(c"NSApplication").expect("NSApplication class");
+            let ns_app: *mut objc2::runtime::AnyObject =
+                objc2::msg_send![cls, sharedApplication];
+            if !ns_app.is_null() {
+                let _: () = objc2::msg_send![ns_app, deactivate];
+            }
+        }
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -767,6 +1123,10 @@ pub fn run() {
             home_bounds: Mutex::new(None),
             session_last_seen: Mutex::new(HashMap::new()),
             session_retention_secs: Mutex::new(DEFAULT_SESSION_RETENTION_SECS),
+            session_token_usage: Mutex::new(HashMap::new()),
+            token_usage_file_offsets: Mutex::new(HashMap::new()),
+            token_usage_day: Mutex::new(current_utc_day_key()),
+            known_sessions: Mutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -784,7 +1144,8 @@ pub fn run() {
             set_session_retention,
             open_in_terminal,
             open_url,
-            quit_atoll
+            quit_atoll,
+            deactivate_atoll
         ])
         .setup(|app| {
             build_tray(app.handle())?;
@@ -793,20 +1154,24 @@ pub fn run() {
             start_auto_archive_timer(app.handle().clone());
 
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_always_on_top(true);
                 let _ = window.set_shadow(false);
                 let _ = window.set_skip_taskbar(true);
                 let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
-                apply_macos_island_window_style(&window);
                 let _ = window.show();
+                // Apply island style AFTER show() so the window number is
+                // assigned and the NSPanel promotion takes effect.
+                apply_macos_island_window_style(&window);
+                eprintln!("[Atoll] step: island style applied, now applying mode...");
                 if let Ok(Some(home)) =
                     apply_island_window_mode(&window, IslandWindowMode::Compact, COMPACT_WINDOW_WIDTH)
                 {
+                    eprintln!("[Atoll] step: island window mode applied");
                     let state = app.state::<AppState>();
                     if let Ok(mut home_bounds) = state.home_bounds.lock() {
                         *home_bounds = Some(home);
                     };
                 }
+                eprintln!("[Atoll] step: setup window complete");
             }
 
             Ok(())
@@ -885,9 +1250,18 @@ fn start_auto_archive_timer(app: AppHandle) {
             }
 
             if changed {
+                roll_over_token_usage_if_needed(&state);
                 let last_seen = state.session_last_seen.lock().unwrap_or_else(|e| e.into_inner());
                 let retention = *state.session_retention_secs.lock().unwrap_or_else(|e| e.into_inner());
-                let snapshot = snapshot_from(&requests, &last_seen, retention);
+                let token_usage = state
+                    .session_token_usage
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                let known_sessions = state
+                    .known_sessions
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
                 let _ = app.emit("snapshot-changed", &snapshot);
             }
             changed
@@ -942,7 +1316,18 @@ fn exit_atoll(app: &AppHandle) {
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
-        let _ = window.set_focus();
+        #[cfg(target_os = "macos")]
+        {
+            let panel_ptr = panel_store::get_raw();
+            if !panel_ptr.is_null() {
+                unsafe {
+                    let _: () = objc2::msg_send![
+                        panel_ptr as *mut objc2::runtime::AnyObject,
+                        orderFrontRegardless
+                    ];
+                }
+            }
+        }
         let _ = app.emit("island-open-requested", ());
     }
 }
@@ -1004,7 +1389,7 @@ fn apply_island_window_mode(
     apply_macos_island_window_style(window);
     let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
     window.set_size(island_window_logical_size(mode, compact_width))?;
-    let _ = window.set_ignore_cursor_events(matches!(
+    set_island_cursor_events_ignored(window, matches!(
         mode,
         IslandWindowMode::Compact | IslandWindowMode::Dormant
     ));
@@ -1015,14 +1400,10 @@ fn apply_island_window_mode(
     let window_size = island_window_physical_size(mode, monitor.scale_factor(), compact_width);
     let logical_window_size = window_size.to_logical::<f64>(scale_factor);
     let centered_x = monitor_position.x + (monitor_size.width - logical_window_size.width) / 2.0;
-    let mut centered_y = island_top_y(window, monitor_position.y, monitor.work_area().position.y);
-    centered_y += macos_camera_housing_top_clearance(
-        window,
-        monitor_position.x,
-        monitor_size.width,
-        centered_x,
-        logical_window_size.width,
-    );
+    // Position flush with the top edge of the screen – identical to how iPhone
+    // Dynamic Island sits at the very top.  No camera-housing clearance so the
+    // pill overlaps the notch / menu-bar area.
+    let centered_y = monitor_position.y;
     let position = LogicalPosition::new(centered_x, centered_y);
     let home = HomeWindowBounds {
         position,
@@ -1050,7 +1431,7 @@ fn animate_island_window_mode(
 ) -> tauri::Result<()> {
     let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
     if matches!(mode, IslandWindowMode::Expanded) {
-        let _ = window.set_ignore_cursor_events(false);
+        set_island_cursor_events_ignored(window, false);
     }
 
     let scale_factor = home_bounds
@@ -1112,7 +1493,7 @@ fn animate_island_window_mode(
     });
     let _ = sync_rx.recv();
 
-    let _ = window.set_ignore_cursor_events(matches!(
+    set_island_cursor_events_ignored(window, matches!(
         mode,
         IslandWindowMode::Compact | IslandWindowMode::Dormant
     ));
@@ -1164,45 +1545,6 @@ fn sanitize_compact_width(width: f64) -> f64 {
     width.clamp(MIN_COMPACT_WINDOW_WIDTH, EXPANDED_WINDOW_WIDTH)
 }
 
-fn island_top_y(window: &tauri::WebviewWindow, monitor_y: f64, work_area_y: i32) -> f64 {
-    let scale_factor = window.scale_factor().unwrap_or(1.0);
-    let work_area_y = work_area_y as f64 / scale_factor;
-    let visible_offset = (work_area_y - monitor_y).max(0.0);
-    let menu_offset = macos_menu_bar_offset_physical(window).unwrap_or(0) as f64 / scale_factor;
-
-    island_top_y_from_offsets(monitor_y, visible_offset, menu_offset)
-}
-
-fn island_top_y_from_offsets(monitor_y: f64, visible_offset: f64, menu_offset: f64) -> f64 {
-    monitor_y - (menu_offset.max(0.0) - visible_offset.max(0.0)).max(0.0)
-}
-
-fn has_camera_housing(frame_width: f64, aux_left_width: f64, aux_right_width: f64) -> bool {
-    aux_left_width + aux_right_width < frame_width - 1.0
-}
-
-fn island_overlaps_camera_housing(
-    island_x: f64,
-    island_width: f64,
-    housing_left: f64,
-    housing_right: f64,
-) -> bool {
-    let island_right = island_x + island_width;
-    island_right > housing_left && island_x < housing_right
-}
-
-fn camera_housing_top_clearance(
-    has_camera_housing: bool,
-    island_overlaps_housing: bool,
-    safe_area_top: f64,
-) -> f64 {
-    if has_camera_housing && island_overlaps_housing {
-        safe_area_top.max(0.0)
-    } else {
-        0.0
-    }
-}
-
 #[cfg(target_os = "macos")]
 fn with_nsscreen_for_monitor<R>(
     window: &tauri::WebviewWindow,
@@ -1236,48 +1578,6 @@ fn with_nsscreen_for_monitor<R>(
 }
 
 #[cfg(target_os = "macos")]
-fn macos_camera_housing_top_clearance(
-    window: &tauri::WebviewWindow,
-    monitor_x: f64,
-    monitor_width: f64,
-    island_x: f64,
-    island_width: f64,
-) -> f64 {
-    with_nsscreen_for_monitor(window, monitor_x, monitor_width, |screen| {
-        let frame = screen.frame();
-        let aux_left = screen.auxiliaryTopLeftArea();
-        let aux_right = screen.auxiliaryTopRightArea();
-        let has_housing = has_camera_housing(
-            frame.size.width,
-            aux_left.size.width,
-            aux_right.size.width,
-        );
-        let housing_left = aux_left.origin.x + aux_left.size.width;
-        let housing_right = aux_right.origin.x;
-        let overlaps = island_overlaps_camera_housing(
-            island_x,
-            island_width,
-            housing_left,
-            housing_right,
-        );
-
-        camera_housing_top_clearance(has_housing, overlaps, screen.safeAreaInsets().top)
-    })
-    .unwrap_or(0.0)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn macos_camera_housing_top_clearance(
-    _window: &tauri::WebviewWindow,
-    _monitor_x: f64,
-    _monitor_width: f64,
-    _island_x: f64,
-    _island_width: f64,
-) -> f64 {
-    0.0
-}
-
-#[cfg(target_os = "macos")]
 fn macos_screen_geometry(
     window: &tauri::WebviewWindow,
     monitor_x: f64,
@@ -1290,6 +1590,27 @@ fn macos_screen_geometry(
             height: frame.size.height,
         }
     })
+}
+
+fn set_island_cursor_events_ignored(window: &tauri::WebviewWindow, ignore: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let panel_ptr = panel_store::get_raw();
+        if !panel_ptr.is_null() {
+            // setIgnoresMouseEvents: MUST run on the main thread.
+            // animate_island_window_mode calls us from a tokio worker,
+            // so dispatch via run_on_main_thread.
+            let ptr_val = panel_ptr as usize;
+            let _ = window.run_on_main_thread(move || unsafe {
+                use objc2::runtime::{AnyObject, Bool};
+                let ptr = ptr_val as *mut AnyObject;
+                let val = if ignore { Bool::YES } else { Bool::NO };
+                let _: () = objc2::msg_send![ptr, setIgnoresMouseEvents: val];
+            });
+            return;
+        }
+    }
+    let _ = window.set_ignore_cursor_events(ignore);
 }
 
 #[cfg(target_os = "macos")]
@@ -1327,13 +1648,25 @@ fn set_island_window_frame_now(
         frame.origin.y = origin_y;
         frame.size.width = logical_size.width;
         frame.size.height = logical_size.height;
+
+        // Keep the Tauri window frame in sync (for position/size queries).
         ns_window.setFrame_display(frame, true);
 
         let height_progress = ((logical_size.height - COMPACT_WINDOW_HEIGHT)
             / (EXPANDED_WINDOW_HEIGHT - COMPACT_WINDOW_HEIGHT))
             .clamp(0.0, 1.0);
         let corner_radius = 15.0 + 7.0 * height_progress;
-        apply_content_view_corner_mask(ns_window, corner_radius);
+
+        // If a floating panel exists, also update its frame and apply
+        // the corner mask there (that's where the WKWebView lives).
+        let panel_ptr = panel_store::get_raw();
+        if !panel_ptr.is_null() {
+            let panel = &*(panel_ptr as *const NSWindow);
+            panel.setFrame_display(frame, true);
+            apply_content_view_corner_mask(panel, corner_radius);
+        } else {
+            apply_content_view_corner_mask(ns_window, corner_radius);
+        }
     }
 
     Ok(())
@@ -1410,7 +1743,12 @@ fn apply_macos_island_window_style(window: &tauri::WebviewWindow) {
 
     unsafe {
         let ns_window = &*(ns_window.cast::<NSWindow>());
+        promote_to_floating_panel(ns_window);
+        eprintln!("[Atoll] step: promote_to_floating_panel done");
         apply_macos_unconstrained_window_class(ns_window);
+        eprintln!("[Atoll] step: unconstrained_window_class done");
+        apply_accepts_first_mouse(ns_window);
+        eprintln!("[Atoll] step: accepts_first_mouse done");
         let clear = NSColor::clearColor();
         ns_window.setOpaque(false);
         ns_window.setBackgroundColor(Some(&clear));
@@ -1427,9 +1765,197 @@ fn apply_macos_island_window_style(window: &tauri::WebviewWindow) {
                 | NSWindowCollectionBehavior::IgnoresCycle,
         );
         ns_window.setLevel(NSMainMenuWindowLevel + 3);
+        eprintln!("[Atoll] step: window properties set");
 
-        apply_content_view_corner_mask(ns_window, 15.0);
+        // Corner mask goes on the panel (where the WKWebView lives)
+        // if it exists, otherwise on the Tauri window as fallback.
+        let panel_ptr = panel_store::get_raw();
+        if !panel_ptr.is_null() {
+            apply_content_view_corner_mask(&*(panel_ptr as *const NSWindow), 15.0);
+        } else {
+            apply_content_view_corner_mask(ns_window, 15.0);
+        }
+        eprintln!("[Atoll] step: apply_macos_island_window_style complete");
     }
+}
+
+/// Create a real NSPanel (properly initialised as a floating panel that
+/// renders above the macOS menu bar), then move the WKWebView from the
+/// Tauri window into this panel.  The Tauri window keeps an empty
+/// contentView so tao's internal bookkeeping doesn't crash, and all
+/// frame / mouse-event updates target the panel via `panel_store`.
+#[cfg(target_os = "macos")]
+fn promote_to_floating_panel(ns_window: &objc2_app_kit::NSWindow) {
+    use std::sync::OnceLock;
+
+    use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, Sel};
+    use objc2::sel;
+    use objc2_app_kit::{
+        NSColor, NSMainMenuWindowLevel, NSScreen, NSWindow, NSWindowCollectionBehavior,
+        NSWindowStyleMask,
+    };
+    use objc2_foundation::NSRect;
+
+    static DONE: OnceLock<()> = OnceLock::new();
+    DONE.get_or_init(|| unsafe {
+        let panel_cls = AnyClass::get(c"NSPanel").expect("NSPanel class");
+        let frame = ns_window.frame();
+
+        let raw: *mut AnyObject = objc2::msg_send![panel_cls, alloc];
+        let style_bits: usize =
+            NSWindowStyleMask::Borderless.0 as usize | (1usize << 7);
+        let raw: *mut AnyObject = objc2::msg_send![
+            raw,
+            initWithContentRect: frame,
+            styleMask: style_bits,
+            backing: 2usize,
+            defer: Bool::NO
+        ];
+        assert!(!raw.is_null(), "NSPanel init failed");
+
+        let _: () = objc2::msg_send![raw, setFloatingPanel: Bool::YES];
+        let _: () = objc2::msg_send![raw, setHidesOnDeactivate: Bool::NO];
+        let _: () = objc2::msg_send![raw, setOpaque: Bool::NO];
+        let clear = NSColor::clearColor();
+        let _: () = objc2::msg_send![raw, setBackgroundColor: &*clear];
+        let _: () = objc2::msg_send![raw, setHasShadow: Bool::NO];
+        let _: () = objc2::msg_send![raw, setMovable: Bool::NO];
+        let _: () = objc2::msg_send![raw, setLevel: NSMainMenuWindowLevel + 3];
+        let _: () = objc2::msg_send![raw, setCollectionBehavior:
+            NSWindowCollectionBehavior::CanJoinAllSpaces
+                | NSWindowCollectionBehavior::Stationary
+                | NSWindowCollectionBehavior::FullScreenAuxiliary
+                | NSWindowCollectionBehavior::IgnoresCycle
+        ];
+
+        // Patch NSPanel's constrainFrameRect:toScreen: so the panel
+        // is never clamped below the menu bar.
+        extern "C-unwind" fn unconstrained_panel(
+            _w: *mut NSWindow,
+            _s: Sel,
+            f: NSRect,
+            _scr: *mut NSScreen,
+        ) -> NSRect {
+            f
+        }
+        let panel_class = (&*raw).class();
+        let constrain_sel = sel!(constrainFrameRect:toScreen:);
+        if let Some(m) = panel_class.instance_method(constrain_sel) {
+            let imp: Imp = std::mem::transmute(
+                unconstrained_panel
+                    as extern "C-unwind" fn(*mut NSWindow, Sel, NSRect, *mut NSScreen) -> NSRect,
+            );
+            objc2::ffi::class_replaceMethod(
+                panel_class as *const AnyClass as *mut AnyClass,
+                constrain_sel,
+                imp,
+                objc2::ffi::method_getTypeEncoding(m),
+            );
+        }
+
+        // ── Move the WKWebView from the Tauri window into the panel ──
+        // We use addSubview: which automatically removes the view from
+        // its old superview.  Crucially we do NOT replace the Tauri
+        // window's contentView — tao keeps an internal reference to it
+        // and replacing it causes a crash on mouse events.
+        let content_view: *mut AnyObject = objc2::msg_send![ns_window, contentView];
+        if !content_view.is_null() {
+            let subviews: *mut AnyObject = objc2::msg_send![content_view, subviews];
+            let count: usize = objc2::msg_send![subviews, count];
+            if count > 0 {
+                let wk: *mut AnyObject =
+                    objc2::msg_send![subviews, objectAtIndex: 0usize];
+
+                // addSubview: on the panel's contentView automatically
+                // removes `wk` from the Tauri window's contentView.
+                let pcv: *mut AnyObject = objc2::msg_send![raw, contentView];
+                let _: () = objc2::msg_send![pcv, addSubview: wk];
+                let bounds: NSRect = objc2::msg_send![pcv, bounds];
+                let _: () = objc2::msg_send![wk, setFrame: bounds];
+                // NSViewWidthSizable(2) | NSViewHeightSizable(16) = 18
+                let _: () = objc2::msg_send![wk, setAutoresizingMask: 18usize];
+
+                eprintln!("[Atoll] WKWebView moved to floating panel");
+            }
+        }
+
+        // The Tauri window is now content-less; keep it permanently
+        // ignoring mouse events so it never blocks the panel.
+        let _: () = objc2::msg_send![ns_window, setIgnoresMouseEvents: Bool::YES];
+
+        // Panel starts with ignoresMouseEvents=YES (compact mode).
+        // The mode system will toggle this via set_island_cursor_events_ignored.
+        let _: () = objc2::msg_send![raw, setIgnoresMouseEvents: Bool::YES];
+        let _: () = objc2::msg_send![raw, orderFrontRegardless];
+
+        panel_store::set(raw as *mut std::ffi::c_void);
+
+        let is_floating: Bool = objc2::msg_send![raw, isFloatingPanel];
+        eprintln!(
+            "[Atoll] floating panel ready, floating={}, level={}",
+            is_floating.as_bool(),
+            { let lvl: isize = objc2::msg_send![raw, level]; lvl },
+        );
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn apply_accepts_first_mouse(ns_window: &objc2_app_kit::NSWindow) {
+    use std::sync::OnceLock;
+
+    use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
+
+    extern "C-unwind" fn always_accepts(
+        _view: *mut AnyObject,
+        _sel: Sel,
+        _event: *mut AnyObject,
+    ) -> bool {
+        true
+    }
+
+    unsafe fn patch_view_class(view: *mut AnyObject) {
+        if view.is_null() {
+            return;
+        }
+        let class = (&*view).class();
+        let selector = objc2::sel!(acceptsFirstMouse:);
+        let Some(method) = class.instance_method(selector) else {
+            return;
+        };
+        let implementation: Imp = std::mem::transmute(
+            always_accepts as extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject) -> bool,
+        );
+        objc2::ffi::class_replaceMethod(
+            class as *const AnyClass as *mut AnyClass,
+            selector,
+            implementation,
+            objc2::ffi::method_getTypeEncoding(method),
+        );
+    }
+
+    static VIEW_PATCHED: OnceLock<()> = OnceLock::new();
+    VIEW_PATCHED.get_or_init(|| unsafe {
+        // Patch the Tauri window's contentView.
+        let cv: *mut AnyObject = objc2::msg_send![ns_window, contentView];
+        patch_view_class(cv);
+
+        // Also patch the floating panel's views (contentView + WKWebView).
+        let panel_ptr = panel_store::get_raw();
+        if !panel_ptr.is_null() {
+            let pcv: *mut AnyObject =
+                objc2::msg_send![panel_ptr as *mut AnyObject, contentView];
+            patch_view_class(pcv);
+            if !pcv.is_null() {
+                let subviews: *mut AnyObject = objc2::msg_send![pcv, subviews];
+                let count: usize = objc2::msg_send![subviews, count];
+                for i in 0..count {
+                    let sv: *mut AnyObject =
+                        objc2::msg_send![subviews, objectAtIndex: i];
+                    patch_view_class(sv);
+                }
+            }
+        }
+    });
 }
 
 #[cfg(target_os = "macos")]
@@ -1494,37 +2020,12 @@ unsafe fn apply_content_view_corner_mask(ns_window: &objc2_app_kit::NSWindow, ra
     let _: () = objc2::msg_send![layer, setMaskedCorners: 3_usize];
 }
 
-#[cfg(target_os = "macos")]
-fn macos_menu_bar_offset_physical(window: &tauri::WebviewWindow) -> Option<i32> {
-    use objc2_app_kit::NSWindow;
-
-    let ns_window = window.ns_window().ok()?;
-    if ns_window.is_null() {
-        return None;
-    }
-
-    unsafe {
-        let ns_window = &*(ns_window.cast::<NSWindow>());
-        let screen = ns_window.screen()?;
-        let frame = screen.frame();
-        let visible_frame = screen.visibleFrame();
-        let scale = screen.backingScaleFactor();
-        let offset = (frame.origin.y + frame.size.height)
-            - (visible_frame.origin.y + visible_frame.size.height);
-
-        Some((offset.max(0.0) * scale).round() as i32)
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn macos_menu_bar_offset_physical(_window: &tauri::WebviewWindow) -> Option<i32> {
-    None
-}
-
 fn snapshot_from(
     requests: &[PermissionRequest],
     session_last_seen: &HashMap<String, u64>,
     retention_secs: u64,
+    session_token_usage: &HashMap<String, TokenUsage>,
+    known_sessions: &HashMap<String, KnownSession>,
 ) -> IslandSnapshot {
     let visible: Vec<&PermissionRequest> = requests
         .iter()
@@ -1603,6 +2104,52 @@ fn snapshot_from(
         });
     }
 
+    // Include known sessions (from Stop/PostToolUse events) that have no
+    // permission requests – these are sessions with only text output.
+    {
+        let existing_ids: HashSet<String> =
+            sessions.iter().map(|s| s.session_id.clone()).collect();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        for (session_id, info) in known_sessions {
+            if existing_ids.contains(session_id.as_str()) {
+                continue;
+            }
+            if retention_secs > 0 {
+                let last_seen_ts = session_last_seen
+                    .get(session_id)
+                    .copied()
+                    .unwrap_or_else(|| parse_iso_timestamp_secs(&info.last_activity));
+                if now.saturating_sub(last_seen_ts) > retention_secs {
+                    continue;
+                }
+            }
+            sessions.push(SessionSummary {
+                session_id: session_id.clone(),
+                agent: info.agent.clone(),
+                cwd: info.cwd.clone(),
+                pending_count: 0,
+                total_count: 0,
+                last_activity: info.last_activity.clone(),
+                transcript_path: info.transcript_path.clone(),
+            });
+        }
+
+        sessions.sort_by(|a, b| {
+            b.pending_count
+                .cmp(&a.pending_count)
+                .then(b.last_activity.cmp(&a.last_activity))
+        });
+    }
+
+    let mut daily_tokens = TokenUsage::default();
+    for usage in session_token_usage.values() {
+        daily_tokens.add_assign(*usage);
+    }
+
     IslandSnapshot {
         online: true,
         pending_count,
@@ -1610,6 +2157,7 @@ fn snapshot_from(
         active_request,
         recent: visible.into_iter().take(12).cloned().collect(),
         sessions,
+        daily_tokens,
     }
 }
 

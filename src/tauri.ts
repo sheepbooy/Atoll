@@ -4,6 +4,13 @@ import { listen } from "@tauri-apps/api/event";
 export type PermissionStatus = "pending" | "approved" | "denied";
 export type AgentKind = "claude" | "codex" | "gemini" | "other";
 
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+}
+
 export interface PermissionRequest {
   id: string;
   toolUseId?: string | null;
@@ -25,6 +32,7 @@ export interface IslandSnapshot {
   activeRequest: PermissionRequest | null;
   recent: PermissionRequest[];
   sessions: SessionSummary[];
+  dailyTokens: TokenUsage;
 }
 
 export interface SessionSummary {
@@ -63,6 +71,12 @@ export async function getSnapshot(): Promise<IslandSnapshot> {
     activeRequest: localRequests.find((request) => request.status === "pending") ?? null,
     recent: localRequests,
     sessions: [],
+    dailyTokens: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    },
   };
 }
 
@@ -165,6 +179,14 @@ export async function quitAtoll() {
   }
 
   return invoke<void>("quit_atoll");
+}
+
+export async function deactivateAtoll() {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  return invoke<void>("deactivate_atoll");
 }
 
 export async function setIslandPresentation(

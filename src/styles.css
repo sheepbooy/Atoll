@@ -339,6 +339,7 @@ kbd {
 }
 
 .is-dormant .header-actions,
+.is-dormant .header-metrics,
 .is-dormant .pending-badge-slot {
   display: none;
 }
@@ -765,6 +766,86 @@ kbd {
 }
 
 /* ─── Pending Badge ───────────────────────────────────────────── */
+
+.header-metrics {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.is-expanded .header-metrics {
+  gap: 8px;
+}
+
+.token-counter-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.token-counter {
+  display: inline-flex;
+  min-width: 62px;
+  height: 18px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  padding: 0 6px;
+  color: rgba(240, 246, 255, 0.86);
+  background: linear-gradient(135deg, rgba(116, 182, 255, 0.24), rgba(255, 255, 255, 0.06));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 0 10px rgba(98, 176, 255, 0.18);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 8px rgba(190, 224, 255, 0.22);
+  backdrop-filter: blur(6px);
+  transform: translateZ(0);
+  transition:
+    opacity 180ms ease,
+    transform 220ms ease,
+    filter 220ms ease,
+    background 220ms ease;
+}
+
+.token-counter.is-updating {
+  background: linear-gradient(135deg, rgba(138, 208, 255, 0.33), rgba(255, 255, 255, 0.14));
+  transform: translateZ(0) scale(1.05);
+  filter: brightness(1.2) drop-shadow(0 0 12px rgba(138, 206, 255, 0.36));
+}
+
+.token-counter-delta {
+  position: absolute;
+  right: -2px;
+  top: -11px;
+  color: #a8deff;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 10px rgba(158, 219, 255, 0.55);
+  pointer-events: none;
+  animation: token-delta-pop 640ms ease-out forwards;
+}
+
+@keyframes token-delta-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(3px) scale(0.9);
+  }
+  18% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-11px) scale(1.02);
+  }
+}
 
 .pending-badge-slot {
   display: inline-flex;
@@ -2006,19 +2087,62 @@ kbd {
 
 /* Setup variant */
 .setup-view {
-  flex-direction: column;
-  gap: 14px;
+  padding: 4px 0 8px;
 }
 
-.setup-view > div:last-of-type {
-  max-width: 340px;
-  text-align: center;
+.setup-card {
+  display: grid;
+  width: min(100%, 360px);
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+
+.setup-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.setup-copy {
+  min-width: 0;
+}
+
+.setup-copy h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.setup-copy p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.setup-warning {
+  color: #f4c487;
+}
+
+.setup-footnote {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .setup-icon {
+  width: 34px;
+  height: 34px;
   color: var(--accent-cyan);
   background: rgba(111, 220, 255, 0.08);
   box-shadow: inset 0 0 0 1px rgba(111, 220, 255, 0.1);
+  animation: none;
 }
 
 .setup-icon::after {
@@ -2028,17 +2152,18 @@ kbd {
 .install-button {
   position: relative;
   display: inline-flex;
+  width: 100%;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  height: 40px;
-  min-width: 170px;
+  gap: 6px;
+  height: 34px;
+  min-width: 0;
   border-radius: var(--radius-md);
-  padding: 0 22px;
+  padding: 0 12px;
   color: var(--color-approve-ink);
   background: linear-gradient(135deg, var(--color-always-a), var(--color-always-b));
-  font-size: 13px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 700;
   cursor: pointer;
   overflow: hidden;
   transition:
@@ -2099,8 +2224,10 @@ kbd {
   .agent-slot,
   .agent-dot,
   .header-meta,
+  .header-metrics,
   .pending-badge-slot,
-  .pending-badge {
+  .pending-badge,
+  .token-counter {
     transition-duration: 1ms !important;
     transition-delay: 0ms !important;
   }
@@ -2114,6 +2241,8 @@ kbd {
   .idle-icon,
   .install-button::before,
   .compact-empty-logo,
+  .token-counter.is-updating,
+  .token-counter-delta,
   .clawd,
   .clawd * {
     animation: none !important;

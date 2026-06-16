@@ -7,3 +7,4 @@ src-tauri/gen
 *.log
 .DS_Store
 .worktrees
+.tools/

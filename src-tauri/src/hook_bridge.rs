@@ -8,8 +8,9 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
-    iso_timestamp_now, show_main_window, snapshot_from, touch_session_last_seen, AgentKind,
-    AppState, Decision, DecisionWithNote, PermissionRequest, PermissionStatus,
+    iso_timestamp_now, refresh_session_token_usage, register_known_session,
+    roll_over_token_usage_if_needed, show_main_window, snapshot_from, touch_session_last_seen,
+    AgentKind, AppState, Decision, DecisionWithNote, PermissionRequest, PermissionStatus,
 };
 
 const HOOK_BIND_ADDR: &str = "127.0.0.1:47777";
@@ -134,7 +135,12 @@ pub(crate) fn claude_hook_response(hook_event_name: &str, decision: Decision, no
 pub(crate) fn claude_hook_ask_response(hook_event_name: &str, reason: &str) -> Value {
     if matches!(
         hook_event_name,
-        "PermissionRequest" | "PostToolUse" | "PostToolUseFailure"
+        "PermissionRequest"
+            | "PostToolUse"
+            | "PostToolUseFailure"
+            | "Stop"
+            | "StopFailure"
+            | "SubagentStop"
     ) {
         return json!({});
     }
@@ -179,6 +185,10 @@ fn route_request(app: AppHandle, request: HttpRequest, stream: &TcpStream) -> Re
             sync_claude_tool_completion(app, payload)?;
             Ok(json!({}))
         }
+        "Stop" | "StopFailure" | "SubagentStop" => {
+            sync_claude_turn_completion(app, payload)?;
+            Ok(json!({}))
+        }
         _ => Ok(json!({})),
     }
 }
@@ -214,9 +224,18 @@ fn submit_claude_pre_tool_request(
         auto_request.detail = format!("{} Auto-approved.", auto_request.detail);
         touch_session_last_seen(&state, &auto_request.session);
         requests.insert(0, auto_request);
+        roll_over_token_usage_if_needed(&state);
         let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
         let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
-        let snapshot = snapshot_from(&requests, &last_seen, retention);
+        let token_usage = state
+            .session_token_usage
+            .lock()
+            .map_err(|error| error.to_string())?;
+        let known_sessions = state
+            .known_sessions
+            .lock()
+            .map_err(|error| error.to_string())?;
+        let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
         let _ = app.emit("snapshot-changed", &snapshot);
         return Ok(claude_hook_response(&hook_event_name, Decision::Approved, ""));
     }
@@ -235,9 +254,18 @@ fn submit_claude_pre_tool_request(
         let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
         touch_session_last_seen(&state, &request.session);
         requests.insert(0, request);
+        roll_over_token_usage_if_needed(&state);
         let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
         let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
-        let snapshot = snapshot_from(&requests, &last_seen, retention);
+        let token_usage = state
+            .session_token_usage
+            .lock()
+            .map_err(|error| error.to_string())?;
+        let known_sessions = state
+            .known_sessions
+            .lock()
+            .map_err(|error| error.to_string())?;
+        let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
         app.emit("snapshot-changed", &snapshot)
             .map_err(|error| error.to_string())?;
     }
@@ -319,9 +347,18 @@ fn mark_request_completed_externally(
         }
     }
 
+    roll_over_token_usage_if_needed(state);
     let last_seen = state.session_last_seen.lock().unwrap_or_else(|e| e.into_inner());
     let retention = *state.session_retention_secs.lock().unwrap_or_else(|e| e.into_inner());
-    let snapshot = snapshot_from(&requests, &last_seen, retention);
+    let token_usage = state
+        .session_token_usage
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let known_sessions = state
+        .known_sessions
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
     let _ = app.emit("snapshot-changed", &snapshot);
 }
 
@@ -336,42 +373,170 @@ fn mark_request_denied(state: &AppState, app: &AppHandle, request_id: &str, note
         touch_session_last_seen(state, &request.session);
     }
 
+    roll_over_token_usage_if_needed(state);
     let last_seen = state.session_last_seen.lock().unwrap_or_else(|e| e.into_inner());
     let retention = *state.session_retention_secs.lock().unwrap_or_else(|e| e.into_inner());
-    let snapshot = snapshot_from(&requests, &last_seen, retention);
+    let token_usage = state
+        .session_token_usage
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let known_sessions = state
+        .known_sessions
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
     let _ = app.emit("snapshot-changed", &snapshot);
 }
 
 fn sync_claude_tool_completion(app: AppHandle, payload: Value) -> Result<(), String> {
     let state = app.state::<AppState>();
-    let snapshot = {
-        let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
-        let Some(request_id) = mark_matching_pending_request_complete(&mut requests, &payload)
-        else {
-            return Ok(());
-        };
+    let mut completed_session_id = payload_session_id(&payload).map(str::to_string);
+    let mut completed_transcript_path = payload_transcript_path(&payload).map(str::to_string);
 
-        if let Some(session_id) = payload.get("session_id").and_then(Value::as_str) {
-            touch_session_last_seen(&state, session_id);
+    if let Some(session_id) = completed_session_id.as_deref() {
+        let cwd = payload
+            .get("cwd")
+            .and_then(Value::as_str)
+            .unwrap_or(".");
+        register_known_session(
+            &state,
+            session_id,
+            AgentKind::Claude,
+            cwd,
+            completed_transcript_path.as_deref(),
+        );
+    }
+
+    let completed_request_id = {
+        let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
+        let completed_request_id = mark_matching_pending_request_complete(&mut requests, &payload);
+
+        if let Some(request_id) = completed_request_id.as_deref() {
+            if let Some(completed_request) = requests.iter().find(|request| request.id == request_id) {
+                if completed_session_id.is_none() {
+                    completed_session_id = Some(completed_request.session.clone());
+                }
+                if completed_transcript_path.is_none() {
+                    completed_transcript_path = completed_request.transcript_path.clone();
+                }
+            }
         }
 
+        if let Some(session_id) = completed_session_id.as_deref() {
+            if completed_transcript_path.is_none() {
+                completed_transcript_path = requests
+                    .iter()
+                    .filter(|request| request.session == session_id)
+                    .find_map(|request| request.transcript_path.clone());
+            }
+        }
+        completed_request_id
+    };
+
+    if let Some(session_id) = completed_session_id.as_deref() {
+        touch_session_last_seen(&state, session_id);
+        if let Err(error) = refresh_session_token_usage(
+            &state,
+            session_id,
+            completed_transcript_path.as_deref(),
+        ) {
+            eprintln!("Atoll token usage refresh failed: {error}");
+        }
+    }
+
+    if let Some(request_id) = completed_request_id.as_deref() {
         if let Ok(mut waiters) = state.hook_waiters.lock() {
-            if let Some(waiter) = waiters.remove(&request_id) {
+            if let Some(waiter) = waiters.remove(request_id) {
                 let _ = waiter.send(DecisionWithNote {
                     decision: Decision::Approved,
                     note: String::new(),
                 });
             }
         }
+    }
 
+    let snapshot = {
+        let requests = state.requests.lock().map_err(|error| error.to_string())?;
+        roll_over_token_usage_if_needed(&state);
         let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
         let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
-        snapshot_from(&requests, &last_seen, retention)
+        let token_usage = state
+            .session_token_usage
+            .lock()
+            .map_err(|error| error.to_string())?;
+        let known_sessions = state
+            .known_sessions
+            .lock()
+            .map_err(|error| error.to_string())?;
+        snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions)
     };
 
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+fn sync_claude_turn_completion(app: AppHandle, payload: Value) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let session_id = payload_session_id(&payload).map(str::to_string);
+    let transcript_path = payload_transcript_path(&payload).map(str::to_string);
+    let cwd = payload
+        .get("cwd")
+        .and_then(Value::as_str)
+        .unwrap_or(".");
+
+    if let Some(session_id) = session_id.as_deref() {
+        touch_session_last_seen(&state, session_id);
+        register_known_session(
+            &state,
+            session_id,
+            AgentKind::Claude,
+            cwd,
+            transcript_path.as_deref(),
+        );
+        if let Err(error) =
+            refresh_session_token_usage(&state, session_id, transcript_path.as_deref())
+        {
+            eprintln!("Atoll token usage refresh failed: {error}");
+        }
+    }
+
+    let snapshot = {
+        let requests = state.requests.lock().map_err(|error| error.to_string())?;
+        roll_over_token_usage_if_needed(&state);
+        let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
+        let retention = *state
+            .session_retention_secs
+            .lock()
+            .map_err(|error| error.to_string())?;
+        let token_usage = state
+            .session_token_usage
+            .lock()
+            .map_err(|error| error.to_string())?;
+        let known_sessions = state
+            .known_sessions
+            .lock()
+            .map_err(|error| error.to_string())?;
+        snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions)
+    };
+
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn payload_session_id(payload: &Value) -> Option<&str> {
+    payload
+        .get("session_id")
+        .and_then(Value::as_str)
+        .or_else(|| payload.get("sessionId").and_then(Value::as_str))
+}
+
+fn payload_transcript_path(payload: &Value) -> Option<&str> {
+    payload
+        .get("transcript_path")
+        .and_then(Value::as_str)
+        .or_else(|| payload.get("transcriptPath").and_then(Value::as_str))
 }
 
 pub(crate) fn mark_matching_pending_request_complete(
