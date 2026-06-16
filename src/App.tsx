@@ -38,6 +38,7 @@ import {
   getSessionRequests,
   getSessionTranscript,
   IslandSnapshot,
+  TokenUsage,
   onIslandHoverChanged,
   onIslandOpenRequested,
   onSnapshotChanged,
@@ -46,6 +47,7 @@ import {
   ChatMessage,
   HookStatus,
   archiveAllResolved,
+  deactivateAtoll,
   quitAtoll,
   resolvePermissionRequest,
   setIslandPresentation,
@@ -80,7 +82,14 @@ const COMPACT_WIDTH_ICON_SIZE = 20;
 const COMPACT_WIDTH_ICON_GAP = 4;
 const COMPACT_WIDTH_OVERFLOW = 32;
 const COMPACT_WIDTH_PENDING = 28;
+const COMPACT_WIDTH_TOKEN_COUNTER = 72;
 const COMPACT_WIDTH_EMPTY = 72;
+const ZERO_TOKEN_USAGE: TokenUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheCreationTokens: 0,
+};
 
 function clampCompactIconLimit(value: number) {
   return Math.min(
@@ -122,9 +131,16 @@ function computeCompactWindowWidth(
   sessionCount: number,
   maxCompactIcons: number,
   pendingCount: number,
+  tokenTotal: number,
 ) {
+  const pendingWidth = pendingCount > 0 ? COMPACT_WIDTH_PENDING : 0;
+  const hasTokenCounter = sessionCount > 0 || pendingCount > 0 || tokenTotal > 0;
+  const tokenWidth = hasTokenCounter ? COMPACT_WIDTH_TOKEN_COUNTER : 0;
   if (sessionCount === 0) {
-    return COMPACT_WIDTH_EMPTY;
+    return Math.max(
+      COMPACT_WIDTH_EMPTY,
+      Math.ceil(COMPACT_WIDTH_BASE + tokenWidth + pendingWidth),
+    );
   }
   const shown = Math.min(sessionCount, maxCompactIcons);
   const iconWidth =
@@ -133,10 +149,9 @@ function computeCompactWindowWidth(
         Math.max(0, shown - 1) * COMPACT_WIDTH_ICON_GAP
       : COMPACT_WIDTH_ICON_SIZE;
   const overflowWidth = sessionCount > shown ? COMPACT_WIDTH_OVERFLOW : 0;
-  const pendingWidth = pendingCount > 0 ? COMPACT_WIDTH_PENDING : 0;
   return Math.max(
     COMPACT_WIDTH_MIN,
-    Math.ceil(COMPACT_WIDTH_BASE + iconWidth + overflowWidth + pendingWidth),
+    Math.ceil(COMPACT_WIDTH_BASE + iconWidth + overflowWidth + pendingWidth + tokenWidth),
   );
 }
 
@@ -147,6 +162,7 @@ const initialSnapshot: IslandSnapshot = {
   activeRequest: null,
   recent: [],
   sessions: [],
+  dailyTokens: ZERO_TOKEN_USAGE,
 };
 
 const agentLabels: Record<AgentKind, string> = {
@@ -308,14 +324,17 @@ export function App() {
 
   const activeRequest = snapshot.activeRequest;
   const sessions = snapshot.sessions;
+  const dailyTokens = snapshot.dailyTokens ?? ZERO_TOKEN_USAGE;
+  const dailyTokenTotal = dailyTokens.inputTokens + dailyTokens.outputTokens;
   const compactWindowWidth = useMemo(
     () =>
       computeCompactWindowWidth(
         sessions.length,
         maxCompactIcons,
         snapshot.pendingCount,
+        dailyTokenTotal,
       ),
-    [sessions.length, maxCompactIcons, snapshot.pendingCount],
+    [sessions.length, maxCompactIcons, snapshot.pendingCount, dailyTokenTotal],
   );
   // With no active sessions the island super-collapses into a tiny top-edge
   // drawer handle instead of showing a capsule.
@@ -541,6 +560,7 @@ export function App() {
       applySnapshot(nextSnapshot);
       if (nextSnapshot.pendingCount === 0) {
         collapseIsland(true);
+        deactivateAtoll().catch(() => undefined);
       }
     } finally {
       setBusyDecision(null);
@@ -558,6 +578,7 @@ export function App() {
       }
       if (nextSnapshot.pendingCount === 0) {
         scheduleIdleCollapse();
+        deactivateAtoll().catch(() => undefined);
       }
     } finally {
       setBusyDecision(null);
@@ -909,12 +930,19 @@ export function App() {
             )}
           </div>
 
-          {snapshot.pendingCount > 0 ? (
-            <span className="pending-badge-slot">
-              <span className="pending-badge" aria-label={`${snapshot.pendingCount} pending`}>
-                {snapshot.pendingCount}
-              </span>
-            </span>
+          {(!isDormant && !isExpanded) || snapshot.pendingCount > 0 ? (
+            <div className="header-metrics">
+              {!isDormant && !isExpanded ? (
+                <TokenCounter value={dailyTokenTotal} usage={dailyTokens} />
+              ) : null}
+              {snapshot.pendingCount > 0 ? (
+                <span className="pending-badge-slot">
+                  <span className="pending-badge" aria-label={`${snapshot.pendingCount} pending`}>
+                    {snapshot.pendingCount}
+                  </span>
+                </span>
+              ) : null}
+            </div>
           ) : null}
 
           <div
@@ -1005,6 +1033,137 @@ export function App() {
 }
 
 /* ─── Compact Header ───────────────────────────────────────────── */
+
+function formatCompactTokenCount(value: number): string {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (abs >= 1_000_000) {
+    const fractionDigits = abs >= 100_000_000 ? 0 : abs >= 10_000_000 ? 1 : 2;
+    return `${sign}${(abs / 1_000_000).toFixed(fractionDigits)}M`;
+  }
+  if (abs >= 1_000) {
+    const fractionDigits = abs >= 100_000 ? 1 : 2;
+    return `${sign}${(abs / 1_000).toFixed(fractionDigits)}K`;
+  }
+  return value.toLocaleString();
+}
+
+function tokenCounterTitle(value: number, usage: TokenUsage): string {
+  return [
+    `Today tokens ${value.toLocaleString()}`,
+    `input ${usage.inputTokens.toLocaleString()}`,
+    `output ${usage.outputTokens.toLocaleString()}`,
+    `cache-read ${usage.cacheReadTokens.toLocaleString()}`,
+    `cache-write ${usage.cacheCreationTokens.toLocaleString()}`,
+  ].join(" · ");
+}
+
+interface TokenCounterProps {
+  value: number;
+  usage: TokenUsage;
+}
+
+function TokenCounter({ value, usage }: TokenCounterProps) {
+  const [displayValue, setDisplayValue] = useState(value);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [deltaText, setDeltaText] = useState<string | null>(null);
+  const displayRef = useRef(value);
+  const frameRef = useRef<number | null>(null);
+  const pulseTimerRef = useRef<number | null>(null);
+  const deltaTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (frameRef.current !== null) {
+      window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+    if (pulseTimerRef.current !== null) {
+      window.clearTimeout(pulseTimerRef.current);
+      pulseTimerRef.current = null;
+    }
+    if (deltaTimerRef.current !== null) {
+      window.clearTimeout(deltaTimerRef.current);
+      deltaTimerRef.current = null;
+    }
+
+    const startValue = displayRef.current;
+    if (startValue === value) {
+      setIsUpdating(false);
+      setDeltaText(null);
+      return;
+    }
+
+    const delta = value - startValue;
+    const duration = Math.max(200, Math.min(700, Math.abs(delta) * 0.2));
+    const startAt = performance.now();
+    setIsUpdating(true);
+    if (delta > 0) {
+      setDeltaText(`+${formatCompactTokenCount(delta)}`);
+      deltaTimerRef.current = window.setTimeout(() => {
+        setDeltaText(null);
+        deltaTimerRef.current = null;
+      }, 680);
+    } else {
+      setDeltaText(null);
+    }
+
+    const animate = (now: number) => {
+      const progress = Math.min(1, (now - startAt) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const nextValue = Math.round(startValue + delta * eased);
+
+      if (nextValue !== displayRef.current) {
+        displayRef.current = nextValue;
+        setDisplayValue(nextValue);
+      }
+
+      if (progress < 1) {
+        frameRef.current = window.requestAnimationFrame(animate);
+        return;
+      }
+
+      frameRef.current = null;
+    };
+
+    frameRef.current = window.requestAnimationFrame(animate);
+    pulseTimerRef.current = window.setTimeout(() => {
+      setIsUpdating(false);
+      pulseTimerRef.current = null;
+    }, 320);
+
+    return () => {
+      if (frameRef.current !== null) {
+        window.cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+      if (pulseTimerRef.current !== null) {
+        window.clearTimeout(pulseTimerRef.current);
+        pulseTimerRef.current = null;
+      }
+      if (deltaTimerRef.current !== null) {
+        window.clearTimeout(deltaTimerRef.current);
+        deltaTimerRef.current = null;
+      }
+    };
+  }, [value]);
+
+  return (
+    <span className="token-counter-wrap">
+      <span
+        className={`token-counter ${isUpdating ? "is-updating" : ""}`}
+        aria-label={tokenCounterTitle(displayValue, usage)}
+        title={tokenCounterTitle(displayValue, usage)}
+      >
+        {formatCompactTokenCount(displayValue)}
+      </span>
+      {deltaText ? (
+        <span className="token-counter-delta" aria-hidden="true">
+          {deltaText}
+        </span>
+      ) : null}
+    </span>
+  );
+}
 
 interface CompactSessionStackProps {
   sessions: SessionSummary[];
@@ -1487,25 +1646,36 @@ interface IdleViewProps {
 
 function IdleView({ hookStatus, hookBusy, onInstall }: IdleViewProps) {
   if (hookStatus && !hookStatus.installed) {
+    const scriptMissing = !hookStatus.scriptFound;
     return (
       <div className="idle-view setup-view">
-        <div className="idle-icon setup-icon">
-          <Download size={22} />
+        <div className="setup-card">
+          <div className="setup-head">
+            <div className="idle-icon setup-icon">
+              <Download size={16} />
+            </div>
+            <div className="setup-copy">
+              <h2>Install Claude hooks</h2>
+              <p>Forward approval requests and token usage updates to Atoll.</p>
+              {scriptMissing ? (
+                <p className="setup-warning">
+                  Hook script not found. If install fails, reinstall Atoll and try again.
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <p className="setup-footnote">Once installed, this panel will auto-switch to waiting mode.</p>
+          <button
+            type="button"
+            className="install-button"
+            onClick={onInstall}
+            disabled={hookBusy}
+            data-no-drag
+          >
+            <Download size={14} />
+            <span>{hookBusy ? "Installing..." : "Install hooks"}</span>
+          </button>
         </div>
-        <div>
-          <h1>Setup required</h1>
-          <p>Install Claude Code hooks to forward approval requests to Atoll.</p>
-        </div>
-        <button
-          type="button"
-          className="install-button"
-          onClick={onInstall}
-          disabled={hookBusy}
-          data-no-drag
-        >
-          <Download size={15} />
-          <span>{hookBusy ? "Installing..." : "Install hooks"}</span>
-        </button>
       </div>
     );
   }

@@ -38,6 +38,12 @@ describe("Tauri bridge", () => {
       activeRequest: null,
       recent: [],
       sessions: [],
+      dailyTokens: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
     });
   });
 

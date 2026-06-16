@@ -48,7 +48,14 @@ function hookEventNameFromPayload(payload) {
 }
 
 function fallbackResponse(hookEventName, error) {
-  if (hookEventName === "PermissionRequest" || hookEventName === "PostToolUse") {
+  if (
+    hookEventName === "PermissionRequest" ||
+    hookEventName === "PostToolUse" ||
+    hookEventName === "PostToolUseFailure" ||
+    hookEventName === "Stop" ||
+    hookEventName === "StopFailure" ||
+    hookEventName === "SubagentStop"
+  ) {
     return "{}";
   }
 
