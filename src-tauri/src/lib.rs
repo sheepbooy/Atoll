@@ -119,6 +119,8 @@ struct AppState {
     compact_width: Mutex<f64>,
     presentation_generation: Arc<AtomicU64>,
     home_bounds: Mutex<Option<HomeWindowBounds>>,
+    session_last_seen: Mutex<HashMap<String, u64>>,
+    session_retention_secs: Mutex<u64>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -139,7 +141,10 @@ struct MacosScreenGeometry {
 
 #[tauri::command]
 fn get_snapshot(state: State<'_, AppState>) -> IslandSnapshot {
-    snapshot_from(&state.requests.lock().expect("state mutex poisoned"))
+    let requests = state.requests.lock().expect("state mutex poisoned");
+    let last_seen = state.session_last_seen.lock().expect("state mutex poisoned");
+    let retention = *state.session_retention_secs.lock().expect("state mutex poisoned");
+    snapshot_from(&requests, &last_seen, retention)
 }
 
 #[tauri::command]
@@ -165,6 +170,8 @@ fn resolve_permission_request(
         request.detail = format!("{} Note: {}", request.detail, note.trim());
     }
 
+    let session_id = request.session.clone();
+
     let waiter = state
         .hook_waiters
         .lock()
@@ -177,7 +184,10 @@ fn resolve_permission_request(
         });
     }
 
-    let snapshot = snapshot_from(&requests);
+    touch_session_last_seen(&state, &session_id);
+    let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
+    let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
+    let snapshot = snapshot_from(&requests, &last_seen, retention);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
     Ok(snapshot)
@@ -256,7 +266,9 @@ fn archive_request(
     if let Some(request) = requests.iter_mut().find(|r| r.id == id) {
         request.archived = true;
     }
-    let snapshot = snapshot_from(&requests);
+    let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
+    let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
+    let snapshot = snapshot_from(&requests, &last_seen, retention);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
     Ok(snapshot)
@@ -390,10 +402,40 @@ fn archive_all_resolved(
             request.archived = true;
         }
     }
-    let snapshot = snapshot_from(&requests);
+    let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
+    let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
+    let snapshot = snapshot_from(&requests, &last_seen, retention);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
     Ok(snapshot)
+}
+
+const DEFAULT_SESSION_RETENTION_SECS: u64 = 300;
+
+#[tauri::command]
+fn get_session_retention(state: State<'_, AppState>) -> u64 {
+    *state.session_retention_secs.lock().expect("state mutex poisoned")
+}
+
+#[tauri::command]
+fn set_session_retention(
+    state: State<'_, AppState>,
+    minutes: u64,
+) -> u64 {
+    let secs = minutes.clamp(1, 30) * 60;
+    let mut retention = state.session_retention_secs.lock().expect("state mutex poisoned");
+    *retention = secs;
+    secs
+}
+
+pub(crate) fn touch_session_last_seen(state: &AppState, session_id: &str) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    if let Ok(mut last_seen) = state.session_last_seen.lock() {
+        last_seen.insert(session_id.to_string(), now);
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -616,6 +658,8 @@ pub fn run() {
             compact_width: Mutex::new(COMPACT_WINDOW_WIDTH),
             presentation_generation: Arc::new(AtomicU64::new(0)),
             home_bounds: Mutex::new(None),
+            session_last_seen: Mutex::new(HashMap::new()),
+            session_retention_secs: Mutex::new(DEFAULT_SESSION_RETENTION_SECS),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -629,6 +673,8 @@ pub fn run() {
             get_claude_hook_status,
             install_claude_hooks,
             uninstall_claude_hooks,
+            get_session_retention,
+            set_session_retention,
             quit_atoll
         ])
         .setup(|app| {
@@ -730,7 +776,9 @@ fn start_auto_archive_timer(app: AppHandle) {
             }
 
             if changed {
-                let snapshot = snapshot_from(&requests);
+                let last_seen = state.session_last_seen.lock().unwrap_or_else(|e| e.into_inner());
+                let retention = *state.session_retention_secs.lock().unwrap_or_else(|e| e.into_inner());
+                let snapshot = snapshot_from(&requests, &last_seen, retention);
                 let _ = app.emit("snapshot-changed", &snapshot);
             }
             changed
@@ -1364,7 +1412,11 @@ fn macos_menu_bar_offset_physical(_window: &tauri::WebviewWindow) -> Option<i32>
     None
 }
 
-fn snapshot_from(requests: &[PermissionRequest]) -> IslandSnapshot {
+fn snapshot_from(
+    requests: &[PermissionRequest],
+    session_last_seen: &HashMap<String, u64>,
+    retention_secs: u64,
+) -> IslandSnapshot {
     let visible: Vec<&PermissionRequest> = requests
         .iter()
         .filter(|request| !request.archived)
@@ -1379,7 +1431,68 @@ fn snapshot_from(requests: &[PermissionRequest]) -> IslandSnapshot {
         .cloned()
         .cloned();
     let archived_count = requests.iter().filter(|r| r.archived).count();
-    let sessions = build_session_summaries(&visible);
+    let mut sessions = build_session_summaries(&visible);
+
+    if retention_secs > 0 {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let active_session_ids: HashSet<&str> =
+            sessions.iter().map(|s| s.session_id.as_str()).collect();
+
+        let mut retained_map: HashMap<&str, (String, String, Option<String>, AgentKind)> =
+            HashMap::new();
+        for request in requests.iter().filter(|r| r.archived) {
+            if active_session_ids.contains(request.session.as_str()) {
+                continue;
+            }
+            let last_seen_ts = session_last_seen
+                .get(&request.session)
+                .copied()
+                .unwrap_or_else(|| parse_iso_timestamp_secs(&request.requested_at));
+            if now.saturating_sub(last_seen_ts) > retention_secs {
+                continue;
+            }
+            let entry = retained_map
+                .entry(&request.session)
+                .or_insert_with(|| {
+                    (
+                        request.cwd.clone(),
+                        request.requested_at.clone(),
+                        request.transcript_path.clone(),
+                        request.agent.clone(),
+                    )
+                });
+            if request.requested_at > entry.1 {
+                entry.0 = request.cwd.clone();
+                entry.1 = request.requested_at.clone();
+                entry.3 = request.agent.clone();
+            }
+            if entry.2.is_none() && request.transcript_path.is_some() {
+                entry.2 = request.transcript_path.clone();
+            }
+        }
+
+        for (session_id, (cwd, last_activity, transcript_path, agent)) in retained_map {
+            sessions.push(SessionSummary {
+                session_id: session_id.to_string(),
+                agent,
+                cwd,
+                pending_count: 0,
+                total_count: 0,
+                last_activity,
+                transcript_path,
+            });
+        }
+
+        sessions.sort_by(|a, b| {
+            b.pending_count
+                .cmp(&a.pending_count)
+                .then(b.last_activity.cmp(&a.last_activity))
+        });
+    }
 
     IslandSnapshot {
         online: true,

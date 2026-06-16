@@ -30,6 +30,8 @@ const bridge = vi.hoisted(() => ({
   archiveRequest: vi.fn(),
   getSessionRequests: vi.fn(),
   getSessionTranscript: vi.fn(),
+  getSessionRetention: vi.fn(),
+  setSessionRetention: vi.fn(),
 }));
 
 const windowBridge = vi.hoisted(() => ({
@@ -75,6 +77,8 @@ describe("App", () => {
       settingsPath: "",
       scriptPath: "",
     });
+    bridge.getSessionRetention.mockResolvedValue(300);
+    bridge.setSessionRetention.mockResolvedValue(300);
     bridge.installClaudeHooks.mockResolvedValue({
       installed: true,
       scriptFound: true,
@@ -153,6 +157,46 @@ describe("App", () => {
     await waitFor(
       () => expect(container.querySelector(".is-compact")).not.toBeNull(),
       { timeout: 1500 },
+    );
+  });
+
+  it("auto-collapses after leaving a session opened from the list", async () => {
+    const session = {
+      sessionId: "session-1",
+      agent: "claude" as const,
+      cwd: "/tmp/project",
+      pendingCount: 0,
+      totalCount: 2,
+      lastActivity: "2026-06-10T08:00:00Z",
+      transcriptPath: null,
+    };
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [session],
+    });
+    bridge.getSessionRequests.mockResolvedValue([]);
+    bridge.getSessionTranscript.mockResolvedValue([]);
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+    const island = screen.getByLabelText("Atoll");
+
+    fireEvent.pointerEnter(island);
+    await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+
+    // Opening a session focuses the tapped button — this must NOT pin the
+    // island open once the pointer leaves.
+    await user.click(await screen.findByRole("button", { name: /project/i }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument(),
+    );
+
+    fireEvent.pointerLeave(island);
+    await waitFor(
+      () => expect(container.querySelector(".is-compact")).not.toBeNull(),
+      { timeout: 2000 },
     );
   });
 

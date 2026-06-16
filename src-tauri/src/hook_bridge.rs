@@ -8,8 +8,8 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
-    iso_timestamp_now, show_main_window, snapshot_from, AgentKind, AppState, Decision,
-    DecisionWithNote, PermissionRequest, PermissionStatus,
+    iso_timestamp_now, show_main_window, snapshot_from, touch_session_last_seen, AgentKind,
+    AppState, Decision, DecisionWithNote, PermissionRequest, PermissionStatus,
 };
 
 const HOOK_BIND_ADDR: &str = "127.0.0.1:47777";
@@ -212,8 +212,11 @@ fn submit_claude_pre_tool_request(
         let mut auto_request = request;
         auto_request.status = PermissionStatus::Approved;
         auto_request.detail = format!("{} Auto-approved.", auto_request.detail);
+        touch_session_last_seen(&state, &auto_request.session);
         requests.insert(0, auto_request);
-        let snapshot = snapshot_from(&requests);
+        let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
+        let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
+        let snapshot = snapshot_from(&requests, &last_seen, retention);
         let _ = app.emit("snapshot-changed", &snapshot);
         return Ok(claude_hook_response(&hook_event_name, Decision::Approved, ""));
     }
@@ -230,8 +233,11 @@ fn submit_claude_pre_tool_request(
 
     {
         let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
+        touch_session_last_seen(&state, &request.session);
         requests.insert(0, request);
-        let snapshot = snapshot_from(&requests);
+        let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
+        let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
+        let snapshot = snapshot_from(&requests, &last_seen, retention);
         app.emit("snapshot-changed", &snapshot)
             .map_err(|error| error.to_string())?;
     }
@@ -309,10 +315,13 @@ fn mark_request_completed_externally(
             if !request.detail.contains("Resolved in Claude.") {
                 request.detail = format!("{} Resolved in Claude.", request.detail);
             }
+            touch_session_last_seen(state, &request.session);
         }
     }
 
-    let snapshot = snapshot_from(&requests);
+    let last_seen = state.session_last_seen.lock().unwrap_or_else(|e| e.into_inner());
+    let retention = *state.session_retention_secs.lock().unwrap_or_else(|e| e.into_inner());
+    let snapshot = snapshot_from(&requests, &last_seen, retention);
     let _ = app.emit("snapshot-changed", &snapshot);
 }
 
@@ -324,9 +333,12 @@ fn mark_request_denied(state: &AppState, app: &AppHandle, request_id: &str, note
     if let Some(request) = requests.iter_mut().find(|request| request.id == request_id) {
         request.status = PermissionStatus::Denied;
         request.detail = format!("{} {note}", request.detail);
+        touch_session_last_seen(state, &request.session);
     }
 
-    let snapshot = snapshot_from(&requests);
+    let last_seen = state.session_last_seen.lock().unwrap_or_else(|e| e.into_inner());
+    let retention = *state.session_retention_secs.lock().unwrap_or_else(|e| e.into_inner());
+    let snapshot = snapshot_from(&requests, &last_seen, retention);
     let _ = app.emit("snapshot-changed", &snapshot);
 }
 
@@ -339,6 +351,10 @@ fn sync_claude_tool_completion(app: AppHandle, payload: Value) -> Result<(), Str
             return Ok(());
         };
 
+        if let Some(session_id) = payload.get("session_id").and_then(Value::as_str) {
+            touch_session_last_seen(&state, session_id);
+        }
+
         if let Ok(mut waiters) = state.hook_waiters.lock() {
             if let Some(waiter) = waiters.remove(&request_id) {
                 let _ = waiter.send(DecisionWithNote {
@@ -348,7 +364,9 @@ fn sync_claude_tool_completion(app: AppHandle, payload: Value) -> Result<(), Str
             }
         }
 
-        snapshot_from(&requests)
+        let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
+        let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
+        snapshot_from(&requests, &last_seen, retention)
     };
 
     app.emit("snapshot-changed", &snapshot)
