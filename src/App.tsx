@@ -84,7 +84,9 @@ const COMPACT_WIDTH_ICON_SIZE = 20;
 const COMPACT_WIDTH_ICON_GAP = 4;
 const COMPACT_WIDTH_OVERFLOW = 32;
 const COMPACT_WIDTH_PENDING = 28;
-const COMPACT_WIDTH_TOKEN_COUNTER = 72;
+const COMPACT_WIDTH_TOKEN_COUNTER = 82;
+const COMPACT_WIDTH_TOKEN_NARROW = 52;
+const COMPACT_WIDTH_TOKEN_TIGHT = 38;
 const COMPACT_WIDTH_EMPTY = 72;
 const ZERO_TOKEN_USAGE: TokenUsage = {
   inputTokens: 0,
@@ -137,7 +139,14 @@ function computeCompactWindowWidth(
 ) {
   const pendingWidth = pendingCount > 0 ? COMPACT_WIDTH_PENDING : 0;
   const hasTokenCounter = sessionCount > 0 || pendingCount > 0 || tokenTotal > 0;
-  const tokenWidth = hasTokenCounter ? COMPACT_WIDTH_TOKEN_COUNTER : 0;
+  const compact = tokenCompactLevel(sessionCount);
+  const tokenWidth = hasTokenCounter
+    ? compact >= 2
+      ? COMPACT_WIDTH_TOKEN_TIGHT
+      : compact >= 1
+        ? COMPACT_WIDTH_TOKEN_NARROW
+        : COMPACT_WIDTH_TOKEN_COUNTER
+    : 0;
   if (sessionCount === 0) {
     return Math.max(
       COMPACT_WIDTH_EMPTY,
@@ -954,7 +963,7 @@ export function App() {
           {(!isDormant && !isExpanded) || snapshot.pendingCount > 0 ? (
             <div className="header-metrics">
               {!isDormant && !isExpanded ? (
-                <TokenCounter value={dailyTokenTotal} usage={dailyTokens} />
+                <TokenCounter value={dailyTokenTotal} usage={dailyTokens} sessionCount={sessions.length} />
               ) : null}
               {snapshot.pendingCount > 0 ? (
                 <span className="pending-badge-slot">
@@ -1055,18 +1064,40 @@ export function App() {
 
 /* ─── Compact Header ───────────────────────────────────────────── */
 
-function formatCompactTokenCount(value: number): string {
+/**
+ * @param value   – the token count
+ * @param compact – 0 = raw digits (maximum visceral impact — every digit rolls),
+ *                  1 = moderate (abbreviated with one fraction digit),
+ *                  2 = tight (abbreviated, no fraction digits).
+ *                  Driven by how many session mascots share the compact header.
+ */
+function formatCompactTokenCount(value: number, compact = 0): string {
   const abs = Math.abs(value);
   const sign = value < 0 ? "-" : "";
+
+  if (compact === 0) {
+    if (abs >= 1_000_000) {
+      const fractionDigits = abs >= 100_000_000 ? 0 : abs >= 10_000_000 ? 1 : 2;
+      return `${sign}${(abs / 1_000_000).toFixed(fractionDigits)}M`;
+    }
+    return value.toLocaleString();
+  }
+
   if (abs >= 1_000_000) {
-    const fractionDigits = abs >= 100_000_000 ? 0 : abs >= 10_000_000 ? 1 : 2;
+    const fractionDigits = compact >= 2 ? 0 : 1;
     return `${sign}${(abs / 1_000_000).toFixed(fractionDigits)}M`;
   }
   if (abs >= 1_000) {
-    const fractionDigits = abs >= 100_000 ? 1 : 2;
+    const fractionDigits = compact >= 2 ? 0 : abs >= 100_000 ? 1 : 1;
     return `${sign}${(abs / 1_000).toFixed(fractionDigits)}K`;
   }
   return value.toLocaleString();
+}
+
+function tokenCompactLevel(sessionCount: number): number {
+  if (sessionCount >= 4) return 2;
+  if (sessionCount >= 2) return 1;
+  return 0;
 }
 
 function tokenCounterTitle(value: number, usage: TokenUsage): string {
@@ -1082,9 +1113,10 @@ function tokenCounterTitle(value: number, usage: TokenUsage): string {
 interface TokenCounterProps {
   value: number;
   usage: TokenUsage;
+  sessionCount?: number;
 }
 
-function TokenCounter({ value, usage }: TokenCounterProps) {
+function TokenCounter({ value, usage, sessionCount = 0 }: TokenCounterProps) {
   const [displayValue, setDisplayValue] = useState(value);
   const [isUpdating, setIsUpdating] = useState(false);
   const [deltaText, setDeltaText] = useState<string | null>(null);
@@ -1102,10 +1134,11 @@ function TokenCounter({ value, usage }: TokenCounterProps) {
       deltaTimerRef.current = null;
     }
 
+    const compact = tokenCompactLevel(sessionCount);
     const incomingDelta = value - targetRef.current;
     targetRef.current = value;
     if (incomingDelta > 0) {
-      setDeltaText(`+${formatCompactTokenCount(incomingDelta)}`);
+      setDeltaText(`+${formatCompactTokenCount(incomingDelta, compact)}`);
       deltaTimerRef.current = window.setTimeout(() => {
         setDeltaText(null);
         deltaTimerRef.current = null;
@@ -1181,7 +1214,7 @@ function TokenCounter({ value, usage }: TokenCounterProps) {
         deltaTimerRef.current = null;
       }
     };
-  }, [value]);
+  }, [value, sessionCount]);
 
   return (
     <span className="token-counter-wrap">
@@ -1190,7 +1223,7 @@ function TokenCounter({ value, usage }: TokenCounterProps) {
         aria-label={tokenCounterTitle(displayValue, usage)}
         title={tokenCounterTitle(displayValue, usage)}
       >
-        {formatCompactTokenCount(displayValue)}
+        {formatCompactTokenCount(displayValue, tokenCompactLevel(sessionCount))}
       </span>
       {deltaText ? (
         <span className="token-counter-delta" aria-hidden="true">

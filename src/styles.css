@@ -316,8 +316,8 @@ kbd {
 /* ─── Dormant pill (no active sessions) ────────────────────────── */
 .island.is-dormant {
   width: 48px;
-  height: 24px;
-  border-radius: 0 0 11px 11px;
+  height: 28px;
+  border-radius: 0 0 15px 15px;
 }
 
 .tauri-runtime .island.is-dormant {
@@ -349,7 +349,7 @@ kbd {
 .atoll-indicator {
   position: absolute;
   z-index: 5;
-  top: 4px;
+  top: 6px;
   left: 6px;
   display: inline-flex;
   align-items: center;
@@ -395,9 +395,24 @@ kbd {
   animation: header-content-in 300ms var(--ease-out) 180ms both;
 }
 
+/* Same crossfade for the compact stack → expanded tabs transition */
+.is-opening .compact-session-stack {
+  animation: header-content-in 260ms var(--ease-out) 140ms both;
+}
+
+/* Fade-out during collapse so mascots don't pop away */
+.is-closing .compact-session-stack {
+  animation: header-content-out 200ms ease both;
+}
+
 @keyframes header-content-in {
   from { opacity: 0; transform: translateY(-3px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes header-content-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(3px); }
 }
 
 .compact-session-stack {
@@ -406,14 +421,15 @@ kbd {
   align-items: center;
   gap: 4px;
   overflow: hidden;
+  transition: gap var(--duration-expand) var(--ease-window);
 }
 
-/* Folded content sits centered in the capsule (but NOT when dormant,
-   where the logo must stay left-aligned beside the notch). */
+/* Folded content left-aligned in the capsule so mascots line up
+   naturally from left to right beside the listener dot. */
 .is-compact:not(.is-dormant) .header-main,
 .is-closing:not(.is-dormant) .header-main {
   width: 100%;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .compact-session-stack.is-empty {
@@ -457,36 +473,101 @@ kbd {
   align-items: center;
   justify-content: center;
   border-radius: 4px;
+  animation: session-dot-in 400ms var(--ease-out) both;
 }
 
+.compact-session-dot:nth-child(2) { animation-delay: 60ms; }
+.compact-session-dot:nth-child(3) { animation-delay: 120ms; }
+.compact-session-dot:nth-child(4) { animation-delay: 180ms; }
+.compact-session-dot:nth-child(5) { animation-delay: 240ms; }
+.compact-session-dot:nth-child(6) { animation-delay: 300ms; }
+.compact-session-dot:nth-child(7) { animation-delay: 360ms; }
+.compact-session-dot:nth-child(8) { animation-delay: 420ms; }
+
 .compact-session-dot.coral {
+  --dot-glow: rgba(255, 129, 117, 0.4);
   background: none;
 }
 .compact-session-dot.cyan {
+  --dot-glow: rgba(111, 220, 255, 0.4);
   background: none;
 }
 .compact-session-dot.lime {
+  --dot-glow: rgba(178, 234, 126, 0.4);
   background: none;
 }
 .compact-session-dot.neutral {
+  --dot-glow: rgba(205, 193, 255, 0.4);
   background: none;
 }
 .compact-session-dot.amber {
+  --dot-glow: rgba(240, 192, 96, 0.4);
   background: none;
 }
 .compact-session-dot.pink {
+  --dot-glow: rgba(247, 160, 200, 0.4);
   background: none;
 }
 .compact-session-dot.teal {
+  --dot-glow: rgba(112, 216, 200, 0.4);
   background: none;
 }
 .compact-session-dot.blue {
+  --dot-glow: rgba(128, 176, 248, 0.4);
   background: none;
+}
+
+/* Breathing glow for compact session dots — mirrors atoll-breathe */
+.compact-session-dot .clawd.is-calm {
+  animation: session-dot-breathe 3.2s ease-in-out infinite;
+}
+
+.compact-session-dot .clawd.is-sleeping {
+  animation: session-dot-breathe 3.6s ease-in-out infinite;
+}
+
+.compact-session-dot .clawd.is-alert {
+  animation-name: clawd-alert-hop;
+  animation-duration: 0.85s;
+}
+
+.compact-session-dot .clawd.is-happy {
+  animation-name: clawd-bounce;
+  animation-duration: 0.6s;
+}
+
+.compact-session-dot .clawd.is-worried {
+  animation-name: clawd-tremble;
+  animation-duration: 0.5s;
+}
+
+@keyframes session-dot-breathe {
+  0%, 100% {
+    transform: scale(0.96) translateY(2%);
+    filter: drop-shadow(0 0 2px transparent);
+  }
+  50% {
+    transform: scale(1.04) translateY(-2%);
+    filter: drop-shadow(0 0 5px var(--dot-glow, rgba(56, 189, 248, 0.35)));
+  }
 }
 
 .compact-session-dot.has-pending {
   background: rgba(248, 221, 160, 0.15);
   box-shadow: 0 0 0 1px rgba(248, 221, 160, 0.6);
+}
+
+@keyframes session-dot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6) translateY(2px);
+    filter: blur(1px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
 }
 
 .compact-session-overflow {
@@ -788,7 +869,16 @@ kbd {
   flex: 0 0 auto;
   border-radius: 50%;
   background: var(--text-muted);
-  transition: background 300ms ease, box-shadow 300ms ease;
+  transition: background 300ms ease, box-shadow 300ms ease, opacity 300ms ease, transform 300ms var(--ease-out);
+}
+
+/* Mirror the dormant indicator's smooth entry in compact mode */
+.is-opening .listener-dot {
+  animation: header-content-in 260ms var(--ease-out) 140ms both;
+}
+
+.is-closing .listener-dot {
+  animation: header-content-out 180ms ease both;
 }
 
 .listener-dot.online {
@@ -817,6 +907,16 @@ kbd {
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
+  transition: gap var(--duration-expand) var(--ease-window);
+}
+
+/* Smooth entry/exit for metrics during island transitions */
+.is-opening .header-metrics {
+  animation: header-content-in 280ms var(--ease-out) 160ms both;
+}
+
+.is-closing .header-metrics {
+  animation: header-content-out 180ms ease both;
 }
 
 .is-expanded .header-metrics {
@@ -832,25 +932,26 @@ kbd {
 
 .token-counter {
   display: inline-flex;
-  min-width: 62px;
+  min-width: 30px;
   height: 18px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-pill);
   padding: 0 6px;
-  color: rgba(240, 246, 255, 0.86);
-  background: linear-gradient(135deg, rgba(116, 182, 255, 0.24), rgba(255, 255, 255, 0.06));
+  color: rgba(255, 240, 220, 0.92);
+  background: linear-gradient(135deg, rgba(255, 180, 80, 0.22), rgba(255, 140, 60, 0.10));
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 0 10px rgba(98, 176, 255, 0.18);
+    inset 0 0 0 1px rgba(255, 200, 120, 0.12),
+    0 0 10px rgba(255, 160, 80, 0.16);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 8px rgba(190, 224, 255, 0.22);
+  text-shadow: 0 0 6px rgba(255, 200, 120, 0.3);
   backdrop-filter: blur(6px);
   transform: translateZ(0);
+  animation: token-ember 3s ease-in-out infinite;
   transition:
     opacity 180ms ease,
     transform 220ms ease,
@@ -858,10 +959,24 @@ kbd {
     background 220ms ease;
 }
 
+@keyframes token-ember {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 200, 120, 0.12),
+      0 0 8px rgba(255, 160, 80, 0.14);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 200, 120, 0.2),
+      0 0 14px rgba(255, 160, 80, 0.28);
+  }
+}
+
 .token-counter.is-updating {
-  background: linear-gradient(135deg, rgba(138, 208, 255, 0.33), rgba(255, 255, 255, 0.14));
-  transform: translateZ(0) scale(1.05);
-  filter: brightness(1.2) drop-shadow(0 0 12px rgba(138, 206, 255, 0.36));
+  background: linear-gradient(135deg, rgba(255, 200, 100, 0.38), rgba(255, 160, 60, 0.2));
+  transform: translateZ(0) scale(1.06);
+  filter: brightness(1.15) drop-shadow(0 0 14px rgba(255, 180, 80, 0.4));
+  animation: none;
 }
 
 .token-counter-delta {
@@ -873,11 +988,11 @@ kbd {
   justify-content: center;
   border-radius: var(--radius-pill);
   padding: 0 6px;
-  color: #042436;
-  background: linear-gradient(135deg, #9ee9b8, #7edbff);
+  color: #2a1400;
+  background: linear-gradient(135deg, #ffd480, #ffaa40);
   box-shadow:
-    0 0 16px rgba(105, 202, 255, 0.34),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.42);
+    0 0 18px rgba(255, 170, 60, 0.45),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.35);
   font-size: 10px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
@@ -2345,6 +2460,9 @@ kbd {
   .idle-icon,
   .install-button::before,
   .compact-empty-logo,
+  .compact-session-dot,
+  .compact-session-dot .clawd,
+  .token-counter,
   .token-counter.is-updating,
   .token-counter-delta,
   .clawd,
