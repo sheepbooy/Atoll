@@ -385,9 +385,8 @@ kbd {
 .is-dormant .atoll-indicator {
   animation: none;
   opacity: 0.9;
-  top: 3px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: -5px;
+  left: 4px;
 }
 
 .is-expanded .atoll-indicator,
