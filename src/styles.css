@@ -1680,13 +1680,9 @@ kbd {
   display: flex;
   width: 100%;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
   color: inherit;
   background: transparent;
   text-align: left;
-  cursor: pointer;
   transition: transform var(--duration-fast) ease;
 }
 
@@ -1716,6 +1712,62 @@ kbd {
 
 .session-item:active {
   transform: translateY(0) scale(0.99);
+}
+
+.session-item.is-pinned::before {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.session-item-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 8px 10px 12px;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.session-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 8px;
+  opacity: 0;
+  transition: opacity var(--duration-fast) ease;
+}
+
+.session-item:hover .session-item-actions {
+  opacity: 1;
+}
+
+.session-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--text-tertiary);
+  background: transparent;
+  cursor: pointer;
+  transition: color var(--duration-fast) ease, background var(--duration-fast) ease;
+}
+
+.session-action-btn:hover {
+  color: var(--text-primary);
+  background: var(--surface-strong);
+}
+
+.pin-indicator {
+  display: inline-block;
+  margin-right: 4px;
+  color: var(--text-tertiary);
+  vertical-align: middle;
 }
 
 .session-item-left {
@@ -1831,6 +1883,10 @@ kbd {
 
 .session-item:hover .session-item-trail {
   color: var(--text-secondary);
+}
+
+.session-item:hover .session-item-trail > svg:last-child {
+  opacity: 0;
 }
 
 .session-pending-badge {

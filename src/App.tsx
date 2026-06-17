@@ -15,6 +15,8 @@ import {
   FolderClosed,
   Layers,
   Minus,
+  Pin,
+  PinOff,
   Power,
   Settings2,
   Plus,
@@ -47,6 +49,8 @@ import {
   ChatMessage,
   HookStatus,
   archiveAllResolved,
+  archiveSession,
+  pinSession,
   deactivateAtoll,
   quitAtoll,
   resolvePermissionRequest,
@@ -827,6 +831,20 @@ export function App() {
     }
   }
 
+  async function handleArchiveSession(sessionId: string) {
+    const nextSnapshot = await archiveSession(sessionId).catch(() => null);
+    if (nextSnapshot) {
+      applySnapshot(nextSnapshot);
+    }
+  }
+
+  async function handlePinSession(sessionId: string, pinned: boolean) {
+    const nextSnapshot = await pinSession(sessionId, pinned).catch(() => null);
+    if (nextSnapshot) {
+      applySnapshot(nextSnapshot);
+    }
+  }
+
   function handleOpenSettings() {
     setMenuOpen(false);
     setPanelView({ kind: "settings" });
@@ -887,6 +905,8 @@ export function App() {
           activeRequest={selectedAgentRequest}
           justResolved={justResolved}
           onSelectSession={navigateToSession}
+          onArchiveSession={handleArchiveSession}
+          onPinSession={handlePinSession}
         />
       );
     }
@@ -1371,9 +1391,11 @@ interface SessionListViewProps {
   activeRequest: PermissionRequest | null;
   justResolved: boolean;
   onSelectSession: (sessionId: string) => void;
+  onArchiveSession: (sessionId: string) => void;
+  onPinSession: (sessionId: string, pinned: boolean) => void;
 }
 
-function SessionListView({ sessions, activeRequest, justResolved, onSelectSession }: SessionListViewProps) {
+function SessionListView({ sessions, activeRequest, justResolved, onSelectSession, onArchiveSession, onPinSession }: SessionListViewProps) {
   return (
     <div className="session-list-view">
       <div className="session-list-header">
@@ -1384,42 +1406,65 @@ function SessionListView({ sessions, activeRequest, justResolved, onSelectSessio
         {sessions.map((session) => {
           const sessionColor = getSessionColor(session.sessionId);
           return (
-            <button
+            <div
               key={session.sessionId}
-              className="session-item"
-              type="button"
-              onClick={() => onSelectSession(session.sessionId)}
+              className={`session-item ${session.pinned ? "is-pinned" : ""}`}
             >
-              <div className="session-item-left">
-                <span className="session-clawd">
-                  <ClawdMascot
-                    mood={deriveSessionMood(session, activeRequest, justResolved)}
-                    accent={sessionColor.accent}
-                    accentDark={sessionColor.accentDark}
-                  />
-                </span>
-                <div className="session-item-info">
-                  <span className="session-item-name">
-                    {sessionDisplayName(session.cwd)}
+              <button
+                className="session-item-main"
+                type="button"
+                onClick={() => onSelectSession(session.sessionId)}
+              >
+                <div className="session-item-left">
+                  <span className="session-clawd">
+                    <ClawdMascot
+                      mood={deriveSessionMood(session, activeRequest, justResolved)}
+                      accent={sessionColor.accent}
+                      accentDark={sessionColor.accentDark}
+                    />
                   </span>
-                  <span className="session-item-meta">
-                    {session.cwd}
-                    <span className="meta-divider">·</span>
-                    <span className={`session-agent-pill ${sessionColor.tone}`}>
-                      {agentLabels[session.agent]}
+                  <div className="session-item-info">
+                    <span className="session-item-name">
+                      {session.pinned ? <Pin size={10} className="pin-indicator" /> : null}
+                      {sessionDisplayName(session.cwd)}
                     </span>
-                    <span className="meta-divider">·</span>
-                    {timeAgo(session.lastActivity)}
-                  </span>
+                    <span className="session-item-meta">
+                      {session.cwd}
+                      <span className="meta-divider">·</span>
+                      <span className={`session-agent-pill ${sessionColor.tone}`}>
+                        {agentLabels[session.agent]}
+                      </span>
+                      <span className="meta-divider">·</span>
+                      {timeAgo(session.lastActivity)}
+                    </span>
+                  </div>
                 </div>
+                <div className="session-item-trail">
+                  {session.pendingCount > 0 ? (
+                    <span className="session-pending-badge">{session.pendingCount}</span>
+                  ) : null}
+                  <ChevronRight size={14} />
+                </div>
+              </button>
+              <div className="session-item-actions">
+                <button
+                  type="button"
+                  className="session-action-btn"
+                  title={session.pinned ? "Unpin" : "Pin"}
+                  onClick={(e) => { e.stopPropagation(); onPinSession(session.sessionId, !session.pinned); }}
+                >
+                  {session.pinned ? <PinOff size={12} /> : <Pin size={12} />}
+                </button>
+                <button
+                  type="button"
+                  className="session-action-btn"
+                  title="Archive"
+                  onClick={(e) => { e.stopPropagation(); onArchiveSession(session.sessionId); }}
+                >
+                  <Archive size={12} />
+                </button>
               </div>
-              <div className="session-item-trail">
-                {session.pendingCount > 0 ? (
-                  <span className="session-pending-badge">{session.pendingCount}</span>
-                ) : null}
-                <ChevronRight size={14} />
-              </div>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -1503,9 +1548,9 @@ function SettingsView({
       </div>
       <div className="settings-item">
         <div className="settings-item-text">
-          <span className="settings-item-title">Session retention</span>
+          <span className="settings-item-title">Auto-archive timeout</span>
           <span className="settings-item-desc">
-            Minutes a session stays visible after all requests are resolved.
+            Minutes before idle sessions are auto-archived. Pinned sessions are exempt.
           </span>
         </div>
         <div className="settings-stepper">
