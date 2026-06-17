@@ -1,4 +1,4 @@
-import { FocusEvent, MouseEvent, useEffect, useRef, useState, useMemo } from "react";
+import { FocusEvent, MouseEvent, PointerEvent, useEffect, useRef, useState, useMemo } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -962,6 +962,7 @@ export function App() {
           sessions={filteredSessions}
           activeRequest={selectedAgentRequest}
           justResolved={justResolved}
+          isExpanded={isExpanded}
           onSelectSession={navigateToSession}
           onArchiveSession={handleArchiveSession}
           onPinSession={handlePinSession}
@@ -1452,29 +1453,85 @@ function AgentTabBar({
 
 /* ─── Session List View ───────────────────────────────────────── */
 
+function sessionIdAtClientPoint(
+  x: number,
+  y: number,
+  listEl: HTMLElement | null,
+): string | null {
+  if (!listEl) return null;
+  for (const item of listEl.querySelectorAll<HTMLElement>("[data-session-id]")) {
+    const rect = item.getBoundingClientRect();
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+      return item.dataset.sessionId ?? null;
+    }
+  }
+  return null;
+}
+
 interface SessionListViewProps {
   sessions: SessionSummary[];
   activeRequest: PermissionRequest | null;
   justResolved: boolean;
+  isExpanded: boolean;
   onSelectSession: (sessionId: string) => void;
   onArchiveSession: (sessionId: string) => void;
   onPinSession: (sessionId: string, pinned: boolean) => void;
 }
 
-function SessionListView({ sessions, activeRequest, justResolved, onSelectSession, onArchiveSession, onPinSession }: SessionListViewProps) {
+function SessionListView({ sessions, activeRequest, justResolved, isExpanded, onSelectSession, onArchiveSession, onPinSession }: SessionListViewProps) {
+  const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isExpanded) {
+      setHoveredSessionId(null);
+      return;
+    }
+
+    let unsubscribe = () => {};
+
+    onIslandHoverChanged(({ hovering, clientX, clientY }) => {
+      if (!hovering || clientX == null || clientY == null) {
+        if (!hovering) {
+          setHoveredSessionId(null);
+        }
+        return;
+      }
+      setHoveredSessionId(sessionIdAtClientPoint(clientX, clientY, listRef.current));
+    }).then((cleanup) => {
+      unsubscribe = cleanup;
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [isExpanded, sessions.length]);
+
+  function handleListPointerMove(event: PointerEvent<HTMLDivElement>) {
+    const item = (event.target as HTMLElement).closest<HTMLElement>("[data-session-id]");
+    setHoveredSessionId(item?.dataset.sessionId ?? null);
+  }
+
   return (
     <div className="session-list-view">
       <div className="session-list-header">
         <Layers size={12} />
         <span>{sessions.length} session{sessions.length > 1 ? "s" : ""}</span>
       </div>
-      <div className="session-list">
+      <div
+        ref={listRef}
+        className="session-list"
+        onPointerMove={handleListPointerMove}
+        onPointerLeave={() => setHoveredSessionId(null)}
+      >
         {sessions.map((session) => {
           const sessionColor = getSessionColor(session.sessionId);
+          const isHovered = hoveredSessionId === session.sessionId;
           return (
             <div
               key={session.sessionId}
-              className={`session-item ${session.pinned ? "is-pinned" : ""}`}
+              data-session-id={session.sessionId}
+              className={`session-item ${session.pinned ? "is-pinned" : ""} ${isHovered ? "is-hovered" : ""}`}
             >
               <button
                 className="session-item-main"

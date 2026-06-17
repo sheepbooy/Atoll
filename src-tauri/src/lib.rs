@@ -152,6 +152,10 @@ enum IslandWindowMode {
 #[serde(rename_all = "camelCase")]
 struct IslandHoverChanged {
     hovering: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_x: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_y: Option<f64>,
 }
 
 struct DecisionWithNote {
@@ -1667,19 +1671,47 @@ fn start_island_hover_monitor(app: AppHandle) {
         loop {
             thread::sleep(Duration::from_millis(80));
 
-            let hovering = app
-                .get_webview_window("main")
-                .and_then(|window| is_cursor_over_window(&window).ok())
-                .unwrap_or(false);
-
-            if hovering == last_hovering {
+            let Some(window) = app.get_webview_window("main") else {
                 continue;
-            }
+            };
 
-            last_hovering = hovering;
-            let _ = app.emit("island-hover-changed", IslandHoverChanged { hovering });
+            let hovering = is_cursor_over_window(&window).unwrap_or(false);
+            let client = if hovering {
+                cursor_client_point(&window)
+            } else {
+                None
+            };
+
+            if hovering {
+                let _ = app.emit(
+                    "island-hover-changed",
+                    IslandHoverChanged {
+                        hovering: true,
+                        client_x: client.map(|(x, _)| x),
+                        client_y: client.map(|(_, y)| y),
+                    },
+                );
+                last_hovering = true;
+            } else if last_hovering {
+                let _ = app.emit(
+                    "island-hover-changed",
+                    IslandHoverChanged {
+                        hovering: false,
+                        client_x: None,
+                        client_y: None,
+                    },
+                );
+                last_hovering = false;
+            }
         }
     });
+}
+
+fn cursor_client_point(window: &tauri::WebviewWindow) -> Option<(f64, f64)> {
+    let scale = window.scale_factor().ok()?;
+    let cursor = window.cursor_position().ok()?.to_logical::<f64>(scale);
+    let origin = window.outer_position().ok()?.to_logical::<f64>(scale);
+    Some((cursor.x - origin.x, cursor.y - origin.y))
 }
 
 fn is_cursor_over_window(window: &tauri::WebviewWindow) -> tauri::Result<bool> {
@@ -2067,6 +2099,11 @@ fn set_island_cursor_events_ignored(window: &tauri::WebviewWindow, ignore: bool)
                 let ptr = ptr_val as *mut AnyObject;
                 let val = if ignore { Bool::YES } else { Bool::NO };
                 let _: () = objc2::msg_send![ptr, setIgnoresMouseEvents: val];
+                // Non-activating NSPanels do not deliver mouse-moved events to
+                // the WKWebView until the panel becomes key (first click). Enable
+                // mouse-moved delivery while expanded so CSS :hover works on hover.
+                let moved = if ignore { Bool::NO } else { Bool::YES };
+                let _: () = objc2::msg_send![ptr, setAcceptsMouseMovedEvents: moved];
             });
             return;
         }

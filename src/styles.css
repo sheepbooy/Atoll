@@ -2038,11 +2038,13 @@ kbd {
     box-shadow var(--duration-fast) ease;
 }
 
-.session-item:hover {
+.session-item:hover,
+.session-item.is-hovered {
   transform: translateY(-1px);
 }
 
-.session-item:hover::before {
+.session-item:hover::before,
+.session-item.is-hovered::before {
   border-color: var(--border-medium);
   background: var(--surface-overlay);
   box-shadow: var(--shadow-card);
@@ -2076,11 +2078,19 @@ kbd {
   gap: 2px;
   padding-right: 8px;
   opacity: 0;
+  pointer-events: none;
   transition: opacity var(--duration-fast) ease;
 }
 
-.session-item:hover .session-item-actions {
+.is-expanded .session-item-actions {
   opacity: 1;
+  pointer-events: auto;
+}
+
+.session-item:hover .session-item-actions,
+.session-item.is-hovered .session-item-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .session-action-btn {
@@ -2219,11 +2229,13 @@ kbd {
   transition: color var(--duration-fast) ease;
 }
 
-.session-item:hover .session-item-trail {
+.session-item:hover .session-item-trail,
+.session-item.is-hovered .session-item-trail {
   color: var(--text-secondary);
 }
 
-.session-item:hover .session-item-trail > svg:last-child {
+.session-item:hover .session-item-trail > svg:last-child,
+.session-item.is-hovered .session-item-trail > svg:last-child {
   opacity: 0;
 }
 
