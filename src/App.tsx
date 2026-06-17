@@ -970,6 +970,11 @@ export function App() {
     panelView.kind === "home" &&
     sessions.length === 0 &&
     snapshot.pendingCount === 0;
+  const isSubview = isExpanded && panelView.kind !== "home";
+  const subviewSession =
+    panelView.kind === "session"
+      ? sessions.find((session) => session.sessionId === panelView.sessionId)
+      : undefined;
 
   useEffect(() => {
     if (phase !== "expanded") return;
@@ -983,11 +988,8 @@ export function App() {
       const session = sessions.find((s) => s.sessionId === panelView.sessionId);
       return (
         <SessionChatView
-          sessionId={panelView.sessionId}
-          cwd={session?.cwd ?? ""}
           transcriptPath={session?.transcriptPath ?? null}
           requests={sessionRequests}
-          onBack={navigateBack}
         />
       );
     }
@@ -1008,7 +1010,6 @@ export function App() {
           onChangeIdleInterval={(v) => setIdleIntervalSec(clampIdleInterval(v))}
           idleDurationSec={idleDurationSec}
           onChangeIdleDuration={(v) => setIdleDurationSec(clampIdleDuration(v))}
-          onBack={navigateBack}
         />
       );
     }
@@ -1053,7 +1054,7 @@ export function App() {
   return (
     <main className="stage">
       <section
-        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpanded && panelView.kind !== "home" ? "is-subview" : ""}`}
+        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpanded && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" ? "is-session-subview" : ""}`}
         aria-label="Atoll"
         tabIndex={0}
         onClick={handleIslandClick}
@@ -1070,7 +1071,12 @@ export function App() {
             <span
               className={`atoll-indicator-mark ${snapshot.online ? "is-online" : "is-offline"}`}
             >
-              <AtollLogo size={22} activity={snapshot.online ? "idle" : "napping"} idleIntervalSec={idleIntervalSec * 60} idleDurationSec={idleDurationSec * 60} />
+              <AtollLogo
+                size={panelView.kind === "session" ? 28 : 26}
+                activity={snapshot.online ? "idle" : "napping"}
+                idleIntervalSec={idleIntervalSec * 60}
+                idleDurationSec={idleDurationSec * 60}
+              />
             </span>
           </span>
         ) : null}
@@ -1081,7 +1087,7 @@ export function App() {
           title={isExpanded ? "Drag window" : "Hover to open"}
         >
           <div
-            className={`header-main ${showPanelAgentTabs ? "has-agent-tabs" : ""}`}
+            className={`header-main ${showPanelAgentTabs ? "has-agent-tabs" : ""}${isSubview ? " has-subview-nav" : ""}`}
           >
             {collapsedMode !== "dormant" && !isExpanded ? (
               <>
@@ -1099,6 +1105,13 @@ export function App() {
                   idleDurationSec={idleDurationSec}
                 />
               </>
+            ) : panelView.kind === "session" ? (
+              <SessionSubviewNav
+                cwd={subviewSession?.cwd ?? ""}
+                onBack={navigateBack}
+              />
+            ) : panelView.kind === "settings" ? (
+              <SettingsSubviewNav onBack={navigateBack} />
             ) : showPanelAgentTabs ? (
               <div className="header-agent-tabs" data-no-drag>
                 <AgentTabBar
@@ -1151,6 +1164,7 @@ export function App() {
             </div>
           ) : null}
 
+          {panelView.kind !== "session" ? (
           <div
             className="header-actions"
             data-no-drag
@@ -1237,6 +1251,7 @@ export function App() {
               </div>
             ) : null}
           </div>
+          ) : null}
 
         </header>
 
@@ -1307,7 +1322,7 @@ function CompactSessionStack({
               mood={deriveSessionMood(session, activeRequest, justResolved)}
               accent={sessionColor.accent}
               accentDark={sessionColor.accentDark}
-              size={16}
+              size={18}
             />
           </span>
         );
@@ -1354,7 +1369,7 @@ function AgentTabBar({
           mood={mood}
           accent={agentMascotAccent[active]}
           accentDark={agentMascotDark[active]}
-          size={14}
+          size={16}
         />
         <span>{agentLabels[active]}</span>
         {pending > 0 ? <span className="agent-tab-pending">{pending}</span> : null}
@@ -1379,7 +1394,7 @@ function AgentTabBar({
               mood={mood}
               accent={agentMascotAccent[agent]}
               accentDark={agentMascotDark[agent]}
-              size={14}
+              size={16}
             />
             <span>{agentLabels[agent]}</span>
             {pending > 0 ? <span className="agent-tab-pending">{pending}</span> : null}
@@ -1546,7 +1561,6 @@ interface SettingsViewProps {
   onChangeIdleInterval: (value: number) => void;
   idleDurationSec: number;
   onChangeIdleDuration: (value: number) => void;
-  onBack: () => void;
 }
 
 function SettingsSlider({
@@ -1609,21 +1623,9 @@ function SettingsView({
   onChangeIdleInterval,
   idleDurationSec,
   onChangeIdleDuration,
-  onBack,
 }: SettingsViewProps) {
   return (
     <div className="settings-view" data-no-drag>
-      <div className="settings-header">
-        <button type="button" className="back-button" onClick={onBack}>
-          <ArrowLeft size={13} />
-          <span>Back</span>
-        </button>
-        <span className="settings-header-title">
-          <Settings2 size={14} />
-          <span>Settings</span>
-        </span>
-      </div>
-
       <div className="settings-body">
         <div className="settings-section">
           <span className="settings-section-label">Display</span>
@@ -1704,7 +1706,7 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
               mood={mascotMood}
               accent={sessionColor.accent}
               accentDark={sessionColor.accentDark}
-              size={16}
+              size={18}
             />
             Command request
           </span>
@@ -1777,17 +1779,59 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
   );
 }
 
-/* ─── Session Chat View ───────────────────────────────────────── */
+/* ─── Subview Header Nav (menu-bar row) ───────────────────────── */
 
-interface SessionChatViewProps {
-  sessionId: string;
+interface SessionSubviewNavProps {
   cwd: string;
-  transcriptPath: string | null;
-  requests: PermissionRequest[];
   onBack: () => void;
 }
 
-function SessionChatView({ sessionId, cwd, transcriptPath, requests, onBack }: SessionChatViewProps) {
+function SessionSubviewNav({ cwd, onBack }: SessionSubviewNavProps) {
+  return (
+    <div className="session-detail-nav" data-no-drag>
+      <button type="button" className="back-button" onClick={onBack}>
+        <ArrowLeft size={13} />
+        <span>Back</span>
+      </button>
+      <button
+        type="button"
+        className="open-terminal-button"
+        onClick={() => openInTerminal(cwd)}
+      >
+        <ExternalLink size={13} />
+        <span>Terminal</span>
+      </button>
+    </div>
+  );
+}
+
+interface SettingsSubviewNavProps {
+  onBack: () => void;
+}
+
+function SettingsSubviewNav({ onBack }: SettingsSubviewNavProps) {
+  return (
+    <div className="settings-subview-nav" data-no-drag>
+      <button type="button" className="back-button" onClick={onBack}>
+        <ArrowLeft size={13} />
+        <span>Back</span>
+      </button>
+      <span className="settings-header-title">
+        <Settings2 size={14} />
+        <span>Settings</span>
+      </span>
+    </div>
+  );
+}
+
+/* ─── Session Chat View ───────────────────────────────────────── */
+
+interface SessionChatViewProps {
+  transcriptPath: string | null;
+  requests: PermissionRequest[];
+}
+
+function SessionChatView({ transcriptPath, requests }: SessionChatViewProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -1807,23 +1851,6 @@ function SessionChatView({ sessionId, cwd, transcriptPath, requests, onBack }: S
 
   return (
     <div className="session-chat">
-      <div className="session-detail-nav">
-        <button type="button" className="back-button" onClick={onBack}>
-          <ArrowLeft size={13} />
-          <span>Back</span>
-        </button>
-        <span className="session-chat-title">{sessionDisplayName(cwd || sessionId)}</span>
-        <button
-          type="button"
-          className="open-terminal-button"
-          onClick={() => openInTerminal(cwd)}
-          data-no-drag
-        >
-          <ExternalLink size={13} />
-          <span>Terminal</span>
-        </button>
-      </div>
-
       <div className="chat-messages" ref={scrollRef}>
         {messages.length === 0 && requests.length === 0 ? (
           <div className="chat-empty">No conversation history.</div>

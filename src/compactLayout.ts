@@ -8,7 +8,7 @@ import {
 /** Keep in sync with EXPANDED_WINDOW_WIDTH in src-tauri/src/lib.rs. */
 export const COMPACT_MAX_WINDOW_WIDTH = 560;
 
-export const COMPACT_ICON_SLOT = 22;
+export const COMPACT_ICON_SLOT = 24;
 export const COMPACT_ICON_GAP = 4;
 export const COMPACT_LISTENER_SLOT = 10;
 export const COMPACT_SIDE_MIN = 56;
