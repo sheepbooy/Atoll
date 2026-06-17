@@ -301,17 +301,38 @@ kbd {
 
 .is-expanded .island-header {
   height: var(--compact-height);
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
-  padding: 3px 92px 3px 14px;
+  padding: 0 14px;
   cursor: grab;
 }
 
-/* Idle expand: center copy in the full body below the notch; header stays
-   transparent on top for dragging. */
+/* Expanded menu bar: logo (absolute), tabs, and actions share one 36px band at
+   the physical top — same row as .atoll-indicator. Do NOT push the header down
+   with notch margin; panel content starts below --notch-height instead. */
+.is-expanded:not(.is-subview) .island-header,
+.is-opening:not(.is-subview) .island-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  margin-top: 0;
+  align-items: center;
+}
+
+.is-expanded:not(.is-subview) .header-actions {
+  align-self: center;
+  grid-column: -1;
+}
+
+.is-expanded:not(.is-subview) .header-main {
+  padding-left: 30px;
+}
+
+/* Idle expand: center copy in the full body below the notch; menu bar stays
+   at the top for dragging (same row as the logo). */
 .is-expanded.is-idle .island-header {
-  position: relative;
-  z-index: 2;
   background: transparent;
   pointer-events: auto;
 }
@@ -361,8 +382,13 @@ kbd {
 .is-expanded.is-subview .island-header {
   height: 0;
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
   pointer-events: none;
+}
+
+.is-expanded.is-subview .header-main,
+.is-expanded.is-subview .header-metrics {
+  display: none;
 }
 
 /* ─── Header Main / Compact Stack / Tabs ─────────────────────── */
@@ -410,8 +436,7 @@ kbd {
 }
 
 /* Atoll logo indicator — pinned to the physical menu-bar band at the top of
-   the window. Do NOT add --notch-height: the menu bar overlaps the housing,
-   and expanded header content is pushed down via margin-top separately. */
+   the window. Expanded tabs/actions live in the same band via .island-header. */
 .atoll-indicator {
   position: absolute;
   z-index: 5;
@@ -471,26 +496,38 @@ kbd {
 }
 
 .is-expanded .header-main {
-  gap: 10px;
-}
-
-.island-panel.has-agent-tabs {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 10px;
-}
-
-.island-panel.has-agent-tabs > :last-child {
-  min-height: 0;
-}
-
-.panel-agent-tabs {
   display: flex;
-  min-height: 28px;
+  width: 100%;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* Tabs sit in the menu-bar row, immediately to the right of the logo. */
+.is-expanded .header-main.has-agent-tabs {
+  position: relative;
+  height: var(--compact-height);
+}
+
+.is-expanded .header-agent-tabs {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 0;
+  box-sizing: border-box;
+  pointer-events: auto;
+}
+
+.header-agent-tabs {
+  display: flex;
+  min-width: 0;
+  flex: 1;
   align-items: center;
 }
 
-.panel-agent-tabs .agent-tabbar {
+.header-agent-tabs .agent-tabbar {
   width: 100%;
 }
 
@@ -501,7 +538,8 @@ kbd {
 }
 
 /* Same crossfade for the compact stack → expanded tabs transition */
-.is-opening .compact-session-stack {
+.is-opening .compact-session-stack,
+.is-opening .header-agent-tabs {
   animation: header-content-in 260ms var(--ease-out) 140ms both;
 }
 
@@ -1340,12 +1378,11 @@ kbd {
 /* ─── Header Actions ──────────────────────────────────────────── */
 
 .header-actions {
-  position: absolute;
-  top: 3px;
-  right: 14px;
+  position: relative;
   z-index: 10;
   display: inline-flex;
   width: 65px;
+  flex: 0 0 auto;
   align-items: center;
   gap: 4px;
   opacity: 1;
@@ -1353,16 +1390,18 @@ kbd {
   transform: translate3d(0, 0, 0) scale(1);
   transform-origin: right center;
   backface-visibility: hidden;
-  will-change: opacity, transform, top;
+  will-change: opacity, transform;
   transition:
     opacity 220ms ease 100ms,
     transform var(--duration-normal) var(--ease-spring) 70ms,
-    top 200ms var(--ease-window),
     visibility 0ms linear 0ms;
 }
 
-.is-subview .header-actions {
-  top: 22px;
+.is-expanded.is-subview .header-actions {
+  position: absolute;
+  top: max(calc(var(--notch-height, 0px) + 8px), 22px);
+  right: 14px;
+  pointer-events: auto;
 }
 
 .is-compact .header-actions,
@@ -1579,25 +1618,16 @@ kbd {
   display: none;
 }
 
-/* Notch margin only when expanded/opening — compact/dormant sit in
-   the menu-bar band without extra_top. */
-.tauri-runtime.has-notch .is-expanded .island-header,
-.tauri-runtime.has-notch .is-opening .island-header {
-  margin-top: var(--notch-height, 0px);
-}
-
+/* Notch margin removed for expanded header — menu bar shares the top band with
+   the logo; only panel content is pushed below the housing. */
 .tauri-runtime.has-notch .island-panel {
-  top: calc(36px + var(--notch-height, 0px));
-  height: calc(100% - 36px - var(--notch-height, 0px));
+  top: max(var(--compact-height), var(--notch-height, 0px));
+  height: calc(100% - max(var(--compact-height), var(--notch-height, 0px)));
 }
 
 .tauri-runtime.has-notch .is-subview .island-panel {
   top: var(--notch-height, 0px);
   height: calc(100% - var(--notch-height, 0px));
-}
-
-.tauri-runtime.has-notch .is-subview .header-actions {
-  top: calc(var(--notch-height, 0px) + 22px);
 }
 
 /* Dormant/compact pill on notched displays: both sit within the menu-bar band
