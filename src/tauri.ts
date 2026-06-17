@@ -43,6 +43,7 @@ export interface SessionSummary {
   totalCount: number;
   lastActivity: string;
   transcriptPath: string | null;
+  pinned?: boolean;
 }
 
 export interface ChatMessage {
@@ -139,6 +140,25 @@ export async function archiveAllResolved(): Promise<IslandSnapshot> {
   localRequests = localRequests.map((request) =>
     request.status !== "pending" ? { ...request, archived: true } : request,
   );
+  return getSnapshot();
+}
+
+export async function archiveSession(sessionId: string): Promise<IslandSnapshot> {
+  if (isTauriRuntime) {
+    return invoke<IslandSnapshot>("archive_session", { sessionId });
+  }
+
+  localRequests = localRequests.map((request) =>
+    request.session === sessionId ? { ...request, archived: true } : request,
+  );
+  return getSnapshot();
+}
+
+export async function pinSession(sessionId: string, pinned: boolean): Promise<IslandSnapshot> {
+  if (isTauriRuntime) {
+    return invoke<IslandSnapshot>("pin_session", { sessionId, pinned });
+  }
+
   return getSnapshot();
 }
 

@@ -88,6 +88,8 @@ struct SessionSummary {
     total_count: usize,
     last_activity: String,
     transcript_path: Option<String>,
+    #[serde(default)]
+    pinned: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -176,6 +178,7 @@ struct AppState {
     token_usage_file_offsets: Mutex<HashMap<String, u64>>,
     token_usage_day: Mutex<String>,
     known_sessions: Mutex<HashMap<String, KnownSession>>,
+    pinned_sessions: Mutex<HashSet<String>>,
     /// pid of the app that was frontmost before Atoll grabbed focus for an
     /// approval, so focus can be handed back when the user is done (macOS).
     previous_app_pid: Mutex<Option<i32>>,
@@ -232,7 +235,8 @@ fn get_snapshot(state: State<'_, AppState>) -> IslandSnapshot {
         .known_sessions
         .lock()
         .expect("state mutex poisoned");
-    snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions)
+    let pinned = state.pinned_sessions.lock().expect("state mutex poisoned");
+    snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned)
 }
 
 #[tauri::command]
@@ -284,7 +288,8 @@ fn resolve_permission_request(
         .known_sessions
         .lock()
         .map_err(|error| error.to_string())?;
-    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
+    let pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
+    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
     Ok(snapshot)
@@ -379,7 +384,8 @@ fn archive_request(
         .known_sessions
         .lock()
         .map_err(|error| error.to_string())?;
-    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
+    let pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
+    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
     Ok(snapshot)
@@ -691,9 +697,16 @@ fn archive_all_resolved(
     state: State<'_, AppState>,
 ) -> Result<IslandSnapshot, String> {
     let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
-    // Archive-all should feel immediate in UI: keep only pending requests and
-    // drop all resolved/archived items from in-memory list.
-    requests.retain(|request| request.status == PermissionStatus::Pending);
+    let pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
+    // Archive-all: keep pending requests and requests belonging to pinned sessions.
+    requests.retain(|request| {
+        request.status == PermissionStatus::Pending || pinned.contains(&request.session)
+    });
+    // Also remove non-pinned known sessions.
+    {
+        let mut known = state.known_sessions.lock().map_err(|error| error.to_string())?;
+        known.retain(|session_id, _| pinned.contains(session_id));
+    }
     roll_over_token_usage_if_needed(&state);
     let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
     let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
@@ -705,7 +718,82 @@ fn archive_all_resolved(
         .known_sessions
         .lock()
         .map_err(|error| error.to_string())?;
-    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
+    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+    Ok(snapshot)
+}
+
+#[tauri::command]
+fn archive_session(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<IslandSnapshot, String> {
+    let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
+    // Archive all requests for this session (regardless of status/time).
+    for request in requests.iter_mut() {
+        if request.session == session_id {
+            request.archived = true;
+        }
+    }
+    // Also remove from known_sessions.
+    {
+        let mut known = state.known_sessions.lock().map_err(|error| error.to_string())?;
+        known.remove(&session_id);
+    }
+    // Unpin if pinned.
+    {
+        let mut pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
+        pinned.remove(&session_id);
+    }
+    roll_over_token_usage_if_needed(&state);
+    let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
+    let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
+    let token_usage = state
+        .session_token_usage
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let known_sessions = state
+        .known_sessions
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
+    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+    Ok(snapshot)
+}
+
+#[tauri::command]
+fn pin_session(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+    pinned: bool,
+) -> Result<IslandSnapshot, String> {
+    {
+        let mut pinned_set = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
+        if pinned {
+            pinned_set.insert(session_id);
+        } else {
+            pinned_set.remove(&session_id);
+        }
+    }
+    let requests = state.requests.lock().map_err(|error| error.to_string())?;
+    roll_over_token_usage_if_needed(&state);
+    let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
+    let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
+    let token_usage = state
+        .session_token_usage
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let known_sessions = state
+        .known_sessions
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let pinned_set = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
+    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned_set);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
     Ok(snapshot)
@@ -1229,6 +1317,7 @@ pub fn run() {
             token_usage_file_offsets: Mutex::new(HashMap::new()),
             token_usage_day: Mutex::new(current_utc_day_key()),
             known_sessions: Mutex::new(HashMap::new()),
+            pinned_sessions: Mutex::new(HashSet::new()),
             previous_app_pid: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
@@ -1239,6 +1328,8 @@ pub fn run() {
             set_session_auto_approve,
             archive_request,
             archive_all_resolved,
+            archive_session,
+            pin_session,
             set_island_presentation,
             get_notch_metrics,
             get_claude_hook_status,
@@ -1328,7 +1419,6 @@ fn tray_menu_entries() -> [(&'static str, &'static str); 2] {
 }
 
 const AUTO_ARCHIVE_INTERVAL: Duration = Duration::from_secs(10);
-const AUTO_ARCHIVE_AGE: Duration = Duration::from_secs(60);
 const TOKEN_REFRESH_INTERVAL: Duration = Duration::from_millis(900);
 
 fn start_auto_archive_timer(app: AppHandle) {
@@ -1340,6 +1430,8 @@ fn start_auto_archive_timer(app: AppHandle) {
             let Ok(mut requests) = state.requests.lock() else {
                 continue;
             };
+            let retention_secs = *state.session_retention_secs.lock().unwrap_or_else(|e| e.into_inner());
+            let pinned = state.pinned_sessions.lock().unwrap_or_else(|e| e.into_inner());
 
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1351,9 +1443,33 @@ fn start_auto_archive_timer(app: AppHandle) {
                 if request.archived || request.status == PermissionStatus::Pending {
                     continue;
                 }
+                // Skip pinned sessions from auto-archive.
+                if pinned.contains(&request.session) {
+                    continue;
+                }
                 let requested_at_secs = parse_iso_timestamp_secs(&request.requested_at);
-                if now.saturating_sub(requested_at_secs) >= AUTO_ARCHIVE_AGE.as_secs() {
+                if now.saturating_sub(requested_at_secs) >= retention_secs {
                     request.archived = true;
+                    changed = true;
+                }
+            }
+
+            // Also auto-archive non-pinned known sessions that exceeded retention.
+            {
+                let last_seen = state.session_last_seen.lock().unwrap_or_else(|e| e.into_inner());
+                let mut known = state.known_sessions.lock().unwrap_or_else(|e| e.into_inner());
+                let before_len = known.len();
+                known.retain(|session_id, info| {
+                    if pinned.contains(session_id) {
+                        return true;
+                    }
+                    let last_seen_ts = last_seen
+                        .get(session_id)
+                        .copied()
+                        .unwrap_or_else(|| parse_iso_timestamp_secs(&info.last_activity));
+                    now.saturating_sub(last_seen_ts) < retention_secs
+                });
+                if known.len() != before_len {
                     changed = true;
                 }
             }
@@ -1370,7 +1486,7 @@ fn start_auto_archive_timer(app: AppHandle) {
                     .known_sessions
                     .lock()
                     .unwrap_or_else(|e| e.into_inner());
-                let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
+                let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
                 let _ = app.emit("snapshot-changed", &snapshot);
             }
             changed
@@ -1426,7 +1542,8 @@ fn start_token_refresh_timer(app: AppHandle) {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let known_sessions = state.known_sessions.lock().unwrap_or_else(|e| e.into_inner());
-        let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
+        let pinned = state.pinned_sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
         let _ = app.emit("snapshot-changed", &snapshot);
     });
 }
@@ -2341,6 +2458,7 @@ fn snapshot_from(
     retention_secs: u64,
     session_token_usage: &HashMap<String, TokenUsage>,
     known_sessions: &HashMap<String, KnownSession>,
+    pinned_sessions: &HashSet<String>,
 ) -> IslandSnapshot {
     let visible: Vec<&PermissionRequest> = requests
         .iter()
@@ -2358,6 +2476,11 @@ fn snapshot_from(
     let archived_count = requests.iter().filter(|r| r.archived).count();
     let mut sessions = build_session_summaries(&visible);
 
+    // Mark active sessions as pinned.
+    for session in sessions.iter_mut() {
+        session.pinned = pinned_sessions.contains(&session.session_id);
+    }
+
     if retention_secs > 0 {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -2373,12 +2496,16 @@ fn snapshot_from(
             if active_session_ids.contains(request.session.as_str()) {
                 continue;
             }
-            let last_seen_ts = session_last_seen
-                .get(&request.session)
-                .copied()
-                .unwrap_or_else(|| parse_iso_timestamp_secs(&request.requested_at));
-            if now.saturating_sub(last_seen_ts) > retention_secs {
-                continue;
+            // Pinned sessions are always retained regardless of time.
+            let is_pinned = pinned_sessions.contains(&request.session);
+            if !is_pinned {
+                let last_seen_ts = session_last_seen
+                    .get(&request.session)
+                    .copied()
+                    .unwrap_or_else(|| parse_iso_timestamp_secs(&request.requested_at));
+                if now.saturating_sub(last_seen_ts) > retention_secs {
+                    continue;
+                }
             }
             let entry = retained_map
                 .entry(&request.session)
@@ -2409,12 +2536,13 @@ fn snapshot_from(
                 total_count: 0,
                 last_activity,
                 transcript_path,
+                pinned: pinned_sessions.contains(session_id),
             });
         }
 
         sessions.sort_by(|a, b| {
-            b.pending_count
-                .cmp(&a.pending_count)
+            b.pinned.cmp(&a.pinned)
+                .then(b.pending_count.cmp(&a.pending_count))
                 .then(b.last_activity.cmp(&a.last_activity))
         });
     }
@@ -2433,7 +2561,9 @@ fn snapshot_from(
             if existing_ids.contains(session_id.as_str()) {
                 continue;
             }
-            if retention_secs > 0 {
+            // Pinned sessions always included; non-pinned filtered by retention.
+            let is_pinned = pinned_sessions.contains(session_id);
+            if !is_pinned && retention_secs > 0 {
                 let last_seen_ts = session_last_seen
                     .get(session_id)
                     .copied()
@@ -2450,12 +2580,13 @@ fn snapshot_from(
                 total_count: 0,
                 last_activity: info.last_activity.clone(),
                 transcript_path: info.transcript_path.clone(),
+                pinned: is_pinned,
             });
         }
 
         sessions.sort_by(|a, b| {
-            b.pending_count
-                .cmp(&a.pending_count)
+            b.pinned.cmp(&a.pinned)
+                .then(b.pending_count.cmp(&a.pending_count))
                 .then(b.last_activity.cmp(&a.last_activity))
         });
     }
@@ -2519,6 +2650,7 @@ fn build_session_summaries(visible: &[&PermissionRequest]) -> Vec<SessionSummary
                 total_count,
                 last_activity,
                 transcript_path,
+                pinned: false,
             },
         )
         .collect();

@@ -236,7 +236,8 @@ fn submit_claude_pre_tool_request(
             .known_sessions
             .lock()
             .map_err(|error| error.to_string())?;
-        let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
+        let pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
+        let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
         let _ = app.emit("snapshot-changed", &snapshot);
         return Ok(claude_hook_response(&hook_event_name, Decision::Approved, ""));
     }
@@ -266,7 +267,8 @@ fn submit_claude_pre_tool_request(
             .known_sessions
             .lock()
             .map_err(|error| error.to_string())?;
-        let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
+        let pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
+        let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
         app.emit("snapshot-changed", &snapshot)
             .map_err(|error| error.to_string())?;
     }
@@ -371,7 +373,8 @@ fn mark_request_completed_externally(
         .known_sessions
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
+    let pinned = state.pinned_sessions.lock().unwrap_or_else(|e| e.into_inner());
+    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
     let _ = app.emit("snapshot-changed", &snapshot);
 }
 
@@ -397,7 +400,8 @@ fn mark_request_denied(state: &AppState, app: &AppHandle, request_id: &str, note
         .known_sessions
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions);
+    let pinned = state.pinned_sessions.lock().unwrap_or_else(|e| e.into_inner());
+    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
     let _ = app.emit("snapshot-changed", &snapshot);
 }
 
@@ -481,7 +485,8 @@ fn sync_claude_tool_completion(app: AppHandle, payload: Value) -> Result<(), Str
             .known_sessions
             .lock()
             .map_err(|error| error.to_string())?;
-        snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions)
+        let pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
+        snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned)
     };
 
     app.emit("snapshot-changed", &snapshot)
@@ -556,7 +561,8 @@ fn sync_claude_turn_completion(app: AppHandle, payload: Value) -> Result<(), Str
             .known_sessions
             .lock()
             .map_err(|error| error.to_string())?;
-        snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions)
+        let pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
+        snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned)
     };
 
     app.emit("snapshot-changed", &snapshot)
