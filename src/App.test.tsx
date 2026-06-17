@@ -20,6 +20,7 @@ const bridge = vi.hoisted(() => ({
   onIslandHoverChanged: vi.fn(),
   onIslandOpenRequested: vi.fn(),
   quitAtoll: vi.fn(),
+  deactivateAtoll: vi.fn(),
   resolvePermissionRequest: vi.fn(),
   setIslandPresentation: vi.fn(),
   getClaudeHookStatus: vi.fn(),
@@ -30,6 +31,7 @@ const bridge = vi.hoisted(() => ({
   archiveRequest: vi.fn(),
   getSessionRequests: vi.fn(),
   getSessionTranscript: vi.fn(),
+  getNotchMetrics: vi.fn(),
   getSessionRetention: vi.fn(),
   setSessionRetention: vi.fn(),
 }));
@@ -64,6 +66,7 @@ describe("App", () => {
     bridge.onIslandOpenRequested.mockResolvedValue(() => undefined);
     bridge.setIslandPresentation.mockResolvedValue(undefined);
     bridge.quitAtoll.mockResolvedValue(undefined);
+    bridge.deactivateAtoll.mockResolvedValue(undefined);
     bridge.resolvePermissionRequest.mockResolvedValue({
       online: true,
       pendingCount: 0,
@@ -78,6 +81,11 @@ describe("App", () => {
       scriptPath: "",
     });
     bridge.getSessionRetention.mockResolvedValue(300);
+    bridge.getNotchMetrics.mockResolvedValue({
+      hasNotch: false,
+      width: 0,
+      height: 0,
+    });
     bridge.setSessionRetention.mockResolvedValue(300);
     bridge.installClaudeHooks.mockResolvedValue({
       installed: true,

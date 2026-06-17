@@ -34,10 +34,12 @@ const COMPACT_WINDOW_HEIGHT: f64 = 28.0;
 const EXPANDED_WINDOW_WIDTH: f64 = 560.0;
 const EXPANDED_WINDOW_HEIGHT: f64 = 320.0;
 const MIN_COMPACT_WINDOW_WIDTH: f64 = 72.0;
-// "Super-collapsed" drawer shown when there are no active sessions: a tiny
-// handle peeking from the top edge of the screen.
-const DORMANT_WINDOW_WIDTH: f64 = 80.0;
-const DORMANT_WINDOW_HEIGHT: f64 = 10.0;
+// Dormant pill: sits in the menu bar, slightly wider than the notch so the
+// logo on the left edge is visible beside the camera housing.
+const DORMANT_WINDOW_WIDTH: f64 = 48.0;
+const DORMANT_WINDOW_HEIGHT: f64 = 24.0;
+// Extra width beyond the notch on each side so edges are visible.
+const DORMANT_NOTCH_PADDING: f64 = 30.0;
 const WINDOW_ANIMATION_DURATION: Duration = Duration::from_millis(420);
 const WINDOW_ANIMATION_FRAME: Duration = Duration::from_micros(16_667);
 // Fallback notch width (logical pt) used when the auxiliary menu-bar areas
@@ -1728,20 +1730,27 @@ fn island_window_logical_size(
     notch: NotchMetrics,
 ) -> LogicalSize<f64> {
     let compact_width = sanitize_compact_width(compact_width);
-    // Reserve the notch height at the top of the window so the content can sit
-    // *below* the camera housing (the cutout itself has no pixels). The width
-    // keeps following the content so the capsule grows and shrinks with the
-    // number of agents instead of being forced to the notch width.
     let extra_top = if notch.has_notch { notch.height } else { 0.0 };
+    let min_notch_width = if notch.has_notch { notch.width } else { 0.0 };
     match mode {
+        // Dormant sits WITHIN the menu-bar band (no extra notch padding).
+        // Slightly wider than the notch so edges peek out and the logo on
+        // the left is visible beside the camera housing.
         IslandWindowMode::Dormant => {
-            LogicalSize::new(DORMANT_WINDOW_WIDTH, DORMANT_WINDOW_HEIGHT + extra_top)
+            let w = if notch.has_notch {
+                notch.width + 2.0 * DORMANT_NOTCH_PADDING
+            } else {
+                DORMANT_WINDOW_WIDTH
+            };
+            LogicalSize::new(w, DORMANT_WINDOW_HEIGHT)
         }
         IslandWindowMode::Compact => {
-            LogicalSize::new(compact_width, COMPACT_WINDOW_HEIGHT + extra_top)
+            let w = compact_width.max(min_notch_width);
+            LogicalSize::new(w, COMPACT_WINDOW_HEIGHT + extra_top)
         }
         IslandWindowMode::Expanded => {
-            LogicalSize::new(EXPANDED_WINDOW_WIDTH, EXPANDED_WINDOW_HEIGHT + extra_top)
+            let w = EXPANDED_WINDOW_WIDTH.max(min_notch_width);
+            LogicalSize::new(w, EXPANDED_WINDOW_HEIGHT + extra_top)
         }
     }
 }
@@ -1852,8 +1861,6 @@ fn detect_notch_metrics(
             return NotchMetrics::default();
         }
         let frame = screen.frame();
-        // `auxiliaryTop*Area` returns NSZeroRect (width 0) when there is no
-        // notch / menu bar on this screen.
         let aux_left_width = screen.auxiliaryTopLeftArea().size.width;
         let aux_right_width = screen.auxiliaryTopRightArea().size.width;
         if !has_camera_housing(frame.size.width, aux_left_width, aux_right_width) {
@@ -1939,7 +1946,6 @@ fn set_island_window_frame_now(
         frame.size.width = logical_size.width;
         frame.size.height = logical_size.height;
 
-        // Keep the Tauri window frame in sync (for position/size queries).
         ns_window.setFrame_display(frame, true);
 
         let height_progress = ((logical_size.height - COMPACT_WINDOW_HEIGHT)
@@ -1947,8 +1953,6 @@ fn set_island_window_frame_now(
             .clamp(0.0, 1.0);
         let corner_radius = 15.0 + 7.0 * height_progress;
 
-        // If a floating panel exists, also update its frame and apply
-        // the corner mask there (that's where the WKWebView lives).
         let panel_ptr = panel_store::get_raw();
         if !panel_ptr.is_null() {
             let panel = &*(panel_ptr as *const NSWindow);
@@ -2648,18 +2652,27 @@ mod core_tests {
     }
 
     #[test]
-    fn notched_display_reserves_top_inset_without_widening() {
+    fn notched_display_widens_to_notch_width() {
         let notch = NotchMetrics {
             has_notch: true,
             width: 200.0,
             height: 38.0,
         };
         let compact = island_window_logical_size(IslandWindowMode::Compact, 132.0, notch);
-        // Height grows by the notch height so content can sit below the cutout.
         assert_eq!(compact.height, COMPACT_WINDOW_HEIGHT + 38.0);
-        // Width keeps following the content (the capsule stays centered under
-        // the notch) instead of being inflated to the notch width.
-        assert_eq!(compact.width, 132.0);
+        // Width is clamped up to the notch width so the capsule visually
+        // fuses with the camera housing (Dynamic-Island style).
+        assert_eq!(compact.width, 200.0);
+
+        // Content wider than the notch keeps its own width.
+        let wide = island_window_logical_size(IslandWindowMode::Compact, 300.0, notch);
+        assert_eq!(wide.width, 300.0);
+
+        // Dormant is slightly wider than the notch (padding on each side)
+        // and has NO extra_top — it sits within the menu-bar band.
+        let dormant = island_window_logical_size(IslandWindowMode::Dormant, 132.0, notch);
+        assert_eq!(dormant.width, 200.0 + 2.0 * DORMANT_NOTCH_PADDING);
+        assert_eq!(dormant.height, DORMANT_WINDOW_HEIGHT);
     }
 
     #[test]

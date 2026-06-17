@@ -313,11 +313,11 @@ kbd {
   align-items: center;
 }
 
-/* ─── Dormant drawer (no active sessions) ─────────────────────── */
+/* ─── Dormant pill (no active sessions) ────────────────────────── */
 .island.is-dormant {
-  width: 80px;
-  height: 10px;
-  border-radius: 0 0 5px 5px;
+  width: 48px;
+  height: 24px;
+  border-radius: 0 0 11px 11px;
 }
 
 .tauri-runtime .island.is-dormant {
@@ -335,7 +335,6 @@ kbd {
 .is-dormant .header-main {
   width: 100%;
   height: 100%;
-  justify-content: center;
 }
 
 .is-dormant .header-actions,
@@ -344,17 +343,61 @@ kbd {
   display: none;
 }
 
-.dormant-handle {
-  width: 30px;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.55);
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.18);
-  transition: background var(--duration-expand) var(--ease-spring);
+/* Atoll logo indicator — pinned to the menu-bar band so it never moves
+   vertically when the island expands.  In dormant it sits as a static
+   glowing mark; on expand it slides horizontally and starts breathing. */
+.atoll-indicator {
+  position: absolute;
+  z-index: 5;
+  top: 4px;
+  left: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  filter: drop-shadow(0 0 3px rgba(56, 189, 248, 0.35));
+  transition: left var(--duration-expand) var(--ease-window),
+              opacity 200ms ease,
+              filter 300ms ease;
+}
+
+.atoll-indicator.is-online {
+  animation: atoll-breathe 3.2s ease-in-out infinite;
+}
+
+.atoll-indicator.is-offline {
+  opacity: 0.5;
+  filter: grayscale(0.8) brightness(0.85);
+}
+
+.is-dormant .atoll-indicator {
+  animation: none;
+  opacity: 0.9;
+}
+
+.is-expanded .atoll-indicator,
+.is-opening .atoll-indicator {
+  left: 14px;
+}
+
+.island.is-dormant:hover .atoll-indicator {
+  opacity: 1;
+  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.55));
 }
 
 .is-expanded .header-main {
   gap: 10px;
+}
+
+/* Smooth content crossfade during phase transitions so content doesn't
+   flash inside a still-growing window (especially dormant → expanded). */
+.is-opening .header-main {
+  animation: header-content-in 300ms var(--ease-out) 180ms both;
+}
+
+@keyframes header-content-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .compact-session-stack {
@@ -365,9 +408,10 @@ kbd {
   overflow: hidden;
 }
 
-/* Folded content sits centered in the capsule */
-.is-compact .header-main,
-.is-closing .header-main {
+/* Folded content sits centered in the capsule (but NOT when dormant,
+   where the logo must stay left-aligned beside the notch). */
+.is-compact:not(.is-dormant) .header-main,
+.is-closing:not(.is-dormant) .header-main {
   width: 100%;
   justify-content: center;
 }
@@ -400,7 +444,7 @@ kbd {
   }
   50% {
     transform: scale(1.04);
-    filter: drop-shadow(0 0 6px rgba(255, 150, 110, 0.5))
+    filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.5))
       drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
   }
 }
@@ -1093,7 +1137,7 @@ kbd {
   top: 60px;
   left: 50%;
   width: 560px;
-  height: 300px;
+  height: calc(100% - 60px);
   contain: layout paint;
   transform: translate3d(-50%, -8px, 0);
 }
@@ -1102,7 +1146,7 @@ kbd {
   opacity: 1;
   pointer-events: auto;
   transform: translate3d(0, 0, 0);
-  transition-delay: 80ms;
+  transition-delay: 200ms;
 }
 
 .tauri-runtime .is-expanded .island-panel {
@@ -1121,15 +1165,13 @@ kbd {
 }
 
 /* ─── Notch adaptation (MacBook camera housing) ───────────────── */
-/* On notched displays the window is flush with the physical top edge and the
-   capsule is wider/taller than the notch (sized in Rust). The black body
-   covers the camera-housing band so it fuses with the notch, while the actual
-   content is pushed below it. Driven by --notch-height / --notch-width, which
-   are set from NSScreen safe-area metrics; absent on non-notched screens. */
+/* On notched displays the window spans at least the notch width and is flush
+   with the physical top edge. The black band covers the camera-housing area
+   so the capsule visually fuses with the notch (Dynamic-Island style). Content
+   is pushed below the housing. Driven by --notch-height / --notch-width set
+   from NSScreen safe-area metrics; absent on non-notched screens. */
 
 .tauri-runtime.has-notch .island {
-  /* Pure black across the notch band so the capsule blends into the housing,
-     then the normal surface gradient below it. */
   background:
     linear-gradient(
       180deg,
@@ -1146,12 +1188,19 @@ kbd {
 
 .tauri-runtime.has-notch .island-panel {
   top: calc(60px + var(--notch-height, 0px));
+  height: calc(100% - 60px - var(--notch-height, 0px));
 }
 
-/* Dormant handle: keep the tiny grab handle just below the notch. */
+/* Dormant pill on notched displays: the window sits within the menu-bar band
+   (no extra_top in Rust), so no additional margin is needed. The pill appears
+   as a dark extension of the notch, embedded in the menu bar. */
+.tauri-runtime.has-notch .island.is-dormant {
+  background: var(--surface-base);
+}
+
 .tauri-runtime.has-notch .is-dormant .island-header {
-  margin-top: var(--notch-height, 0px);
-  height: calc(100% - var(--notch-height, 0px));
+  margin-top: 0;
+  height: 100%;
 }
 
 /* ─── Approval View ───────────────────────────────────────────── */

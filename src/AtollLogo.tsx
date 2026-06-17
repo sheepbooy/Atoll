@@ -4,9 +4,9 @@ interface AtollLogoProps {
 }
 
 /**
- * Neutral product mark: a minimal atoll seen from above — a thin coral ring
- * around a lagoon with a small central islet. Reads as the app itself rather
- * than any single agent's mascot.
+ * Neutral product mark: a minimal atoll seen from above — a bold gradient
+ * reef ring around a bright central islet.  Two elements only so the mark
+ * stays crisp at small sizes (≤ 16 px).
  */
 export function AtollLogo({ size = 64, className }: AtollLogoProps) {
   return (
@@ -20,31 +20,27 @@ export function AtollLogo({ size = 64, className }: AtollLogoProps) {
     >
       <defs>
         <linearGradient
-          id="atoll-reef"
-          x1="16"
-          y1="11"
-          x2="48"
-          y2="53"
+          id="atoll-ring-g"
+          x1="8"
+          y1="8"
+          x2="56"
+          y2="56"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stopColor="#ffd9a4" />
-          <stop offset="1" stopColor="#ff8f6e" />
-        </linearGradient>
-        <linearGradient
-          id="atoll-lagoon"
-          x1="21"
-          y1="21"
-          x2="43"
-          y2="43"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop stopColor="#8fe3ee" />
-          <stop offset="1" stopColor="#359dc3" />
+          <stop stopColor="#5EEAD4" />
+          <stop offset="0.5" stopColor="#38BDF8" />
+          <stop offset="1" stopColor="#818CF8" />
         </linearGradient>
       </defs>
-      <circle cx="32" cy="32" r="22" fill="url(#atoll-reef)" />
-      <circle cx="32" cy="32" r="13" fill="url(#atoll-lagoon)" />
-      <circle cx="32" cy="32" r="3" fill="#fff3e2" />
+      <circle
+        cx="32"
+        cy="32"
+        r="22"
+        stroke="url(#atoll-ring-g)"
+        strokeWidth="8"
+        strokeLinecap="round"
+      />
+      <circle cx="32" cy="32" r="4.5" fill="white" fillOpacity="0.92" />
     </svg>
   );
 }
