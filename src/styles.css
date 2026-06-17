@@ -304,6 +304,18 @@ kbd {
   cursor: grabbing;
 }
 
+/* -- Subview mode: hide header, give panel full height -- */
+.is-expanded.is-subview .island-header {
+  height: 0;
+  padding: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.is-expanded.is-subview .island-header::after {
+  display: none;
+}
+
 /* ─── Header Main / Compact Stack / Tabs ─────────────────────── */
 
 .header-main {
@@ -349,8 +361,8 @@ kbd {
 .atoll-indicator {
   position: absolute;
   z-index: 5;
-  top: 6px;
-  left: 6px;
+  top: 3px;
+  left: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -658,6 +670,166 @@ kbd {
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
+
+/* ─── Atoll Logo Mascot ───────────────────────────────────────── */
+
+/* -- body movement -- */
+
+@keyframes atoll-float {
+  0%   { transform: translateY(8%) rotate(-2deg); }
+  25%  { transform: translateY(-10%) rotate(3deg); }
+  50%  { transform: translateY(6%) rotate(-1deg); }
+  75%  { transform: translateY(-8%) rotate(2deg); }
+  100% { transform: translateY(8%) rotate(-2deg); }
+}
+
+@keyframes atoll-typing-nod {
+  0%   { transform: translateY(0) rotate(0deg); }
+  8%   { transform: translateY(-10%) rotate(-5deg); }
+  16%  { transform: translateY(6%) rotate(3deg); }
+  24%  { transform: translateY(-8%) rotate(-4deg); }
+  32%  { transform: translateY(4%) rotate(2deg); }
+  40%  { transform: translateY(-6%) rotate(-3deg); }
+  48%  { transform: translateY(2%) rotate(1deg); }
+  56%  { transform: translateY(0) rotate(0deg); }
+  72%  { transform: translateY(0) rotate(0deg); }
+  80%  { transform: translateY(-12%) rotate(-6deg); }
+  88%  { transform: translateY(6%) rotate(3deg); }
+  100% { transform: translateY(0) rotate(0deg); }
+}
+
+@keyframes atoll-reading-sway {
+  0%   { transform: rotate(-5deg) translateX(-6%); }
+  20%  { transform: rotate(2deg) translateX(2%); }
+  35%  { transform: rotate(-3deg) translateX(-4%); }
+  50%  { transform: rotate(5deg) translateX(6%); }
+  65%  { transform: rotate(0deg) translateX(0%); }
+  80%  { transform: rotate(-4deg) translateX(-5%); }
+  100% { transform: rotate(-5deg) translateX(-6%); }
+}
+
+@keyframes atoll-thinking-bob {
+  0%   { transform: translateY(8%) rotate(0deg); }
+  15%  { transform: translateY(-14%) rotate(4deg); }
+  30%  { transform: translateY(-10%) rotate(4deg); }
+  50%  { transform: translateY(4%) rotate(-3deg); }
+  65%  { transform: translateY(-12%) rotate(-3deg); }
+  80%  { transform: translateY(-8%) rotate(-3deg); }
+  100% { transform: translateY(8%) rotate(0deg); }
+}
+
+@keyframes atoll-coffee-breathe {
+  0%   { transform: scale(1) rotate(0deg) translateY(0); }
+  20%  { transform: scale(1.06) rotate(2deg) translateY(-8%); }
+  35%  { transform: scale(1.04) rotate(1deg) translateY(-6%); }
+  50%  { transform: scale(0.96) rotate(-1deg) translateY(4%); }
+  70%  { transform: scale(1) rotate(0deg) translateY(2%); }
+  100% { transform: scale(1) rotate(0deg) translateY(0); }
+}
+
+@keyframes atoll-idea-pop {
+  0%   { transform: translateY(6%) scale(1) rotate(0deg); }
+  12%  { transform: translateY(-40%) scale(1.2) rotate(-6deg); }
+  24%  { transform: translateY(8%) scale(0.88) rotate(4deg); }
+  36%  { transform: translateY(-25%) scale(1.12) rotate(-3deg); }
+  48%  { transform: translateY(4%) scale(0.95) rotate(2deg); }
+  60%  { transform: translateY(-15%) scale(1.06) rotate(-2deg); }
+  75%  { transform: translateY(2%) scale(1) rotate(0deg); }
+  100% { transform: translateY(6%) scale(1) rotate(0deg); }
+}
+
+@keyframes atoll-slacking-shift {
+  0%   { transform: translateX(-6%) rotate(-4deg); }
+  15%  { transform: translateX(8%) rotate(5deg); }
+  25%  { transform: translateX(6%) rotate(3deg); }
+  40%  { transform: translateX(-8%) rotate(-5deg); }
+  55%  { transform: translateX(-4%) rotate(-2deg); }
+  65%  { transform: translateX(10%) rotate(6deg); }
+  80%  { transform: translateX(4%) rotate(2deg); }
+  100% { transform: translateX(-6%) rotate(-4deg); }
+}
+
+@keyframes atoll-rock {
+  0%   { transform: translateY(4%) rotate(-7deg); }
+  25%  { transform: translateY(8%) rotate(5deg); }
+  50%  { transform: translateY(4%) rotate(7deg); }
+  75%  { transform: translateY(8%) rotate(-5deg); }
+  100% { transform: translateY(4%) rotate(-7deg); }
+}
+
+/* -- prop animations -- */
+@keyframes atoll-code-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0.3; } }
+@keyframes atoll-steam-rise { 0% { opacity: 0; transform: translateY(20%); } 30% { opacity: 0.7; } 100% { opacity: 0; transform: translateY(-160%); } }
+@keyframes atoll-dot-pulse { 0%, 100% { opacity: 0.25; transform: scale(0.7); } 50% { opacity: 1; transform: scale(1.1); } }
+@keyframes atoll-bulb-flash { 0%, 100% { opacity: 1; filter: drop-shadow(0 0 4px rgba(255,230,80,0.8)); } 50% { opacity: 0.7; filter: drop-shadow(0 0 0 transparent); } }
+@keyframes atoll-ray-pulse { 0%, 100% { opacity: 0.3; transform: scaleX(0.6); } 50% { opacity: 1; transform: scaleX(1.2); } }
+@keyframes atoll-fish-swim { 0% { transform: translateX(0); } 100% { transform: translateX(-120%); } }
+@keyframes atoll-zzz-rise { 0% { opacity: 0; transform: translate(0, 20%); } 35% { opacity: 1; } 100% { opacity: 0; transform: translate(40%, -100%); } }
+@keyframes atoll-screen-glow { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+
+.atoll-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  will-change: transform;
+}
+
+.atoll-logo-svg { overflow: visible; }
+
+.atoll-steam,
+.atoll-z,
+.atoll-ray,
+.atoll-fish {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* -- body state animations -- */
+.atoll-logo.is-idle { animation: atoll-float 3.6s ease-in-out infinite; }
+.atoll-logo.is-coding { animation: atoll-typing-nod 1.6s ease-in-out infinite; }
+.atoll-logo.is-reading { animation: atoll-reading-sway 4s ease-in-out infinite; }
+.atoll-logo.is-thinking { animation: atoll-thinking-bob 4.8s ease-in-out infinite; }
+.atoll-logo.is-coffee { animation: atoll-coffee-breathe 5s ease-in-out infinite; }
+.atoll-logo.is-idea { animation: atoll-idea-pop 1.2s ease-in-out infinite; }
+.atoll-logo.is-slacking { animation: atoll-slacking-shift 3s ease-in-out infinite; }
+.atoll-logo.is-napping { animation: atoll-rock 4.4s ease-in-out infinite; }
+
+/* -- coding: blinking code lines staggered -- */
+.atoll-code-line { animation: atoll-code-blink 1.2s step-end infinite; }
+.atoll-code-0 { animation-delay: 0s; }
+.atoll-code-1 { animation-delay: 0.3s; }
+.atoll-code-2 { animation-delay: 0.6s; }
+.atoll-code-3 { animation-delay: 0.9s; }
+
+/* -- coffee: rising steam -- */
+.atoll-steam { opacity: 0; }
+.atoll-steam-0 { animation: atoll-steam-rise 1.8s ease-out infinite; }
+.atoll-steam-1 { animation: atoll-steam-rise 1.8s ease-out infinite 0.6s; }
+.atoll-steam-2 { animation: atoll-steam-rise 1.8s ease-out infinite 1.2s; }
+
+/* -- thinking: pulsing dots -- */
+.atoll-dot { opacity: 0.25; }
+.atoll-dot-0 { animation: atoll-dot-pulse 1.6s ease-in-out infinite; }
+.atoll-dot-1 { animation: atoll-dot-pulse 1.6s ease-in-out infinite 0.4s; }
+.atoll-dot-2 { animation: atoll-dot-pulse 1.6s ease-in-out infinite 0.8s; }
+
+/* -- idea: flashing bulb and rays -- */
+.atoll-bulb { animation: atoll-bulb-flash 0.8s ease-in-out infinite; }
+.atoll-ray { opacity: 0.3; }
+.atoll-ray-0 { animation: atoll-ray-pulse 0.8s ease-in-out infinite; }
+.atoll-ray-1 { animation: atoll-ray-pulse 0.8s ease-in-out infinite 0.25s; }
+.atoll-ray-2 { animation: atoll-ray-pulse 0.8s ease-in-out infinite 0.5s; }
+
+/* -- slacking: fish swimming across -- */
+.atoll-fish-0 { animation: atoll-fish-swim 3.5s linear infinite; }
+.atoll-fish-1 { animation: atoll-fish-swim 4.5s linear infinite 1.5s; }
+
+/* -- napping: zzz -- */
+.atoll-z { opacity: 0; }
+.atoll-z-0 { animation: atoll-zzz-rise 2.2s ease-in-out infinite; }
+.atoll-z-1 { animation: atoll-zzz-rise 2.2s ease-in-out infinite 0.6s; }
+.atoll-z-2 { animation: atoll-zzz-rise 2.2s ease-in-out infinite 1.2s; }
 
 /* ─── Clawd Mascot ────────────────────────────────────────────── */
 
@@ -1077,7 +1249,7 @@ kbd {
   position: absolute;
   top: 15px;
   right: 14px;
-  z-index: 2;
+  z-index: 10;
   display: inline-flex;
   width: 65px;
   align-items: center;
@@ -1087,11 +1259,16 @@ kbd {
   transform: translate3d(0, 0, 0) scale(1);
   transform-origin: right center;
   backface-visibility: hidden;
-  will-change: opacity, transform;
+  will-change: opacity, transform, top;
   transition:
     opacity 220ms ease 100ms,
     transform var(--duration-normal) var(--ease-spring) 70ms,
+    top 200ms var(--ease-window),
     visibility 0ms linear 0ms;
+}
+
+.is-subview .header-actions {
+  top: 22px;
 }
 
 .is-compact .header-actions,
@@ -1152,9 +1329,7 @@ kbd {
 .icon-button:focus-visible,
 .decision-button:focus-visible,
 .more-menu button:focus-visible,
-.agent-tab:focus-visible,
-.settings-stepper-btn:focus-visible,
-.settings-stepper-input:focus-visible {
+.agent-tab:focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
@@ -1279,6 +1454,16 @@ kbd {
   transform: translate3d(-50%, -8px, 0);
 }
 
+/* Subview: panel takes full height */
+.is-subview .island-panel {
+  height: 100%;
+}
+
+.tauri-runtime .is-subview .island-panel {
+  top: 0;
+  height: 100%;
+}
+
 /* ─── Notch adaptation (MacBook camera housing) ───────────────── */
 /* On notched displays the window spans at least the notch width and is flush
    with the physical top edge. The black band covers the camera-housing area
@@ -1304,6 +1489,15 @@ kbd {
 .tauri-runtime.has-notch .island-panel {
   top: calc(60px + var(--notch-height, 0px));
   height: calc(100% - 60px - var(--notch-height, 0px));
+}
+
+.tauri-runtime.has-notch .is-subview .island-panel {
+  top: var(--notch-height, 0px);
+  height: calc(100% - var(--notch-height, 0px));
+}
+
+.tauri-runtime.has-notch .is-subview .header-actions {
+  top: calc(var(--notch-height, 0px) + 22px);
 }
 
 /* Dormant pill on notched displays: the window sits within the menu-bar band
@@ -1911,18 +2105,21 @@ kbd {
 
 .settings-view {
   display: grid;
-  align-content: start;
-  gap: 12px;
+  grid-template-rows: auto 1fr;
+  height: 100%;
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
   background: var(--surface-raised);
-  padding: 12px;
+  overflow: hidden;
 }
 
 .settings-header {
   display: flex;
   align-items: center;
   gap: 10px;
+  padding: 12px 14px;
+  padding-right: 70px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .settings-header-title {
@@ -1936,78 +2133,176 @@ kbd {
   letter-spacing: 0.08em;
 }
 
-.settings-item {
+/* -- scrollable body -- */
+.settings-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px 14px 18px;
+  display: grid;
+  align-content: start;
+  gap: 20px;
+}
+
+.settings-body::-webkit-scrollbar { width: 5px; }
+.settings-body::-webkit-scrollbar-track { background: transparent; }
+.settings-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+}
+.settings-body::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.22); }
+
+/* -- section grouping -- */
+.settings-section {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-section-label {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* -- individual card -- */
+.settings-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  transition: background var(--duration-fast) ease;
+}
+
+.settings-card:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.settings-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
 
-.settings-item-text {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.settings-item-title {
+.settings-card-title {
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 650;
 }
 
-.settings-item-desc {
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.settings-stepper {
+.settings-card-value {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
-}
-
-.settings-stepper-btn {
-  display: inline-flex;
-  width: 26px;
-  height: 26px;
-  align-items: center;
+  gap: 1px;
+  min-width: 32px;
   justify-content: center;
-  border-radius: 8px;
-  color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.05);
-  box-shadow: inset 0 0 0 1px var(--border-subtle);
-  cursor: pointer;
-  transition: color var(--duration-fast) ease, background var(--duration-fast) ease;
-}
-
-.settings-stepper-btn:hover:not(:disabled) {
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.settings-stepper-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.settings-stepper-input {
-  width: 48px;
-  height: 28px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  padding: 0 8px;
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.03);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(111, 220, 255, 0.1);
+  color: rgba(111, 220, 255, 0.9);
   font-size: 12px;
-  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
-.settings-stepper-input:focus {
+.settings-card-unit {
+  font-weight: 500;
+  opacity: 0.7;
+  font-size: 10.5px;
+  margin-left: 1px;
+}
+
+.settings-card-desc {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+/* -- range slider -- */
+.settings-slider-wrap {
+  display: grid;
+  gap: 2px;
+  padding: 0 2px;
+}
+
+.settings-slider-labels {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+}
+
+.settings-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    rgba(111, 220, 255, 0.4) 0%,
+    rgba(111, 220, 255, 0.4) var(--slider-pct, 50%),
+    rgba(255, 255, 255, 0.08) var(--slider-pct, 50%),
+    rgba(255, 255, 255, 0.08) 100%
+  );
   outline: none;
-  border-color: rgba(111, 220, 255, 0.45);
-  box-shadow: 0 0 0 2px rgba(111, 220, 255, 0.14);
+  cursor: pointer;
+  transition: background var(--duration-fast) ease;
+}
+
+.settings-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(111, 220, 255, 0.9);
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3), 0 0 0 0 rgba(111, 220, 255, 0);
+  cursor: grab;
+  transition: box-shadow var(--duration-fast) ease, transform var(--duration-fast) ease;
+}
+
+.settings-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.4), 0 0 0 4px rgba(111, 220, 255, 0.15);
+}
+
+.settings-slider::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.05);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4), 0 0 0 6px rgba(111, 220, 255, 0.2);
+}
+
+.settings-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(111, 220, 255, 0.9);
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  cursor: grab;
+}
+
+.settings-slider::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.settings-slider:focus-visible {
+  outline: none;
+}
+
+.settings-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3), 0 0 0 3px rgba(111, 220, 255, 0.3);
 }
 
 /* ─── Session Chat View ───────────────────────────────────────── */
@@ -2016,6 +2311,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding-right: 56px;
 }
 
 .session-detail-nav .session-chat-title {
