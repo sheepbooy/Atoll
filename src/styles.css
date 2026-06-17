@@ -86,6 +86,8 @@
   --expanded-header-height: 36px;
   /* Expanded idle panel — keep in sync with EXPANDED_IDLE_WINDOW_HEIGHT in lib.rs */
   --expanded-idle-height: 240px;
+  /* Expanded token counter extends left of header-actions into subview nav */
+  --subview-nav-token-inset: 88px;
 
   color: var(--text-primary);
   background: transparent;
@@ -328,13 +330,33 @@ kbd {
   overflow: visible;
 }
 
-.is-expanded:not(.is-subview) .header-actions {
+.is-expanded.is-subview .island-header,
+.is-opening.is-subview .island-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  height: var(--compact-height);
+  padding: 0 12px 0 14px;
+  margin-top: 0;
+  align-items: center;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.is-expanded.is-subview .header-main,
+.is-expanded.is-subview .header-actions {
+  pointer-events: auto;
+}
+
+.is-expanded .header-actions {
   align-self: center;
   grid-column: -1;
 }
 
 .is-expanded:not(.is-subview) .header-main {
-  padding-left: 30px;
+  padding-left: 44px;
   padding-right: 4px;
   min-width: 0;
   overflow: hidden;
@@ -386,19 +408,6 @@ kbd {
 
 .island-header:active {
   cursor: grabbing;
-}
-
-/* -- Subview mode: hide header, give panel full height -- */
-.is-expanded.is-subview .island-header {
-  height: 0;
-  padding: 0;
-  overflow: visible;
-  pointer-events: none;
-}
-
-.is-expanded.is-subview .header-main,
-.is-expanded.is-subview .header-metrics {
-  display: none;
 }
 
 /* ─── Header Main / Compact Stack / Tabs ─────────────────────── */
@@ -498,6 +507,36 @@ kbd {
 .is-expanded .atoll-indicator-mark.is-online,
 .is-opening .atoll-indicator-mark.is-online {
   animation: atoll-breathe 3.2s ease-in-out infinite;
+}
+
+/* Session subview: logo + nav buttons share one optical center in the menu bar. */
+.is-session-subview .atoll-indicator {
+  top: calc(var(--compact-height) / 2);
+  left: 12px;
+  transform: translateY(-50%);
+}
+
+.is-expanded.is-session-subview .header-main.has-subview-nav {
+  padding-left: 46px;
+}
+
+.is-session-subview .session-detail-nav {
+  height: 100%;
+  align-items: center;
+}
+
+.is-session-subview .session-detail-nav .back-button,
+.is-session-subview .session-detail-nav .open-terminal-button {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.is-session-subview .session-detail-nav .open-terminal-button {
+  gap: 5px;
+  padding-right: 12px;
 }
 
 .island.is-dormant:hover .atoll-indicator {
@@ -640,8 +679,8 @@ kbd {
 
 .compact-session-dot {
   display: inline-flex;
-  width: 22px;
-  height: 20px;
+  width: 24px;
+  height: 22px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
@@ -1060,16 +1099,16 @@ kbd {
 .clawd-bang { animation: clawd-bang-pop 0.7s ease-in-out infinite; }
 
 .agent-slot .clawd {
-  width: 19px;
-  height: 17px;
+  width: 21px;
+  height: 18px;
   transition:
     width var(--duration-expand) var(--ease-window),
     height var(--duration-expand) var(--ease-window);
 }
 
 .is-expanded .agent-slot .clawd {
-  width: 36px;
-  height: 32px;
+  width: 40px;
+  height: 35px;
 }
 
 .idle-logo {
@@ -1088,8 +1127,8 @@ kbd {
 
 .clawd-stack-item {
   display: inline-flex;
-  width: 18px;
-  height: 16px;
+  width: 20px;
+  height: 18px;
   margin-left: -5px;
 }
 
@@ -1098,8 +1137,8 @@ kbd {
 }
 
 .clawd-stack-item .clawd {
-  width: 18px;
-  height: 16px;
+  width: 20px;
+  height: 18px;
 }
 
 .clawd-stack-more {
@@ -1121,14 +1160,14 @@ kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 26px;
+  width: 34px;
+  height: 30px;
   flex: 0 0 auto;
 }
 
 .session-clawd .clawd {
-  width: 30px;
-  height: 26px;
+  width: 34px;
+  height: 30px;
 }
 
 /* ─── Header Copy ─────────────────────────────────────────────── */
@@ -1725,13 +1764,6 @@ kbd {
   transform: none;
 }
 
-.is-expanded.is-subview .header-actions {
-  position: absolute;
-  top: max(calc(var(--notch-height, 0px) + 8px), 22px);
-  right: 14px;
-  pointer-events: auto;
-}
-
 .is-compact .header-actions,
 .is-closing .header-actions {
   opacity: 0;
@@ -1915,14 +1947,14 @@ kbd {
   transform: translate3d(-50%, -8px, 0);
 }
 
-/* Subview: panel takes full height */
+/* Subview: panel content sits below the menu-bar row (same as home) */
 .is-subview .island-panel {
-  height: 100%;
+  height: calc(100% - var(--compact-height));
 }
 
 .tauri-runtime .is-subview .island-panel {
-  top: 0;
-  height: 100%;
+  top: var(--compact-height);
+  height: calc(100% - var(--compact-height));
 }
 
 /* ─── Notch adaptation (MacBook camera housing) ───────────────── */
@@ -1951,11 +1983,6 @@ kbd {
 .tauri-runtime.has-notch .island-panel {
   top: max(var(--compact-height), var(--notch-height, 0px));
   height: calc(100% - max(var(--compact-height), var(--notch-height, 0px)));
-}
-
-.tauri-runtime.has-notch .is-subview .island-panel {
-  top: var(--notch-height, 0px);
-  height: calc(100% - var(--notch-height, 0px));
 }
 
 /* Dormant/compact pill on notched displays: both sit within the menu-bar band
@@ -2594,7 +2621,7 @@ kbd {
 
 .settings-view {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: 1fr;
   height: 100%;
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
@@ -2607,7 +2634,6 @@ kbd {
   align-items: center;
   gap: 10px;
   padding: 12px 14px;
-  padding-right: 70px;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -2798,9 +2824,32 @@ kbd {
 
 .session-detail-nav {
   display: flex;
+  width: 100%;
+  min-width: 0;
   align-items: center;
   gap: 8px;
-  padding-right: 56px;
+}
+
+.settings-subview-nav {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding-right: var(--subview-nav-token-inset);
+}
+
+.is-session-subview .session-detail-nav .open-terminal-button {
+  margin-left: auto;
+}
+
+.is-expanded .header-main.has-subview-nav {
+  position: relative;
+  height: var(--compact-height);
+  padding-left: 44px;
+  padding-right: 4px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .session-detail-nav .session-chat-title {
@@ -2839,8 +2888,7 @@ kbd {
   height: 100%;
   max-height: 100%;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 10px;
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .session-chat-title {
