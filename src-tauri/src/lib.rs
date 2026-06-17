@@ -177,6 +177,7 @@ struct AppState {
     hook_waiters: Mutex<HashMap<String, SyncSender<DecisionWithNote>>>,
     auto_approve_sessions: Mutex<HashSet<String>>,
     compact_width: Mutex<f64>,
+    compact_left_width: Mutex<f64>,
     presentation_generation: Arc<AtomicU64>,
     home_bounds: Mutex<Option<HomeWindowBounds>>,
     notch_metrics: Mutex<NotchMetrics>,
@@ -212,6 +213,10 @@ struct NotchMetrics {
     has_notch: bool,
     width: f64,
     height: f64,
+    #[serde(default)]
+    left_area_width: f64,
+    #[serde(default)]
+    right_area_width: f64,
 }
 
 #[cfg(target_os = "macos")]
@@ -310,6 +315,7 @@ async fn set_island_presentation(
     state: State<'_, AppState>,
     mode: IslandWindowMode,
     compact_width: Option<f64>,
+    compact_left_width: Option<f64>,
     expanded_idle: Option<bool>,
 ) -> Result<(), String> {
     let Some(window) = app.get_webview_window("main") else {
@@ -324,10 +330,26 @@ async fn set_island_presentation(
         *saved_width = sanitize_compact_width(width);
     }
 
+    if let Some(left_width) = compact_left_width {
+        let mut saved_left = state
+            .compact_left_width
+            .lock()
+            .map_err(|error| error.to_string())?;
+        *saved_left = if left_width.is_finite() {
+            left_width.max(0.0)
+        } else {
+            0.0
+        };
+    }
+
     let generation = state.presentation_generation.fetch_add(1, Ordering::SeqCst) + 1;
     let presentation_generation = Arc::clone(&state.presentation_generation);
     let compact_width = *state
         .compact_width
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let compact_left_width = *state
+        .compact_left_width
         .lock()
         .map_err(|error| error.to_string())?;
     let home_bounds = *state
@@ -344,6 +366,7 @@ async fn set_island_presentation(
             &presentation_generation,
             home_bounds,
             compact_width,
+            compact_left_width,
             expanded_idle,
         )
         .map_err(|error| error.to_string())
@@ -1320,6 +1343,7 @@ pub fn run() {
             hook_waiters: Mutex::new(HashMap::new()),
             auto_approve_sessions: Mutex::new(HashSet::new()),
             compact_width: Mutex::new(COMPACT_WINDOW_WIDTH),
+            compact_left_width: Mutex::new(0.0),
             presentation_generation: Arc::new(AtomicU64::new(0)),
             home_bounds: Mutex::new(None),
             notch_metrics: Mutex::new(NotchMetrics::default()),
@@ -1374,7 +1398,12 @@ pub fn run() {
                 apply_macos_island_window_style(&window);
                 eprintln!("[Atoll] step: island style applied, now applying mode...");
                 if let Ok(Some(home)) =
-                    apply_island_window_mode(&window, IslandWindowMode::Compact, COMPACT_WINDOW_WIDTH)
+                    apply_island_window_mode(
+                        &window,
+                        IslandWindowMode::Compact,
+                        COMPACT_WINDOW_WIDTH,
+                        0.0,
+                    )
                 {
                     eprintln!("[Atoll] step: island window mode applied");
                     let state = app.state::<AppState>();
@@ -1732,10 +1761,33 @@ fn is_cursor_over_window(window: &tauri::WebviewWindow) -> tauri::Result<bool> {
     Ok(cursor.x >= left && cursor.x <= right && cursor.y >= top && cursor.y <= bottom)
 }
 
+fn default_compact_left_pane_width(compact_width: f64, notch: NotchMetrics) -> f64 {
+    if notch.has_notch {
+        ((compact_width - notch.width).max(0.0) / 2.0).max(28.0)
+    } else {
+        (compact_width / 2.0).max(28.0)
+    }
+}
+
+fn compact_window_origin_x(
+    monitor_center_x: f64,
+    window_width: f64,
+    notch: NotchMetrics,
+    left_pane_width: f64,
+    mode: IslandWindowMode,
+) -> f64 {
+    if notch.has_notch && matches!(mode, IslandWindowMode::Compact) {
+        monitor_center_x - notch.width / 2.0 - left_pane_width.max(0.0)
+    } else {
+        monitor_center_x - window_width / 2.0
+    }
+}
+
 fn apply_island_window_mode(
     window: &tauri::WebviewWindow,
     mode: IslandWindowMode,
     compact_width: f64,
+    compact_left_width: f64,
 ) -> tauri::Result<Option<HomeWindowBounds>> {
     let monitor = window
         .primary_monitor()
@@ -1767,7 +1819,18 @@ fn apply_island_window_mode(
 
     let window_size = island_window_physical_size(mode, scale_factor, compact_width, notch, false);
     let logical_window_size = window_size.to_logical::<f64>(scale_factor);
-    let centered_x = monitor_position.x + (monitor_size.width - logical_window_size.width) / 2.0;
+    let left_pane_width = if compact_left_width > 0.0 {
+        compact_left_width
+    } else {
+        default_compact_left_pane_width(logical_window_size.width, notch)
+    };
+    let centered_x = compact_window_origin_x(
+        monitor_position.x + monitor_size.width / 2.0,
+        logical_window_size.width,
+        notch,
+        left_pane_width,
+        mode,
+    );
     // Keep the window flush with the physical top edge so the capsule overlaps
     // the notch / menu-bar band; the actual content is pushed below the notch
     // height inside the web view. On non-notched screens this is unchanged.
@@ -1801,6 +1864,7 @@ fn animate_island_window_mode(
     presentation_generation: &AtomicU64,
     home_bounds: Option<HomeWindowBounds>,
     compact_width: f64,
+    compact_left_width: f64,
     expanded_idle: bool,
 ) -> tauri::Result<()> {
     let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
@@ -1823,8 +1887,19 @@ fn animate_island_window_mode(
     // vs compact 460px).
     let (target_x, target_y) = home_bounds
         .map(|home| {
+            let left_pane_width = if compact_left_width > 0.0 {
+                compact_left_width
+            } else {
+                default_compact_left_pane_width(target_logical_size.width, home.notch)
+            };
             (
-                home.monitor_center_x - target_logical_size.width / 2.0,
+                compact_window_origin_x(
+                    home.monitor_center_x,
+                    target_logical_size.width,
+                    home.notch,
+                    left_pane_width,
+                    mode,
+                ),
                 home.position.y,
             )
         })
@@ -2071,6 +2146,8 @@ fn detect_notch_metrics(
             } else {
                 FALLBACK_NOTCH_HEIGHT
             },
+            left_area_width: aux_left_width,
+            right_area_width: aux_right_width,
         }
     })
     .unwrap_or_default()
@@ -2886,6 +2963,7 @@ mod core_tests {
             has_notch: true,
             width: 200.0,
             height: 38.0,
+            ..NotchMetrics::default()
         };
         let compact = island_window_logical_size(IslandWindowMode::Compact, 132.0, notch, false);
         // Compact sits in the menu-bar band (like dormant) — no extra_top.

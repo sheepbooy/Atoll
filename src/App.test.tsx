@@ -132,6 +132,8 @@ describe("App", () => {
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
       "compact",
       expect.any(Number),
+      undefined,
+      expect.any(Number),
     );
     expect(container.querySelector(".is-compact")).not.toBeNull();
 
@@ -224,6 +226,8 @@ describe("App", () => {
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
       "compact",
       expect.any(Number),
+      undefined,
+      expect.any(Number),
     );
     expect(container.querySelector(".is-compact")).not.toBeNull();
 
@@ -305,6 +309,8 @@ describe("App", () => {
     await waitFor(() => {
       expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
         "compact",
+        expect.any(Number),
+        undefined,
         expect.any(Number),
       );
     });

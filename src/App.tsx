@@ -33,6 +33,16 @@ import {
 } from "./islandPresentation";
 import { ClawdMascot, type ClawdMood } from "./ClawdMascot";
 import { AtollLogo } from "./AtollLogo";
+import {
+  ABSOLUTE_MAX_COMPACT_ICONS,
+  COMPACT_NOTCH_INNER_GAP,
+  computeCollapsedWindowWidth,
+  computeCompactHeaderLayout,
+  computeCompactLeftPaneWidth,
+  computeMaxCompactIconLimit,
+  MIN_MAX_COMPACT_ICONS,
+} from "./compactLayout";
+import { TokenCounter } from "./TokenCounter";
 
 import {
   getSnapshot,
@@ -76,8 +86,6 @@ type PanelView =
 const COMPACT_ICON_SETTING_KEY = "atoll.maxCompactIcons";
 const RETENTION_SETTING_KEY = "atoll.sessionRetentionMinutes";
 const DEFAULT_MAX_COMPACT_ICONS = 4;
-const MIN_MAX_COMPACT_ICONS = 1;
-const MAX_MAX_COMPACT_ICONS = 8;
 const DEFAULT_RETENTION_MINUTES = 5;
 const MIN_RETENTION_MINUTES = 1;
 const MAX_RETENTION_MINUTES = 30;
@@ -89,9 +97,6 @@ const MAX_IDLE_INTERVAL_MIN = 30;
 const DEFAULT_IDLE_DURATION_MIN = 10;
 const MIN_IDLE_DURATION_MIN = 1;
 const MAX_IDLE_DURATION_MIN = 30;
-const DORMANT_NOTCH_PADDING = 30;
-const FALLBACK_NOTCH_WIDTH = 200;
-const COMPACT_NOTCH_SIDE_PADDING = 130;
 const ZERO_TOKEN_USAGE: TokenUsage = {
   inputTokens: 0,
   outputTokens: 0,
@@ -104,11 +109,11 @@ const EMPTY_NOTCH_METRICS: NotchMetrics = {
   height: 0,
 };
 
-function clampCompactIconLimit(value: number) {
-  return Math.min(
-    MAX_MAX_COMPACT_ICONS,
-    Math.max(MIN_MAX_COMPACT_ICONS, Math.round(value)),
-  );
+function clampCompactIconLimit(
+  value: number,
+  max = ABSOLUTE_MAX_COMPACT_ICONS,
+) {
+  return Math.min(max, Math.max(MIN_MAX_COMPACT_ICONS, Math.round(value)));
 }
 
 function readCompactIconLimit() {
@@ -162,13 +167,6 @@ function readIdleDuration() {
     if (!Number.isFinite(raw)) return DEFAULT_IDLE_DURATION_MIN;
     return clampIdleDuration(raw);
   } catch { return DEFAULT_IDLE_DURATION_MIN; }
-}
-
-function computeCollapsedWindowWidth(notchMetrics: NotchMetrics) {
-  if (notchMetrics.hasNotch) {
-    return Math.ceil(notchMetrics.width + COMPACT_NOTCH_SIDE_PADDING * 2);
-  }
-  return Math.ceil(FALLBACK_NOTCH_WIDTH + DORMANT_NOTCH_PADDING * 2);
 }
 
 const initialSnapshot: IslandSnapshot = {
@@ -329,6 +327,7 @@ function applyWindowMetrics(notch: NotchMetrics) {
     : 0;
   root.style.setProperty("--notch-height", `${coverHeight}px`);
   root.style.setProperty("--notch-width", `${Math.max(0, notch.width)}px`);
+  root.style.setProperty("--compact-notch-inner-gap", `${COMPACT_NOTCH_INNER_GAP}px`);
   root.classList.toggle("has-notch", notch.hasNotch);
 }
 
@@ -369,9 +368,47 @@ export function App() {
   const sessions = snapshot.sessions;
   const dailyTokens = snapshot.dailyTokens ?? ZERO_TOKEN_USAGE;
   const dailyTokenTotal = dailyTokens.inputTokens + dailyTokens.outputTokens;
-  const collapsedWindowWidth = useMemo(
-    () => computeCollapsedWindowWidth(notchMetrics),
+  const maxCompactIconLimit = useMemo(
+    () => computeMaxCompactIconLimit(notchMetrics),
     [notchMetrics],
+  );
+  const compactHeaderLayout = useMemo(
+    () =>
+      computeCompactHeaderLayout(
+        notchMetrics,
+        sessions.length,
+        maxCompactIcons,
+        dailyTokenTotal,
+        snapshot.pendingCount,
+      ),
+    [
+      notchMetrics,
+      sessions.length,
+      maxCompactIcons,
+      dailyTokenTotal,
+      snapshot.pendingCount,
+    ],
+  );
+  const collapsedWindowWidth = useMemo(
+    () =>
+      computeCollapsedWindowWidth(
+        notchMetrics,
+        sessions.length,
+        maxCompactIcons,
+        dailyTokenTotal,
+        snapshot.pendingCount,
+      ),
+    [
+      notchMetrics,
+      sessions.length,
+      maxCompactIcons,
+      dailyTokenTotal,
+      snapshot.pendingCount,
+    ],
+  );
+  const compactLeftPaneWidth = useMemo(
+    () => computeCompactLeftPaneWidth(compactHeaderLayout),
+    [compactHeaderLayout],
   );
   // With no active sessions the island super-collapses into a tiny top-edge
   // drawer handle instead of showing a capsule.
@@ -551,6 +588,12 @@ export function App() {
   }, [tabAgents, selectedAgent, activeRequest?.agent]);
 
   useEffect(() => {
+    setMaxCompactIcons((current) =>
+      clampCompactIconLimit(current, maxCompactIconLimit),
+    );
+  }, [maxCompactIconLimit]);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(
         COMPACT_ICON_SETTING_KEY,
@@ -593,9 +636,14 @@ export function App() {
     if (collapsedMode === "dormant") {
       setIslandPresentation("dormant").catch(() => undefined);
     } else {
-      setIslandPresentation("compact", collapsedWindowWidth).catch(() => undefined);
+      setIslandPresentation(
+        "compact",
+        collapsedWindowWidth,
+        undefined,
+        compactLeftPaneWidth,
+      ).catch(() => undefined);
     }
-  }, [phase, collapsedWindowWidth, collapsedMode]);
+  }, [phase, collapsedWindowWidth, compactLeftPaneWidth, collapsedMode]);
 
   async function resolveActive(
     request: PermissionRequest | null,
@@ -727,7 +775,12 @@ export function App() {
     const nativeTransition =
       collapsedModeRef.current === "dormant"
         ? setIslandPresentation("dormant")
-        : setIslandPresentation("compact", collapsedWindowWidth);
+        : setIslandPresentation(
+            "compact",
+            collapsedWindowWidth,
+            undefined,
+            compactLeftPaneWidth,
+          );
     transitionTimerRef.current = window.setTimeout(async () => {
       transitionTimerRef.current = null;
       if (phaseRef.current !== "closing") return;
@@ -895,6 +948,23 @@ export function App() {
   const showPanelAgentTabs =
     isExpanded && panelView.kind === "home" && tabAgents.length > 1;
   const isDormant = !isExpanded && collapsedMode === "dormant";
+  const showCompactNotchSpacer =
+    collapsedMode === "compact" && !isExpanded && notchMetrics.hasNotch;
+  const compactLeftSessions = sessions.slice(0, compactHeaderLayout.leftIconCount);
+  const compactRightSessions = sessions.slice(
+    compactHeaderLayout.leftIconCount,
+    compactHeaderLayout.leftIconCount + compactHeaderLayout.rightIconCount,
+  );
+  const compactLeftOverflow =
+    compactHeaderLayout.overflowCount > 0 &&
+    compactHeaderLayout.rightIconCount === 0
+      ? compactHeaderLayout.overflowCount
+      : 0;
+  const compactRightOverflow =
+    compactHeaderLayout.overflowCount > 0 &&
+    compactHeaderLayout.rightIconCount > 0
+      ? compactHeaderLayout.overflowCount
+      : 0;
   const isIdleExpanded =
     isExpanded &&
     panelView.kind === "home" &&
@@ -926,8 +996,9 @@ export function App() {
       return (
         <SettingsView
           maxCompactIcons={maxCompactIcons}
+          maxCompactIconLimit={maxCompactIconLimit}
           onChangeMaxCompactIcons={(nextValue) =>
-            setMaxCompactIcons(clampCompactIconLimit(nextValue))
+            setMaxCompactIcons(clampCompactIconLimit(nextValue, maxCompactIconLimit))
           }
           retentionMinutes={retentionMinutes}
           onChangeRetentionMinutes={(nextValue) =>
@@ -1019,8 +1090,8 @@ export function App() {
                   title={snapshot.online ? "Listening" : "Offline"}
                 />
                 <CompactSessionStack
-                  sessions={sessions}
-                  maxCompactIcons={maxCompactIcons}
+                  sessions={compactLeftSessions}
+                  overflowCount={compactLeftOverflow}
                   online={snapshot.online}
                   activeRequest={activeRequest}
                   justResolved={justResolved}
@@ -1042,10 +1113,33 @@ export function App() {
             ) : null}
           </div>
 
-          {(!isDormant && !isExpanded) || snapshot.pendingCount > 0 ? (
+          {showCompactNotchSpacer ? (
+            <span className="header-notch-spacer" aria-hidden="true" />
+          ) : null}
+
+          {((!isDormant && !isExpanded) || snapshot.pendingCount > 0) ? (
             <div className="header-metrics">
+              {!isDormant && !isExpanded && compactRightSessions.length > 0 ? (
+                <CompactSessionStack
+                  placement="right"
+                  sessions={compactRightSessions}
+                  overflowCount={compactRightOverflow}
+                  online={snapshot.online}
+                  activeRequest={activeRequest}
+                  justResolved={justResolved}
+                  idleIntervalSec={idleIntervalSec}
+                  idleDurationSec={idleDurationSec}
+                />
+              ) : null}
               {!isDormant && !isExpanded ? (
-                <TokenCounter value={dailyTokenTotal} usage={dailyTokens} sessionCount={sessions.length} />
+                <TokenCounter
+                  value={dailyTokenTotal}
+                  usage={dailyTokens}
+                  variant="compact"
+                  sessionCount={sessions.length}
+                  maxCompactIcons={maxCompactIcons}
+                  compactTokenLevel={compactHeaderLayout.tokenCompactLevel}
+                />
               ) : null}
               {snapshot.pendingCount > 0 ? (
                 <span className="pending-badge-slot">
@@ -1063,6 +1157,15 @@ export function App() {
             ref={menuRef}
             onMouseDown={handleControlMouseDown}
           >
+            {!isDormant && isExpanded ? (
+              <TokenCounter
+                value={dailyTokenTotal}
+                usage={dailyTokens}
+                variant="expanded"
+                sessionCount={sessions.length}
+                maxCompactIcons={maxCompactIcons}
+              />
+            ) : null}
             <button
               className="icon-button"
               type="button"
@@ -1147,179 +1250,10 @@ export function App() {
 
 /* ─── Compact Header ───────────────────────────────────────────── */
 
-/**
- * @param value   – the token count
- * @param compact – 0 = raw digits (maximum visceral impact — every digit rolls),
- *                  1 = moderate (abbreviated with one fraction digit),
- *                  2 = tight (abbreviated, no fraction digits).
- *                  Driven by how many session mascots share the compact header.
- */
-function formatCompactTokenCount(value: number, compact = 0): string {
-  const abs = Math.abs(value);
-  const sign = value < 0 ? "-" : "";
-
-  if (compact === 0) {
-    if (abs >= 1_000_000) {
-      const fractionDigits = abs >= 100_000_000 ? 0 : abs >= 10_000_000 ? 1 : 2;
-      return `${sign}${(abs / 1_000_000).toFixed(fractionDigits)}M`;
-    }
-    return value.toLocaleString();
-  }
-
-  if (abs >= 1_000_000) {
-    const fractionDigits = compact >= 2 ? 0 : 1;
-    return `${sign}${(abs / 1_000_000).toFixed(fractionDigits)}M`;
-  }
-  if (abs >= 1_000) {
-    const fractionDigits = compact >= 2 ? 0 : abs >= 100_000 ? 1 : 1;
-    return `${sign}${(abs / 1_000).toFixed(fractionDigits)}K`;
-  }
-  return value.toLocaleString();
-}
-
-function tokenCompactLevel(sessionCount: number): number {
-  if (sessionCount >= 4) return 2;
-  if (sessionCount >= 2) return 1;
-  return 0;
-}
-
-function tokenCounterTitle(value: number, usage: TokenUsage): string {
-  return [
-    `Today tokens ${value.toLocaleString()}`,
-    `input ${usage.inputTokens.toLocaleString()}`,
-    `output ${usage.outputTokens.toLocaleString()}`,
-    `cache-read ${usage.cacheReadTokens.toLocaleString()}`,
-    `cache-write ${usage.cacheCreationTokens.toLocaleString()}`,
-  ].join(" · ");
-}
-
-interface TokenCounterProps {
-  value: number;
-  usage: TokenUsage;
-  sessionCount?: number;
-}
-
-function TokenCounter({ value, usage, sessionCount = 0 }: TokenCounterProps) {
-  const [displayValue, setDisplayValue] = useState(value);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [deltaText, setDeltaText] = useState<string | null>(null);
-  const displayRef = useRef(value);
-  const animatedValueRef = useRef(value);
-  const targetRef = useRef(value);
-  const lastFrameAtRef = useRef<number | null>(null);
-  const frameRef = useRef<number | null>(null);
-  const pulseTimerRef = useRef<number | null>(null);
-  const deltaTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (deltaTimerRef.current !== null) {
-      window.clearTimeout(deltaTimerRef.current);
-      deltaTimerRef.current = null;
-    }
-
-    const compact = tokenCompactLevel(sessionCount);
-    const incomingDelta = value - targetRef.current;
-    targetRef.current = value;
-    if (incomingDelta > 0) {
-      setDeltaText(`+${formatCompactTokenCount(incomingDelta, compact)}`);
-      deltaTimerRef.current = window.setTimeout(() => {
-        setDeltaText(null);
-        deltaTimerRef.current = null;
-      }, 920);
-    } else {
-      setDeltaText(null);
-    }
-
-    if (pulseTimerRef.current !== null) {
-      window.clearTimeout(pulseTimerRef.current);
-      pulseTimerRef.current = null;
-    }
-    setIsUpdating(true);
-
-    const animate = (now: number) => {
-      const previousFrameAt = lastFrameAtRef.current ?? now;
-      lastFrameAtRef.current = now;
-      const dt = Math.min(0.06, Math.max(0.001, (now - previousFrameAt) / 1000));
-      const current = animatedValueRef.current;
-      const target = targetRef.current;
-      const diff = target - current;
-      const distance = Math.abs(diff);
-
-      if (distance < 0.5) {
-        const settled = target;
-        animatedValueRef.current = settled;
-        const settledInt = Math.round(settled);
-        if (settledInt !== displayRef.current) {
-          displayRef.current = settledInt;
-          setDisplayValue(settledInt);
-        }
-        frameRef.current = null;
-        lastFrameAtRef.current = null;
-        pulseTimerRef.current = window.setTimeout(() => {
-          setIsUpdating(false);
-          pulseTimerRef.current = null;
-        }, 220);
-        return;
-      }
-
-      // Keep the counter feeling "alive": larger gaps roll faster but still
-      // increment smoothly instead of jumping straight to the final value.
-      const speedPerSecond = Math.min(22_000, Math.max(240, distance * 3.8));
-      const step = Math.max(1, speedPerSecond * dt);
-      const next = current + Math.sign(diff) * Math.min(distance, step);
-
-      animatedValueRef.current = next;
-      const nextInt = Math.round(next);
-      if (nextInt !== displayRef.current) {
-        displayRef.current = nextInt;
-        setDisplayValue(nextInt);
-      }
-
-      frameRef.current = window.requestAnimationFrame(animate);
-    };
-
-    if (frameRef.current === null) {
-      frameRef.current = window.requestAnimationFrame(animate);
-    }
-
-    return () => {
-      if (frameRef.current !== null) {
-        window.cancelAnimationFrame(frameRef.current);
-        frameRef.current = null;
-        lastFrameAtRef.current = null;
-      }
-      if (pulseTimerRef.current !== null) {
-        window.clearTimeout(pulseTimerRef.current);
-        pulseTimerRef.current = null;
-      }
-      if (deltaTimerRef.current !== null) {
-        window.clearTimeout(deltaTimerRef.current);
-        deltaTimerRef.current = null;
-      }
-    };
-  }, [value, sessionCount]);
-
-  return (
-    <span className="token-counter-wrap">
-      <span
-        className={`token-counter ${isUpdating ? "is-updating" : ""}`}
-        aria-label={tokenCounterTitle(displayValue, usage)}
-        title={tokenCounterTitle(displayValue, usage)}
-      >
-        {formatCompactTokenCount(displayValue, tokenCompactLevel(sessionCount))}
-      </span>
-      {deltaText ? (
-        <span className="token-counter-delta" aria-hidden="true">
-          {deltaText}
-        </span>
-      ) : null}
-    </span>
-  );
-}
-
 interface CompactSessionStackProps {
   sessions: SessionSummary[];
-  maxCompactIcons: number;
+  overflowCount?: number;
+  placement?: "left" | "right";
   online: boolean;
   activeRequest: PermissionRequest | null;
   justResolved: boolean;
@@ -1329,16 +1263,16 @@ interface CompactSessionStackProps {
 
 function CompactSessionStack({
   sessions,
-  maxCompactIcons,
+  overflowCount = 0,
+  placement = "left",
   online,
   activeRequest,
   justResolved,
   idleIntervalSec,
   idleDurationSec,
 }: CompactSessionStackProps) {
-  const shown = sessions.slice(0, maxCompactIcons);
-  const overflow = sessions.length - shown.length;
-  if (shown.length === 0) {
+  if (sessions.length === 0 && overflowCount === 0) {
+    if (placement === "right") return null;
     return (
       <span className="compact-session-stack is-empty" aria-hidden="true">
         <span
@@ -1351,8 +1285,13 @@ function CompactSessionStack({
   }
 
   return (
-    <span className="compact-session-stack" aria-hidden="true">
-      {shown.map((session) => {
+    <span
+      className={`compact-session-stack ${
+        placement === "right" ? "compact-session-stack--right" : ""
+      }`}
+      aria-hidden="true"
+    >
+      {sessions.map((session) => {
         const sessionColor = getSessionColor(session.sessionId);
         return (
           <span
@@ -1373,8 +1312,8 @@ function CompactSessionStack({
           </span>
         );
       })}
-      {overflow > 0 ? (
-        <span className="compact-session-overflow">✖️{overflow}</span>
+      {overflowCount > 0 ? (
+        <span className="compact-session-overflow">+{overflowCount}</span>
       ) : null}
     </span>
   );
@@ -1599,6 +1538,7 @@ function SessionListView({ sessions, activeRequest, justResolved, isExpanded, on
 
 interface SettingsViewProps {
   maxCompactIcons: number;
+  maxCompactIconLimit: number;
   onChangeMaxCompactIcons: (value: number) => void;
   retentionMinutes: number;
   onChangeRetentionMinutes: (value: number) => void;
@@ -1661,6 +1601,7 @@ function SettingsSlider({
 
 function SettingsView({
   maxCompactIcons,
+  maxCompactIconLimit,
   onChangeMaxCompactIcons,
   retentionMinutes,
   onChangeRetentionMinutes,
@@ -1690,8 +1631,12 @@ function SettingsView({
             label="Folded icon limit"
             value={maxCompactIcons}
             min={MIN_MAX_COMPACT_ICONS}
-            max={MAX_MAX_COMPACT_ICONS}
-            desc="Max session icons in compact mode, overflow shows as +N."
+            max={maxCompactIconLimit}
+            desc={
+              maxCompactIconLimit < ABSOLUTE_MAX_COMPACT_ICONS
+                ? `Up to ${maxCompactIconLimit} icons fit on this display; extras spill to the right beside tokens.`
+                : "Max session icons in compact mode; extras spill to the right beside tokens."
+            }
             onChange={onChangeMaxCompactIcons}
           />
           <SettingsSlider
