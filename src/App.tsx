@@ -1012,7 +1012,7 @@ export function App() {
         onFocusCapture={handleIslandFocus}
         onBlurCapture={handleIslandBlur}
       >
-        {collapsedMode === "dormant" && (
+        {collapsedMode === "dormant" || isExpanded ? (
           <span
             className={`atoll-indicator ${snapshot.online ? "is-online" : "is-offline"}`}
             title={snapshot.online ? "Listening" : "Offline"}
@@ -1023,7 +1023,7 @@ export function App() {
               <AtollLogo size={22} activity={snapshot.online ? "idle" : "napping"} idleIntervalSec={idleIntervalSec * 60} idleDurationSec={idleDurationSec * 60} />
             </span>
           </span>
-        )}
+        ) : null}
 
         <header
           className="island-header"
@@ -1033,10 +1033,12 @@ export function App() {
           <div className="header-main">
             {collapsedMode !== "dormant" && (
               <>
-                <span
-                  className={`listener-dot ${snapshot.online ? "online" : ""}`}
-                  title={snapshot.online ? "Listening" : "Offline"}
-                />
+                {!isExpanded ? (
+                  <span
+                    className={`listener-dot ${snapshot.online ? "online" : ""}`}
+                    title={snapshot.online ? "Listening" : "Offline"}
+                  />
+                ) : null}
                 {isExpanded ? (
                   <AgentTabBar
                     agents={tabAgents}

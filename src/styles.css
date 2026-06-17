@@ -212,10 +212,6 @@ kbd {
   pointer-events: none;
 }
 
-.island.is-expanded::before {
-  opacity: 1;
-}
-
 /* Bottom accent line — breathes when something is pending */
 .island::after {
   content: "";
@@ -257,20 +253,25 @@ kbd {
   width: min(560px, 100vw);
   height: min(360px, 100vh);
   border-radius: 0 0 22px 22px;
+  background: #000;
+}
+
+.island.is-expanded::before {
+  display: none;
 }
 
 .island.is-expanded.is-idle {
   height: min(var(--expanded-idle-height), 100vh);
-  background: #000;
-}
-
-.island.is-expanded.is-idle::before {
-  display: none;
 }
 
 .tauri-runtime .island.is-expanded {
   width: 100%;
   height: 100%;
+  background: #000;
+}
+
+.tauri-runtime .island.is-expanded::before {
+  display: none;
 }
 
 .island:focus {
@@ -402,8 +403,9 @@ kbd {
   display: none;
 }
 
-/* Atoll logo indicator — stays in the top capsule band; on expand it nudges
-   down slightly and scales up instead of jumping to the expanded header row. */
+/* Atoll logo indicator — pinned to the physical menu-bar band at the top of
+   the window. Do NOT add --notch-height: the menu bar overlaps the housing,
+   and expanded header content is pushed down via margin-top separately. */
 .atoll-indicator {
   position: absolute;
   z-index: 5;
@@ -416,6 +418,7 @@ kbd {
   transform: translateY(calc(-50% + 3px)) scale(1);
   filter: drop-shadow(0 0 3px rgba(56, 189, 248, 0.35));
   transition:
+    top var(--duration-expand) var(--ease-window),
     left var(--duration-expand) var(--ease-window),
     transform var(--duration-expand) var(--ease-window),
     opacity 200ms ease,
@@ -446,8 +449,9 @@ kbd {
 
 .is-expanded .atoll-indicator,
 .is-opening .atoll-indicator {
+  top: calc(var(--compact-height) / 2);
   left: 14px;
-  transform: translateY(calc(-50% + 6px)) scale(1.12);
+  transform: translateY(calc(-50% + 3px)) scale(1.08);
 }
 
 .is-expanded .atoll-indicator-mark.is-online,
@@ -458,6 +462,10 @@ kbd {
 .island.is-dormant:hover .atoll-indicator {
   opacity: 1;
   filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.55));
+}
+
+.is-expanded:not(.is-dormant) .header-main {
+  padding-left: 32px;
 }
 
 .is-expanded .header-main {
@@ -1536,17 +1544,6 @@ kbd {
    from NSScreen safe-area metrics; absent on non-notched screens. */
 
 .tauri-runtime.has-notch .island.is-expanded {
-  background:
-    linear-gradient(
-      180deg,
-      #000 0,
-      #000 var(--notch-height, 0px),
-      var(--surface-2) var(--notch-height, 0px),
-      var(--surface-base)
-    );
-}
-
-.tauri-runtime.has-notch .island.is-expanded.is-idle {
   background: #000;
 }
 
@@ -1554,14 +1551,6 @@ kbd {
    against the menu bar / notch band. */
 .tauri-runtime .island:not(.is-expanded) {
   background: #000;
-}
-
-.tauri-runtime .island.is-expanded.is-idle {
-  background: #000;
-}
-
-.tauri-runtime .island.is-expanded.is-idle::before {
-  display: none;
 }
 
 .tauri-runtime .island:not(.is-expanded)::before {
