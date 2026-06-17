@@ -1851,14 +1851,17 @@ fn island_window_logical_size(
     let min_notch_width = if notch.has_notch { notch.width } else { 0.0 };
     match mode {
         // Dormant sits WITHIN the menu-bar band (no extra notch padding).
-        // Slightly wider than the notch so edges peek out and the logo on
-        // the left is visible beside the camera housing.
+        // On notched displays it spans the notch + padding so the logo is
+        // visible beside the camera housing. On non-notched displays apply
+        // the same formula with FALLBACK_NOTCH_WIDTH so the dormant pill
+        // has a comfortable width comparable to a notched screen.
         IslandWindowMode::Dormant => {
-            let w = if notch.has_notch {
-                notch.width + 2.0 * DORMANT_NOTCH_PADDING
+            let reference_notch = if notch.has_notch {
+                notch.width
             } else {
-                DORMANT_WINDOW_WIDTH
+                FALLBACK_NOTCH_WIDTH
             };
+            let w = reference_notch + 2.0 * DORMANT_NOTCH_PADDING;
             LogicalSize::new(w, DORMANT_WINDOW_HEIGHT)
         }
         IslandWindowMode::Compact => {
@@ -2818,23 +2821,22 @@ mod core_tests {
 
     #[test]
     fn non_notched_display_uses_minimum_comfortable_width() {
-        // compact_width (132) is below FALLBACK_NOTCH_WIDTH (200), so the
-        // island is widened to the fallback floor on un-notched screens.
-        let compact = island_window_logical_size(
-            IslandWindowMode::Compact,
-            132.0,
-            NotchMetrics::default(),
-        );
+        let no_notch = NotchMetrics::default();
+
+        // Compact: compact_width (132) < FALLBACK_NOTCH_WIDTH (200) → widened.
+        let compact = island_window_logical_size(IslandWindowMode::Compact, 132.0, no_notch);
         assert_eq!(compact.width, FALLBACK_NOTCH_WIDTH);
         assert_eq!(compact.height, COMPACT_WINDOW_HEIGHT);
 
         // A compact_width that already exceeds the floor is kept as-is.
-        let wide = island_window_logical_size(
-            IslandWindowMode::Compact,
-            250.0,
-            NotchMetrics::default(),
-        );
+        let wide = island_window_logical_size(IslandWindowMode::Compact, 250.0, no_notch);
         assert_eq!(wide.width, 250.0);
+
+        // Dormant: uses the same FALLBACK_NOTCH_WIDTH reference + padding,
+        // matching the visual footprint of a notched display.
+        let dormant = island_window_logical_size(IslandWindowMode::Dormant, 132.0, no_notch);
+        assert_eq!(dormant.width, FALLBACK_NOTCH_WIDTH + 2.0 * DORMANT_NOTCH_PADDING);
+        assert_eq!(dormant.height, DORMANT_WINDOW_HEIGHT);
     }
 
     #[test]
