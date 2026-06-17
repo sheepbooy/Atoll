@@ -212,12 +212,17 @@ export async function deactivateAtoll() {
 export async function setIslandPresentation(
   mode: "compact" | "expanded" | "dormant",
   compactWidth?: number,
+  expandedIdle?: boolean,
 ) {
   if (!isTauriRuntime) {
     return;
   }
 
-  return invoke<void>("set_island_presentation", { mode, compactWidth });
+  return invoke<void>("set_island_presentation", {
+    mode,
+    compactWidth,
+    expandedIdle,
+  });
 }
 
 export interface NotchMetrics {

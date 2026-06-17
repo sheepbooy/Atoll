@@ -338,10 +338,26 @@ function deriveSessionMood(
   return "calm";
 }
 
-function applyNotchMetrics(notch: NotchMetrics) {
+// Keep in sync with COMPACT_WINDOW_HEIGHT in src-tauri/src/lib.rs.
+const COMPACT_WINDOW_HEIGHT = 36;
+// Keep in sync with NOTCH_COVER_PADDING in src-tauri/src/lib.rs.
+const NOTCH_COVER_PADDING = 16;
+
+// Keep in sync with EXPANDED_IDLE_WINDOW_HEIGHT in src-tauri/src/lib.rs.
+const EXPANDED_IDLE_WINDOW_HEIGHT = 240;
+
+function applyWindowMetrics(notch: NotchMetrics) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
-  root.style.setProperty("--notch-height", `${Math.max(0, notch.height)}px`);
+  root.style.setProperty("--compact-height", `${COMPACT_WINDOW_HEIGHT}px`);
+  root.style.setProperty(
+    "--expanded-idle-height",
+    `${EXPANDED_IDLE_WINDOW_HEIGHT}px`,
+  );
+  const coverHeight = notch.hasNotch
+    ? Math.max(0, notch.height + NOTCH_COVER_PADDING)
+    : 0;
+  root.style.setProperty("--notch-height", `${coverHeight}px`);
   root.style.setProperty("--notch-width", `${Math.max(0, notch.width)}px`);
   root.classList.toggle("has-notch", notch.hasNotch);
 }
@@ -450,8 +466,10 @@ export function App() {
       .then(setHookStatus)
       .catch(() => undefined);
     getNotchMetrics()
-      .then(applyNotchMetrics)
-      .catch(() => undefined);
+      .then(applyWindowMetrics)
+      .catch(() =>
+        applyWindowMetrics({ hasNotch: false, width: 0, height: 0 }),
+      );
     setSessionRetention(readRetentionMinutes()).catch(() => undefined);
     onSnapshotChanged(applySnapshot).then((cleanup) => {
       unsubscribe = cleanup;
@@ -699,7 +717,12 @@ export function App() {
     clearTransitionWork();
     setPresentationPhase(next);
 
-    const nativeTransition = setIslandPresentation("expanded");
+    const nativeTransition = setIslandPresentation(
+      "expanded",
+      undefined,
+      snapshotRef.current.pendingCount === 0 &&
+        snapshotRef.current.sessions.length === 0,
+    );
     transitionTimerRef.current = window.setTimeout(async () => {
       transitionTimerRef.current = null;
       if (phaseRef.current !== "opening") return;
@@ -894,6 +917,18 @@ export function App() {
   const isExpanded = phase === "opening" || phase === "expanded";
   const showAgentTabs = isExpanded && tabAgents.length > 1;
   const isDormant = !isExpanded && collapsedMode === "dormant";
+  const isIdleExpanded =
+    isExpanded &&
+    panelView.kind === "home" &&
+    sessions.length === 0 &&
+    snapshot.pendingCount === 0;
+
+  useEffect(() => {
+    if (phase !== "expanded") return;
+    setIslandPresentation("expanded", undefined, isIdleExpanded).catch(
+      () => undefined,
+    );
+  }, [phase, isIdleExpanded]);
 
   function renderPanel() {
     if (panelView.kind === "session") {
@@ -968,7 +1003,7 @@ export function App() {
   return (
     <main className="stage">
       <section
-        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpanded && panelView.kind !== "home" ? "is-subview" : ""}`}
+        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpanded && panelView.kind !== "home" ? "is-subview" : ""}`}
         aria-label="Atoll"
         tabIndex={0}
         onClick={handleIslandClick}
@@ -982,7 +1017,11 @@ export function App() {
             className={`atoll-indicator ${snapshot.online ? "is-online" : "is-offline"}`}
             title={snapshot.online ? "Listening" : "Offline"}
           >
-            <AtollLogo size={22} activity={snapshot.online ? "idle" : "napping"} idleIntervalSec={idleIntervalSec * 60} idleDurationSec={idleDurationSec * 60} />
+            <span
+              className={`atoll-indicator-mark ${snapshot.online ? "is-online" : "is-offline"}`}
+            >
+              <AtollLogo size={22} activity={snapshot.online ? "idle" : "napping"} idleIntervalSec={idleIntervalSec * 60} idleDurationSec={idleDurationSec * 60} />
+            </span>
           </span>
         )}
 

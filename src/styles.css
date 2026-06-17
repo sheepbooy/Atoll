@@ -81,6 +81,12 @@
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "SFMono-Regular", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
 
+  /* Collapsed island capsule height — keep in sync with COMPACT_WINDOW_HEIGHT in lib.rs */
+  --compact-height: 36px;
+  --expanded-header-height: 60px;
+  /* Expanded idle panel — keep in sync with EXPANDED_IDLE_WINDOW_HEIGHT in lib.rs */
+  --expanded-idle-height: 240px;
+
   color: var(--text-primary);
   background: transparent;
   font-family: var(--font-sans);
@@ -174,7 +180,7 @@ kbd {
 .island {
   position: relative;
   width: 132px;
-  height: 28px;
+  height: var(--compact-height);
   border: 0;
   border-radius: 0 0 15px 15px;
   background:
@@ -253,6 +259,15 @@ kbd {
   border-radius: 0 0 22px 22px;
 }
 
+.island.is-expanded.is-idle {
+  height: min(var(--expanded-idle-height), 100vh);
+  background: #000;
+}
+
+.island.is-expanded.is-idle::before {
+  display: none;
+}
+
 .tauri-runtime .island.is-expanded {
   width: 100%;
   height: 100%;
@@ -268,7 +283,7 @@ kbd {
   position: relative;
   display: grid;
   width: 100%;
-  height: 28px;
+  height: var(--compact-height);
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
@@ -290,14 +305,50 @@ kbd {
   cursor: grab;
 }
 
-.is-expanded .island-header::after {
-  content: "";
+/* Idle expand: center copy in the full body below the notch; header stays
+   transparent on top for dragging. */
+.is-expanded.is-idle .island-header {
+  position: relative;
+  z-index: 2;
+  background: transparent;
+  pointer-events: auto;
+}
+
+.is-expanded.is-idle .island-panel {
   position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--border-subtle) 18%, var(--border-subtle) 82%, transparent);
+  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  transform: none;
+  z-index: 1;
+}
+
+.tauri-runtime .is-expanded.is-idle .island-panel {
+  left: 0;
+  transform: none;
+}
+
+.tauri-runtime.has-notch .is-expanded.is-idle .island-panel {
+  top: var(--notch-height, 0px);
+  height: calc(100% - var(--notch-height, 0px));
+}
+
+.is-expanded.is-idle .idle-view {
+  height: auto;
+  padding: 0;
+}
+
+.is-expanded.is-idle .setup-view {
+  padding: 0;
+  width: 100%;
+  display: flex;
+  justify-content: center;
 }
 
 .island-header:active {
@@ -312,10 +363,6 @@ kbd {
   pointer-events: none;
 }
 
-.is-expanded.is-subview .island-header::after {
-  display: none;
-}
-
 /* ─── Header Main / Compact Stack / Tabs ─────────────────────── */
 
 .header-main {
@@ -328,7 +375,7 @@ kbd {
 /* ─── Dormant pill (no active sessions) ────────────────────────── */
 .island.is-dormant {
   width: 48px;
-  height: 28px;
+  height: var(--compact-height);
   border-radius: 0 0 15px 15px;
 }
 
@@ -355,25 +402,32 @@ kbd {
   display: none;
 }
 
-/* Atoll logo indicator — pinned to the menu-bar band so it never moves
-   vertically when the island expands.  In dormant it sits as a static
-   glowing mark; on expand it slides horizontally and starts breathing. */
+/* Atoll logo indicator — stays in the top capsule band; on expand it nudges
+   down slightly and scales up instead of jumping to the expanded header row. */
 .atoll-indicator {
   position: absolute;
   z-index: 5;
-  top: 3px;
   left: 4px;
+  top: calc(var(--compact-height) / 2);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   line-height: 0;
+  transform: translateY(calc(-50% + 3px)) scale(1);
   filter: drop-shadow(0 0 3px rgba(56, 189, 248, 0.35));
-  transition: left var(--duration-expand) var(--ease-window),
-              opacity 200ms ease,
-              filter 300ms ease;
+  transition:
+    left var(--duration-expand) var(--ease-window),
+    transform var(--duration-expand) var(--ease-window),
+    opacity 200ms ease,
+    filter 300ms ease;
 }
 
-.atoll-indicator.is-online {
+.atoll-indicator-mark {
+  display: inline-flex;
+  line-height: 0;
+}
+
+.atoll-indicator-mark.is-online {
   animation: atoll-breathe 3.2s ease-in-out infinite;
 }
 
@@ -383,15 +437,22 @@ kbd {
 }
 
 .is-dormant .atoll-indicator {
-  animation: none;
   opacity: 0.9;
-  top: -1px;
-  left: 4px;
+}
+
+.is-dormant .atoll-indicator-mark.is-online {
+  animation: none;
 }
 
 .is-expanded .atoll-indicator,
 .is-opening .atoll-indicator {
   left: 14px;
+  transform: translateY(calc(-50% + 6px)) scale(1.12);
+}
+
+.is-expanded .atoll-indicator-mark.is-online,
+.is-opening .atoll-indicator-mark.is-online {
+  animation: atoll-breathe 3.2s ease-in-out infinite;
 }
 
 .island.is-dormant:hover .atoll-indicator {
@@ -454,6 +515,7 @@ kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transform: translateY(1px);
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
 }
 
@@ -1473,7 +1535,7 @@ kbd {
    is pushed below the housing. Driven by --notch-height / --notch-width set
    from NSScreen safe-area metrics; absent on non-notched screens. */
 
-.tauri-runtime.has-notch .island {
+.tauri-runtime.has-notch .island.is-expanded {
   background:
     linear-gradient(
       180deg,
@@ -1482,6 +1544,28 @@ kbd {
       var(--surface-2) var(--notch-height, 0px),
       var(--surface-base)
     );
+}
+
+.tauri-runtime.has-notch .island.is-expanded.is-idle {
+  background: #000;
+}
+
+/* Collapsed capsule: solid black so the transparent window reads as opaque
+   against the menu bar / notch band. */
+.tauri-runtime .island:not(.is-expanded) {
+  background: #000;
+}
+
+.tauri-runtime .island.is-expanded.is-idle {
+  background: #000;
+}
+
+.tauri-runtime .island.is-expanded.is-idle::before {
+  display: none;
+}
+
+.tauri-runtime .island:not(.is-expanded)::before {
+  display: none;
 }
 
 .tauri-runtime.has-notch .island-header {
@@ -1506,7 +1590,7 @@ kbd {
    (no extra_top in Rust), so no additional margin is needed. The pill appears
    as a dark extension of the notch, embedded in the menu bar. */
 .tauri-runtime.has-notch .island.is-dormant {
-  background: var(--surface-base);
+  background: #000;
 }
 
 .tauri-runtime.has-notch .is-dormant .island-header {
