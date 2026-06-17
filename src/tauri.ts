@@ -54,6 +54,8 @@ export interface ChatMessage {
 
 export interface IslandHoverChanged {
   hovering: boolean;
+  clientX?: number;
+  clientY?: number;
 }
 
 const isTauriRuntime = "__TAURI_INTERNALS__" in window;
