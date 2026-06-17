@@ -639,6 +639,7 @@ export function App() {
 
   async function expandIsland() {
     clearIdleTimer();
+
     const next = beginExpand(phaseRef.current);
     if (next === phaseRef.current) return;
     clearTransitionWork();
@@ -902,15 +903,22 @@ export function App() {
         onFocusCapture={handleIslandFocus}
         onBlurCapture={handleIslandBlur}
       >
+        {collapsedMode === "dormant" && (
+          <span
+            className={`atoll-indicator ${snapshot.online ? "is-online" : "is-offline"}`}
+            title={snapshot.online ? "Listening" : "Offline"}
+          >
+            <AtollLogo size={16} />
+          </span>
+        )}
+
         <header
           className="island-header"
           onMouseDown={startWindowDrag}
           title={isExpanded ? "Drag window" : "Hover to open"}
         >
           <div className="header-main">
-            {isDormant ? (
-              <span className="dormant-handle" aria-hidden="true" />
-            ) : (
+            {collapsedMode !== "dormant" && (
               <>
                 <span
                   className={`listener-dot ${snapshot.online ? "online" : ""}`}
