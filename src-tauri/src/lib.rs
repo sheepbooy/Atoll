@@ -1341,6 +1341,9 @@ pub fn run() {
             deactivate_atoll
         ])
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             build_tray(app.handle())?;
             hook_bridge::start_server(app.handle().clone());
             start_island_hover_monitor(app.handle().clone());
