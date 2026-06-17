@@ -1727,13 +1727,13 @@ fn apply_island_window_mode(
     let position = LogicalPosition::new(centered_x, centered_y);
     let home = HomeWindowBounds {
         position,
-        // Un-notched compact size keeps the animation's scale-factor recovery
-        // (compact_size.width / COMPACT_WINDOW_WIDTH) correct.
-        compact_size: island_window_physical_size(
-            IslandWindowMode::Compact,
-            scale_factor,
-            COMPACT_WINDOW_WIDTH,
-            NotchMetrics::default(),
+        // Fixed reference size for animation scale-factor recovery:
+        //   compact_size.width / COMPACT_WINDOW_WIDTH == scale_factor
+        // Computed directly so the FALLBACK_NOTCH_WIDTH minimum width floor
+        // that island_window_logical_size applies does not distort the ratio.
+        compact_size: PhysicalSize::new(
+            (COMPACT_WINDOW_WIDTH * scale_factor).round() as u32,
+            (COMPACT_WINDOW_HEIGHT * scale_factor).round() as u32,
         ),
         monitor_top_y: monitor_position.y,
         notch,
@@ -1862,7 +1862,16 @@ fn island_window_logical_size(
             LogicalSize::new(w, DORMANT_WINDOW_HEIGHT)
         }
         IslandWindowMode::Compact => {
-            let w = compact_width.max(min_notch_width);
+            // On notched displays the capsule must be at least as wide as the
+            // camera housing so it visually fuses with it (Dynamic-Island style).
+            // On non-notched displays apply the same FALLBACK_NOTCH_WIDTH floor
+            // so the folded island has a comfortable minimum width on any screen.
+            let min_w = if notch.has_notch {
+                notch.width
+            } else {
+                FALLBACK_NOTCH_WIDTH
+            };
+            let w = compact_width.max(min_w);
             LogicalSize::new(w, COMPACT_WINDOW_HEIGHT + extra_top)
         }
         IslandWindowMode::Expanded => {
@@ -2808,13 +2817,24 @@ mod core_tests {
     }
 
     #[test]
-    fn non_notched_display_keeps_original_compact_size() {
+    fn non_notched_display_uses_minimum_comfortable_width() {
+        // compact_width (132) is below FALLBACK_NOTCH_WIDTH (200), so the
+        // island is widened to the fallback floor on un-notched screens.
         let compact = island_window_logical_size(
             IslandWindowMode::Compact,
             132.0,
             NotchMetrics::default(),
         );
-        assert_eq!(compact, LogicalSize::new(132.0, COMPACT_WINDOW_HEIGHT));
+        assert_eq!(compact.width, FALLBACK_NOTCH_WIDTH);
+        assert_eq!(compact.height, COMPACT_WINDOW_HEIGHT);
+
+        // A compact_width that already exceeds the floor is kept as-is.
+        let wide = island_window_logical_size(
+            IslandWindowMode::Compact,
+            250.0,
+            NotchMetrics::default(),
+        );
+        assert_eq!(wide.width, 250.0);
     }
 
     #[test]
