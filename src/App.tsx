@@ -893,7 +893,7 @@ export function App() {
   const isExpanded = phase === "opening" || phase === "expanded";
   const showAgentTabs = isExpanded && tabAgents.length > 1;
   const showPanelAgentTabs =
-    isExpanded && panelView.kind === "home" && tabAgents.length > 0;
+    isExpanded && panelView.kind === "home" && tabAgents.length > 1;
   const isDormant = !isExpanded && collapsedMode === "dormant";
   const isIdleExpanded =
     isExpanded &&
@@ -1008,7 +1008,9 @@ export function App() {
           onMouseDown={startWindowDrag}
           title={isExpanded ? "Drag window" : "Hover to open"}
         >
-          <div className="header-main">
+          <div
+            className={`header-main ${showPanelAgentTabs ? "has-agent-tabs" : ""}`}
+          >
             {collapsedMode !== "dormant" && !isExpanded ? (
               <>
                 <span
@@ -1025,6 +1027,17 @@ export function App() {
                   idleDurationSec={idleDurationSec}
                 />
               </>
+            ) : showPanelAgentTabs ? (
+              <div className="header-agent-tabs" data-no-drag>
+                <AgentTabBar
+                  agents={tabAgents}
+                  selectedAgent={selectedAgent}
+                  pendingCountByAgent={pendingCountByAgent}
+                  showTabs={showAgentTabs}
+                  online={snapshot.online}
+                  onSelectAgent={handleSelectAgent}
+                />
+              </div>
             ) : null}
           </div>
 
@@ -1043,99 +1056,87 @@ export function App() {
             </div>
           ) : null}
 
+          <div
+            className="header-actions"
+            data-no-drag
+            ref={menuRef}
+            onMouseDown={handleControlMouseDown}
+          >
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => collapseIsland(true)}
+              aria-label="Collapse Atoll"
+              tabIndex={isExpanded ? 0 : -1}
+            >
+              <ChevronUp size={16} />
+            </button>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => setMenuOpen((open) => !open)}
+              aria-label="More options"
+              aria-expanded={menuOpen}
+              tabIndex={isExpanded ? 0 : -1}
+            >
+              <Ellipsis size={17} />
+            </button>
+            {menuOpen ? (
+              <div className="more-menu" role="menu">
+                {hookStatus?.installed ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleUninstallHooks}
+                    disabled={hookBusy}
+                  >
+                    <Trash2 size={14} />
+                    Uninstall hooks
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); handleInstallHooks(); }}
+                    disabled={hookBusy}
+                  >
+                    <Download size={14} />
+                    Install hooks
+                  </button>
+                )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleArchiveAll}
+                >
+                  <Archive size={14} />
+                  Archive all
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleOpenSettings}
+                >
+                  <Settings2 size={14} />
+                  Settings
+                </button>
+                <div className="menu-separator" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="danger"
+                  onClick={handleQuit}
+                >
+                  <Power size={14} />
+                  Quit Atoll
+                </button>
+              </div>
+            ) : null}
+          </div>
+
         </header>
 
-        <div
-          className="header-actions"
-          data-no-drag
-          ref={menuRef}
-          onMouseDown={handleControlMouseDown}
-        >
-          <button
-            className="icon-button"
-            type="button"
-            onClick={() => collapseIsland(true)}
-            aria-label="Collapse Atoll"
-            tabIndex={isExpanded ? 0 : -1}
-          >
-            <ChevronUp size={16} />
-          </button>
-          <button
-            className="icon-button"
-            type="button"
-            onClick={() => setMenuOpen((open) => !open)}
-            aria-label="More options"
-            aria-expanded={menuOpen}
-            tabIndex={isExpanded ? 0 : -1}
-          >
-            <Ellipsis size={17} />
-          </button>
-          {menuOpen ? (
-            <div className="more-menu" role="menu">
-              {hookStatus?.installed ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleUninstallHooks}
-                  disabled={hookBusy}
-                >
-                  <Trash2 size={14} />
-                  Uninstall hooks
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => { setMenuOpen(false); handleInstallHooks(); }}
-                  disabled={hookBusy}
-                >
-                  <Download size={14} />
-                  Install hooks
-                </button>
-              )}
-              <button
-                type="button"
-                role="menuitem"
-                onClick={handleArchiveAll}
-              >
-                <Archive size={14} />
-                Archive all
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={handleOpenSettings}
-              >
-                <Settings2 size={14} />
-                Settings
-              </button>
-              <div className="menu-separator" />
-              <button
-                type="button"
-                role="menuitem"
-                className="danger"
-                onClick={handleQuit}
-              >
-                <Power size={14} />
-                Quit Atoll
-              </button>
-            </div>
-          ) : null}
-        </div>
-
-        <div className={`island-panel ${showPanelAgentTabs ? "has-agent-tabs" : ""}`}>
-          {showPanelAgentTabs ? (
-            <div className="panel-agent-tabs" data-no-drag>
-              <AgentTabBar
-                agents={tabAgents}
-                selectedAgent={selectedAgent}
-                pendingCountByAgent={pendingCountByAgent}
-                showTabs={showAgentTabs}
-                online={snapshot.online}
-                onSelectAgent={handleSelectAgent}
-              />
-            </div>
-          ) : null}
+        <div className="island-panel">
           {renderPanel()}
         </div>
       </section>
