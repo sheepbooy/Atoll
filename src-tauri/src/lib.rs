@@ -37,7 +37,7 @@ const MIN_COMPACT_WINDOW_WIDTH: f64 = 72.0;
 // Dormant pill: sits in the menu bar, slightly wider than the notch so the
 // logo on the left edge is visible beside the camera housing.
 const DORMANT_WINDOW_WIDTH: f64 = 48.0;
-const DORMANT_WINDOW_HEIGHT: f64 = 24.0;
+const DORMANT_WINDOW_HEIGHT: f64 = 28.0;
 // Extra width beyond the notch on each side so edges are visible.
 const DORMANT_NOTCH_PADDING: f64 = 30.0;
 const WINDOW_ANIMATION_DURATION: Duration = Duration::from_millis(420);
