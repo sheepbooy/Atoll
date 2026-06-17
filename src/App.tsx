@@ -1130,9 +1130,9 @@ export function App() {
             <span className="header-notch-spacer" aria-hidden="true" />
           ) : null}
 
-          {((!isDormant && !isExpanded) || snapshot.pendingCount > 0) ? (
+          {!isDormant && !isExpanded ? (
             <div className="header-metrics">
-              {!isDormant && !isExpanded && compactRightSessions.length > 0 ? (
+              {compactRightSessions.length > 0 ? (
                 <CompactSessionStack
                   placement="right"
                   sessions={compactRightSessions}
@@ -1144,16 +1144,14 @@ export function App() {
                   idleDurationSec={idleDurationSec}
                 />
               ) : null}
-              {!isDormant && !isExpanded ? (
-                <TokenCounter
-                  value={dailyTokenTotal}
-                  usage={dailyTokens}
-                  variant="compact"
-                  sessionCount={sessions.length}
-                  maxCompactIcons={maxCompactIcons}
-                  compactTokenLevel={compactHeaderLayout.tokenCompactLevel}
-                />
-              ) : null}
+              <TokenCounter
+                value={dailyTokenTotal}
+                usage={dailyTokens}
+                variant="compact"
+                sessionCount={sessions.length}
+                maxCompactIcons={maxCompactIcons}
+                compactTokenLevel={compactHeaderLayout.tokenCompactLevel}
+              />
               {snapshot.pendingCount > 0 ? (
                 <span className="pending-badge-slot">
                   <span className="pending-badge" aria-label={`${snapshot.pendingCount} pending`}>
