@@ -1,4 +1,4 @@
-import { FocusEvent, MouseEvent, PointerEvent, useEffect, useRef, useState, useMemo } from "react";
+import { FocusEvent, MouseEvent, PointerEvent as ReactPointerEvent, useEffect, useRef, useState, useMemo } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -1446,7 +1446,7 @@ function SessionListView({ sessions, activeRequest, justResolved, isExpanded, on
     };
   }, [isExpanded, sessions.length]);
 
-  function handleListPointerMove(event: PointerEvent<HTMLDivElement>) {
+  function handleListPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
     const item = (event.target as HTMLElement).closest<HTMLElement>("[data-session-id]");
     setHoveredSessionId(item?.dataset.sessionId ?? null);
   }
