@@ -89,21 +89,19 @@ const MAX_IDLE_INTERVAL_MIN = 30;
 const DEFAULT_IDLE_DURATION_MIN = 10;
 const MIN_IDLE_DURATION_MIN = 1;
 const MAX_IDLE_DURATION_MIN = 30;
-const COMPACT_WIDTH_MIN = 96;
-const COMPACT_WIDTH_BASE = 52;
-const COMPACT_WIDTH_ICON_SIZE = 20;
-const COMPACT_WIDTH_ICON_GAP = 4;
-const COMPACT_WIDTH_OVERFLOW = 32;
-const COMPACT_WIDTH_PENDING = 28;
-const COMPACT_WIDTH_TOKEN_COUNTER = 82;
-const COMPACT_WIDTH_TOKEN_NARROW = 52;
-const COMPACT_WIDTH_TOKEN_TIGHT = 38;
-const COMPACT_WIDTH_EMPTY = 72;
+const DORMANT_NOTCH_PADDING = 30;
+const FALLBACK_NOTCH_WIDTH = 200;
+const COMPACT_NOTCH_SIDE_PADDING = 130;
 const ZERO_TOKEN_USAGE: TokenUsage = {
   inputTokens: 0,
   outputTokens: 0,
   cacheReadTokens: 0,
   cacheCreationTokens: 0,
+};
+const EMPTY_NOTCH_METRICS: NotchMetrics = {
+  hasNotch: false,
+  width: 0,
+  height: 0,
 };
 
 function clampCompactIconLimit(value: number) {
@@ -166,39 +164,11 @@ function readIdleDuration() {
   } catch { return DEFAULT_IDLE_DURATION_MIN; }
 }
 
-function computeCompactWindowWidth(
-  sessionCount: number,
-  maxCompactIcons: number,
-  pendingCount: number,
-  tokenTotal: number,
-) {
-  const pendingWidth = pendingCount > 0 ? COMPACT_WIDTH_PENDING : 0;
-  const hasTokenCounter = sessionCount > 0 || pendingCount > 0 || tokenTotal > 0;
-  const compact = tokenCompactLevel(sessionCount);
-  const tokenWidth = hasTokenCounter
-    ? compact >= 2
-      ? COMPACT_WIDTH_TOKEN_TIGHT
-      : compact >= 1
-        ? COMPACT_WIDTH_TOKEN_NARROW
-        : COMPACT_WIDTH_TOKEN_COUNTER
-    : 0;
-  if (sessionCount === 0) {
-    return Math.max(
-      COMPACT_WIDTH_EMPTY,
-      Math.ceil(COMPACT_WIDTH_BASE + tokenWidth + pendingWidth),
-    );
+function computeCollapsedWindowWidth(notchMetrics: NotchMetrics) {
+  if (notchMetrics.hasNotch) {
+    return Math.ceil(notchMetrics.width + COMPACT_NOTCH_SIDE_PADDING * 2);
   }
-  const shown = Math.min(sessionCount, maxCompactIcons);
-  const iconWidth =
-    shown > 0
-      ? shown * COMPACT_WIDTH_ICON_SIZE +
-        Math.max(0, shown - 1) * COMPACT_WIDTH_ICON_GAP
-      : COMPACT_WIDTH_ICON_SIZE;
-  const overflowWidth = sessionCount > shown ? COMPACT_WIDTH_OVERFLOW : 0;
-  return Math.max(
-    COMPACT_WIDTH_MIN,
-    Math.ceil(COMPACT_WIDTH_BASE + iconWidth + overflowWidth + pendingWidth + tokenWidth),
-  );
+  return Math.ceil(FALLBACK_NOTCH_WIDTH + DORMANT_NOTCH_PADDING * 2);
 }
 
 const initialSnapshot: IslandSnapshot = {
@@ -385,6 +355,7 @@ export function App() {
   const [hookStatus, setHookStatus] = useState<HookStatus | null>(null);
   const [hookBusy, setHookBusy] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<AgentKind | null>(null);
+  const [notchMetrics, setNotchMetrics] = useState<NotchMetrics>(EMPTY_NOTCH_METRICS);
   const [maxCompactIcons, setMaxCompactIcons] = useState<number>(() => readCompactIconLimit());
   const [retentionMinutes, setRetentionMinutes] = useState<number>(() => readRetentionMinutes());
   const [idleIntervalSec, setIdleIntervalSec] = useState<number>(() => readIdleInterval());
@@ -398,15 +369,9 @@ export function App() {
   const sessions = snapshot.sessions;
   const dailyTokens = snapshot.dailyTokens ?? ZERO_TOKEN_USAGE;
   const dailyTokenTotal = dailyTokens.inputTokens + dailyTokens.outputTokens;
-  const compactWindowWidth = useMemo(
-    () =>
-      computeCompactWindowWidth(
-        sessions.length,
-        maxCompactIcons,
-        snapshot.pendingCount,
-        dailyTokenTotal,
-      ),
-    [sessions.length, maxCompactIcons, snapshot.pendingCount, dailyTokenTotal],
+  const collapsedWindowWidth = useMemo(
+    () => computeCollapsedWindowWidth(notchMetrics),
+    [notchMetrics],
   );
   // With no active sessions the island super-collapses into a tiny top-edge
   // drawer handle instead of showing a capsule.
@@ -466,10 +431,14 @@ export function App() {
       .then(setHookStatus)
       .catch(() => undefined);
     getNotchMetrics()
-      .then(applyWindowMetrics)
-      .catch(() =>
-        applyWindowMetrics({ hasNotch: false, width: 0, height: 0 }),
-      );
+      .then((notch) => {
+        setNotchMetrics(notch);
+        applyWindowMetrics(notch);
+      })
+      .catch(() => {
+        setNotchMetrics(EMPTY_NOTCH_METRICS);
+        applyWindowMetrics(EMPTY_NOTCH_METRICS);
+      });
     setSessionRetention(readRetentionMinutes()).catch(() => undefined);
     onSnapshotChanged(applySnapshot).then((cleanup) => {
       unsubscribe = cleanup;
@@ -624,9 +593,9 @@ export function App() {
     if (collapsedMode === "dormant") {
       setIslandPresentation("dormant").catch(() => undefined);
     } else {
-      setIslandPresentation("compact", compactWindowWidth).catch(() => undefined);
+      setIslandPresentation("compact", collapsedWindowWidth).catch(() => undefined);
     }
-  }, [phase, compactWindowWidth, collapsedMode]);
+  }, [phase, collapsedWindowWidth, collapsedMode]);
 
   async function resolveActive(
     request: PermissionRequest | null,
@@ -758,7 +727,7 @@ export function App() {
     const nativeTransition =
       collapsedModeRef.current === "dormant"
         ? setIslandPresentation("dormant")
-        : setIslandPresentation("compact", compactWindowWidth);
+        : setIslandPresentation("compact", collapsedWindowWidth);
     transitionTimerRef.current = window.setTimeout(async () => {
       transitionTimerRef.current = null;
       if (phaseRef.current !== "closing") return;
@@ -909,6 +878,13 @@ export function App() {
     }
   }
 
+  function handleSelectAgent(agent: AgentKind) {
+    setSelectedAgent(agent);
+    if (panelView.kind !== "home") {
+      setPanelView({ kind: "home" });
+    }
+  }
+
   function handleOpenSettings() {
     setMenuOpen(false);
     setPanelView({ kind: "settings" });
@@ -916,6 +892,8 @@ export function App() {
 
   const isExpanded = phase === "opening" || phase === "expanded";
   const showAgentTabs = isExpanded && tabAgents.length > 1;
+  const showPanelAgentTabs =
+    isExpanded && panelView.kind === "home" && tabAgents.length > 0;
   const isDormant = !isExpanded && collapsedMode === "dormant";
   const isIdleExpanded =
     isExpanded &&
@@ -1031,41 +1009,23 @@ export function App() {
           title={isExpanded ? "Drag window" : "Hover to open"}
         >
           <div className="header-main">
-            {collapsedMode !== "dormant" && (
+            {collapsedMode !== "dormant" && !isExpanded ? (
               <>
-                {!isExpanded ? (
-                  <span
-                    className={`listener-dot ${snapshot.online ? "online" : ""}`}
-                    title={snapshot.online ? "Listening" : "Offline"}
-                  />
-                ) : null}
-                {isExpanded ? (
-                  <AgentTabBar
-                    agents={tabAgents}
-                    selectedAgent={selectedAgent}
-                    pendingCountByAgent={pendingCountByAgent}
-                    showTabs={showAgentTabs}
-                    online={snapshot.online}
-                    onSelectAgent={(agent) => {
-                      setSelectedAgent(agent);
-                      if (panelView.kind !== "home") {
-                        setPanelView({ kind: "home" });
-                      }
-                    }}
-                  />
-                ) : (
-                  <CompactSessionStack
-                    sessions={sessions}
-                    maxCompactIcons={maxCompactIcons}
-                    online={snapshot.online}
-                    activeRequest={activeRequest}
-                    justResolved={justResolved}
-                    idleIntervalSec={idleIntervalSec}
-                    idleDurationSec={idleDurationSec}
-                  />
-                )}
+                <span
+                  className={`listener-dot ${snapshot.online ? "online" : ""}`}
+                  title={snapshot.online ? "Listening" : "Offline"}
+                />
+                <CompactSessionStack
+                  sessions={sessions}
+                  maxCompactIcons={maxCompactIcons}
+                  online={snapshot.online}
+                  activeRequest={activeRequest}
+                  justResolved={justResolved}
+                  idleIntervalSec={idleIntervalSec}
+                  idleDurationSec={idleDurationSec}
+                />
               </>
-            )}
+            ) : null}
           </div>
 
           {(!isDormant && !isExpanded) || snapshot.pendingCount > 0 ? (
@@ -1163,7 +1123,19 @@ export function App() {
           ) : null}
         </div>
 
-        <div className="island-panel">
+        <div className={`island-panel ${showPanelAgentTabs ? "has-agent-tabs" : ""}`}>
+          {showPanelAgentTabs ? (
+            <div className="panel-agent-tabs" data-no-drag>
+              <AgentTabBar
+                agents={tabAgents}
+                selectedAgent={selectedAgent}
+                pendingCountByAgent={pendingCountByAgent}
+                showTabs={showAgentTabs}
+                online={snapshot.online}
+                onSelectAgent={handleSelectAgent}
+              />
+            </div>
+          ) : null}
           {renderPanel()}
         </div>
       </section>

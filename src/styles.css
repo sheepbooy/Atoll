@@ -83,7 +83,7 @@
 
   /* Collapsed island capsule height — keep in sync with COMPACT_WINDOW_HEIGHT in lib.rs */
   --compact-height: 36px;
-  --expanded-header-height: 60px;
+  --expanded-header-height: 36px;
   /* Expanded idle panel — keep in sync with EXPANDED_IDLE_WINDOW_HEIGHT in lib.rs */
   --expanded-idle-height: 240px;
 
@@ -294,15 +294,16 @@ kbd {
   user-select: none;
   transition:
     height var(--duration-expand) var(--ease-window),
+    margin-top var(--duration-expand) var(--ease-window),
     padding var(--duration-expand) var(--ease-window),
     gap var(--duration-expand) var(--ease-window);
 }
 
 .is-expanded .island-header {
-  height: 60px;
+  height: var(--compact-height);
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  padding: 12px 92px 10px 14px;
+  gap: 8px;
+  padding: 3px 92px 3px 14px;
   cursor: grab;
 }
 
@@ -403,6 +404,11 @@ kbd {
   display: none;
 }
 
+/* Collapse/more buttons are only relevant when expanded. */
+.is-compact:not(.is-dormant) .header-actions {
+  display: none;
+}
+
 /* Atoll logo indicator — pinned to the physical menu-bar band at the top of
    the window. Do NOT add --notch-height: the menu bar overlaps the housing,
    and expanded header content is pushed down via margin-top separately. */
@@ -464,12 +470,28 @@ kbd {
   filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.55));
 }
 
-.is-expanded:not(.is-dormant) .header-main {
-  padding-left: 32px;
-}
-
 .is-expanded .header-main {
   gap: 10px;
+}
+
+.island-panel.has-agent-tabs {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+}
+
+.island-panel.has-agent-tabs > :last-child {
+  min-height: 0;
+}
+
+.panel-agent-tabs {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+}
+
+.panel-agent-tabs .agent-tabbar {
+  width: 100%;
 }
 
 /* Smooth content crossfade during phase transitions so content doesn't
@@ -1319,7 +1341,7 @@ kbd {
 
 .header-actions {
   position: absolute;
-  top: 15px;
+  top: 3px;
   right: 14px;
   z-index: 10;
   display: inline-flex;
@@ -1481,7 +1503,7 @@ kbd {
 /* ─── Island Panel ────────────────────────────────────────────── */
 
 .island-panel {
-  height: calc(100% - 60px);
+  height: calc(100% - 36px);
   padding: 12px 16px 16px;
   opacity: 0;
   overflow: hidden;
@@ -1496,10 +1518,10 @@ kbd {
 
 .tauri-runtime .island-panel {
   position: absolute;
-  top: 60px;
+  top: 36px;
   left: 50%;
   width: 560px;
-  height: calc(100% - 60px);
+  height: calc(100% - 36px);
   contain: layout paint;
   transform: translate3d(-50%, -8px, 0);
 }
@@ -1557,13 +1579,16 @@ kbd {
   display: none;
 }
 
-.tauri-runtime.has-notch .island-header {
+/* Notch margin only when expanded/opening — compact/dormant sit in
+   the menu-bar band without extra_top. */
+.tauri-runtime.has-notch .is-expanded .island-header,
+.tauri-runtime.has-notch .is-opening .island-header {
   margin-top: var(--notch-height, 0px);
 }
 
 .tauri-runtime.has-notch .island-panel {
-  top: calc(60px + var(--notch-height, 0px));
-  height: calc(100% - 60px - var(--notch-height, 0px));
+  top: calc(36px + var(--notch-height, 0px));
+  height: calc(100% - 36px - var(--notch-height, 0px));
 }
 
 .tauri-runtime.has-notch .is-subview .island-panel {
@@ -1575,16 +1600,30 @@ kbd {
   top: calc(var(--notch-height, 0px) + 22px);
 }
 
-/* Dormant pill on notched displays: the window sits within the menu-bar band
-   (no extra_top in Rust), so no additional margin is needed. The pill appears
-   as a dark extension of the notch, embedded in the menu bar. */
+/* Dormant/compact pill on notched displays: both sit within the menu-bar band
+   (no extra_top in Rust). The pill appears as a dark extension of the notch. */
 .tauri-runtime.has-notch .island.is-dormant {
   background: #000;
 }
 
-.tauri-runtime.has-notch .is-dormant .island-header {
-  margin-top: 0;
-  height: 100%;
+/* Compact pill on notched displays: split content to both visible sides of the
+   notch. The header becomes two equal-width columns separated by a gap matching
+   the notch width so icons land on the left and metrics on the right. */
+.tauri-runtime.has-notch .is-compact:not(.is-dormant) .island-header {
+  grid-template-columns:
+    calc((100% - var(--notch-width, 0px)) / 2)
+    calc((100% - var(--notch-width, 0px)) / 2);
+  gap: var(--notch-width, 0px);
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.tauri-runtime.has-notch .is-compact:not(.is-dormant) .header-main {
+  padding-left: 6px;
+}
+
+.tauri-runtime.has-notch .is-compact:not(.is-dormant) .header-metrics {
+  padding-right: 6px;
 }
 
 /* ─── Approval View ───────────────────────────────────────────── */
