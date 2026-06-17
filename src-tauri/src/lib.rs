@@ -193,6 +193,7 @@ struct HomeWindowBounds {
     position: LogicalPosition<f64>,
     compact_size: PhysicalSize<u32>,
     monitor_top_y: f64,
+    monitor_center_x: f64,
     notch: NotchMetrics,
     #[cfg(target_os = "macos")]
     screen_geometry: Option<MacosScreenGeometry>,
@@ -1751,6 +1752,7 @@ fn apply_island_window_mode(
             (COMPACT_WINDOW_HEIGHT * scale_factor).round() as u32,
         ),
         monitor_top_y: monitor_position.y,
+        monitor_center_x: monitor_position.x + monitor_size.width / 2.0,
         notch,
         #[cfg(target_os = "macos")]
         screen_geometry: macos_screen_geometry(window, monitor_position.x, monitor_size.width),
@@ -1783,14 +1785,14 @@ fn animate_island_window_mode(
     let target_size =
         island_window_physical_size(mode, scale_factor, compact_width, notch, expanded_idle);
     let target_logical_size = target_size.to_logical::<f64>(scale_factor);
-    // Center every mode on the same axis as the compact capsule (which may be
-    // widened to straddle the notch).
-    let compact_logical_width =
-        island_window_logical_size(IslandWindowMode::Compact, compact_width, notch, false).width;
+    // Center the target window on the screen center.  Using monitor_center_x
+    // instead of deriving from home.position avoids mis-centering when the
+    // initial home position was set from a narrower mode (e.g. dormant 260px
+    // vs compact 460px).
     let (target_x, target_y) = home_bounds
         .map(|home| {
             (
-                home.position.x + (compact_logical_width - target_logical_size.width) / 2.0,
+                home.monitor_center_x - target_logical_size.width / 2.0,
                 home.position.y,
             )
         })
@@ -1895,15 +1897,15 @@ fn island_window_logical_size(
             LogicalSize::new(w, DORMANT_WINDOW_HEIGHT)
         }
         IslandWindowMode::Compact => {
+            // Compact sits in the menu-bar band (same as dormant) — no extra_top.
             // On notched displays the capsule must be at least as wide as the
             // camera housing so it visually fuses with it (Dynamic-Island style).
-            // Otherwise honour the content-driven compact width from the frontend.
             let w = if notch.has_notch {
                 compact_width.max(notch.width)
             } else {
                 compact_width
             };
-            LogicalSize::new(w, COMPACT_WINDOW_HEIGHT + extra_top)
+            LogicalSize::new(w, COMPACT_WINDOW_HEIGHT)
         }
         IslandWindowMode::Expanded => {
             let w = EXPANDED_WINDOW_WIDTH.max(min_notch_width);
@@ -2849,10 +2851,8 @@ mod core_tests {
             height: 38.0,
         };
         let compact = island_window_logical_size(IslandWindowMode::Compact, 132.0, notch, false);
-        assert_eq!(
-            compact.height,
-            COMPACT_WINDOW_HEIGHT + 38.0 + NOTCH_COVER_PADDING
-        );
+        // Compact sits in the menu-bar band (like dormant) — no extra_top.
+        assert_eq!(compact.height, COMPACT_WINDOW_HEIGHT);
         // Width is clamped up to the notch width so the capsule visually
         // fuses with the camera housing (Dynamic-Island style).
         assert_eq!(compact.width, 200.0);
