@@ -166,7 +166,7 @@ export function buildTokenOdometerCells(next: string, prev: string): TokenOdomet
   });
 
   const cells = nextChars.map((char, index) => {
-    const kind = isNumericTokenChar(char)
+    const kind: TokenOdometerCell["kind"] = isNumericTokenChar(char)
       ? "digit"
       : isTokenSeparator(char)
         ? "sep"
