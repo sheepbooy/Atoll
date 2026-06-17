@@ -137,7 +137,11 @@ describe("App", () => {
 
     fireEvent.click(screen.getByLabelText("Atoll"));
     await vi.advanceTimersByTimeAsync(420);
-    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith("expanded");
+    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
+      "expanded",
+      undefined,
+      false,
+    );
     expect(container.querySelector(".is-expanded")).not.toBeNull();
     vi.useRealTimers();
   });
@@ -226,7 +230,11 @@ describe("App", () => {
     emitIslandHover?.({ hovering: false });
     emitIslandHover?.({ hovering: true });
     await vi.advanceTimersByTimeAsync(420);
-    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith("expanded");
+    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
+      "expanded",
+      undefined,
+      false,
+    );
     vi.useRealTimers();
   });
 

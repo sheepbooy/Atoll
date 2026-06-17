@@ -30,12 +30,13 @@ mod panel_store {
 }
 
 const COMPACT_WINDOW_WIDTH: f64 = 132.0;
-const COMPACT_WINDOW_HEIGHT: f64 = 28.0;
+const COMPACT_WINDOW_HEIGHT: f64 = 36.0;
 const EXPANDED_WINDOW_WIDTH: f64 = 560.0;
 const EXPANDED_WINDOW_HEIGHT: f64 = 320.0;
+const EXPANDED_IDLE_WINDOW_HEIGHT: f64 = 240.0;
 const MIN_COMPACT_WINDOW_WIDTH: f64 = 72.0;
 // Dormant pill height (width is computed dynamically from notch geometry).
-const DORMANT_WINDOW_HEIGHT: f64 = 28.0;
+const DORMANT_WINDOW_HEIGHT: f64 = 36.0;
 // Extra width beyond the notch on each side so edges are visible.
 const DORMANT_NOTCH_PADDING: f64 = 30.0;
 const WINDOW_ANIMATION_DURATION: Duration = Duration::from_millis(420);
@@ -43,6 +44,11 @@ const WINDOW_ANIMATION_FRAME: Duration = Duration::from_micros(16_667);
 // Fallback notch width (logical pt) used when the auxiliary menu-bar areas
 // can't be read but a notch height is reported.
 const FALLBACK_NOTCH_WIDTH: f64 = 200.0;
+// Used when auxiliary menu-bar areas are unavailable but a housing is present.
+const FALLBACK_NOTCH_HEIGHT: f64 = 38.0;
+// Extra logical points added above the reported safe-area inset so the
+// collapsed capsule fully covers the physical camera housing.
+const NOTCH_COVER_PADDING: f64 = 16.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -299,6 +305,7 @@ async fn set_island_presentation(
     state: State<'_, AppState>,
     mode: IslandWindowMode,
     compact_width: Option<f64>,
+    expanded_idle: Option<bool>,
 ) -> Result<(), String> {
     let Some(window) = app.get_webview_window("main") else {
         return Ok(());
@@ -322,6 +329,7 @@ async fn set_island_presentation(
         .home_bounds
         .lock()
         .map_err(|error| error.to_string())?;
+    let expanded_idle = expanded_idle.unwrap_or(false);
 
     tauri::async_runtime::spawn_blocking(move || {
         animate_island_window_mode(
@@ -331,6 +339,7 @@ async fn set_island_presentation(
             &presentation_generation,
             home_bounds,
             compact_width,
+            expanded_idle,
         )
         .map_err(|error| error.to_string())
     })
@@ -1712,13 +1721,18 @@ fn apply_island_window_mode(
     let monitor_size = monitor.size().to_logical::<f64>(scale_factor);
     let notch = detect_notch_metrics(window, monitor_position.x, monitor_size.width);
 
-    window.set_size(island_window_logical_size(mode, compact_width, notch))?;
+    window.set_size(island_window_logical_size(
+        mode,
+        compact_width,
+        notch,
+        false,
+    ))?;
     set_island_cursor_events_ignored(window, matches!(
         mode,
         IslandWindowMode::Compact | IslandWindowMode::Dormant
     ));
 
-    let window_size = island_window_physical_size(mode, scale_factor, compact_width, notch);
+    let window_size = island_window_physical_size(mode, scale_factor, compact_width, notch, false);
     let logical_window_size = window_size.to_logical::<f64>(scale_factor);
     let centered_x = monitor_position.x + (monitor_size.width - logical_window_size.width) / 2.0;
     // Keep the window flush with the physical top edge so the capsule overlaps
@@ -1753,6 +1767,7 @@ fn animate_island_window_mode(
     presentation_generation: &AtomicU64,
     home_bounds: Option<HomeWindowBounds>,
     compact_width: f64,
+    expanded_idle: bool,
 ) -> tauri::Result<()> {
     let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
     if matches!(mode, IslandWindowMode::Expanded) {
@@ -1765,12 +1780,13 @@ fn animate_island_window_mode(
     let start_position = window.outer_position()?.to_logical::<f64>(scale_factor);
     let start_size = window.outer_size()?;
     let notch = home_bounds.map(|home| home.notch).unwrap_or_default();
-    let target_size = island_window_physical_size(mode, scale_factor, compact_width, notch);
+    let target_size =
+        island_window_physical_size(mode, scale_factor, compact_width, notch, expanded_idle);
     let target_logical_size = target_size.to_logical::<f64>(scale_factor);
     // Center every mode on the same axis as the compact capsule (which may be
     // widened to straddle the notch).
     let compact_logical_width =
-        island_window_logical_size(IslandWindowMode::Compact, compact_width, notch).width;
+        island_window_logical_size(IslandWindowMode::Compact, compact_width, notch, false).width;
     let (target_x, target_y) = home_bounds
         .map(|home| {
             (
@@ -1842,13 +1858,26 @@ fn interpolate_f64(start: f64, end: f64, progress: f64) -> f64 {
     start + (end - start) * progress
 }
 
+fn expanded_window_height(expanded_idle: bool) -> f64 {
+    if expanded_idle {
+        EXPANDED_IDLE_WINDOW_HEIGHT
+    } else {
+        EXPANDED_WINDOW_HEIGHT
+    }
+}
+
 fn island_window_logical_size(
     mode: IslandWindowMode,
     compact_width: f64,
     notch: NotchMetrics,
+    expanded_idle: bool,
 ) -> LogicalSize<f64> {
     let compact_width = sanitize_compact_width(compact_width);
-    let extra_top = if notch.has_notch { notch.height } else { 0.0 };
+    let extra_top = if notch.has_notch {
+        notch.height + NOTCH_COVER_PADDING
+    } else {
+        0.0
+    };
     let min_notch_width = if notch.has_notch { notch.width } else { 0.0 };
     match mode {
         // Dormant sits WITHIN the menu-bar band (no extra notch padding).
@@ -1880,7 +1909,7 @@ fn island_window_logical_size(
         }
         IslandWindowMode::Expanded => {
             let w = EXPANDED_WINDOW_WIDTH.max(min_notch_width);
-            LogicalSize::new(w, EXPANDED_WINDOW_HEIGHT + extra_top)
+            LogicalSize::new(w, expanded_window_height(expanded_idle) + extra_top)
         }
     }
 }
@@ -1890,8 +1919,9 @@ fn island_window_physical_size(
     scale_factor: f64,
     compact_width: f64,
     notch: NotchMetrics,
+    expanded_idle: bool,
 ) -> PhysicalSize<u32> {
-    let logical_size = island_window_logical_size(mode, compact_width, notch);
+    let logical_size = island_window_logical_size(mode, compact_width, notch, expanded_idle);
 
     PhysicalSize::new(
         (logical_size.width * scale_factor).round() as u32,
@@ -1987,15 +2017,15 @@ fn detect_notch_metrics(
 ) -> NotchMetrics {
     with_nsscreen_for_monitor(window, monitor_x, monitor_width, |screen| {
         let safe_top = screen.safeAreaInsets().top;
-        if safe_top <= 0.0 {
-            return NotchMetrics::default();
-        }
         let frame = screen.frame();
         let aux_left_width = screen.auxiliaryTopLeftArea().size.width;
         let aux_right_width = screen.auxiliaryTopRightArea().size.width;
-        if !has_camera_housing(frame.size.width, aux_left_width, aux_right_width) {
+        let has_housing = has_camera_housing(frame.size.width, aux_left_width, aux_right_width);
+
+        if safe_top <= 0.0 && !has_housing {
             return NotchMetrics::default();
         }
+
         NotchMetrics {
             has_notch: true,
             width: notch_logical_width(
@@ -2004,7 +2034,11 @@ fn detect_notch_metrics(
                 aux_right_width,
                 FALLBACK_NOTCH_WIDTH,
             ),
-            height: safe_top.ceil(),
+            height: if safe_top > 0.0 {
+                safe_top.ceil()
+            } else {
+                FALLBACK_NOTCH_HEIGHT
+            },
         }
     })
     .unwrap_or_default()
@@ -2752,9 +2786,22 @@ mod core_tests {
             IslandWindowMode::Expanded,
             COMPACT_WINDOW_WIDTH,
             NotchMetrics::default(),
+            false,
         );
 
         assert_eq!(size, LogicalSize::new(560.0, 320.0));
+    }
+
+    #[test]
+    fn expanded_idle_window_is_shorter() {
+        let size = island_window_logical_size(
+            IslandWindowMode::Expanded,
+            COMPACT_WINDOW_WIDTH,
+            NotchMetrics::default(),
+            true,
+        );
+
+        assert_eq!(size, LogicalSize::new(560.0, EXPANDED_IDLE_WINDOW_HEIGHT));
     }
 
     #[test]
@@ -2803,19 +2850,22 @@ mod core_tests {
             width: 200.0,
             height: 38.0,
         };
-        let compact = island_window_logical_size(IslandWindowMode::Compact, 132.0, notch);
-        assert_eq!(compact.height, COMPACT_WINDOW_HEIGHT + 38.0);
+        let compact = island_window_logical_size(IslandWindowMode::Compact, 132.0, notch, false);
+        assert_eq!(
+            compact.height,
+            COMPACT_WINDOW_HEIGHT + 38.0 + NOTCH_COVER_PADDING
+        );
         // Width is clamped up to the notch width so the capsule visually
         // fuses with the camera housing (Dynamic-Island style).
         assert_eq!(compact.width, 200.0);
 
         // Content wider than the notch keeps its own width.
-        let wide = island_window_logical_size(IslandWindowMode::Compact, 300.0, notch);
+        let wide = island_window_logical_size(IslandWindowMode::Compact, 300.0, notch, false);
         assert_eq!(wide.width, 300.0);
 
         // Dormant is slightly wider than the notch (padding on each side)
         // and has NO extra_top — it sits within the menu-bar band.
-        let dormant = island_window_logical_size(IslandWindowMode::Dormant, 132.0, notch);
+        let dormant = island_window_logical_size(IslandWindowMode::Dormant, 132.0, notch, false);
         assert_eq!(dormant.width, 200.0 + 2.0 * DORMANT_NOTCH_PADDING);
         assert_eq!(dormant.height, DORMANT_WINDOW_HEIGHT);
     }
@@ -2825,17 +2875,17 @@ mod core_tests {
         let no_notch = NotchMetrics::default();
 
         // Compact: compact_width (132) < FALLBACK_NOTCH_WIDTH (200) → widened.
-        let compact = island_window_logical_size(IslandWindowMode::Compact, 132.0, no_notch);
+        let compact = island_window_logical_size(IslandWindowMode::Compact, 132.0, no_notch, false);
         assert_eq!(compact.width, FALLBACK_NOTCH_WIDTH);
         assert_eq!(compact.height, COMPACT_WINDOW_HEIGHT);
 
         // A compact_width that already exceeds the floor is kept as-is.
-        let wide = island_window_logical_size(IslandWindowMode::Compact, 250.0, no_notch);
+        let wide = island_window_logical_size(IslandWindowMode::Compact, 250.0, no_notch, false);
         assert_eq!(wide.width, 250.0);
 
         // Dormant: uses the same FALLBACK_NOTCH_WIDTH reference + padding,
         // matching the visual footprint of a notched display.
-        let dormant = island_window_logical_size(IslandWindowMode::Dormant, 132.0, no_notch);
+        let dormant = island_window_logical_size(IslandWindowMode::Dormant, 132.0, no_notch, false);
         assert_eq!(dormant.width, FALLBACK_NOTCH_WIDTH + 2.0 * DORMANT_NOTCH_PADDING);
         assert_eq!(dormant.height, DORMANT_WINDOW_HEIGHT);
     }
