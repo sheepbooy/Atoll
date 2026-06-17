@@ -86,8 +86,8 @@
   --expanded-header-height: 36px;
   /* Expanded idle panel — keep in sync with EXPANDED_IDLE_WINDOW_HEIGHT in lib.rs */
   --expanded-idle-height: 240px;
-  /* Expanded token counter extends left of header-actions into subview nav */
-  --subview-nav-token-inset: 88px;
+  /* Token counter extends left of header-actions; reserve space in the menu bar */
+  --header-token-inset: 88px;
 
   color: var(--text-primary);
   background: transparent;
@@ -309,7 +309,7 @@ kbd {
 
 .is-expanded .island-header {
   height: var(--compact-height);
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px;
   padding: 0 12px 0 14px;
   cursor: grab;
@@ -357,7 +357,7 @@ kbd {
 
 .is-expanded:not(.is-subview) .header-main {
   padding-left: 44px;
-  padding-right: 4px;
+  padding-right: var(--header-token-inset);
   min-width: 0;
   overflow: hidden;
 }
@@ -2836,7 +2836,7 @@ kbd {
   min-width: 0;
   align-items: center;
   gap: 10px;
-  padding-right: var(--subview-nav-token-inset);
+  padding-right: var(--header-token-inset);
 }
 
 .is-session-subview .session-detail-nav .open-terminal-button {
