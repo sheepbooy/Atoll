@@ -215,6 +215,7 @@ export async function setIslandPresentation(
   mode: "compact" | "expanded" | "dormant",
   compactWidth?: number,
   expandedIdle?: boolean,
+  compactLeftWidth?: number,
 ) {
   if (!isTauriRuntime) {
     return;
@@ -223,6 +224,7 @@ export async function setIslandPresentation(
   return invoke<void>("set_island_presentation", {
     mode,
     compactWidth,
+    compactLeftWidth,
     expandedIdle,
   });
 }
@@ -231,6 +233,8 @@ export interface NotchMetrics {
   hasNotch: boolean;
   width: number;
   height: number;
+  leftAreaWidth?: number;
+  rightAreaWidth?: number;
 }
 
 export async function getNotchMetrics(): Promise<NotchMetrics> {
