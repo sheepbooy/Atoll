@@ -14,12 +14,10 @@ import {
   ExternalLink,
   FolderClosed,
   Layers,
-  Minus,
   Pin,
   PinOff,
   Power,
   Settings2,
-  Plus,
   TriangleAlert,
   Trash2,
   X,
@@ -35,6 +33,7 @@ import {
 } from "./islandPresentation";
 import { ClawdMascot, type ClawdMood } from "./ClawdMascot";
 import { AtollLogo } from "./AtollLogo";
+
 import {
   getSnapshot,
   getSessionRequests,
@@ -82,6 +81,14 @@ const MAX_MAX_COMPACT_ICONS = 8;
 const DEFAULT_RETENTION_MINUTES = 5;
 const MIN_RETENTION_MINUTES = 1;
 const MAX_RETENTION_MINUTES = 30;
+const IDLE_INTERVAL_SETTING_KEY = "atoll.idleIntervalMin";
+const IDLE_DURATION_SETTING_KEY = "atoll.idleDurationMin";
+const DEFAULT_IDLE_INTERVAL_MIN = 5;
+const MIN_IDLE_INTERVAL_MIN = 1;
+const MAX_IDLE_INTERVAL_MIN = 30;
+const DEFAULT_IDLE_DURATION_MIN = 10;
+const MIN_IDLE_DURATION_MIN = 1;
+const MAX_IDLE_DURATION_MIN = 30;
 const COMPACT_WIDTH_MIN = 96;
 const COMPACT_WIDTH_BASE = 52;
 const COMPACT_WIDTH_ICON_SIZE = 20;
@@ -133,6 +140,30 @@ function readRetentionMinutes() {
   } catch {
     return DEFAULT_RETENTION_MINUTES;
   }
+}
+
+function clampIdleInterval(v: number) {
+  return Math.min(MAX_IDLE_INTERVAL_MIN, Math.max(MIN_IDLE_INTERVAL_MIN, Math.round(v)));
+}
+function readIdleInterval() {
+  if (typeof window === "undefined") return DEFAULT_IDLE_INTERVAL_MIN;
+  try {
+    const raw = Number(window.localStorage.getItem(IDLE_INTERVAL_SETTING_KEY));
+    if (!Number.isFinite(raw)) return DEFAULT_IDLE_INTERVAL_MIN;
+    return clampIdleInterval(raw);
+  } catch { return DEFAULT_IDLE_INTERVAL_MIN; }
+}
+
+function clampIdleDuration(v: number) {
+  return Math.min(MAX_IDLE_DURATION_MIN, Math.max(MIN_IDLE_DURATION_MIN, Math.round(v)));
+}
+function readIdleDuration() {
+  if (typeof window === "undefined") return DEFAULT_IDLE_DURATION_MIN;
+  try {
+    const raw = Number(window.localStorage.getItem(IDLE_DURATION_SETTING_KEY));
+    if (!Number.isFinite(raw)) return DEFAULT_IDLE_DURATION_MIN;
+    return clampIdleDuration(raw);
+  } catch { return DEFAULT_IDLE_DURATION_MIN; }
 }
 
 function computeCompactWindowWidth(
@@ -340,6 +371,8 @@ export function App() {
   const [selectedAgent, setSelectedAgent] = useState<AgentKind | null>(null);
   const [maxCompactIcons, setMaxCompactIcons] = useState<number>(() => readCompactIconLimit());
   const [retentionMinutes, setRetentionMinutes] = useState<number>(() => readRetentionMinutes());
+  const [idleIntervalSec, setIdleIntervalSec] = useState<number>(() => readIdleInterval());
+  const [idleDurationSec, setIdleDurationSec] = useState<number>(() => readIdleDuration());
   const [justResolved, setJustResolved] = useState(false);
   const prevPendingRef = useRef(0);
   const selectedAgentRef = useRef<AgentKind | null>(null);
@@ -552,6 +585,14 @@ export function App() {
     }
     setSessionRetention(retentionMinutes).catch(() => undefined);
   }, [retentionMinutes]);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(IDLE_INTERVAL_SETTING_KEY, String(idleIntervalSec)); } catch {}
+  }, [idleIntervalSec]);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(IDLE_DURATION_SETTING_KEY, String(idleDurationSec)); } catch {}
+  }, [idleDurationSec]);
 
   useEffect(() => {
     if (panelView.kind !== "session") return;
@@ -879,6 +920,10 @@ export function App() {
           onChangeRetentionMinutes={(nextValue) =>
             setRetentionMinutes(clampRetentionMinutes(nextValue))
           }
+          idleIntervalSec={idleIntervalSec}
+          onChangeIdleInterval={(v) => setIdleIntervalSec(clampIdleInterval(v))}
+          idleDurationSec={idleDurationSec}
+          onChangeIdleDuration={(v) => setIdleDurationSec(clampIdleDuration(v))}
           onBack={navigateBack}
         />
       );
@@ -923,7 +968,7 @@ export function App() {
   return (
     <main className="stage">
       <section
-        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""}`}
+        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpanded && panelView.kind !== "home" ? "is-subview" : ""}`}
         aria-label="Atoll"
         tabIndex={0}
         onClick={handleIslandClick}
@@ -937,7 +982,7 @@ export function App() {
             className={`atoll-indicator ${snapshot.online ? "is-online" : "is-offline"}`}
             title={snapshot.online ? "Listening" : "Offline"}
           >
-            <AtollLogo size={16} />
+            <AtollLogo size={22} activity={snapshot.online ? "idle" : "napping"} idleIntervalSec={idleIntervalSec * 60} idleDurationSec={idleDurationSec * 60} />
           </span>
         )}
 
@@ -974,6 +1019,8 @@ export function App() {
                     online={snapshot.online}
                     activeRequest={activeRequest}
                     justResolved={justResolved}
+                    idleIntervalSec={idleIntervalSec}
+                    idleDurationSec={idleDurationSec}
                   />
                 )}
               </>
@@ -995,84 +1042,85 @@ export function App() {
             </div>
           ) : null}
 
-          <div
-            className="header-actions"
-            data-no-drag
-            ref={menuRef}
-            onMouseDown={handleControlMouseDown}
-          >
-            <button
-              className="icon-button"
-              type="button"
-              onClick={() => collapseIsland(true)}
-              aria-label="Collapse Atoll"
-              tabIndex={isExpanded ? 0 : -1}
-            >
-              <ChevronUp size={16} />
-            </button>
-            <button
-              className="icon-button"
-              type="button"
-              onClick={() => setMenuOpen((open) => !open)}
-              aria-label="More options"
-              aria-expanded={menuOpen}
-              tabIndex={isExpanded ? 0 : -1}
-            >
-              <Ellipsis size={17} />
-            </button>
-            {menuOpen ? (
-              <div className="more-menu" role="menu">
-                {hookStatus?.installed ? (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={handleUninstallHooks}
-                    disabled={hookBusy}
-                  >
-                    <Trash2 size={14} />
-                    Uninstall hooks
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => { setMenuOpen(false); handleInstallHooks(); }}
-                    disabled={hookBusy}
-                  >
-                    <Download size={14} />
-                    Install hooks
-                  </button>
-                )}
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleArchiveAll}
-                >
-                  <Archive size={14} />
-                  Archive all
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleOpenSettings}
-                >
-                  <Settings2 size={14} />
-                  Settings
-                </button>
-                <div className="menu-separator" />
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="danger"
-                  onClick={handleQuit}
-                >
-                  <Power size={14} />
-                  Quit Atoll
-                </button>
-              </div>
-            ) : null}
-          </div>
         </header>
+
+        <div
+          className="header-actions"
+          data-no-drag
+          ref={menuRef}
+          onMouseDown={handleControlMouseDown}
+        >
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => collapseIsland(true)}
+            aria-label="Collapse Atoll"
+            tabIndex={isExpanded ? 0 : -1}
+          >
+            <ChevronUp size={16} />
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-label="More options"
+            aria-expanded={menuOpen}
+            tabIndex={isExpanded ? 0 : -1}
+          >
+            <Ellipsis size={17} />
+          </button>
+          {menuOpen ? (
+            <div className="more-menu" role="menu">
+              {hookStatus?.installed ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleUninstallHooks}
+                  disabled={hookBusy}
+                >
+                  <Trash2 size={14} />
+                  Uninstall hooks
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); handleInstallHooks(); }}
+                  disabled={hookBusy}
+                >
+                  <Download size={14} />
+                  Install hooks
+                </button>
+              )}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={handleArchiveAll}
+              >
+                <Archive size={14} />
+                Archive all
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={handleOpenSettings}
+              >
+                <Settings2 size={14} />
+                Settings
+              </button>
+              <div className="menu-separator" />
+              <button
+                type="button"
+                role="menuitem"
+                className="danger"
+                onClick={handleQuit}
+              >
+                <Power size={14} />
+                Quit Atoll
+              </button>
+            </div>
+          ) : null}
+        </div>
 
         <div className="island-panel">
           {renderPanel()}
@@ -1260,6 +1308,8 @@ interface CompactSessionStackProps {
   online: boolean;
   activeRequest: PermissionRequest | null;
   justResolved: boolean;
+  idleIntervalSec: number;
+  idleDurationSec: number;
 }
 
 function CompactSessionStack({
@@ -1268,6 +1318,8 @@ function CompactSessionStack({
   online,
   activeRequest,
   justResolved,
+  idleIntervalSec,
+  idleDurationSec,
 }: CompactSessionStackProps) {
   const shown = sessions.slice(0, maxCompactIcons);
   const overflow = sessions.length - shown.length;
@@ -1277,7 +1329,7 @@ function CompactSessionStack({
         <span
           className={`compact-empty-logo ${online ? "is-online" : "is-offline"}`}
         >
-          <AtollLogo size={22} />
+          <AtollLogo size={32} activity={online ? "idle" : "napping"} idleIntervalSec={idleIntervalSec * 60} idleDurationSec={idleDurationSec * 60} />
         </span>
       </span>
     );
@@ -1479,7 +1531,61 @@ interface SettingsViewProps {
   onChangeMaxCompactIcons: (value: number) => void;
   retentionMinutes: number;
   onChangeRetentionMinutes: (value: number) => void;
+  idleIntervalSec: number;
+  onChangeIdleInterval: (value: number) => void;
+  idleDurationSec: number;
+  onChangeIdleDuration: (value: number) => void;
   onBack: () => void;
+}
+
+function SettingsSlider({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  unit,
+  desc,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  unit?: string;
+  desc: string;
+  onChange: (v: number) => void;
+}) {
+  const pct = ((value - min) / (max - min)) * 100;
+  return (
+    <div className="settings-card">
+      <div className="settings-card-head">
+        <span className="settings-card-title">{label}</span>
+        <span className="settings-card-value">
+          {value}
+          {unit ? <span className="settings-card-unit">{unit}</span> : null}
+        </span>
+      </div>
+      <div className="settings-slider-wrap">
+        <input
+          type="range"
+          className="settings-slider"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          style={{ "--slider-pct": `${pct}%` } as React.CSSProperties}
+          onChange={(e) => onChange(Number(e.target.value))}
+        />
+        <div className="settings-slider-labels">
+          <span>{min}{unit ?? ""}</span>
+          <span>{max}{unit ?? ""}</span>
+        </div>
+      </div>
+      <span className="settings-card-desc">{desc}</span>
+    </div>
+  );
 }
 
 function SettingsView({
@@ -1487,13 +1593,12 @@ function SettingsView({
   onChangeMaxCompactIcons,
   retentionMinutes,
   onChangeRetentionMinutes,
+  idleIntervalSec,
+  onChangeIdleInterval,
+  idleDurationSec,
+  onChangeIdleDuration,
   onBack,
 }: SettingsViewProps) {
-  const canDecrease = maxCompactIcons > MIN_MAX_COMPACT_ICONS;
-  const canIncrease = maxCompactIcons < MAX_MAX_COMPACT_ICONS;
-  const canDecreaseRetention = retentionMinutes > MIN_RETENTION_MINUTES;
-  const canIncreaseRetention = retentionMinutes < MAX_RETENTION_MINUTES;
-
   return (
     <div className="settings-view" data-no-drag>
       <div className="settings-header">
@@ -1503,87 +1608,52 @@ function SettingsView({
         </button>
         <span className="settings-header-title">
           <Settings2 size={14} />
-          <span>Display settings</span>
+          <span>Settings</span>
         </span>
       </div>
-      <div className="settings-item">
-        <div className="settings-item-text">
-          <span className="settings-item-title">Folded icon limit</span>
-          <span className="settings-item-desc">
-            Max session icons in compact mode, overflow shows as ✖️N.
-          </span>
-        </div>
-        <div className="settings-stepper">
-          <button
-            type="button"
-            className="settings-stepper-btn"
-            onClick={() => onChangeMaxCompactIcons(maxCompactIcons - 1)}
-            disabled={!canDecrease}
-            aria-label="Decrease compact icon limit"
-          >
-            <Minus size={12} />
-          </button>
-          <input
-            type="number"
+
+      <div className="settings-body">
+        <div className="settings-section">
+          <span className="settings-section-label">Display</span>
+          <SettingsSlider
+            label="Folded icon limit"
+            value={maxCompactIcons}
             min={MIN_MAX_COMPACT_ICONS}
             max={MAX_MAX_COMPACT_ICONS}
-            value={maxCompactIcons}
-            className="settings-stepper-input"
-            onChange={(event) => {
-              const parsed = Number(event.target.value);
-              if (!Number.isFinite(parsed)) return;
-              onChangeMaxCompactIcons(parsed);
-            }}
+            desc="Max session icons in compact mode, overflow shows as +N."
+            onChange={onChangeMaxCompactIcons}
           />
-          <button
-            type="button"
-            className="settings-stepper-btn"
-            onClick={() => onChangeMaxCompactIcons(maxCompactIcons + 1)}
-            disabled={!canIncrease}
-            aria-label="Increase compact icon limit"
-          >
-            <Plus size={12} />
-          </button>
-        </div>
-      </div>
-      <div className="settings-item">
-        <div className="settings-item-text">
-          <span className="settings-item-title">Auto-archive timeout</span>
-          <span className="settings-item-desc">
-            Minutes before idle sessions are auto-archived. Pinned sessions are exempt.
-          </span>
-        </div>
-        <div className="settings-stepper">
-          <button
-            type="button"
-            className="settings-stepper-btn"
-            onClick={() => onChangeRetentionMinutes(retentionMinutes - 1)}
-            disabled={!canDecreaseRetention}
-            aria-label="Decrease session retention"
-          >
-            <Minus size={12} />
-          </button>
-          <input
-            type="number"
+          <SettingsSlider
+            label="Auto-archive timeout"
+            value={retentionMinutes}
             min={MIN_RETENTION_MINUTES}
             max={MAX_RETENTION_MINUTES}
-            value={retentionMinutes}
-            className="settings-stepper-input"
-            onChange={(event) => {
-              const parsed = Number(event.target.value);
-              if (!Number.isFinite(parsed)) return;
-              onChangeRetentionMinutes(parsed);
-            }}
+            unit=" min"
+            desc="Minutes before idle sessions are auto-archived. Pinned sessions are exempt."
+            onChange={onChangeRetentionMinutes}
           />
-          <button
-            type="button"
-            className="settings-stepper-btn"
-            onClick={() => onChangeRetentionMinutes(retentionMinutes + 1)}
-            disabled={!canIncreaseRetention}
-            aria-label="Increase session retention"
-          >
-            <Plus size={12} />
-          </button>
+        </div>
+
+        <div className="settings-section">
+          <span className="settings-section-label">Mascot</span>
+          <SettingsSlider
+            label="Activity interval"
+            value={idleIntervalSec}
+            min={MIN_IDLE_INTERVAL_MIN}
+            max={MAX_IDLE_INTERVAL_MIN}
+            unit=" min"
+            desc="Minutes between random mascot activity switches."
+            onChange={onChangeIdleInterval}
+          />
+          <SettingsSlider
+            label="Activity duration"
+            value={idleDurationSec}
+            min={MIN_IDLE_DURATION_MIN}
+            max={MAX_IDLE_DURATION_MIN}
+            unit=" min"
+            desc="How long each activity plays before switching."
+            onChange={onChangeIdleDuration}
+          />
         </div>
       </div>
     </div>
