@@ -73,6 +73,12 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "::notice::aarch64 sha256=$(cat Atoll-aarch64.dmg.sha256)"
 
+      - name: Stage install script
+        run: |
+          mkdir -p staging
+          cp scripts/install.sh staging/install.sh
+          chmod +x staging/install.sh
+
       - name: Generate Fix-Atoll.command
         # 供直接从 Releases 页面下载 dmg 的用户使用：拖入 App 后双击此脚本即可清除隔离属性。
         run: |
@@ -101,4 +107,5 @@ jobs:
           files: |
             staging/Atoll-aarch64.dmg
             staging/Atoll-aarch64.dmg.sha256
+            staging/install.sh
             staging/Fix-Atoll.command
