@@ -1,6 +1,7 @@
 name: Trigger Release
 
-# 在 GitHub Actions 页面手动输入版本号，自动 bump + 打 tag，随后触发 Release 流水线。
+# 在 GitHub Actions 页面手动输入版本号，自动 bump + 打 tag。
+# 注意：GITHUB_TOKEN 推送的 tag 不会触发 Release workflow；发版请用 scripts/release.sh。
 on:
   workflow_dispatch:
     inputs:

@@ -148,27 +148,23 @@ version from the release tag.
 
 ### Option 1: One-command release (recommended)
 
-Requires [GitHub CLI](https://cli.github.com):
+From `main`, with your changes committed or ready to ship:
 
 ```bash
 ./scripts/release.sh 0.2.0
 ```
 
-This starts the **Trigger Release** workflow, which:
+This script:
 
 1. Syncs version across `package.json`, `tauri.conf.json`, and `Cargo.toml`
-2. Commits the bump to `main`
-3. Creates and pushes tag `v0.2.0`
-4. Triggers the **Release** workflow to build and publish artifacts
+2. Commits the bump to `main` and pushes
+3. Creates and pushes tag `v0.2.0` from your machine
+4. Waits for the **Release** workflow to build and publish artifacts
 
-### Option 2: GitHub Actions UI
+Requires [GitHub CLI](https://cli.github.com) for the auto-watch step. Without `gh`,
+the script still releases; open Actions manually to track the build.
 
-1. Open [Actions → Trigger Release](https://github.com/sheepbooy/Atoll/actions/workflows/trigger-release.yml)
-2. Click **Run workflow**
-3. Enter the version (e.g. `0.2.0`)
-4. Wait for **Release** to finish and check [Releases](https://github.com/sheepbooy/Atoll/releases)
-
-### Option 3: Git tag only
+### Option 2: Git tag only
 
 If you already pushed your changes to `main`:
 
@@ -178,7 +174,18 @@ git push origin v0.2.0
 ```
 
 The **Release** workflow reads the version from the tag and builds automatically.
-Use this when you do not need the version-bump commit on `main`.
+Use this when version files on `main` are already at the target version.
+
+### Option 3: GitHub Actions UI (version bump only)
+
+[Actions → Trigger Release](https://github.com/sheepbooy/Atoll/actions/workflows/trigger-release.yml)
+can bump versions and create a tag, but tags pushed by `GITHUB_TOKEN` do **not**
+start the Release build. After it finishes, run locally:
+
+```bash
+git fetch --tags
+git push origin v0.2.0
+```
 
 Each release ships:
 
