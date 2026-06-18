@@ -1,4 +1,7 @@
 import { useEffect, useState } from "react";
+import { ATOLL_ENTER_MS, ATOLL_EXIT_MS } from "./atollTransitions";
+import { IDLE_EASTER_EGG_ACTIVITIES } from "./logoStates";
+import { useAtollPhase } from "./useAtollPhase";
 
 export type AtollActivity =
   | "idle"
@@ -10,25 +13,20 @@ export type AtollActivity =
   | "slacking"
   | "napping";
 
-interface Palette { body: string; top: string }
-const PALETTES: Record<AtollActivity, Palette> = {
-  idle:     { body: "#38BDD8", top: "#5FD8EC" },
-  coding:   { body: "#4A90D9", top: "#6AAAF0" },
-  reading:  { body: "#D4A054", top: "#E8BC78" },
-  thinking: { body: "#9B8EC8", top: "#B8ACE0" },
-  coffee:   { body: "#A8785A", top: "#C49470" },
-  idea:     { body: "#F0C040", top: "#F8D868" },
-  slacking: { body: "#38BDD8", top: "#5FD8EC" },
-  napping:  { body: "#2A8FA8", top: "#3CA8C0" },
-};
-const EYE = "#1A2A3A";
+interface Palette { body: string; top: string; limb: string }
+const IDLE_PALETTE: Palette = { body: "#38BDD8", top: "#5FD8EC", limb: "#2A8FA8" };
+
+const EYE = "#1a1a1a";
+const BX = 8;
+const BY = 18;
+const BW = 48;
+const BH = 26;
+const BTOP = 5;
+const EYE_Y = 24;
 
 const VIEWBOX = { x: -16, y: -36, w: 96, h: 108 };
 const ASPECT = VIEWBOX.w / VIEWBOX.h;
 
-const IDLE_PLAY: AtollActivity[] = [
-  "coding", "reading", "thinking", "coffee", "idea", "slacking", "napping",
-];
 const DEFAULT_IDLE_INTERVAL_SEC = 600;
 const DEFAULT_IDLE_DURATION_SEC = 1200;
 
@@ -38,6 +36,66 @@ interface AtollLogoProps {
   className?: string;
   idleIntervalSec?: number;
   idleDurationSec?: number;
+}
+
+type EyeVariant = "normal" | "closed" | "happy" | "wide";
+
+interface MascotBodyProps {
+  body: string;
+  top: string;
+  limb: string;
+  showLimbs: boolean;
+  blinking: boolean;
+  eyeOffsetX?: number;
+  eyeVariant?: EyeVariant;
+  blush?: boolean;
+}
+
+function MascotBody({
+  body,
+  top,
+  limb,
+  showLimbs,
+  blinking,
+  eyeOffsetX = 0,
+  eyeVariant = "normal",
+  blush = false,
+}: MascotBodyProps) {
+  const closed = eyeVariant === "closed" || blinking;
+  const eyeH = closed ? 2 : eyeVariant === "wide" ? 12 : 11;
+  const eyeY = closed ? EYE_Y + 4 : eyeVariant === "happy" ? EYE_Y + 5 : EYE_Y;
+
+  return (
+    <g className="atoll-body-group">
+      {showLimbs && (
+        <g className="atoll-limbs">
+          <rect className="atoll-limb atoll-leg-left" x="20" y="44" width="6" height="12" fill={limb} />
+          <rect className="atoll-limb atoll-leg-right" x="38" y="44" width="6" height="12" fill={limb} />
+        </g>
+      )}
+      <rect x={BX} y={BY} width={BW} height={BH} fill={body} />
+      <rect x={BX} y={BY} width={BW} height={BTOP} fill={top} />
+      {blush && (
+        <g className="atoll-blush" opacity="0.55">
+          <ellipse cx="17" cy="34" rx="4" ry="2" fill="#ffb4b4" shapeRendering="auto" />
+          <ellipse cx="47" cy="34" rx="4" ry="2" fill="#ffb4b4" shapeRendering="auto" />
+        </g>
+      )}
+      <g className="atoll-eyes">
+        {eyeVariant === "happy" && !blinking ? (
+          <>
+            <rect x={18 + eyeOffsetX} y={eyeY} width={8} height={2} fill={EYE} />
+            <rect x={38 + eyeOffsetX} y={eyeY} width={8} height={2} fill={EYE} />
+          </>
+        ) : (
+          <>
+            <rect x={19 + eyeOffsetX} y={eyeY} width={5} height={eyeH} fill={EYE} />
+            <rect x={38 + eyeOffsetX} y={eyeY} width={5} height={eyeH} fill={EYE} />
+          </>
+        )}
+      </g>
+    </g>
+  );
 }
 
 export function AtollLogo({
@@ -51,78 +109,88 @@ export function AtollLogo({
   const [blinking, setBlinking] = useState(false);
   const [scanX, setScanX] = useState(0);
 
-  // --- idle play cycling ---
+  const targetAct = activity === "idle" ? (playAct ?? "idle") : activity;
+  const { renderAct, phase } = useAtollPhase(targetAct);
+
   useEffect(() => {
-    if (activity !== "idle") return;
+    // 彩蛋：仅当 props.activity 为「空闲」idle 时，按设置间隔从 IDLE_EASTER_EGG_ACTIVITIES 随机播放。
+    if (activity !== "idle") {
+      setPlayAct(null);
+      return;
+    }
     const intervalMs = idleIntervalSec * 1000;
     const durationMs = idleDurationSec * 1000;
     let cancelled = false;
     let timer: number;
-    const next = () => {
+
+    const playOnce = () => {
       if (cancelled) return;
       const jitter = intervalMs * 0.3;
       timer = window.setTimeout(() => {
         if (cancelled) return;
-        setPlayAct(IDLE_PLAY[Math.floor(Math.random() * IDLE_PLAY.length)]);
-        const durJitter = durationMs * 0.3;
+        setPlayAct(IDLE_EASTER_EGG_ACTIVITIES[Math.floor(Math.random() * IDLE_EASTER_EGG_ACTIVITIES.length)]);
+        const loopHold = Math.max(1200, durationMs - ATOLL_ENTER_MS - ATOLL_EXIT_MS);
         timer = window.setTimeout(() => {
           if (cancelled) return;
           setPlayAct(null);
-          next();
-        }, durationMs - durJitter + Math.random() * durJitter * 2);
+          timer = window.setTimeout(playOnce, intervalMs - jitter + Math.random() * jitter * 2);
+        }, ATOLL_ENTER_MS + loopHold);
       }, intervalMs - jitter + Math.random() * jitter * 2);
     };
-    next();
-    return () => { cancelled = true; window.clearTimeout(timer); };
+
+    playOnce();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [activity, idleIntervalSec, idleDurationSec]);
 
-  useEffect(() => {
-    if (activity !== "idle") setPlayAct(null);
-  }, [activity]);
+  const palette = IDLE_PALETTE;
+  const showLimbs = renderAct !== "idle" && renderAct !== "napping";
 
-  const shown = playAct ?? activity;
-
-  // --- blinking ---
   useEffect(() => {
-    if (shown === "napping") return;
+    if (renderAct === "napping") return;
     let timer: number;
-    const loop = () => {
+    const blinkOnce = (onDone: () => void) => {
       setBlinking(true);
-      window.setTimeout(() => setBlinking(false), 150);
-      timer = window.setTimeout(loop, 3000 + Math.random() * 2500);
+      window.setTimeout(() => { setBlinking(false); onDone(); }, 130);
     };
-    timer = window.setTimeout(loop, 2500 + Math.random() * 2500);
+    const loop = () => {
+      blinkOnce(() => {
+        timer = window.setTimeout(loop, 2800 + Math.random() * 2800);
+      });
+    };
+    timer = window.setTimeout(loop, 2000 + Math.random() * 1500);
     return () => window.clearTimeout(timer);
-  }, [shown]);
+  }, [renderAct]);
 
-  // --- reading eye-scan ---
   useEffect(() => {
-    if (shown !== "reading") { setScanX(0); return; }
+    if (renderAct !== "reading") { setScanX(0); return; }
     let timer: number;
     let dir = 1;
+    let pos = 0;
     const tick = () => {
-      setScanX(prev => {
-        const next = prev + dir * 3;
-        if (next > 6 || next < -6) dir *= -1;
-        return prev + dir * 3;
-      });
-      timer = window.setTimeout(tick, 600);
+      pos += dir * 2;
+      if (pos >= 4) { pos = 4; dir = -1; }
+      else if (pos <= -4) { pos = -4; dir = 1; }
+      setScanX(pos);
+      timer = window.setTimeout(tick, 55);
     };
-    timer = window.setTimeout(tick, 400);
+    timer = window.setTimeout(tick, 200);
     return () => window.clearTimeout(timer);
-  }, [shown]);
+  }, [renderAct]);
 
-  const { body, top } = PALETTES[shown];
-  const eyeH = blinking ? 2 : shown === "idea" ? 16 : 12;
-  const eyeY = shown === "coding" ? 28 : shown === "thinking" ? 16 : 20;
+  const eyeVariant: EyeVariant =
+    renderAct === "napping" ? "closed"
+    : renderAct === "coffee" ? "happy"
+    : renderAct === "idea" ? "wide"
+    : "normal";
 
-  const wrapperStyle = size
-    ? { width: size * ASPECT, height: size }
-    : undefined;
+  const wrapperStyle = size ? { width: size * ASPECT, height: size } : undefined;
 
   return (
     <span
-      className={`atoll-logo is-${shown}${className ? ` ${className}` : ""}`}
+      className={`atoll-logo is-${renderAct} is-phase-${phase}${blinking ? " is-blinking" : ""}${className ? ` ${className}` : ""}`}
       style={wrapperStyle}
       aria-hidden="true"
     >
@@ -135,156 +203,135 @@ export function AtollLogo({
         fill="none"
         shapeRendering="crispEdges"
       >
-        {/* ===== Body ===== */}
-        <rect x="4" y="12" width="56" height="40" fill={body} />
-        <rect x="12" y="4" width="40" height="56" fill={body} />
-        <rect x="12" y="4" width="40" height="8" fill={top} />
-
-        {/* ===== Eyes ===== */}
-        {shown === "napping" ? (
-          <>
-            <rect x="14" y="28" width="12" height="3" fill={EYE} />
-            <rect x="38" y="28" width="12" height="3" fill={EYE} />
-          </>
-        ) : shown === "coffee" ? (
-          <>
-            <rect x="14" y="26" width="12" height="5" fill={EYE} />
-            <rect x="38" y="26" width="12" height="5" fill={EYE} />
-          </>
-        ) : shown === "reading" ? (
-          <>
-            <rect x={14 + scanX} y="20" width="12" height={eyeH} fill={EYE} />
-            <rect x={38 + scanX} y="20" width="12" height={eyeH} fill={EYE} />
-          </>
-        ) : (
-          <>
-            <rect x="14" y={eyeY} width="12" height={eyeH} fill={EYE} />
-            <rect x="38" y={eyeY} width="12" height={eyeH} fill={EYE} />
-          </>
-        )}
-
-        {/* ===== Slacking: sunglasses over eyes ===== */}
-        {shown === "slacking" && (
-          <g className="atoll-sunglasses">
-            <rect x="10" y="18" width="44" height="4" fill="#1A1A1A" />
-            <rect x="10" y="18" width="18" height="14" rx="2" fill="#1A1A1A" />
-            <rect x="36" y="18" width="18" height="14" rx="2" fill="#1A1A1A" />
-            <rect x="12" y="20" width="14" height="8" fill="#2A4060" />
-            <rect x="38" y="20" width="14" height="8" fill="#2A4060" />
+        {/* ── props behind body ── */}
+        {renderAct === "idea" && (
+          <g className="atoll-prop atoll-bulb">
+            <rect className="atoll-ray atoll-ray-0" x="10" y="-22" width="7" height="3" fill="#FFE566" />
+            <rect className="atoll-ray atoll-ray-1" x="47" y="-22" width="7" height="3" fill="#FFE566" />
+            <rect className="atoll-ray atoll-ray-2" x="28" y="-34" width="4" height="7" fill="#FFE566" />
+            <rect x="20" y="-28" width="24" height="26" rx="7" fill="#FFE566" shapeRendering="auto" />
+            <rect x="24" y="-4" width="16" height="5" fill="#D4C45A" />
           </g>
         )}
 
-        {/* ===== Napping: sleep cap ===== */}
-        {shown === "napping" && (
-          <g>
-            <polygon points="20,-2 44,-2 54,-28" fill="#6B5B9A" />
-            <polygon points="20,-2 44,-2 54,-28" fill="#6B5B9A" />
-            <rect x="16" y="-4" width="32" height="6" fill="#8070B0" />
-            <circle cx="56" cy="-30" r="5" fill="#E8E0F0" />
+        {renderAct === "napping" && (
+          <g className="atoll-prop atoll-sleep-cap">
+            <polygon points="22,16 54,16 58,-6" fill="#6B5B9A" />
+            <rect x="20" y="14" width="36" height="5" fill="#8070B0" />
+            <circle className="atoll-cap-pom" cx="60" cy="-8" r="4" fill="#E8E0F0" />
           </g>
         )}
 
-        {/* ===== Coding: pixel laptop ===== */}
-        {shown === "coding" && (
-          <g className="atoll-laptop">
-            {/* screen */}
-            <rect x="6" y="42" width="52" height="28" fill="#2A2A3A" />
-            <rect x="8" y="44" width="48" height="22" fill="#1A1A2A" />
-            {/* code lines on screen */}
-            <rect className="atoll-code-line atoll-code-0" x="10" y="47" width="20" height="2" fill="#6BE088" />
-            <rect className="atoll-code-line atoll-code-1" x="10" y="51" width="30" height="2" fill="#68B8F8" />
-            <rect className="atoll-code-line atoll-code-2" x="10" y="55" width="16" height="2" fill="#F8C868" />
-            <rect className="atoll-code-line atoll-code-3" x="10" y="59" width="24" height="2" fill="#E080C0" />
-            {/* keyboard base */}
-            <rect x="2" y="70" width="60" height="6" rx="1" fill="#3A3A4A" />
-            <rect x="4" y="70" width="56" height="2" fill="#4A4A5A" />
+        <MascotBody
+          body={palette.body}
+          top={palette.top}
+          limb={palette.limb}
+          showLimbs={showLimbs}
+          blinking={blinking && renderAct !== "napping"}
+          eyeOffsetX={renderAct === "reading" ? scanX : 0}
+          eyeVariant={eyeVariant}
+          blush={renderAct === "coffee" || renderAct === "idea"}
+        />
+
+        {/* ── coding: 面前小桌 + 键盘打字（隐形手） ── */}
+        {renderAct === "coding" && (
+          <g className="atoll-prop atoll-desk">
+            <rect x="14" y="58" width="36" height="3" fill="#5A5A6A" />
+            <rect x="16" y="61" width="3" height="7" fill="#4A4A5A" />
+            <rect x="45" y="61" width="3" height="7" fill="#4A4A5A" />
+            <rect x="18" y="40" width="28" height="18" fill="#2A2A3A" />
+            <rect className="atoll-screen" x="20" y="42" width="24" height="14" fill="#0D1117" />
+            <rect className="atoll-code-line atoll-code-0" x="22" y="45" width="10" height="1.5" fill="#6BE088" />
+            <rect className="atoll-code-line atoll-code-1" x="22" y="48" width="16" height="1.5" fill="#68B8F8" />
+            <rect className="atoll-code-line atoll-code-2" x="22" y="51" width="8" height="1.5" fill="#F8C868" />
+            <rect className="atoll-code-line atoll-code-3" x="22" y="54" width="12" height="1.5" fill="#E080C0" />
+            <text className="atoll-code-tag" x="34" y="55" fontSize="7" fontFamily="var(--font-mono, monospace)" fontWeight="700" fill="#6BE088">{`</>`}</text>
+            <rect className="atoll-cursor" x="22" y="54" width="1.5" height="2" fill="#58A6FF" />
+            <rect x="16" y="56" width="32" height="2" fill="#3A3A4A" />
+            <rect className="atoll-key atoll-key-0" x="18" y="57" width="5" height="2" fill="#6A6A7A" />
+            <rect className="atoll-key atoll-key-1" x="24" y="57" width="5" height="2" fill="#6A6A7A" />
+            <rect className="atoll-key atoll-key-2" x="30" y="57" width="5" height="2" fill="#6A6A7A" />
+            <rect className="atoll-key atoll-key-3" x="36" y="57" width="5" height="2" fill="#6A6A7A" />
+            <rect className="atoll-key atoll-key-4" x="42" y="57" width="5" height="2" fill="#6A6A7A" />
           </g>
         )}
 
-        {/* ===== Reading: open book ===== */}
-        {shown === "reading" && (
-          <g className="atoll-book">
-            <rect x="4" y="48" width="26" height="20" fill="#F5E6C8" />
-            <rect x="34" y="48" width="26" height="20" fill="#F5E6C8" />
-            <rect x="29" y="46" width="6" height="24" fill="#C4956A" />
-            {/* text lines */}
-            <rect x="8" y="52" width="16" height="2" fill="#C0A880" />
-            <rect x="8" y="56" width="18" height="2" fill="#C0A880" />
-            <rect x="8" y="60" width="12" height="2" fill="#C0A880" />
-            <rect x="38" y="52" width="18" height="2" fill="#C0A880" />
-            <rect x="38" y="56" width="14" height="2" fill="#C0A880" />
-            <rect x="38" y="60" width="16" height="2" fill="#C0A880" />
+        {/* ── reading: 胸前捧书（隐形手） ── */}
+        {renderAct === "reading" && (
+          <g className="atoll-prop atoll-book">
+            <rect className="atoll-book-cover" x="14" y="44" width="36" height="3" fill="#8B4513" />
+            <rect className="atoll-book-page atoll-book-left" x="14" y="47" width="15" height="20" fill="#FFF8EC" />
+            <rect className="atoll-book-page atoll-book-right" x="35" y="47" width="15" height="20" fill="#FFF8EC" />
+            <rect x="27" y="45" width="10" height="24" fill="#6B3410" />
+            <rect x="29" y="43" width="6" height="6" fill="#E74C3C" />
+            <rect className="atoll-book-line atoll-book-line-0" x="17" y="52" width="10" height="1.5" fill="#C4A882" />
+            <rect className="atoll-book-line atoll-book-line-1" x="17" y="56" width="11" height="1.5" fill="#C4A882" />
+            <rect className="atoll-book-line atoll-book-line-2" x="17" y="60" width="9" height="1.5" fill="#C4A882" />
+            <rect className="atoll-book-line atoll-book-line-3" x="38" y="52" width="10" height="1.5" fill="#C4A882" />
+            <rect className="atoll-book-line atoll-book-line-4" x="38" y="56" width="8" height="1.5" fill="#C4A882" />
+            <rect className="atoll-book-thumb" x="12" y="54" width="4" height="3" fill="#2A8FA8" opacity="0.85" />
+            <rect className="atoll-book-thumb atoll-book-thumb-r" x="48" y="54" width="4" height="3" fill="#2A8FA8" opacity="0.85" />
           </g>
         )}
 
-        {/* ===== Thinking: thought cloud + dots ===== */}
-        {shown === "thinking" && (
-          <g>
-            <circle cx="52" cy="2" r="4" fill="white" fillOpacity="0.85" />
-            <circle cx="58" cy="-8" r="3" fill="white" fillOpacity="0.85" />
-            <rect x="28" y="-34" width="36" height="22" rx="8" fill="white" fillOpacity="0.9" shapeRendering="auto" />
-            <circle className="atoll-dot atoll-dot-0" cx="38" cy="-23" r="3" fill="#9B8EC8" />
-            <circle className="atoll-dot atoll-dot-1" cx="46" cy="-23" r="3" fill="#9B8EC8" />
-            <circle className="atoll-dot atoll-dot-2" cx="54" cy="-23" r="3" fill="#9B8EC8" />
-          </g>
-        )}
-
-        {/* ===== Coffee: mug + steam ===== */}
-        {shown === "coffee" && (
-          <g>
-            {/* mug body */}
-            <rect x="52" y="24" width="18" height="22" fill="#F5F0E8" />
-            <rect x="54" y="26" width="14" height="16" fill="#6B4226" />
-            {/* handle */}
-            <rect x="70" y="28" width="6" height="4" fill="#F5F0E8" />
-            <rect x="74" y="28" width="4" height="14" fill="#F5F0E8" />
-            <rect x="70" y="38" width="6" height="4" fill="#F5F0E8" />
-            {/* steam */}
-            <rect className="atoll-steam atoll-steam-0" x="56" y="16" width="3" height="6" rx="1" fill="white" fillOpacity="0.6" shapeRendering="auto" />
-            <rect className="atoll-steam atoll-steam-1" x="62" y="14" width="3" height="8" rx="1" fill="white" fillOpacity="0.5" shapeRendering="auto" />
-            <rect className="atoll-steam atoll-steam-2" x="68" y="16" width="3" height="6" rx="1" fill="white" fillOpacity="0.6" shapeRendering="auto" />
-          </g>
-        )}
-
-        {/* ===== Idea: lightbulb ===== */}
-        {shown === "idea" && (
-          <g className="atoll-bulb">
-            <rect x="22" y="-30" width="20" height="24" rx="6" fill="#FFE566" shapeRendering="auto" />
-            <rect x="26" y="-8" width="12" height="4" fill="#D4C45A" />
-            <rect x="28" y="-4" width="8" height="3" fill="#D4C45A" />
-            {/* glow rays */}
-            <rect className="atoll-ray atoll-ray-0" x="14" y="-22" width="6" height="3" fill="#FFE566" />
-            <rect className="atoll-ray atoll-ray-1" x="44" y="-22" width="6" height="3" fill="#FFE566" />
-            <rect className="atoll-ray atoll-ray-2" x="30" y="-36" width="4" height="5" fill="#FFE566" />
-          </g>
-        )}
-
-        {/* ===== Slacking: phone + fish ===== */}
-        {shown === "slacking" && (
-          <g>
-            {/* phone in hand */}
-            <rect x="-12" y="16" width="14" height="24" rx="2" fill="#2A2A3A" shapeRendering="auto" />
-            <rect x="-10" y="18" width="10" height="18" fill="#4488CC" />
-            {/* pixel fish swimming by */}
-            <g className="atoll-fish atoll-fish-0">
-              <polygon points="62,-10 72,-6 62,-2" fill="#FF9060" />
-              <rect x="52" y="-10" width="12" height="8" rx="2" fill="#FFA870" shapeRendering="auto" />
-              <rect x="54" y="-8" width="3" height="2" fill={EYE} />
-            </g>
-            <g className="atoll-fish atoll-fish-1">
-              <polygon points="74,-24 84,-20 74,-16" fill="#60C8FF" />
-              <rect x="64" y="-24" width="12" height="8" rx="2" fill="#78D8FF" shapeRendering="auto" />
-              <rect x="66" y="-22" width="3" height="2" fill={EYE} />
+        {/* ── thinking: 问号气泡 ── */}
+        {renderAct === "thinking" && (
+          <g className="atoll-prop atoll-thought">
+            <circle cx="52" cy="2" r="3.5" fill="white" fillOpacity="0.95" />
+            <circle cx="57" cy="-5" r="2.5" fill="white" fillOpacity="0.95" />
+            <rect x="26" y="-30" width="38" height="22" rx="9" fill="white" fillOpacity="0.95" shapeRendering="auto" />
+            <text className="atoll-think-mark atoll-think-q" x="34" y="-13" fontSize="18" fontWeight="800" fill="#7C6BC4" fontFamily="var(--font-mono, monospace)">?</text>
+            <g className="atoll-think-mark atoll-think-dots" fill="#7C6BC4">
+              <circle className="atoll-dot atoll-dot-0" cx="36" cy="-17" r="2.5" />
+              <circle className="atoll-dot atoll-dot-1" cx="44" cy="-17" r="2.5" />
+              <circle className="atoll-dot atoll-dot-2" cx="52" cy="-17" r="2.5" />
             </g>
           </g>
         )}
 
-        {/* ===== Napping: zzz ===== */}
-        {shown === "napping" && (
-          <g fill="#aab4ff" fontFamily="var(--font-mono, monospace)" fontWeight="700">
-            <text className="atoll-z atoll-z-0" x="46" y="4" fontSize="14">z</text>
-            <text className="atoll-z atoll-z-1" x="54" y="-10" fontSize="18">z</text>
-            <text className="atoll-z atoll-z-2" x="62" y="-26" fontSize="22">z</text>
+        {/* ── coffee: 举杯（隐形手） ── */}
+        {renderAct === "coffee" && (
+          <g className="atoll-prop atoll-coffee-stand">
+            <rect x="50" y="54" width="16" height="3" fill="#8B7355" />
+            <rect x="52" y="57" width="2" height="6" fill="#6B5344" />
+            <rect x="62" y="57" width="2" height="6" fill="#6B5344" />
+            <g className="atoll-mug-group">
+              <rect className="atoll-mug" x="52" y="38" width="12" height="16" fill="#F5F0E8" />
+              <rect x="54" y="40" width="8" height="11" fill="#6B4226" />
+              <rect x="64" y="42" width="4" height="3" fill="#F5F0E8" />
+              <rect className="atoll-steam atoll-steam-0" x="54" y="30" width="3" height="6" rx="1" fill="white" fillOpacity="0.7" shapeRendering="auto" />
+              <rect className="atoll-steam atoll-steam-1" x="60" y="28" width="3" height="7" rx="1" fill="white" fillOpacity="0.55" shapeRendering="auto" />
+            </g>
+            <rect className="atoll-coffee-grip" x="48" y="42" width="3" height="5" fill="#2A8FA8" opacity="0.7" />
+          </g>
+        )}
+
+        {/* ── slacking: 墨镜 + 举手机（隐形手） ── */}
+        {renderAct === "slacking" && (
+          <>
+            <g className="atoll-prop atoll-phone">
+              <rect x="10" y="58" width="16" height="20" rx="2" fill="#1A1A2A" shapeRendering="auto" />
+              <rect x="12" y="60" width="12" height="14" fill="#2563EB" />
+              <rect className="atoll-phone-scroll" x="14" y="64" width="8" height="1.5" fill="#FFFFFF" opacity="0.9" />
+              <rect className="atoll-phone-scroll atoll-phone-scroll-2" x="14" y="67" width="6" height="1.5" fill="#FFFFFF" opacity="0.65" />
+              <rect className="atoll-phone-grip" x="8" y="66" width="3" height="4" fill="#2A8FA8" opacity="0.75" />
+            </g>
+            <g className="atoll-prop atoll-sunglasses">
+              <rect x="12" y="22" width="40" height="3" fill="#1A1A1A" />
+              <rect x="12" y="22" width="16" height="11" rx="2" fill="#1A1A1A" shapeRendering="auto" />
+              <rect x="36" y="22" width="16" height="11" rx="2" fill="#1A1A1A" shapeRendering="auto" />
+              <rect x="14" y="24" width="12" height="6" fill="#2A4060" />
+              <rect x="38" y="24" width="12" height="6" fill="#2A4060" />
+            </g>
+          </>
+        )}
+
+        {/* ── napping: zzz ── */}
+        {renderAct === "napping" && (
+          <g className="atoll-prop atoll-zzz" fill="#aab4ff" fontFamily="var(--font-mono, monospace)" fontWeight="700">
+            <text className="atoll-z atoll-z-0" x="48" y="8" fontSize="12">z</text>
+            <text className="atoll-z atoll-z-1" x="56" y="-4" fontSize="15">z</text>
+            <text className="atoll-z atoll-z-2" x="64" y="-18" fontSize="18">z</text>
           </g>
         )}
       </svg>
