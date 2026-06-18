@@ -1,14 +1,14 @@
 name: Release
 
-# 打 tag（如 v0.1.0）时触发；也支持手动运行
+# 推送 v* tag 时自动构建并发布到 GitHub Releases。
+# 版本号从 tag 注入，无需手动改 package.json / tauri.conf.json / Cargo.toml。
 on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
 
 permissions:
-  contents: write  # 创建/更新 Release 需要写权限
+  contents: write
 
 jobs:
   build-macos:
@@ -19,6 +19,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Building release ${VERSION}"
+
+      - name: Sync version files
+        run: bash scripts/sync-version.sh "${{ steps.version.outputs.value }}"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -104,6 +115,8 @@ jobs:
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
           files: |
             staging/Atoll-aarch64.dmg
             staging/Atoll-aarch64.dmg.sha256

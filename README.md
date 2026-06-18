@@ -142,7 +142,44 @@ coupling UI components directly to a specific CLI.
 
 ## Releases
 
-Releases are built automatically by GitHub Actions when a `v*` tag is pushed.
+Releases are built automatically by GitHub Actions. You do **not** need to
+manually edit version numbers in multiple files — the pipeline injects the
+version from the release tag.
+
+### Option 1: One-command release (recommended)
+
+Requires [GitHub CLI](https://cli.github.com):
+
+```bash
+./scripts/release.sh 0.2.0
+```
+
+This starts the **Trigger Release** workflow, which:
+
+1. Syncs version across `package.json`, `tauri.conf.json`, and `Cargo.toml`
+2. Commits the bump to `main`
+3. Creates and pushes tag `v0.2.0`
+4. Triggers the **Release** workflow to build and publish artifacts
+
+### Option 2: GitHub Actions UI
+
+1. Open [Actions → Trigger Release](https://github.com/sheepbooy/Atoll/actions/workflows/trigger-release.yml)
+2. Click **Run workflow**
+3. Enter the version (e.g. `0.2.0`)
+4. Wait for **Release** to finish and check [Releases](https://github.com/sheepbooy/Atoll/releases)
+
+### Option 3: Git tag only
+
+If you already pushed your changes to `main`:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The **Release** workflow reads the version from the tag and builds automatically.
+Use this when you do not need the version-bump commit on `main`.
+
 Each release ships:
 
 - `Atoll-aarch64.dmg` — Apple Silicon (M1/M2/M3/M4)
