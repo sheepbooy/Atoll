@@ -834,7 +834,7 @@ fn pin_session(
     Ok(snapshot)
 }
 
-const DEFAULT_SESSION_RETENTION_SECS: u64 = 300;
+const DEFAULT_SESSION_RETENTION_SECS: u64 = 900;
 
 #[tauri::command]
 fn get_session_retention(state: State<'_, AppState>) -> u64 {
@@ -846,7 +846,7 @@ fn set_session_retention(
     state: State<'_, AppState>,
     minutes: u64,
 ) -> u64 {
-    let secs = minutes.clamp(1, 30) * 60;
+    let secs = minutes.clamp(1, 60) * 60;
     let mut retention = state.session_retention_secs.lock().expect("state mutex poisoned");
     *retention = secs;
     secs

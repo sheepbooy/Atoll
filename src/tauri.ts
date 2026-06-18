@@ -249,7 +249,7 @@ export async function getSessionRetention(): Promise<number> {
   if (isTauriRuntime) {
     return invoke<number>("get_session_retention");
   }
-  return 300;
+  return 900;
 }
 
 export async function setSessionRetention(minutes: number): Promise<number> {

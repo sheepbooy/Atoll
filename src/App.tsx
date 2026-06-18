@@ -85,18 +85,19 @@ type PanelView =
 
 const COMPACT_ICON_SETTING_KEY = "atoll.maxCompactIcons";
 const RETENTION_SETTING_KEY = "atoll.sessionRetentionMinutes";
-const DEFAULT_MAX_COMPACT_ICONS = 4;
-const DEFAULT_RETENTION_MINUTES = 5;
+const DEFAULT_MAX_COMPACT_ICONS = 3;
+const DEFAULT_RETENTION_MINUTES = 15;
 const MIN_RETENTION_MINUTES = 1;
-const MAX_RETENTION_MINUTES = 30;
+const MAX_RETENTION_MINUTES = 60;
 const IDLE_INTERVAL_SETTING_KEY = "atoll.idleIntervalMin";
 const IDLE_DURATION_SETTING_KEY = "atoll.idleDurationMin";
-const DEFAULT_IDLE_INTERVAL_MIN = 5;
+const DEFAULT_IDLE_INTERVAL_MIN = 10;
 const MIN_IDLE_INTERVAL_MIN = 1;
-const MAX_IDLE_INTERVAL_MIN = 30;
-const DEFAULT_IDLE_DURATION_MIN = 10;
+const MAX_IDLE_INTERVAL_MIN = 60;
+const DEFAULT_IDLE_DURATION_MIN = 20;
 const MIN_IDLE_DURATION_MIN = 1;
-const MAX_IDLE_DURATION_MIN = 30;
+const MAX_IDLE_DURATION_MIN = 60;
+const SETTINGS_INITIALIZED_KEY = "atoll.settingsInitialized";
 const ZERO_TOKEN_USAGE: TokenUsage = {
   inputTokens: 0,
   outputTokens: 0,
@@ -116,15 +117,91 @@ function clampCompactIconLimit(
   return Math.min(max, Math.max(MIN_MAX_COMPACT_ICONS, Math.round(value)));
 }
 
-function readCompactIconLimit() {
-  if (typeof window === "undefined") return DEFAULT_MAX_COMPACT_ICONS;
+function readStoredSetting(
+  key: string,
+  defaultValue: number,
+  clamp: (value: number) => number,
+) {
+  if (typeof window === "undefined") return defaultValue;
   try {
-    const raw = Number(window.localStorage.getItem(COMPACT_ICON_SETTING_KEY));
-    if (!Number.isFinite(raw)) return DEFAULT_MAX_COMPACT_ICONS;
-    return clampCompactIconLimit(raw);
+    const stored = window.localStorage.getItem(key);
+    if (stored === null || stored.trim() === "") return defaultValue;
+    const raw = Number(stored);
+    if (!Number.isFinite(raw)) return defaultValue;
+    return clamp(raw);
   } catch {
-    return DEFAULT_MAX_COMPACT_ICONS;
+    return defaultValue;
   }
+}
+
+function markSettingsInitialized() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SETTINGS_INITIALIZED_KEY, "1");
+  } catch {
+    // ignore local storage errors
+  }
+}
+
+function migrateLegacySettings() {
+  if (typeof window === "undefined") return;
+  try {
+    if (window.localStorage.getItem(SETTINGS_INITIALIZED_KEY) === "1") return;
+
+    const stored = {
+      icons: window.localStorage.getItem(COMPACT_ICON_SETTING_KEY),
+      retention: window.localStorage.getItem(RETENTION_SETTING_KEY),
+      interval: window.localStorage.getItem(IDLE_INTERVAL_SETTING_KEY),
+      duration: window.localStorage.getItem(IDLE_DURATION_SETTING_KEY),
+    };
+    const hasAnyStored = Object.values(stored).some(
+      (value) => value !== null && value.trim() !== "",
+    );
+
+    // First launch with the old bug wrote every slider to its minimum (1).
+    if (
+      hasAnyStored &&
+      stored.icons === "1" &&
+      stored.retention === "1" &&
+      stored.interval === "1" &&
+      stored.duration === "1"
+    ) {
+      window.localStorage.setItem(
+        COMPACT_ICON_SETTING_KEY,
+        String(DEFAULT_MAX_COMPACT_ICONS),
+      );
+      window.localStorage.setItem(
+        RETENTION_SETTING_KEY,
+        String(DEFAULT_RETENTION_MINUTES),
+      );
+      window.localStorage.setItem(
+        IDLE_INTERVAL_SETTING_KEY,
+        String(DEFAULT_IDLE_INTERVAL_MIN),
+      );
+      window.localStorage.setItem(
+        IDLE_DURATION_SETTING_KEY,
+        String(DEFAULT_IDLE_DURATION_MIN),
+      );
+    }
+
+    if (hasAnyStored) {
+      markSettingsInitialized();
+    }
+  } catch {
+    // ignore local storage errors
+  }
+}
+
+if (typeof window !== "undefined") {
+  migrateLegacySettings();
+}
+
+function readCompactIconLimit() {
+  return readStoredSetting(
+    COMPACT_ICON_SETTING_KEY,
+    DEFAULT_MAX_COMPACT_ICONS,
+    (value) => clampCompactIconLimit(value),
+  );
 }
 
 function clampRetentionMinutes(value: number) {
@@ -135,38 +212,33 @@ function clampRetentionMinutes(value: number) {
 }
 
 function readRetentionMinutes() {
-  if (typeof window === "undefined") return DEFAULT_RETENTION_MINUTES;
-  try {
-    const raw = Number(window.localStorage.getItem(RETENTION_SETTING_KEY));
-    if (!Number.isFinite(raw)) return DEFAULT_RETENTION_MINUTES;
-    return clampRetentionMinutes(raw);
-  } catch {
-    return DEFAULT_RETENTION_MINUTES;
-  }
+  return readStoredSetting(
+    RETENTION_SETTING_KEY,
+    DEFAULT_RETENTION_MINUTES,
+    clampRetentionMinutes,
+  );
 }
 
 function clampIdleInterval(v: number) {
   return Math.min(MAX_IDLE_INTERVAL_MIN, Math.max(MIN_IDLE_INTERVAL_MIN, Math.round(v)));
 }
 function readIdleInterval() {
-  if (typeof window === "undefined") return DEFAULT_IDLE_INTERVAL_MIN;
-  try {
-    const raw = Number(window.localStorage.getItem(IDLE_INTERVAL_SETTING_KEY));
-    if (!Number.isFinite(raw)) return DEFAULT_IDLE_INTERVAL_MIN;
-    return clampIdleInterval(raw);
-  } catch { return DEFAULT_IDLE_INTERVAL_MIN; }
+  return readStoredSetting(
+    IDLE_INTERVAL_SETTING_KEY,
+    DEFAULT_IDLE_INTERVAL_MIN,
+    clampIdleInterval,
+  );
 }
 
 function clampIdleDuration(v: number) {
   return Math.min(MAX_IDLE_DURATION_MIN, Math.max(MIN_IDLE_DURATION_MIN, Math.round(v)));
 }
 function readIdleDuration() {
-  if (typeof window === "undefined") return DEFAULT_IDLE_DURATION_MIN;
-  try {
-    const raw = Number(window.localStorage.getItem(IDLE_DURATION_SETTING_KEY));
-    if (!Number.isFinite(raw)) return DEFAULT_IDLE_DURATION_MIN;
-    return clampIdleDuration(raw);
-  } catch { return DEFAULT_IDLE_DURATION_MIN; }
+  return readStoredSetting(
+    IDLE_DURATION_SETTING_KEY,
+    DEFAULT_IDLE_DURATION_MIN,
+    clampIdleDuration,
+  );
 }
 
 const initialSnapshot: IslandSnapshot = {
@@ -623,6 +695,10 @@ export function App() {
   useEffect(() => {
     try { window.localStorage.setItem(IDLE_DURATION_SETTING_KEY, String(idleDurationSec)); } catch {}
   }, [idleDurationSec]);
+
+  useEffect(() => {
+    markSettingsInitialized();
+  }, []);
 
   useEffect(() => {
     if (panelView.kind !== "session") return;
