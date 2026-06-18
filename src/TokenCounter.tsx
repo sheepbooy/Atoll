@@ -182,7 +182,7 @@ export interface TokenCounterProps {
   compactTokenLevel?: number;
 }
 
-const DEFAULT_ICON_LIMIT = 4;
+const DEFAULT_ICON_LIMIT = 3;
 
 export function TokenCounter({
   value,

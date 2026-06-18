@@ -29,8 +29,8 @@ const ASPECT = VIEWBOX.w / VIEWBOX.h;
 const IDLE_PLAY: AtollActivity[] = [
   "coding", "reading", "thinking", "coffee", "idea", "slacking", "napping",
 ];
-const DEFAULT_IDLE_INTERVAL_SEC = 300;
-const DEFAULT_IDLE_DURATION_SEC = 600;
+const DEFAULT_IDLE_INTERVAL_SEC = 600;
+const DEFAULT_IDLE_DURATION_SEC = 1200;
 
 interface AtollLogoProps {
   activity?: AtollActivity;
