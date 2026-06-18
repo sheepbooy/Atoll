@@ -8,3 +8,13 @@ src-tauri/gen
 .DS_Store
 .worktrees
 .tools/
+.cursor/
+
+# Local-only (not shipped)
+docs/superpowers/
+preview-logos.html
+src/preview-logos-main.tsx
+src/LogoConceptPreview.tsx
+src/AtollPreviewLoop.tsx
+src/logo-preview.css
+vite.preview.config.ts
