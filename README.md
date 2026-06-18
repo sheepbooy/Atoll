@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo.svg" alt="Atoll mascot" width="72" />
+  <img src="docs/assets/logo.svg" alt="Atoll mascot" width="64" height="72" />
 </p>
 
 <h1 align="center">Atoll</h1>
@@ -30,7 +30,7 @@
 <br/>
 
 <p align="center">
-  <img src="docs/assets/hero.svg" alt="Atoll — a compact island in the macOS menu bar that expands into an approval panel" width="100%" />
+  <img src="docs/assets/hero.png" alt="Atoll - a compact island in the macOS menu bar that expands into an approval panel" width="100%" />
 </p>
 
 <br/>
@@ -105,7 +105,7 @@ Everything runs locally. The hook bridge binds to `127.0.0.1:47777` — nothing 
 ### Menu bar capsule → expanded approval
 
 <p align="center">
-  <img src="docs/assets/compact-bar.svg" alt="Compact island in the macOS menu bar with session dots and pending badge" width="92%" />
+  <img src="docs/assets/compact-bar.png" alt="Compact island in the macOS menu bar with session dots and pending badge" width="92%" />
 </p>
 
 <p align="center">
@@ -131,7 +131,7 @@ Everything runs locally. The hook bridge binds to `127.0.0.1:47777` — nothing 
 ## 🔁 How it works
 
 <p align="center">
-  <img src="docs/assets/architecture.svg" alt="Architecture: Claude Code hooks → shim → local bridge → floating island UI" width="96%" />
+  <img src="docs/assets/architecture.png" alt="Architecture: Claude Code hooks to shim to local bridge to floating island UI" width="96%" />
 </p>
 
 ```mermaid
@@ -268,6 +268,12 @@ Regenerate the README demo GIF (requires `npm run dev` in another terminal):
 npm run capture:gif
 ```
 
+Regenerate hero/logo PNGs from SVG sources:
+
+```bash
+npm run export:assets
+```
+
 ---
 
 ## 📦 Releases
@@ -334,7 +340,7 @@ MIT
 ---
 
 <p align="center">
-  <img src="docs/assets/logo.svg" alt="" width="28" />
+  <img src="docs/assets/logo.svg" alt="" width="32" height="36" />
   <br/>
   <sub>Built for developers who live in the terminal but refuse to context-switch for every <code>y/n</code>.</sub>
 </p>

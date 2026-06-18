@@ -17,23 +17,21 @@
   <path d="M380 0 H520 Q540 0 540 18 V36 H380 Z" fill="#000000" opacity="0.85"/>
 
   <g transform="translate(300, 0)">
-    <rect x="0" y="0" width="300" height="36" rx="18" fill="url(#pill)" stroke="rgba(255,255,255,0.12)"/>
-    <g transform="translate(10, 4) scale(0.42)">
+    <rect x="0" y="0" width="300" height="36" rx="18" fill="url(#pill)" stroke="#ffffff" stroke-opacity="0.12"/>
+    <g transform="translate(10, 2) scale(0.5)" shape-rendering="crispEdges">
       <rect x="8" y="18" width="48" height="26" fill="#38BDD8"/>
       <rect x="8" y="18" width="48" height="5" fill="#5FD8EC"/>
-      <rect x="20" y="44" width="6" height="12" fill="#2A8FA8"/>
-      <rect x="38" y="44" width="6" height="12" fill="#2A8FA8"/>
-      <rect x="18" y="24" width="11" height="11" rx="2" fill="#1a1a1a"/>
-      <rect x="35" y="24" width="11" height="11" rx="2" fill="#1a1a1a"/>
+      <rect x="19" y="24" width="5" height="11" fill="#1a1a1a"/>
+      <rect x="38" y="24" width="5" height="11" fill="#1a1a1a"/>
     </g>
     <circle cx="52" cy="18" r="4" fill="#6FE0A4"/>
-    <circle cx="88" cy="18" r="10" fill="#e8765a" stroke="rgba(255,255,255,0.15)"/>
-    <circle cx="114" cy="18" r="10" fill="#61d8f7" stroke="rgba(255,255,255,0.15)"/>
-    <circle cx="140" cy="18" r="10" fill="#b2e578" stroke="rgba(255,255,255,0.15)"/>
-    <rect x="162" y="11" width="118" height="14" rx="7" fill="rgba(255,129,117,0.2)" stroke="rgba(255,129,117,0.35)"/>
-    <text x="221" y="21.5" text-anchor="middle" fill="#ffcbc5" font-family="Inter, system-ui, sans-serif" font-size="9" font-weight="600">1 pending</text>
-    <text x="268" y="21.5" fill="#8d8a82" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="500">170k</text>
+    <circle cx="88" cy="18" r="10" fill="#e8765a" stroke="#ffffff" stroke-opacity="0.15"/>
+    <circle cx="114" cy="18" r="10" fill="#61d8f7" stroke="#ffffff" stroke-opacity="0.15"/>
+    <circle cx="140" cy="18" r="10" fill="#b2e578" stroke="#ffffff" stroke-opacity="0.15"/>
+    <rect x="162" y="11" width="118" height="14" rx="7" fill="#ff8175" fill-opacity="0.2" stroke="#ff8175" stroke-opacity="0.35"/>
+    <text x="221" y="21.5" text-anchor="middle" fill="#ffcbc5" font-family="system-ui, sans-serif" font-size="9" font-weight="600">1 pending</text>
+    <text x="268" y="21.5" fill="#8d8a82" font-family="system-ui, sans-serif" font-size="10" font-weight="500">170k</text>
   </g>
 
-  <text x="450" y="78" text-anchor="middle" fill="#b7b4ac" font-family="Inter, system-ui, sans-serif" font-size="14">Lives in your menu bar / notch  hover to expand, approve in one click.</text>
+  <text x="450" y="78" text-anchor="middle" fill="#b7b4ac" font-family="system-ui, sans-serif" font-size="14">Lives in your menu bar / notch - hover to expand, approve in one click.</text>
 </svg>
