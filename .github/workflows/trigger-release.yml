@@ -1,0 +1,60 @@
+name: Trigger Release
+
+# 在 GitHub Actions 页面手动输入版本号，自动 bump + 打 tag，随后触发 Release 流水线。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 0.2.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  bump-and-tag:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Normalize version
+        id: version
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          VERSION="${VERSION#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must look like 0.2.0"
+            exit 1
+          fi
+          echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Sync version files
+        run: bash scripts/sync-version.sh "${{ steps.version.outputs.value }}"
+
+      - name: Commit version bump
+        run: |
+          if git diff --quiet -- package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml; then
+            echo "Version files already up to date."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+            git commit -m "chore: release ${{ steps.version.outputs.tag }}"
+            git push origin HEAD:main
+          fi
+
+      - name: Create and push tag
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists."
+            exit 1
+          fi
+          git tag "$TAG"
+          git push origin "$TAG"
