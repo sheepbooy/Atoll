@@ -21,9 +21,29 @@ Claude Code, so you can approve or deny them without leaving your editor.
 
 ## Installation
 
-Atoll is distributed via Homebrew. Because it is notarization-free (no Apple
-Developer account), install with `--no-quarantine` so macOS does not flag it as
-"damaged":
+Atoll is not notarized yet (no Apple Developer account), so a browser-downloaded
+`.dmg` may show macOS "damaged" or "unverified developer" warnings. Use one of
+the options below.
+
+### Option 1: One-line install (recommended)
+
+Downloads the latest release, installs to `/Applications`, and clears quarantine
+for you:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.sh | bash
+```
+
+Pin a specific version:
+
+```bash
+ATOLL_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.sh | bash
+```
+
+If macOS still blocks the first launch, right-click **Atoll** in Applications and
+choose **Open** once.
+
+### Option 2: Homebrew
 
 ```bash
 brew tap sheepbooy/tap
@@ -36,11 +56,21 @@ To upgrade later:
 brew upgrade --cask --no-quarantine atoll
 ```
 
-> If you downloaded the `.dmg` directly from the
-> [Releases](https://github.com/sheepbooy/Atoll/releases) page instead, run
-> `sudo xattr -cr /Applications/Atoll.app` once after dragging it into
-> Applications. Each release also ships a `Fix-Atoll-*.command` script that does
-> the same thing with a GUI prompt.
+### Option 3: Manual `.dmg` download
+
+1. Download `Atoll-aarch64.dmg` from
+   [Releases](https://github.com/sheepbooy/Atoll/releases).
+2. Drag **Atoll.app** into **Applications**.
+3. Clear quarantine once:
+
+```bash
+sudo xattr -cr /Applications/Atoll.app
+```
+
+Or run the `Fix-Atoll.command` script from the same release page (GUI prompt).
+
+If the app still will not open, right-click **Atoll** in Applications and
+choose **Open** once.
 
 ## Connecting Claude Code
 
@@ -116,8 +146,11 @@ Releases are built automatically by GitHub Actions when a `v*` tag is pushed.
 Each release ships:
 
 - `Atoll-aarch64.dmg` — Apple Silicon (M1/M2/M3/M4)
-- `Atoll-x86_64.dmg` — Intel Mac
-- `Fix-Atoll-*.command` — one-click "damaged app" repair script
+- `Atoll-aarch64.dmg.sha256` — checksum for verification
+- `install.sh` — one-line installer script
+- `Fix-Atoll.command` — manual quarantine repair script
+
+Intel (`x86_64`) builds are not published yet.
 
 See [Releases](https://github.com/sheepbooy/Atoll/releases).
 
