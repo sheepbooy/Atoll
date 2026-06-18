@@ -8,6 +8,28 @@ The first version focuses on the desktop shell:
 - React + TypeScript island UI for pending approvals.
 - Live permission flow from Claude Code hooks into the approval island.
 
+## Installation
+
+Atoll is distributed via Homebrew. Because it is notarization-free (no Apple
+Developer account), install with `--no-quarantine` so macOS does not flag it as
+"damaged":
+
+```bash
+brew tap sheepbooy/tap
+brew install --cask --no-quarantine atoll
+```
+
+To upgrade later:
+
+```bash
+brew upgrade --cask --no-quarantine atoll
+```
+
+> If you downloaded the `.dmg` directly from the
+> [Releases](https://github.com/sheepbooy/Atoll/releases) page instead, run
+> `sudo xattr -cr /Applications/Atoll.app` once after dragging it into
+> Applications.
+
 ## Development
 
 Install dependencies:
