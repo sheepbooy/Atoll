@@ -12,17 +12,9 @@ permissions:
 
 jobs:
   build-macos:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-14      # Apple Silicon (arm64)
-            arch: aarch64
-            rust-target: aarch64-apple-darwin
-          - os: macos-13      # Intel (x86_64)
-            arch: x86_64
-            rust-target: x86_64-apple-darwin
+    runs-on: macos-14   # Apple Silicon (arm64)
+    # Intel (x86_64) build 暂未启用：GitHub 免费 Intel runner 排队严重，
+    # 且 Intel Mac 占比已很低。需要时改成 matrix 加回 macos-13 即可。
 
     steps:
       - name: Checkout
@@ -37,7 +29,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.rust-target }}
+          targets: aarch64-apple-darwin
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -46,46 +38,46 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             src-tauri/target
-          key: ${{ matrix.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: ${{ matrix.os }}-cargo-
+          key: macos-14-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: macos-14-cargo-
 
       - name: Install npm deps
         run: npm ci
 
       - name: Build Tauri app
-        run: npm run tauri -- build --target ${{ matrix.rust-target }}
+        run: npm run tauri -- build --target aarch64-apple-darwin
 
       - name: Ad-hoc sign .app
         # 没有开发者账号，用 ad-hoc 签名保证 App 结构完整。
         # 无法过 Gatekeeper，分发端用 Homebrew --no-quarantine 解决“已损坏”问题。
         run: |
-          APP="src-tauri/target/${{ matrix.rust-target }}/release/bundle/macos/Atoll.app"
+          APP="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Atoll.app"
           codesign --force --deep --sign - "$APP"
           codesign --verify --strict "$APP" && echo "ad-hoc sign OK"
 
       - name: Stage artifacts
         run: |
-          BUNDLE_DIR="src-tauri/target/${{ matrix.rust-target }}/release/bundle"
+          BUNDLE_DIR="src-tauri/target/aarch64-apple-darwin/release/bundle"
           DMG=$(ls "$BUNDLE_DIR/dmg/"*.dmg | head -1)
           test -f "$DMG" || { echo "dmg not found"; exit 1; }
 
           mkdir -p staging
-          # 统一重命名为 Atoll-<arch>.dmg，cask 用稳定文件名引用
-          cp "$DMG" "staging/Atoll-${{ matrix.arch }}.dmg"
+          # 统一重命名为 Atoll-aarch64.dmg，cask 用稳定文件名引用
+          cp "$DMG" "staging/Atoll-aarch64.dmg"
 
           cd staging
-          shasum -a 256 "Atoll-${{ matrix.arch }}.dmg" | awk '{print $1}' > "Atoll-${{ matrix.arch }}.dmg.sha256"
-          echo "## sha256 (${{ matrix.arch }})" >> "$GITHUB_STEP_SUMMARY"
+          shasum -a 256 "Atoll-aarch64.dmg" | awk '{print $1}' > "Atoll-aarch64.dmg.sha256"
+          echo "## sha256 (aarch64)" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          cat "Atoll-${{ matrix.arch }}.dmg.sha256" >> "$GITHUB_STEP_SUMMARY"
+          cat "Atoll-aarch64.dmg.sha256" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "::notice::${{ matrix.arch }} sha256=$(cat Atoll-${{ matrix.arch }}.dmg.sha256)"
+          echo "::notice::aarch64 sha256=$(cat Atoll-aarch64.dmg.sha256)"
 
       - name: Generate Fix-Atoll.command
         # 供直接从 Releases 页面下载 dmg 的用户使用：拖入 App 后双击此脚本即可清除隔离属性。
         run: |
           mkdir -p staging
-          cat > staging/Fix-Atoll-${{ matrix.arch }}.command <<'EOF'
+          cat > staging/Fix-Atoll.command <<'EOF'
           #!/bin/bash
           # 清除 Atoll 的 macOS 隔离属性，解决“已损坏，无法打开”问题。
           set -e
@@ -101,12 +93,12 @@ jobs:
           osascript -e 'display dialog "完成！现在可以打开 Atoll 了。" with title "Atoll 安装修复" buttons {"好"} default button 1' >/dev/null
           EOF
 
-          chmod +x staging/Fix-Atoll-${{ matrix.arch }}.command
+          chmod +x staging/Fix-Atoll.command
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            staging/Atoll-${{ matrix.arch }}.dmg
-            staging/Atoll-${{ matrix.arch }}.dmg.sha256
-            staging/Fix-Atoll-${{ matrix.arch }}.command
+            staging/Atoll-aarch64.dmg
+            staging/Atoll-aarch64.dmg.sha256
+            staging/Fix-Atoll.command
