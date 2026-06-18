@@ -1,0 +1,112 @@
+name: Release
+
+# 打 tag（如 v0.1.0）时触发；也支持手动运行
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write  # 创建/更新 Release 需要写权限
+
+jobs:
+  build-macos:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14      # Apple Silicon (arm64)
+            arch: aarch64
+            rust-target: aarch64-apple-darwin
+          - os: macos-13      # Intel (x86_64)
+            arch: x86_64
+            rust-target: x86_64-apple-darwin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ matrix.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: ${{ matrix.os }}-cargo-
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Build Tauri app
+        run: npm run tauri -- build --target ${{ matrix.rust-target }}
+
+      - name: Ad-hoc sign .app
+        # 没有开发者账号，用 ad-hoc 签名保证 App 结构完整。
+        # 无法过 Gatekeeper，分发端用 Homebrew --no-quarantine 解决“已损坏”问题。
+        run: |
+          APP="src-tauri/target/${{ matrix.rust-target }}/release/bundle/macos/Atoll.app"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --strict "$APP" && echo "ad-hoc sign OK"
+
+      - name: Stage artifacts
+        run: |
+          BUNDLE_DIR="src-tauri/target/${{ matrix.rust-target }}/release/bundle"
+          DMG=$(ls "$BUNDLE_DIR/dmg/"*.dmg | head -1)
+          test -f "$DMG" || { echo "dmg not found"; exit 1; }
+
+          mkdir -p staging
+          # 统一重命名为 Atoll-<arch>.dmg，cask 用稳定文件名引用
+          cp "$DMG" "staging/Atoll-${{ matrix.arch }}.dmg"
+
+          cd staging
+          shasum -a 256 "Atoll-${{ matrix.arch }}.dmg" | awk '{print $1}' > "Atoll-${{ matrix.arch }}.dmg.sha256"
+          echo "## sha256 (${{ matrix.arch }})" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat "Atoll-${{ matrix.arch }}.dmg.sha256" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice::${{ matrix.arch }} sha256=$(cat Atoll-${{ matrix.arch }}.dmg.sha256)"
+
+      - name: Generate Fix-Atoll.command
+        # 供直接从 Releases 页面下载 dmg 的用户使用：拖入 App 后双击此脚本即可清除隔离属性。
+        run: |
+          mkdir -p staging
+          cat > staging/Fix-Atoll-${{ matrix.arch }}.command <<'EOF'
+          #!/bin/bash
+          # 清除 Atoll 的 macOS 隔离属性，解决“已损坏，无法打开”问题。
+          set -e
+          APP_PATH="/Applications/Atoll.app"
+
+          if [ ! -d "$APP_PATH" ]; then
+            osascript -e 'display dialog "请先把 Atoll 拖到「应用程序」文件夹，再运行本脚本。" with title "Atoll 安装修复" buttons {"好"} default button 1' >/dev/null
+            exit 1
+          fi
+
+          echo "正在修复 Atoll（需要输入开机密码）..."
+          sudo xattr -cr "$APP_PATH"
+          osascript -e 'display dialog "完成！现在可以打开 Atoll 了。" with title "Atoll 安装修复" buttons {"好"} default button 1' >/dev/null
+          EOF
+
+          chmod +x staging/Fix-Atoll-${{ matrix.arch }}.command
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            staging/Atoll-${{ matrix.arch }}.dmg
+            staging/Atoll-${{ matrix.arch }}.dmg.sha256
+            staging/Fix-Atoll-${{ matrix.arch }}.command
