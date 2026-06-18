@@ -44,7 +44,7 @@ import {
   MIN_MAX_COMPACT_ICONS,
 } from "./compactLayout";
 import { TokenCounter } from "./TokenCounter";
-import { getDemoMode, shouldAutoExpandDemo } from "./demoSnapshot";
+import { getDemoMode, isGifCaptureMode, shouldAutoExpandDemo } from "./demoSnapshot";
 
 import {
   getSnapshot,
@@ -625,6 +625,20 @@ export function App() {
     }, 120);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!isGifCaptureMode()) return;
+    document.documentElement.style.setProperty(
+      "--gif-window-w",
+      `${collapsedWindowWidth}px`,
+    );
+    document.documentElement.style.setProperty(
+      "--gif-window-h",
+      `${COMPACT_WINDOW_HEIGHT}px`,
+    );
+    document.documentElement.dataset.gifCompactWidth = String(collapsedWindowWidth);
+    document.documentElement.dataset.gifCompactHeight = String(COMPACT_WINDOW_HEIGHT);
+  }, [collapsedWindowWidth]);
 
   useEffect(() => {
     if (!menuOpen) return;

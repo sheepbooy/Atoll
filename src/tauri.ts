@@ -251,7 +251,7 @@ export async function getNotchMetrics(): Promise<NotchMetrics> {
     return invoke<NotchMetrics>("get_notch_metrics");
   }
 
-  if (getDemoMode() === "compact") {
+  if (getDemoMode() === "compact" || getDemoMode() === "gif") {
     return { hasNotch: true, width: 180, height: 32, leftAreaWidth: 120, rightAreaWidth: 120 };
   }
 

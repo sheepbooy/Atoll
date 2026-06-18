@@ -260,6 +260,7 @@ Run the UI in a browser with seeded demo data (for docs / screenshots):
 http://127.0.0.1:1420/?demo=compact
 http://127.0.0.1:1420/?demo=approval
 http://127.0.0.1:1420/?demo=idle
+http://127.0.0.1:1420/?demo=gif
 ```
 
 Regenerate the README demo GIF (requires `npm run dev` in another terminal):

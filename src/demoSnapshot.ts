@@ -1,6 +1,6 @@
 import type { HookStatus, IslandSnapshot, PermissionRequest } from "./tauri";
 
-export type DemoMode = "compact" | "approval" | "idle" | "sessions";
+export type DemoMode = "compact" | "approval" | "idle" | "sessions" | "gif";
 
 export function getDemoMode(): DemoMode | null {
   if ("__TAURI_INTERNALS__" in window) return null;
@@ -9,7 +9,8 @@ export function getDemoMode(): DemoMode | null {
     mode === "compact" ||
     mode === "approval" ||
     mode === "idle" ||
-    mode === "sessions"
+    mode === "sessions" ||
+    mode === "gif"
   ) {
     return mode;
   }
@@ -100,6 +101,7 @@ export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {
         sessions,
       };
     case "compact":
+    case "gif":
     case "sessions":
       return {
         ...base,
@@ -120,4 +122,8 @@ export function getDemoHookStatus(mode: DemoMode): HookStatus {
 
 export function shouldAutoExpandDemo(mode: DemoMode): boolean {
   return mode === "approval" || mode === "sessions" || mode === "idle";
+}
+
+export function isGifCaptureMode(): boolean {
+  return getDemoMode() === "gif";
 }
