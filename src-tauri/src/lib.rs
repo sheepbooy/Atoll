@@ -35,7 +35,7 @@ const EXPANDED_WINDOW_WIDTH: f64 = 560.0;
 const EXPANDED_WINDOW_HEIGHT: f64 = 320.0;
 const EXPANDED_IDLE_WINDOW_HEIGHT: f64 = 240.0;
 const MIN_COMPACT_WINDOW_WIDTH: f64 = 72.0;
-// Dormant pill height (width is computed dynamically from notch geometry).
+// Dormant pill height (width spans the notch + side padding on notched displays).
 const DORMANT_WINDOW_HEIGHT: f64 = 36.0;
 // Extra width beyond the notch on each side so edges are visible.
 const DORMANT_NOTCH_PADDING: f64 = 30.0;
@@ -191,6 +191,8 @@ struct AppState {
     /// pid of the app that was frontmost before Atoll grabbed focus for an
     /// approval, so focus can be handed back when the user is done (macOS).
     previous_app_pid: Mutex<Option<i32>>,
+    /// Last emitted listening-online flag; used to push snapshot updates when hook/bridge health changes.
+    last_listening_online: Mutex<Option<bool>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -227,7 +229,7 @@ struct MacosScreenGeometry {
 }
 
 #[tauri::command]
-fn get_snapshot(state: State<'_, AppState>) -> IslandSnapshot {
+fn get_snapshot(app: AppHandle, state: State<'_, AppState>) -> IslandSnapshot {
     roll_over_token_usage_if_needed(&state);
     let tracked_sessions = {
         let requests = state.requests.lock().expect("state mutex poisoned");
@@ -238,6 +240,21 @@ fn get_snapshot(state: State<'_, AppState>) -> IslandSnapshot {
         let _ = refresh_session_token_usage(&state, &session_id, Some(transcript_path.as_str()));
     }
 
+    let snapshot = build_snapshot(&app, &state);
+    if let Ok(mut last) = state.last_listening_online.lock() {
+        *last = Some(snapshot.online);
+    }
+    snapshot
+}
+
+/// Hook 已写入 Claude 设置且脚本存在，并且本地 bridge 可连接 → 在线监听。
+pub(crate) fn compute_listening_online(app: &AppHandle) -> bool {
+    let (installed, script_found, _, _) = hooks_readiness(app);
+    installed && script_found && hook_bridge::is_bridge_reachable()
+}
+
+pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapshot {
+    roll_over_token_usage_if_needed(state);
     let requests = state.requests.lock().expect("state mutex poisoned");
     let last_seen = state.session_last_seen.lock().expect("state mutex poisoned");
     let retention = *state.session_retention_secs.lock().expect("state mutex poisoned");
@@ -250,7 +267,53 @@ fn get_snapshot(state: State<'_, AppState>) -> IslandSnapshot {
         .lock()
         .expect("state mutex poisoned");
     let pinned = state.pinned_sessions.lock().expect("state mutex poisoned");
-    snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned)
+    let online = compute_listening_online(app);
+    snapshot_from(
+        &requests,
+        &last_seen,
+        retention,
+        &token_usage,
+        &known_sessions,
+        &pinned,
+        online,
+    )
+}
+
+fn sync_listening_online_snapshot(app: &AppHandle, state: &AppState) {
+    let online = compute_listening_online(app);
+    let should_emit = {
+        let mut last = state
+            .last_listening_online
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let changed = last.map(|previous| previous != online).unwrap_or(true);
+        if changed {
+            *last = Some(online);
+        }
+        changed
+    };
+    if should_emit {
+        let snapshot = build_snapshot(app, state);
+        let _ = app.emit("snapshot-changed", &snapshot);
+    }
+}
+
+fn hooks_readiness(app: &AppHandle) -> (bool, bool, String, String) {
+    let script_path = resolve_hook_script_path(app).unwrap_or_default();
+    let script_found = !script_path.is_empty() && std::path::Path::new(&script_path).exists();
+    let settings_path = claude_settings_path()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let installed = if settings_path.is_empty() || !std::path::Path::new(&settings_path).exists() {
+        false
+    } else {
+        std::fs::read_to_string(&settings_path)
+            .ok()
+            .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+            .map(|settings| has_atoll_hooks(&settings))
+            .unwrap_or(false)
+    };
+    (installed, script_found, settings_path, script_path)
 }
 
 #[tauri::command]
@@ -292,18 +355,8 @@ fn resolve_permission_request(
 
     touch_session_last_seen(&state, &session_id);
     roll_over_token_usage_if_needed(&state);
-    let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
-    let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
-    let token_usage = state
-        .session_token_usage
-        .lock()
-        .map_err(|error| error.to_string())?;
-    let known_sessions = state
-        .known_sessions
-        .lock()
-        .map_err(|error| error.to_string())?;
-    let pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
-    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
+    drop(requests);
+    let snapshot = build_snapshot(&app, &state);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
     Ok(snapshot)
@@ -409,18 +462,8 @@ fn archive_request(
         request.archived = true;
     }
     roll_over_token_usage_if_needed(&state);
-    let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
-    let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
-    let token_usage = state
-        .session_token_usage
-        .lock()
-        .map_err(|error| error.to_string())?;
-    let known_sessions = state
-        .known_sessions
-        .lock()
-        .map_err(|error| error.to_string())?;
-    let pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
-    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
+    drop(requests);
+    let snapshot = build_snapshot(&app, &state);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
     Ok(snapshot)
@@ -742,18 +785,10 @@ fn archive_all_resolved(
         let mut known = state.known_sessions.lock().map_err(|error| error.to_string())?;
         known.retain(|session_id, _| pinned.contains(session_id));
     }
+    drop(requests);
+    drop(pinned);
     roll_over_token_usage_if_needed(&state);
-    let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
-    let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
-    let token_usage = state
-        .session_token_usage
-        .lock()
-        .map_err(|error| error.to_string())?;
-    let known_sessions = state
-        .known_sessions
-        .lock()
-        .map_err(|error| error.to_string())?;
-    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
+    let snapshot = build_snapshot(&app, &state);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
     Ok(snapshot)
@@ -765,36 +800,49 @@ fn archive_session(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<IslandSnapshot, String> {
-    let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
-    // Archive all requests for this session (regardless of status/time).
-    for request in requests.iter_mut() {
-        if request.session == session_id {
-            request.archived = true;
+    let removed_pending_ids: Vec<String> = {
+        let requests = state.requests.lock().map_err(|error| error.to_string())?;
+        requests
+            .iter()
+            .filter(|request| {
+                request.session == session_id && request.status == PermissionStatus::Pending
+            })
+            .map(|request| request.id.clone())
+            .collect()
+    };
+
+    for request_id in removed_pending_ids {
+        if let Ok(mut waiters) = state.hook_waiters.lock() {
+            if let Some(waiter) = waiters.remove(&request_id) {
+                let _ = waiter.send(DecisionWithNote {
+                    decision: Decision::Denied,
+                    note: "Session archived in Atoll.".into(),
+                });
+            }
         }
     }
-    // Also remove from known_sessions.
+
+    {
+        let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
+        // Remove session data outright so retention replay does not keep it visible.
+        requests.retain(|request| request.session != session_id);
+    }
     {
         let mut known = state.known_sessions.lock().map_err(|error| error.to_string())?;
         known.remove(&session_id);
     }
-    // Unpin if pinned.
     {
         let mut pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
         pinned.remove(&session_id);
     }
+    if let Ok(mut last_seen) = state.session_last_seen.lock() {
+        last_seen.remove(&session_id);
+    }
+    if let Ok(mut usage) = state.session_token_usage.lock() {
+        usage.remove(&session_id);
+    }
     roll_over_token_usage_if_needed(&state);
-    let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
-    let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
-    let token_usage = state
-        .session_token_usage
-        .lock()
-        .map_err(|error| error.to_string())?;
-    let known_sessions = state
-        .known_sessions
-        .lock()
-        .map_err(|error| error.to_string())?;
-    let pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
-    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
+    let snapshot = build_snapshot(&app, &state);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
     Ok(snapshot)
@@ -815,20 +863,7 @@ fn pin_session(
             pinned_set.remove(&session_id);
         }
     }
-    let requests = state.requests.lock().map_err(|error| error.to_string())?;
-    roll_over_token_usage_if_needed(&state);
-    let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
-    let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
-    let token_usage = state
-        .session_token_usage
-        .lock()
-        .map_err(|error| error.to_string())?;
-    let known_sessions = state
-        .known_sessions
-        .lock()
-        .map_err(|error| error.to_string())?;
-    let pinned_set = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
-    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned_set);
+    let snapshot = build_snapshot(&app, &state);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
     Ok(snapshot)
@@ -899,29 +934,12 @@ struct HookStatus {
 
 #[tauri::command]
 fn get_claude_hook_status(app: AppHandle) -> Result<HookStatus, String> {
-    let script_path = resolve_hook_script_path(&app);
-    let script_found = script_path
-        .as_ref()
-        .map(|p| std::path::Path::new(p).exists())
-        .unwrap_or(false);
-
-    let settings_path = claude_settings_path()
-        .ok_or_else(|| "Cannot determine home directory".to_string())?;
-
-    let installed = if settings_path.exists() {
-        let content = std::fs::read_to_string(&settings_path)
-            .map_err(|e| format!("Cannot read settings: {e}"))?;
-        let settings: Value = serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()));
-        has_atoll_hooks(&settings)
-    } else {
-        false
-    };
-
+    let (installed, script_found, settings_path, script_path) = hooks_readiness(&app);
     Ok(HookStatus {
         installed,
         script_found,
-        settings_path: settings_path.to_string_lossy().into(),
-        script_path: script_path.unwrap_or_default(),
+        settings_path,
+        script_path,
     })
 }
 
@@ -1036,6 +1054,14 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
     std::fs::write(&settings_path, formatted)
         .map_err(|e| format!("Cannot write settings: {e}"))?;
 
+    let state = app.state::<AppState>();
+    let snapshot = build_snapshot(&app, &state);
+    if let Ok(mut last) = state.last_listening_online.lock() {
+        *last = Some(snapshot.online);
+    }
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+
     Ok(HookStatus {
         installed: true,
         script_found: true,
@@ -1045,7 +1071,7 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
 }
 
 #[tauri::command]
-fn uninstall_claude_hooks() -> Result<HookStatus, String> {
+fn uninstall_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
     let settings_path = claude_settings_path()
         .ok_or_else(|| "Cannot determine home directory".to_string())?;
 
@@ -1071,6 +1097,14 @@ fn uninstall_claude_hooks() -> Result<HookStatus, String> {
         .map_err(|e| format!("Cannot serialize settings: {e}"))?;
     std::fs::write(&settings_path, formatted)
         .map_err(|e| format!("Cannot write settings: {e}"))?;
+
+    let state = app.state::<AppState>();
+    let snapshot = build_snapshot(&app, &state);
+    if let Ok(mut last) = state.last_listening_online.lock() {
+        *last = Some(snapshot.online);
+    }
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
 
     Ok(HookStatus {
         installed: false,
@@ -1355,6 +1389,7 @@ pub fn run() {
             known_sessions: Mutex::new(HashMap::new()),
             pinned_sessions: Mutex::new(HashSet::new()),
             previous_app_pid: Mutex::new(None),
+            last_listening_online: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -1519,23 +1554,14 @@ fn start_auto_archive_timer(app: AppHandle) {
             }
 
             if changed {
+                drop(requests);
                 roll_over_token_usage_if_needed(&state);
-                let last_seen = state.session_last_seen.lock().unwrap_or_else(|e| e.into_inner());
-                let retention = *state.session_retention_secs.lock().unwrap_or_else(|e| e.into_inner());
-                let token_usage = state
-                    .session_token_usage
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner());
-                let known_sessions = state
-                    .known_sessions
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner());
-                let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
+                let snapshot = build_snapshot(&app, &state);
                 let _ = app.emit("snapshot-changed", &snapshot);
             }
             changed
         };
-        let _ = changed;
+        sync_listening_online_snapshot(&app, &state);
     });
 }
 
@@ -1578,16 +1604,7 @@ fn start_token_refresh_timer(app: AppHandle) {
         }
 
         roll_over_token_usage_if_needed(&state);
-        let requests = state.requests.lock().unwrap_or_else(|e| e.into_inner());
-        let last_seen = state.session_last_seen.lock().unwrap_or_else(|e| e.into_inner());
-        let retention = *state.session_retention_secs.lock().unwrap_or_else(|e| e.into_inner());
-        let token_usage = state
-            .session_token_usage
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let known_sessions = state.known_sessions.lock().unwrap_or_else(|e| e.into_inner());
-        let pinned = state.pinned_sessions.lock().unwrap_or_else(|e| e.into_inner());
-        let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
+        let snapshot = build_snapshot(&app, &state);
         let _ = app.emit("snapshot-changed", &snapshot);
     });
 }
@@ -1989,11 +2006,9 @@ fn island_window_logical_size(
     };
     let min_notch_width = if notch.has_notch { notch.width } else { 0.0 };
     match mode {
-        // Dormant sits WITHIN the menu-bar band (no extra notch padding).
-        // On notched displays it spans the notch + padding so the logo is
-        // visible beside the camera housing. On non-notched displays apply
-        // the same formula with FALLBACK_NOTCH_WIDTH so the dormant pill
-        // has a comfortable width comparable to a notched screen.
+        // Dormant sits within the menu-bar band. On notched displays the pill
+        // spans the notch plus padding on each side; logo is left-aligned inside
+        // the pill so it stays in the left wing, not under the camera housing.
         IslandWindowMode::Dormant => {
             let reference_notch = if notch.has_notch {
                 notch.width
@@ -2620,6 +2635,7 @@ fn snapshot_from(
     session_token_usage: &HashMap<String, TokenUsage>,
     known_sessions: &HashMap<String, KnownSession>,
     pinned_sessions: &HashSet<String>,
+    online: bool,
 ) -> IslandSnapshot {
     let visible: Vec<&PermissionRequest> = requests
         .iter()
@@ -2758,7 +2774,7 @@ fn snapshot_from(
     }
 
     IslandSnapshot {
-        online: true,
+        online,
         pending_count,
         archived_count,
         active_request,
@@ -2895,6 +2911,52 @@ mod core_tests {
     use super::*;
 
     #[test]
+    fn archived_requests_still_appear_in_session_list_until_retention_expires() {
+        let requested_at = iso_timestamp_now();
+        let requests = vec![PermissionRequest {
+            id: "req-1".into(),
+            tool_use_id: None,
+            agent: AgentKind::Claude,
+            session: "session-a".into(),
+            command: "Bash: ls".into(),
+            detail: "List files".into(),
+            cwd: "/tmp/project".into(),
+            requested_at,
+            status: PermissionStatus::Approved,
+            archived: true,
+            supports_always: false,
+            transcript_path: None,
+        }];
+
+        let snapshot = snapshot_from(
+            &requests,
+            &HashMap::new(),
+            900,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashSet::new(),
+            true,
+        );
+
+        assert_eq!(snapshot.sessions.len(), 1);
+    }
+
+    #[test]
+    fn removed_session_requests_do_not_reappear_in_session_list() {
+        let snapshot = snapshot_from(
+            &[],
+            &HashMap::new(),
+            900,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashSet::new(),
+            true,
+        );
+
+        assert!(snapshot.sessions.is_empty());
+    }
+
+    #[test]
     fn expanded_window_is_560_by_320() {
         let size = island_window_logical_size(
             IslandWindowMode::Expanded,
@@ -2976,11 +3038,50 @@ mod core_tests {
         let wide = island_window_logical_size(IslandWindowMode::Compact, 300.0, notch, false);
         assert_eq!(wide.width, 300.0);
 
-        // Dormant is slightly wider than the notch (padding on each side)
-        // and has NO extra_top — it sits within the menu-bar band.
+        // Dormant is slightly wider than the notch (padding on each side).
         let dormant = island_window_logical_size(IslandWindowMode::Dormant, 132.0, notch, false);
         assert_eq!(dormant.width, 200.0 + 2.0 * DORMANT_NOTCH_PADDING);
         assert_eq!(dormant.height, DORMANT_WINDOW_HEIGHT);
+    }
+
+    #[test]
+    fn dormant_window_is_centered_on_notched_displays() {
+        let notch = NotchMetrics {
+            has_notch: true,
+            width: 200.0,
+            height: 38.0,
+            ..NotchMetrics::default()
+        };
+        let center_x = 756.0;
+        let dormant_width = 200.0 + 2.0 * DORMANT_NOTCH_PADDING;
+        let origin = compact_window_origin_x(
+            center_x,
+            dormant_width,
+            notch,
+            0.0,
+            IslandWindowMode::Dormant,
+        );
+        assert_eq!(origin, center_x - dormant_width / 2.0);
+    }
+
+    #[test]
+    fn compact_window_anchors_left_column_before_the_notch() {
+        let notch = NotchMetrics {
+            has_notch: true,
+            width: 200.0,
+            height: 38.0,
+            ..NotchMetrics::default()
+        };
+        let center_x = 756.0;
+        let left_pane = 58.0;
+        let origin = compact_window_origin_x(
+            center_x,
+            460.0,
+            notch,
+            left_pane,
+            IslandWindowMode::Compact,
+        );
+        assert_eq!(origin, center_x - notch.width / 2.0 - left_pane);
     }
 
     #[test]
@@ -2996,8 +3097,7 @@ mod core_tests {
         let wide = island_window_logical_size(IslandWindowMode::Compact, 250.0, no_notch, false);
         assert_eq!(wide.width, 250.0);
 
-        // Dormant: uses the same FALLBACK_NOTCH_WIDTH reference + padding,
-        // matching the visual footprint of a notched display.
+        // Dormant: uses the same FALLBACK_NOTCH_WIDTH reference + padding.
         let dormant = island_window_logical_size(IslandWindowMode::Dormant, 132.0, no_notch, false);
         assert_eq!(dormant.width, FALLBACK_NOTCH_WIDTH + 2.0 * DORMANT_NOTCH_PADDING);
         assert_eq!(dormant.height, DORMANT_WINDOW_HEIGHT);

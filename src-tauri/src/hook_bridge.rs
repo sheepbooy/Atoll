@@ -1,5 +1,5 @@
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -8,14 +8,23 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
-    iso_timestamp_now, refresh_session_token_usage, register_known_session,
-    roll_over_token_usage_if_needed, show_main_window_for_approval, snapshot_from,
-    touch_session_last_seen,
+    build_snapshot, iso_timestamp_now, refresh_session_token_usage, register_known_session,
+    roll_over_token_usage_if_needed, show_main_window_for_approval, touch_session_last_seen,
     AgentKind, AppState, Decision, DecisionWithNote, PermissionRequest, PermissionStatus,
 };
 
 const HOOK_BIND_ADDR: &str = "127.0.0.1:47777";
 const HOOK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+const BRIDGE_PROBE_TIMEOUT: Duration = Duration::from_millis(200);
+
+/// True when the local hook bridge accepts TCP connections on its bind address.
+pub(crate) fn is_bridge_reachable() -> bool {
+    HOOK_BIND_ADDR
+        .parse::<SocketAddr>()
+        .ok()
+        .and_then(|addr| TcpStream::connect_timeout(&addr, BRIDGE_PROBE_TIMEOUT).ok())
+        .is_some()
+}
 
 pub(crate) fn start_server(app: AppHandle) {
     thread::spawn(move || {
@@ -219,25 +228,16 @@ fn submit_claude_pre_tool_request(
         .unwrap_or(false);
 
     if is_auto_approved {
-        let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
-        let mut auto_request = request;
-        auto_request.status = PermissionStatus::Approved;
-        auto_request.detail = format!("{} Auto-approved.", auto_request.detail);
-        touch_session_last_seen(&state, &auto_request.session);
-        requests.insert(0, auto_request);
-        roll_over_token_usage_if_needed(&state);
-        let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
-        let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
-        let token_usage = state
-            .session_token_usage
-            .lock()
-            .map_err(|error| error.to_string())?;
-        let known_sessions = state
-            .known_sessions
-            .lock()
-            .map_err(|error| error.to_string())?;
-        let pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
-        let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
+        {
+            let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
+            let mut auto_request = request;
+            auto_request.status = PermissionStatus::Approved;
+            auto_request.detail = format!("{} Auto-approved.", auto_request.detail);
+            touch_session_last_seen(&state, &auto_request.session);
+            requests.insert(0, auto_request);
+            roll_over_token_usage_if_needed(&state);
+        }
+        let snapshot = build_snapshot(&app, &state);
         let _ = app.emit("snapshot-changed", &snapshot);
         return Ok(claude_hook_response(&hook_event_name, Decision::Approved, ""));
     }
@@ -257,21 +257,10 @@ fn submit_claude_pre_tool_request(
         touch_session_last_seen(&state, &request.session);
         requests.insert(0, request);
         roll_over_token_usage_if_needed(&state);
-        let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
-        let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
-        let token_usage = state
-            .session_token_usage
-            .lock()
-            .map_err(|error| error.to_string())?;
-        let known_sessions = state
-            .known_sessions
-            .lock()
-            .map_err(|error| error.to_string())?;
-        let pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
-        let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
-        app.emit("snapshot-changed", &snapshot)
-            .map_err(|error| error.to_string())?;
     }
+    let snapshot = build_snapshot(&app, &state);
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
 
     show_main_window_for_approval(&app);
 
@@ -336,23 +325,27 @@ fn mark_request_completed_externally(
     app: &AppHandle,
     request_id: &str,
 ) {
-    let Ok(mut requests) = state.requests.lock() else {
-        return;
-    };
+    let (resolved_session_id, resolved_transcript_path) = {
+        let Ok(mut requests) = state.requests.lock() else {
+            return;
+        };
 
-    let mut resolved_session_id: Option<String> = None;
-    let mut resolved_transcript_path: Option<String> = None;
-    if let Some(request) = requests.iter_mut().find(|r| r.id == request_id) {
-        if request.status == PermissionStatus::Pending {
-            request.status = PermissionStatus::Approved;
-            if !request.detail.contains("Resolved in Claude.") {
-                request.detail = format!("{} Resolved in Claude.", request.detail);
+        let mut resolved_session_id: Option<String> = None;
+        let mut resolved_transcript_path: Option<String> = None;
+        if let Some(request) = requests.iter_mut().find(|r| r.id == request_id) {
+            if request.status == PermissionStatus::Pending {
+                request.status = PermissionStatus::Approved;
+                if !request.detail.contains("Resolved in Claude.") {
+                    request.detail = format!("{} Resolved in Claude.", request.detail);
+                }
+                touch_session_last_seen(state, &request.session);
+                resolved_session_id = Some(request.session.clone());
+                resolved_transcript_path = request.transcript_path.clone();
             }
-            touch_session_last_seen(state, &request.session);
-            resolved_session_id = Some(request.session.clone());
-            resolved_transcript_path = request.transcript_path.clone();
         }
-    }
+        roll_over_token_usage_if_needed(state);
+        (resolved_session_id, resolved_transcript_path)
+    };
 
     if let Some(session_id) = resolved_session_id.as_deref() {
         if let Err(error) =
@@ -362,46 +355,26 @@ fn mark_request_completed_externally(
         }
     }
 
-    roll_over_token_usage_if_needed(state);
-    let last_seen = state.session_last_seen.lock().unwrap_or_else(|e| e.into_inner());
-    let retention = *state.session_retention_secs.lock().unwrap_or_else(|e| e.into_inner());
-    let token_usage = state
-        .session_token_usage
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let known_sessions = state
-        .known_sessions
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let pinned = state.pinned_sessions.lock().unwrap_or_else(|e| e.into_inner());
-    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
+    let snapshot = build_snapshot(app, state);
     let _ = app.emit("snapshot-changed", &snapshot);
 }
 
 fn mark_request_denied(state: &AppState, app: &AppHandle, request_id: &str, note: &str) {
-    let Ok(mut requests) = state.requests.lock() else {
-        return;
-    };
+    {
+        let Ok(mut requests) = state.requests.lock() else {
+            return;
+        };
 
-    if let Some(request) = requests.iter_mut().find(|request| request.id == request_id) {
-        request.status = PermissionStatus::Denied;
-        request.detail = format!("{} {note}", request.detail);
-        touch_session_last_seen(state, &request.session);
+        if let Some(request) = requests.iter_mut().find(|request| request.id == request_id) {
+            request.status = PermissionStatus::Denied;
+            request.detail = format!("{} {note}", request.detail);
+            touch_session_last_seen(state, &request.session);
+        }
+
+        roll_over_token_usage_if_needed(state);
     }
 
-    roll_over_token_usage_if_needed(state);
-    let last_seen = state.session_last_seen.lock().unwrap_or_else(|e| e.into_inner());
-    let retention = *state.session_retention_secs.lock().unwrap_or_else(|e| e.into_inner());
-    let token_usage = state
-        .session_token_usage
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let known_sessions = state
-        .known_sessions
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let pinned = state.pinned_sessions.lock().unwrap_or_else(|e| e.into_inner());
-    let snapshot = snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned);
+    let snapshot = build_snapshot(app, state);
     let _ = app.emit("snapshot-changed", &snapshot);
 }
 
@@ -472,22 +445,8 @@ fn sync_claude_tool_completion(app: AppHandle, payload: Value) -> Result<(), Str
         }
     }
 
-    let snapshot = {
-        let requests = state.requests.lock().map_err(|error| error.to_string())?;
-        roll_over_token_usage_if_needed(&state);
-        let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
-        let retention = *state.session_retention_secs.lock().map_err(|error| error.to_string())?;
-        let token_usage = state
-            .session_token_usage
-            .lock()
-            .map_err(|error| error.to_string())?;
-        let known_sessions = state
-            .known_sessions
-            .lock()
-            .map_err(|error| error.to_string())?;
-        let pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
-        snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned)
-    };
+    roll_over_token_usage_if_needed(&state);
+    let snapshot = build_snapshot(&app, &state);
 
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
@@ -545,25 +504,8 @@ fn sync_claude_turn_completion(app: AppHandle, payload: Value) -> Result<(), Str
         }
     }
 
-    let snapshot = {
-        let requests = state.requests.lock().map_err(|error| error.to_string())?;
-        roll_over_token_usage_if_needed(&state);
-        let last_seen = state.session_last_seen.lock().map_err(|error| error.to_string())?;
-        let retention = *state
-            .session_retention_secs
-            .lock()
-            .map_err(|error| error.to_string())?;
-        let token_usage = state
-            .session_token_usage
-            .lock()
-            .map_err(|error| error.to_string())?;
-        let known_sessions = state
-            .known_sessions
-            .lock()
-            .map_err(|error| error.to_string())?;
-        let pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
-        snapshot_from(&requests, &last_seen, retention, &token_usage, &known_sessions, &pinned)
-    };
+    roll_over_token_usage_if_needed(&state);
+    let snapshot = build_snapshot(&app, &state);
 
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
