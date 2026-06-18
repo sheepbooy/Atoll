@@ -44,68 +44,24 @@ brew upgrade --cask --no-quarantine atoll
 
 ## Connecting Claude Code
 
-Atoll listens on `127.0.0.1:47777`. To forward Claude Code permission requests
-into Atoll, point Claude Code's hooks at the bundled shim script.
+Atoll listens on `127.0.0.1:47777` and ships with a one-click hook installer —
+**no manual editing of Claude Code settings is needed**.
 
-### 1. Get the hook shim
+1. Open Atoll and click the menu (tray / island menu).
+2. Click **Install hooks**.
 
-The shim is [`scripts/atoll-claude-hook.mjs`](scripts/atoll-claude-hook.mjs) in
-this repo. Download it somewhere stable, e.g.:
+Atoll writes the hook configuration into `~/.claude/settings.json` for you,
+pointing at the hook shim bundled inside the app (`node <app-bundle>/…/atoll-claude-hook.mjs`).
+It registers `PermissionRequest`, `PostToolUse`, `Stop`, and `SubagentStop`
+hooks so permission requests from any Claude Code working directory are
+forwarded into the floating island in real time.
 
-```bash
-mkdir -p ~/.atoll
-curl -fsSL https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/atoll-claude-hook.mjs \
-  -o ~/.atoll/atoll-claude-hook.mjs
-```
+To disconnect later, open the same menu and click **Uninstall hooks** — Atoll
+removes the hooks entry from `~/.claude/settings.json`.
 
-> If you cloned this repo, you can also point the hook command directly at your
-> local checkout path.
-
-### 2. Add the hooks to Claude Code
-
-For a **one-off** test session, launch Claude Code with temporary hooks:
-
-```bash
-claude --settings '{
-  "hooks": {
-    "PermissionRequest": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ~/.atoll/atoll-claude-hook.mjs",
-            "timeout": 1800
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ~/.atoll/atoll-claude-hook.mjs",
-            "timeout": 30
-          }
-        ]
-      }
-    ]
-  }
-}'
-```
-
-This does not persist anything into Claude Code settings. The hook forwards
-permission requests into Atoll, waits for approval or denial, and uses
-`PostToolUse` events to clear requests that were handled from Claude itself.
-
-For **global capture** from any Claude Code working directory, add the same
-`PermissionRequest` and `PostToolUse` hook command entries to
-`~/.claude/settings.json`.
-
-> Override the bridge URL with the `ATOLL_HOOK_URL` environment variable if you
-> ever change the port.
+> The hook bridge runs entirely locally; nothing leaves your machine. Override
+> the bridge URL with the `ATOLL_HOOK_URL` environment variable if you ever
+> change the port.
 
 ## Development
 
@@ -148,8 +104,8 @@ npm run tauri build
 - `src-tauri/src/lib.rs` — Rust core: tray menu, window geometry, request state.
 - `src-tauri/src/hook_bridge.rs` — the Claude Code hook bridge (local HTTP server
   on `127.0.0.1:47777`).
-- `scripts/atoll-claude-hook.mjs` — the Claude hook command shim users configure
-  in their Claude Code settings.
+- `scripts/atoll-claude-hook.mjs` — the Claude hook command shim, bundled into the
+  app and registered into `~/.claude/settings.json` by the one-click installer.
 
 Future agent adapters should publish events into the Rust core instead of
 coupling UI components directly to a specific CLI.
