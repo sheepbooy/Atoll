@@ -215,10 +215,16 @@ describe("App", () => {
   });
 
   it("does not reopen from a stale hover event after manual collapse", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const { container } = render(<App />);
-    const collapseButton = await screen.findByRole("button", { name: "Collapse Atoll" });
 
-    vi.useFakeTimers();
+    await waitFor(() => expect(emitIslandHover).not.toBeNull());
+    await waitFor(() =>
+      expect(container.querySelector(".is-expanded")).not.toBeNull(),
+    );
+    await vi.advanceTimersByTimeAsync(420);
+
+    const collapseButton = screen.getByRole("button", { name: "Collapse Atoll" });
     fireEvent.click(collapseButton);
     emitIslandHover?.({ hovering: true });
     await vi.advanceTimersByTimeAsync(420);
@@ -232,7 +238,7 @@ describe("App", () => {
     expect(container.querySelector(".is-compact")).not.toBeNull();
 
     emitIslandHover?.({ hovering: false });
-    emitIslandHover?.({ hovering: true });
+    fireEvent.pointerEnter(screen.getByLabelText("Atoll"));
     await vi.advanceTimersByTimeAsync(420);
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
       "expanded",

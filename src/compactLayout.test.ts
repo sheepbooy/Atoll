@@ -69,8 +69,8 @@ function assertLayoutInvariants(
 
 describe("compactLayout", () => {
   it("computes left width for visible session icons", () => {
-    expect(computeCompactLeftWidth(4, false)).toBe(10 + 4 * 22 + 3 * 4 + 8);
-    expect(computeCompactLeftWidth(4, true)).toBe(10 + 4 * 22 + 3 * 4 + 28 + 8);
+    expect(computeCompactLeftWidth(4, false)).toBe(34 + 10 + 4 * 24 + 3 * 4 + 8);
+    expect(computeCompactLeftWidth(4, true)).toBe(34 + 10 + 4 * 24 + 3 * 4 + 28 + 8);
   });
 
   it("allows more icons on notched displays by spilling to the right", () => {
@@ -86,7 +86,7 @@ describe("compactLayout", () => {
         rightIconCount: 0,
         overflowCount: 0,
       }),
-    ).toBe(10 + 8 + 4 * 22 + 3 * 4 + 6);
+    ).toBe(34 + 10 + 8 + 4 * 24 + 3 * 4 + 6);
   });
 
   it("keeps all icons on the left when the bar is wide enough", () => {
@@ -195,7 +195,7 @@ describe("compactLayout session counts (icon limit = 8, notch)", () => {
     );
   });
 
-  it("shows all 8 icons on the left when sessions = 8", () => {
+  it("fits 7 icons on the left when sessions = 8 (logo slot uses bar width)", () => {
     const layout = computeCompactHeaderLayout(
       NOTCH_14,
       8,
@@ -204,8 +204,8 @@ describe("compactLayout session counts (icon limit = 8, notch)", () => {
       0,
     );
 
-    expect(layout.leftIconCount).toBe(8);
-    expect(layout.rightIconCount).toBe(0);
+    expect(layout.leftIconCount).toBe(7);
+    expect(layout.rightIconCount).toBe(1);
     expect(layout.overflowCount).toBe(0);
   });
 });

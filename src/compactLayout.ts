@@ -10,6 +10,8 @@ export const COMPACT_MAX_WINDOW_WIDTH = 560;
 
 export const COMPACT_ICON_SLOT = 24;
 export const COMPACT_ICON_GAP = 4;
+/** Global Atoll logo slot in the compact menu bar row. */
+export const COMPACT_ATOLL_LOGO_SLOT = 34;
 export const COMPACT_LISTENER_SLOT = 10;
 export const COMPACT_SIDE_MIN = 56;
 export const COMPACT_OVERFLOW_SLOT = 28;
@@ -62,6 +64,7 @@ export function computeCompactLeftPaneWidth(
   const overflowOnLeft =
     layout.overflowCount > 0 && layout.rightIconCount === 0;
   return (
+    COMPACT_ATOLL_LOGO_SLOT +
     COMPACT_LISTENER_SLOT +
     COMPACT_OUTER_PADDING +
     iconRowWidth(layout.leftIconCount) +
@@ -107,7 +110,8 @@ export function computeCompactHeaderLayout(
   const contentBudget = COMPACT_MAX_WINDOW_WIDTH - notchWidth - outerGaps;
   const pendingExtra =
     pendingCount > 0 ? COMPACT_PENDING_BADGE_SLOT + COMPACT_METRICS_GAP : 0;
-  const leftBase = COMPACT_LISTENER_SLOT + COMPACT_OUTER_PADDING;
+  const leftBase =
+    COMPACT_ATOLL_LOGO_SLOT + COMPACT_LISTENER_SLOT + COMPACT_OUTER_PADDING;
   const rightColumnBase = COMPACT_OUTER_PADDING + pendingExtra;
 
   const paneBudgets = notchPaneBudgets(notchMetrics);
@@ -184,6 +188,7 @@ export function computeCompactLeftWidth(
   hasOverflow: boolean,
 ): number {
   return (
+    COMPACT_ATOLL_LOGO_SLOT +
     COMPACT_LISTENER_SLOT +
     iconRowWidth(shownIcons) +
     (hasOverflow ? COMPACT_OVERFLOW_SLOT : 0) +
@@ -251,6 +256,7 @@ export function computeCollapsedWindowWidth(
   const overflowOnRight = layout.overflowCount > 0 && layout.rightIconCount > 0;
 
   const leftWidth =
+    COMPACT_ATOLL_LOGO_SLOT +
     COMPACT_LISTENER_SLOT +
     COMPACT_OUTER_PADDING +
     iconRowWidth(layout.leftIconCount) +

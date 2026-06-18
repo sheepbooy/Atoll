@@ -150,9 +150,7 @@ export async function archiveSession(sessionId: string): Promise<IslandSnapshot>
     return invoke<IslandSnapshot>("archive_session", { sessionId });
   }
 
-  localRequests = localRequests.map((request) =>
-    request.session === sessionId ? { ...request, archived: true } : request,
-  );
+  localRequests = localRequests.filter((request) => request.session !== sessionId);
   return getSnapshot();
 }
 

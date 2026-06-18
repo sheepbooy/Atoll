@@ -32,7 +32,8 @@ import {
   PresentationPhase,
 } from "./islandPresentation";
 import { ClawdMascot, type ClawdMood } from "./ClawdMascot";
-import { AtollLogo } from "./AtollLogo";
+import { AtollLogo, type AtollActivity } from "./AtollLogo";
+import { deriveAppLogoState, deriveAtollActivity } from "./logoStates";
 import {
   ABSOLUTE_MAX_COMPACT_ICONS,
   COMPACT_NOTCH_INNER_GAP,
@@ -403,6 +404,18 @@ function applyWindowMetrics(notch: NotchMetrics) {
   root.classList.toggle("has-notch", notch.hasNotch);
 }
 
+function compactPresentationKey(
+  mode: "compact" | "dormant",
+  width: number,
+  leftWidth: number,
+): string {
+  return mode === "dormant" ? "dormant" : `compact:${width}:${leftWidth}`;
+}
+
+function expandedPresentationKey(idle: boolean): string {
+  return `expanded:${idle}`;
+}
+
 export function App() {
   const [snapshot, setSnapshot] = useState<IslandSnapshot>(initialSnapshot);
   const snapshotRef = useRef(initialSnapshot);
@@ -413,6 +426,7 @@ export function App() {
   const suppressHoverExpandRef = useRef(false);
   const transitionTimerRef = useRef<number | null>(null);
   const idleTimerRef = useRef<number | null>(null);
+  const lastNativePresentationKeyRef = useRef<string | null>(null);
   const [busyDecision, setBusyDecision] = useState<Decision | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -438,6 +452,24 @@ export function App() {
 
   const activeRequest = snapshot.activeRequest;
   const sessions = snapshot.sessions;
+  const atollActivity = useMemo(
+    () =>
+      deriveAtollActivity({
+        online: snapshot.online,
+        pendingCount: snapshot.pendingCount,
+        sessionCount: sessions.length,
+      }),
+    [snapshot.online, snapshot.pendingCount, sessions.length],
+  );
+  const appLogoState = useMemo(
+    () =>
+      deriveAppLogoState({
+        online: snapshot.online,
+        pendingCount: snapshot.pendingCount,
+        sessionCount: sessions.length,
+      }),
+    [snapshot.online, snapshot.pendingCount, sessions.length],
+  );
   const dailyTokens = snapshot.dailyTokens ?? ZERO_TOKEN_USAGE;
   const dailyTokenTotal = dailyTokens.inputTokens + dailyTokens.outputTokens;
   const maxCompactIconLimit = useMemo(
@@ -707,20 +739,6 @@ export function App() {
     setSessionRequests([]);
   }, [panelView, sessions]);
 
-  useEffect(() => {
-    if (phase !== "compact") return;
-    if (collapsedMode === "dormant") {
-      setIslandPresentation("dormant").catch(() => undefined);
-    } else {
-      setIslandPresentation(
-        "compact",
-        collapsedWindowWidth,
-        undefined,
-        compactLeftPaneWidth,
-      ).catch(() => undefined);
-    }
-  }, [phase, collapsedWindowWidth, compactLeftPaneWidth, collapsedMode]);
-
   async function resolveActive(
     request: PermissionRequest | null,
     decision: Decision,
@@ -810,11 +828,15 @@ export function App() {
     clearTransitionWork();
     setPresentationPhase(next);
 
+    const idleExpanded =
+      snapshotRef.current.pendingCount === 0 &&
+      snapshotRef.current.sessions.length === 0;
+    lastNativePresentationKeyRef.current = expandedPresentationKey(idleExpanded);
+
     const nativeTransition = setIslandPresentation(
       "expanded",
       undefined,
-      snapshotRef.current.pendingCount === 0 &&
-        snapshotRef.current.sessions.length === 0,
+      idleExpanded,
     );
     transitionTimerRef.current = window.setTimeout(async () => {
       transitionTimerRef.current = null;
@@ -834,6 +856,18 @@ export function App() {
   function collapseIsland(releaseFocus = false) {
     clearIdleTimer();
     setMenuOpen(false);
+
+    const next = beginCollapse(phaseRef.current);
+    if (next === phaseRef.current) {
+      if (releaseFocus) {
+        focusedRef.current = false;
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+      }
+      return;
+    }
+
     if (releaseFocus) {
       suppressHoverExpandRef.current = true;
       focusedRef.current = false;
@@ -841,12 +875,15 @@ export function App() {
         document.activeElement.blur();
       }
     }
-
-    const next = beginCollapse(phaseRef.current);
-    if (next === phaseRef.current) return;
     clearTransitionWork();
     setPresentationPhase(next);
     setPanelView({ kind: "home" });
+
+    lastNativePresentationKeyRef.current = compactPresentationKey(
+      collapsedModeRef.current,
+      collapsedWindowWidth,
+      compactLeftPaneWidth,
+    );
 
     const nativeTransition =
       collapsedModeRef.current === "dormant"
@@ -868,6 +905,8 @@ export function App() {
         }
       } catch {
         setPresentationPhase("expanded");
+      } finally {
+        suppressHoverExpandRef.current = false;
       }
     }, COLLAPSE_ANIMATION_MS);
   }
@@ -957,6 +996,8 @@ export function App() {
     try {
       const status = await installClaudeHooks();
       setHookStatus(status);
+      const nextSnapshot = await getSnapshot().catch(() => null);
+      if (nextSnapshot) applySnapshot(nextSnapshot);
       if (status.installed) {
         collapseIsland(true);
       }
@@ -973,6 +1014,8 @@ export function App() {
     try {
       const status = await uninstallClaudeHooks();
       setHookStatus(status);
+      const nextSnapshot = await getSnapshot().catch(() => null);
+      if (nextSnapshot) applySnapshot(nextSnapshot);
     } catch {
       // keep previous status
     } finally {
@@ -1047,17 +1090,56 @@ export function App() {
     sessions.length === 0 &&
     snapshot.pendingCount === 0;
   const isSubview = isExpanded && panelView.kind !== "home";
+  const menuBarLogoSize = isExpanded ? 36 : 34;
   const subviewSession =
     panelView.kind === "session"
       ? sessions.find((session) => session.sessionId === panelView.sessionId)
       : undefined;
 
+  // Keep the native window in sync when compact/expanded layout inputs change.
+  // collapseIsland / expandIsland pre-mark the matching key so we do not replay
+  // the same native animation right after a user-driven transition finishes.
   useEffect(() => {
-    if (phase !== "expanded") return;
-    setIslandPresentation("expanded", undefined, isIdleExpanded).catch(
-      () => undefined,
-    );
-  }, [phase, isIdleExpanded]);
+    if (phase === "opening" || phase === "closing") {
+      return;
+    }
+
+    if (phase === "compact") {
+      const key = compactPresentationKey(
+        collapsedMode,
+        collapsedWindowWidth,
+        compactLeftPaneWidth,
+      );
+      if (lastNativePresentationKeyRef.current === key) return;
+      lastNativePresentationKeyRef.current = key;
+      if (collapsedMode === "dormant") {
+        setIslandPresentation("dormant").catch(() => undefined);
+      } else {
+        setIslandPresentation(
+          "compact",
+          collapsedWindowWidth,
+          undefined,
+          compactLeftPaneWidth,
+        ).catch(() => undefined);
+      }
+      return;
+    }
+
+    if (phase === "expanded") {
+      const key = expandedPresentationKey(isIdleExpanded);
+      if (lastNativePresentationKeyRef.current === key) return;
+      lastNativePresentationKeyRef.current = key;
+      setIslandPresentation("expanded", undefined, isIdleExpanded).catch(
+        () => undefined,
+      );
+    }
+  }, [
+    phase,
+    collapsedWindowWidth,
+    compactLeftPaneWidth,
+    collapsedMode,
+    isIdleExpanded,
+  ]);
 
   function renderPanel() {
     if (panelView.kind === "session") {
@@ -1139,24 +1221,6 @@ export function App() {
         onFocusCapture={handleIslandFocus}
         onBlurCapture={handleIslandBlur}
       >
-        {collapsedMode === "dormant" || isExpanded ? (
-          <span
-            className={`atoll-indicator ${snapshot.online ? "is-online" : "is-offline"}`}
-            title={snapshot.online ? "Listening" : "Offline"}
-          >
-            <span
-              className={`atoll-indicator-mark ${snapshot.online ? "is-online" : "is-offline"}`}
-            >
-              <AtollLogo
-                size={panelView.kind === "session" ? 28 : 26}
-                activity={snapshot.online ? "idle" : "napping"}
-                idleIntervalSec={idleIntervalSec * 60}
-                idleDurationSec={idleDurationSec * 60}
-              />
-            </span>
-          </span>
-        ) : null}
-
         <header
           className="island-header"
           onMouseDown={startWindowDrag}
@@ -1165,6 +1229,19 @@ export function App() {
           <div
             className={`header-main ${showPanelAgentTabs ? "has-agent-tabs" : ""}${isSubview ? " has-subview-nav" : ""}`}
           >
+            <span
+              className={`atoll-indicator is-app-${appLogoState} ${snapshot.online ? "is-online" : "is-offline"}`}
+              title={snapshot.online ? "Listening" : "Offline"}
+            >
+              <span className="atoll-indicator-inner">
+                <AtollLogo
+                  size={menuBarLogoSize}
+                  activity={atollActivity}
+                  idleIntervalSec={idleIntervalSec * 60}
+                  idleDurationSec={idleDurationSec * 60}
+                />
+              </span>
+            </span>
             {collapsedMode !== "dormant" && !isExpanded ? (
               <>
                 <span
@@ -1174,11 +1251,8 @@ export function App() {
                 <CompactSessionStack
                   sessions={compactLeftSessions}
                   overflowCount={compactLeftOverflow}
-                  online={snapshot.online}
                   activeRequest={activeRequest}
                   justResolved={justResolved}
-                  idleIntervalSec={idleIntervalSec}
-                  idleDurationSec={idleDurationSec}
                 />
               </>
             ) : panelView.kind === "session" ? (
@@ -1213,11 +1287,8 @@ export function App() {
                   placement="right"
                   sessions={compactRightSessions}
                   overflowCount={compactRightOverflow}
-                  online={snapshot.online}
                   activeRequest={activeRequest}
                   justResolved={justResolved}
-                  idleIntervalSec={idleIntervalSec}
-                  idleDurationSec={idleDurationSec}
                 />
               ) : null}
               <TokenCounter
@@ -1343,34 +1414,19 @@ interface CompactSessionStackProps {
   sessions: SessionSummary[];
   overflowCount?: number;
   placement?: "left" | "right";
-  online: boolean;
   activeRequest: PermissionRequest | null;
   justResolved: boolean;
-  idleIntervalSec: number;
-  idleDurationSec: number;
 }
 
 function CompactSessionStack({
   sessions,
   overflowCount = 0,
   placement = "left",
-  online,
   activeRequest,
   justResolved,
-  idleIntervalSec,
-  idleDurationSec,
 }: CompactSessionStackProps) {
   if (sessions.length === 0 && overflowCount === 0) {
-    if (placement === "right") return null;
-    return (
-      <span className="compact-session-stack is-empty" aria-hidden="true">
-        <span
-          className={`compact-empty-logo ${online ? "is-online" : "is-offline"}`}
-        >
-          <AtollLogo size={32} activity={online ? "idle" : "napping"} idleIntervalSec={idleIntervalSec * 60} idleDurationSec={idleDurationSec * 60} />
-        </span>
-      </span>
-    );
+    return null;
   }
 
   return (

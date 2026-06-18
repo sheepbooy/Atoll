@@ -356,7 +356,6 @@ kbd {
 }
 
 .is-expanded:not(.is-subview) .header-main {
-  padding-left: 44px;
   padding-right: var(--header-token-inset);
   min-width: 0;
   overflow: hidden;
@@ -417,6 +416,7 @@ kbd {
   min-width: 0;
   gap: 8px;
   align-items: center;
+  height: var(--compact-height);
 }
 
 /* ─── Dormant pill (no active sessions) ────────────────────────── */
@@ -441,6 +441,8 @@ kbd {
 .is-dormant .header-main {
   width: 100%;
   height: 100%;
+  justify-content: flex-start;
+  padding-left: 7px;
 }
 
 .is-dormant .header-actions,
@@ -454,94 +456,137 @@ kbd {
   display: none;
 }
 
-/* Atoll logo indicator — pinned to the physical menu-bar band at the top of
-   the window. Expanded tabs/actions live in the same band via .island-header. */
+/* Atoll logo — inline in header row, aligned with session mascots. */
 .atoll-indicator {
-  position: absolute;
-  z-index: 5;
-  left: 4px;
-  top: calc(var(--compact-height) / 2);
   display: inline-flex;
+  flex: 0 0 auto;
+  width: 34px;
+  height: var(--compact-height);
   align-items: center;
   justify-content: center;
   line-height: 0;
-  transform: translateY(calc(-50% + 3px)) scale(1);
-  filter: drop-shadow(0 0 3px rgba(56, 189, 248, 0.35));
-  transition:
-    top var(--duration-expand) var(--ease-window),
-    left var(--duration-expand) var(--ease-window),
-    transform var(--duration-expand) var(--ease-window),
-    opacity 200ms ease,
-    filter 300ms ease;
+  align-self: center;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.38));
+  transition: opacity 200ms ease, filter 300ms ease;
 }
 
-.atoll-indicator-mark {
+.atoll-indicator-inner {
   display: inline-flex;
   line-height: 0;
 }
 
-.atoll-indicator-mark.is-online {
-  animation: atoll-breathe 3.2s ease-in-out infinite;
+/* 折叠态：上移 + 裁切，避免腿/道具探出岛底；idle 浮沉改为向上 */
+.is-compact:not(.is-dormant) .atoll-indicator {
+  height: 30px;
+  margin-top: -2px;
+  overflow: hidden;
 }
 
-.atoll-indicator.is-offline {
-  opacity: 0.5;
-  filter: grayscale(0.8) brightness(0.85);
+.is-compact:not(.is-dormant) .atoll-indicator-inner {
+  transform: translateY(-5px);
 }
 
-.is-dormant .atoll-indicator {
-  opacity: 0.9;
+/* 空闲 pose：与 preview 一致，裁切框内露出双眼（保持 overflow:hidden，避免 hit area 溢出） */
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) {
+  height: 32px;
+  margin-top: 0;
+  overflow: hidden;
 }
 
-.is-dormant .atoll-indicator-mark.is-online {
-  animation: none;
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) .atoll-indicator-inner {
+  transform: translateY(-3px);
+}
+
+.is-dormant .atoll-indicator:has(.atoll-logo.is-idle) .atoll-indicator-inner {
+  transform: translateY(-2px);
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle.is-phase-loop,
+.is-dormant .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle.is-phase-loop {
+  animation: atoll-idle-float-menu-open 2.2s ease-in-out infinite;
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle.is-phase-enter,
+.is-dormant .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle.is-phase-enter {
+  animation: atoll-from-idle-rest-menu-open 0.88s ease-out both;
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle.is-phase-exit,
+.is-dormant .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle.is-phase-exit {
+  animation: atoll-to-idle-rest-menu-open 0.68s ease-in both;
+}
+
+@keyframes atoll-idle-float-menu-open {
+  0%, 100% { transform: translate3d(0, -2%, 0); }
+  50%      { transform: translate3d(0, -8%, 0); }
+}
+
+@keyframes atoll-from-idle-rest-menu-open {
+  from { transform: translateY(2%); }
+  to   { transform: translateY(-2%); }
+}
+
+@keyframes atoll-to-idle-rest-menu-open {
+  from { transform: translateY(-2%); }
+  to   { transform: translateY(2%); }
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator .atoll-logo.is-idle.is-phase-loop {
+  animation: atoll-idle-float-menu 2.2s ease-in-out infinite;
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator .atoll-logo.is-idle.is-phase-enter {
+  animation: atoll-from-idle-rest-menu 0.88s ease-out both;
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator .atoll-logo.is-idle.is-phase-exit {
+  animation: atoll-to-idle-rest-menu 0.68s ease-in both;
+}
+
+@keyframes atoll-idle-float-menu {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(0, -6%, 0); }
+}
+
+@keyframes atoll-from-idle-rest-menu {
+  from { transform: translateY(4%); }
+  to   { transform: translateY(0); }
+}
+
+@keyframes atoll-to-idle-rest-menu {
+  from { transform: translateY(0); }
+  to   { transform: translateY(4%); }
 }
 
 .is-expanded .atoll-indicator,
 .is-opening .atoll-indicator {
-  top: calc(var(--compact-height) / 2);
-  left: 14px;
-  transform: translateY(calc(-50% + 3px)) scale(1.08);
+  width: 38px;
 }
 
-.is-expanded .atoll-indicator-mark.is-online,
-.is-opening .atoll-indicator-mark.is-online {
-  animation: atoll-breathe 3.2s ease-in-out infinite;
+.is-expanded .atoll-indicator-inner,
+.is-opening .atoll-indicator-inner {
+  transform: translateY(-1px) scale(1.02);
+  transform-origin: center bottom;
 }
 
-/* Session subview: logo + nav buttons share one optical center in the menu bar. */
-.is-session-subview .atoll-indicator {
-  top: calc(var(--compact-height) / 2);
-  left: 12px;
-  transform: translateY(-50%);
+.atoll-indicator .atoll-logo-svg {
+  shape-rendering: auto;
 }
 
-.is-expanded.is-session-subview .header-main.has-subview-nav {
-  padding-left: 46px;
+.atoll-indicator.is-offline {
+  opacity: 0.72;
+  filter: grayscale(0.35) brightness(0.92)
+    drop-shadow(0 1px 2px rgba(0, 0, 0, 0.32));
 }
 
-.is-session-subview .session-detail-nav {
-  height: 100%;
-  align-items: center;
-}
-
-.is-session-subview .session-detail-nav .back-button,
-.is-session-subview .session-detail-nav .open-terminal-button {
-  height: 28px;
-  padding: 0 10px;
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 1;
-}
-
-.is-session-subview .session-detail-nav .open-terminal-button {
-  gap: 5px;
-  padding-right: 12px;
+.is-dormant .atoll-indicator {
+  opacity: 0.95;
 }
 
 .island.is-dormant:hover .atoll-indicator {
   opacity: 1;
-  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.55));
+  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.45))
+    drop-shadow(0 1px 2px rgba(0, 0, 0, 0.38));
 }
 
 .is-expanded .header-main {
@@ -617,8 +662,7 @@ kbd {
   transition: gap var(--duration-expand) var(--ease-window);
 }
 
-/* Folded content left-aligned in the capsule so mascots line up
-   naturally from left to right beside the listener dot. */
+/* Folded: logo + listener + session mascots share one flex row. */
 .is-compact:not(.is-dormant) .header-main,
 .is-closing:not(.is-dormant) .header-main {
   width: auto;
@@ -626,11 +670,14 @@ kbd {
   flex: 0 1 auto;
   justify-content: flex-start;
   overflow: visible;
+  gap: 6px;
 }
 
 .is-compact:not(.is-dormant) .island-header {
   grid-template-columns: auto auto;
   justify-content: space-between;
+  align-items: center;
+  padding: 1px 8px 2px;
 }
 
 .compact-session-stack--right {
@@ -872,101 +919,401 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 
-/* ─── Atoll Logo Mascot ───────────────────────────────────────── */
+/* ─── Atoll Logo Mascot (enter → loop → exit) ─────────────────── */
 
-/* -- body movement -- */
-
-@keyframes atoll-float {
-  0%   { transform: translateY(8%) rotate(-2deg); }
-  25%  { transform: translateY(-10%) rotate(3deg); }
-  50%  { transform: translateY(6%) rotate(-1deg); }
-  75%  { transform: translateY(-8%) rotate(2deg); }
-  100% { transform: translateY(8%) rotate(-2deg); }
+/* shared transition keyframes */
+@keyframes atoll-idle-float-pos {
+  0%, 100% { transform: translate3d(0, 6%, 0); }
+  12%      { transform: translate3d(0, 4%, 0); }
+  25%      { transform: translate3d(0, 1%, 0); }
+  37%      { transform: translate3d(0, -3%, 0); }
+  50%      { transform: translate3d(0, -6%, 0); }
+  62%      { transform: translate3d(0, -4%, 0); }
+  75%      { transform: translate3d(0, 0, 0); }
+  87%      { transform: translate3d(0, 3%, 0); }
 }
 
-@keyframes atoll-typing-nod {
-  0%   { transform: translateY(0) rotate(0deg); }
-  8%   { transform: translateY(-10%) rotate(-5deg); }
-  16%  { transform: translateY(6%) rotate(3deg); }
-  24%  { transform: translateY(-8%) rotate(-4deg); }
-  32%  { transform: translateY(4%) rotate(2deg); }
-  40%  { transform: translateY(-6%) rotate(-3deg); }
-  48%  { transform: translateY(2%) rotate(1deg); }
-  56%  { transform: translateY(0) rotate(0deg); }
-  72%  { transform: translateY(0) rotate(0deg); }
-  80%  { transform: translateY(-12%) rotate(-6deg); }
-  88%  { transform: translateY(6%) rotate(3deg); }
-  100% { transform: translateY(0) rotate(0deg); }
+@keyframes atoll-to-idle-rest {
+  from { transform: translateY(0); }
+  to   { transform: translateY(6%); }
 }
 
-@keyframes atoll-reading-sway {
-  0%   { transform: rotate(-5deg) translateX(-6%); }
-  20%  { transform: rotate(2deg) translateX(2%); }
-  35%  { transform: rotate(-3deg) translateX(-4%); }
-  50%  { transform: rotate(5deg) translateX(6%); }
-  65%  { transform: rotate(0deg) translateX(0%); }
-  80%  { transform: rotate(-4deg) translateX(-5%); }
-  100% { transform: rotate(-5deg) translateX(-6%); }
+@keyframes atoll-from-idle-rest {
+  from { transform: translateY(6%); }
+  to   { transform: translateY(0); }
 }
 
-@keyframes atoll-thinking-bob {
-  0%   { transform: translateY(8%) rotate(0deg); }
-  15%  { transform: translateY(-14%) rotate(4deg); }
-  30%  { transform: translateY(-10%) rotate(4deg); }
-  50%  { transform: translateY(4%) rotate(-3deg); }
-  65%  { transform: translateY(-12%) rotate(-3deg); }
-  80%  { transform: translateY(-8%) rotate(-3deg); }
-  100% { transform: translateY(8%) rotate(0deg); }
+@keyframes atoll-leg-grow {
+  from { transform: scaleY(0); opacity: 0; }
+  to   { transform: scaleY(1); opacity: 1; }
 }
 
-@keyframes atoll-coffee-breathe {
-  0%   { transform: scale(1) rotate(0deg) translateY(0); }
-  20%  { transform: scale(1.06) rotate(2deg) translateY(-8%); }
-  35%  { transform: scale(1.04) rotate(1deg) translateY(-6%); }
-  50%  { transform: scale(0.96) rotate(-1deg) translateY(4%); }
-  70%  { transform: scale(1) rotate(0deg) translateY(2%); }
-  100% { transform: scale(1) rotate(0deg) translateY(0); }
+@keyframes atoll-leg-shrink {
+  from { transform: scaleY(1); opacity: 1; }
+  to   { transform: scaleY(0); opacity: 0; }
 }
 
-@keyframes atoll-idea-pop {
-  0%   { transform: translateY(6%) scale(1) rotate(0deg); }
-  12%  { transform: translateY(-40%) scale(1.2) rotate(-6deg); }
-  24%  { transform: translateY(8%) scale(0.88) rotate(4deg); }
-  36%  { transform: translateY(-25%) scale(1.12) rotate(-3deg); }
-  48%  { transform: translateY(4%) scale(0.95) rotate(2deg); }
-  60%  { transform: translateY(-15%) scale(1.06) rotate(-2deg); }
-  75%  { transform: translateY(2%) scale(1) rotate(0deg); }
-  100% { transform: translateY(6%) scale(1) rotate(0deg); }
+@keyframes atoll-prop-rise {
+  from { transform: translateY(16px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
 }
 
-@keyframes atoll-slacking-shift {
-  0%   { transform: translateX(-6%) rotate(-4deg); }
-  15%  { transform: translateX(8%) rotate(5deg); }
-  25%  { transform: translateX(6%) rotate(3deg); }
-  40%  { transform: translateX(-8%) rotate(-5deg); }
-  55%  { transform: translateX(-4%) rotate(-2deg); }
-  65%  { transform: translateX(10%) rotate(6deg); }
-  80%  { transform: translateX(4%) rotate(2deg); }
-  100% { transform: translateX(-6%) rotate(-4deg); }
+@keyframes atoll-prop-sink {
+  from { transform: translateY(0); opacity: 1; }
+  to   { transform: translateY(14px); opacity: 0; }
 }
 
-@keyframes atoll-rock {
-  0%   { transform: translateY(4%) rotate(-7deg); }
-  25%  { transform: translateY(8%) rotate(5deg); }
-  50%  { transform: translateY(4%) rotate(7deg); }
-  75%  { transform: translateY(8%) rotate(-5deg); }
-  100% { transform: translateY(4%) rotate(-7deg); }
+@keyframes atoll-prop-pop {
+  from { transform: scale(0.55); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
 }
 
-/* -- prop animations -- */
-@keyframes atoll-code-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0.3; } }
-@keyframes atoll-steam-rise { 0% { opacity: 0; transform: translateY(20%); } 30% { opacity: 0.7; } 100% { opacity: 0; transform: translateY(-160%); } }
-@keyframes atoll-dot-pulse { 0%, 100% { opacity: 0.25; transform: scale(0.7); } 50% { opacity: 1; transform: scale(1.1); } }
-@keyframes atoll-bulb-flash { 0%, 100% { opacity: 1; filter: drop-shadow(0 0 4px rgba(255,230,80,0.8)); } 50% { opacity: 0.7; filter: drop-shadow(0 0 0 transparent); } }
-@keyframes atoll-ray-pulse { 0%, 100% { opacity: 0.3; transform: scaleX(0.6); } 50% { opacity: 1; transform: scaleX(1.2); } }
-@keyframes atoll-fish-swim { 0% { transform: translateX(0); } 100% { transform: translateX(-120%); } }
-@keyframes atoll-zzz-rise { 0% { opacity: 0; transform: translate(0, 20%); } 35% { opacity: 1; } 100% { opacity: 0; transform: translate(40%, -100%); } }
-@keyframes atoll-screen-glow { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+@keyframes atoll-prop-vanish {
+  from { transform: scale(1); opacity: 1; }
+  to   { transform: scale(0.65); opacity: 0; }
+}
+
+@keyframes atoll-prop-slide-right-in {
+  from { transform: translateX(-18px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes atoll-prop-slide-right-out {
+  from { transform: translateX(0); opacity: 1; }
+  to   { transform: translateX(-14px); opacity: 0; }
+}
+
+@keyframes atoll-prop-drop-in {
+  from { transform: translateY(-14px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes atoll-prop-lift-out {
+  from { transform: translateY(0); opacity: 1; }
+  to   { transform: translateY(-12px); opacity: 0; }
+}
+
+/* enter / exit body poses (0.88s / 0.68s 与 JS 状态机对齐) */
+@keyframes atoll-enter-coding-body {
+  from { transform: translateY(6%) rotate(0deg); }
+  55%  { transform: translateY(2%) rotate(5deg); }
+  to   { transform: translateY(0) rotate(0deg); }
+}
+
+@keyframes atoll-exit-coding-body {
+  from { transform: translateY(0) rotate(0deg); }
+  to   { transform: translateY(6%) rotate(0deg); }
+}
+
+@keyframes atoll-enter-reading-body {
+  from { transform: translateY(6%) rotate(0deg); }
+  to   { transform: translateY(2%) rotate(-4deg); }
+}
+
+@keyframes atoll-exit-reading-body {
+  from { transform: translateY(2%) rotate(-4deg); }
+  to   { transform: translateY(6%) rotate(0deg); }
+}
+
+@keyframes atoll-enter-thinking-body {
+  from { transform: translateY(6%) scale(1); }
+  40%  { transform: translateY(0) scale(1.03); }
+  to   { transform: translateY(0) rotate(0deg); }
+}
+
+@keyframes atoll-exit-thinking-body {
+  from { transform: translateY(0); }
+  to   { transform: translateY(6%); }
+}
+
+@keyframes atoll-enter-coffee-body {
+  from { transform: translateY(6%) rotate(0deg); }
+  to   { transform: translateY(0) rotate(-3deg); }
+}
+
+@keyframes atoll-exit-coffee-body {
+  from { transform: translateY(0) rotate(-3deg); }
+  to   { transform: translateY(6%) rotate(0deg); }
+}
+
+@keyframes atoll-enter-idea-body {
+  0%   { transform: translateY(6%); }
+  45%  { transform: translateY(-14%); }
+  70%  { transform: translateY(4%); }
+  100% { transform: translateY(0); }
+}
+
+@keyframes atoll-exit-idea-body {
+  from { transform: translateY(0); }
+  to   { transform: translateY(6%); }
+}
+
+@keyframes atoll-enter-slacking-body {
+  from { transform: translateY(6%) rotate(0deg); }
+  to   { transform: translateY(0) rotate(-5deg); }
+}
+
+@keyframes atoll-exit-slacking-body {
+  from { transform: translateY(0) rotate(-5deg); }
+  to   { transform: translateY(6%) rotate(0deg); }
+}
+
+@keyframes atoll-enter-nap-body {
+  from { transform: translateY(6%) rotate(0deg); }
+  to   { transform: translateY(0) rotate(-4deg); }
+}
+
+@keyframes atoll-exit-nap-body {
+  from { transform: translateY(0) rotate(-4deg); }
+  to   { transform: translateY(6%) rotate(0deg); }
+}
+
+/* loop keyframes — 高密度关键帧 + 隐形手 implied motion */
+
+@keyframes atoll-coding-body-type {
+  0%   { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+  8%   { transform: translate3d(0, 1px, 0) rotate(0.8deg) scale(0.995, 1.008); }
+  16%  { transform: translate3d(0, 0, 0) rotate(-0.5deg) scale(1.005, 0.992); }
+  24%  { transform: translate3d(0, 1px, 0) rotate(1deg) scale(0.998, 1.005); }
+  32%  { transform: translate3d(0, 0, 0) rotate(-0.8deg) scale(1.002, 0.998); }
+  40%  { transform: translate3d(0, 1px, 0) rotate(0.6deg) scale(0.996, 1.006); }
+  48%  { transform: translate3d(0, 0, 0) rotate(-1deg) scale(1.004, 0.994); }
+  56%  { transform: translate3d(0, 1px, 0) rotate(0.5deg) scale(0.997, 1.004); }
+  64%  { transform: translate3d(0, 0, 0) rotate(-0.6deg) scale(1.003, 0.997); }
+  72%  { transform: translate3d(0, 1px, 0) rotate(0.9deg) scale(0.995, 1.007); }
+  80%  { transform: translate3d(0, 0, 0) rotate(-0.4deg) scale(1.001, 0.999); }
+  88%  { transform: translate3d(0, 1px, 0) rotate(0.7deg) scale(0.998, 1.003); }
+  100% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+}
+
+@keyframes atoll-desk-shake {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  12%      { transform: translate3d(0.5px, 0, 0); }
+  25%      { transform: translate3d(-0.5px, 0.5px, 0); }
+  37%      { transform: translate3d(0.5px, 0, 0); }
+  50%      { transform: translate3d(-0.5px, -0.5px, 0); }
+  62%      { transform: translate3d(0.5px, 0, 0); }
+  75%      { transform: translate3d(-0.5px, 0.5px, 0); }
+  87%      { transform: translate3d(0.5px, 0, 0); }
+}
+
+@keyframes atoll-key-tap {
+  0%, 100% { transform: translateY(0); opacity: 1; }
+  50%      { transform: translateY(1.5px); opacity: 0.55; }
+}
+
+@keyframes atoll-cursor-move {
+  0%   { transform: translateX(0); opacity: 1; }
+  20%  { transform: translateX(4px); opacity: 1; }
+  40%  { transform: translateX(10px); opacity: 1; }
+  60%  { transform: translateX(6px); opacity: 0; }
+  80%  { transform: translateX(14px); opacity: 1; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes atoll-reading-cradle {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(-3deg); }
+  12%      { transform: translate3d(-1px, 1px, 0) rotate(-4deg); }
+  25%      { transform: translate3d(0, 2px, 0) rotate(-2.5deg); }
+  37%      { transform: translate3d(1px, 1px, 0) rotate(-3.5deg); }
+  50%      { transform: translate3d(0, 0, 0) rotate(-2deg); }
+  62%      { transform: translate3d(-1px, 1px, 0) rotate(-3.8deg); }
+  75%      { transform: translate3d(0, 2px, 0) rotate(-2.8deg); }
+  87%      { transform: translate3d(1px, 0, 0) rotate(-3.2deg); }
+}
+
+@keyframes atoll-book-hold-breathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%      { transform: translateY(-1px) scale(1.02, 0.98); }
+}
+
+@keyframes atoll-book-page-turn-l {
+  0%, 100% { transform: rotate(0deg); transform-origin: right center; }
+  25%      { transform: rotate(-6deg); }
+  50%      { transform: rotate(-2deg); }
+  75%      { transform: rotate(-8deg); }
+}
+
+@keyframes atoll-book-page-turn-r {
+  0%, 100% { transform: rotate(0deg); transform-origin: left center; }
+  25%      { transform: rotate(5deg); }
+  50%      { transform: rotate(2deg); }
+  75%      { transform: rotate(7deg); }
+}
+
+@keyframes atoll-thumb-pulse {
+  0%, 100% { transform: scaleY(1); opacity: 0.85; }
+  50%      { transform: scaleY(0.75); opacity: 1; }
+}
+
+@keyframes atoll-book-line-scan {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 1; }
+}
+
+@keyframes atoll-think-chin-tap {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(-2deg); }
+  15%      { transform: translate3d(0, 2px, 0) rotate(1deg); }
+  30%      { transform: translate3d(-1px, 0, 0) rotate(-4deg); }
+  45%      { transform: translate3d(0, 1px, 0) rotate(2deg); }
+  60%      { transform: translate3d(1px, 0, 0) rotate(-3deg); }
+  75%      { transform: translate3d(0, 2px, 0) rotate(1deg); }
+  90%      { transform: translate3d(-1px, 0, 0) rotate(-2deg); }
+}
+
+@keyframes atoll-bubble-bob {
+  0%, 100% { transform: translateY(0) scale(1); }
+  33%      { transform: translateY(-3px) scale(1.04); }
+  66%      { transform: translateY(1px) scale(0.98); }
+}
+
+@keyframes atoll-coffee-sip-body {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(-2deg); }
+  18%      { transform: translate3d(-2px, -1px, 0) rotate(-5deg); }
+  36%      { transform: translate3d(-3px, -2px, 0) rotate(-7deg); }
+  54%      { transform: translate3d(-2px, -1px, 0) rotate(-5deg); }
+  72%      { transform: translate3d(-1px, 0, 0) rotate(-3deg); }
+  90%      { transform: translate3d(0, 0, 0) rotate(-2deg); }
+}
+
+@keyframes atoll-mug-to-mouth {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  18%      { transform: translate3d(-4px, -6px, 0) rotate(-12deg); }
+  36%      { transform: translate3d(-6px, -12px, 0) rotate(-18deg); }
+  54%      { transform: translate3d(-5px, -10px, 0) rotate(-15deg); }
+  72%      { transform: translate3d(-3px, -5px, 0) rotate(-8deg); }
+  90%      { transform: translate3d(-1px, -2px, 0) rotate(-3deg); }
+}
+
+@keyframes atoll-grip-squeeze {
+  0%, 100% { transform: scaleY(1); opacity: 0.7; }
+  36%, 54% { transform: scaleY(0.65); opacity: 1; }
+}
+
+@keyframes atoll-idea-excite {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  12%      { transform: translate3d(0, -10%, 0) scale(1.04, 0.96); }
+  24%      { transform: translate3d(0, 2%, 0) scale(0.97, 1.03); }
+  36%      { transform: translate3d(0, -6%, 0) scale(1.03, 0.97); }
+  48%      { transform: translate3d(0, 1%, 0) scale(0.99, 1.01); }
+  60%      { transform: translate3d(0, -4%, 0) scale(1.02, 0.98); }
+  72%      { transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes atoll-bulb-flash-fast {
+  0%, 100% { filter: drop-shadow(0 0 6px rgba(255, 230, 80, 0.9)); transform: scale(1); }
+  25%      { filter: drop-shadow(0 0 2px rgba(255, 230, 80, 0.4)); transform: scale(0.98); }
+  50%      { filter: drop-shadow(0 0 8px rgba(255, 230, 80, 1)); transform: scale(1.03); }
+  75%      { filter: drop-shadow(0 0 3px rgba(255, 230, 80, 0.5)); transform: scale(0.99); }
+}
+
+@keyframes atoll-slacking-phone-lift {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  15%      { transform: translate3d(2px, -8px, 0) rotate(-8deg); }
+  30%      { transform: translate3d(4px, -18px, 0) rotate(-14deg); }
+  45%      { transform: translate3d(5px, -24px, 0) rotate(-16deg); }
+  60%      { transform: translate3d(4px, -20px, 0) rotate(-12deg); }
+  75%      { transform: translate3d(2px, -10px, 0) rotate(-6deg); }
+  90%      { transform: translate3d(0, -2px, 0) rotate(-2deg); }
+}
+
+@keyframes atoll-slacking-slouch {
+  0%, 100% { transform: translate3d(-1%, 0, 0) rotate(-4deg); }
+  20%      { transform: translate3d(1%, 1px, 0) rotate(-2deg); }
+  40%      { transform: translate3d(2%, 0, 0) rotate(-6deg); }
+  60%      { transform: translate3d(0, 1px, 0) rotate(-3deg); }
+  80%      { transform: translate3d(-2%, 0, 0) rotate(-5deg); }
+}
+
+@keyframes atoll-shades-glint {
+  0%, 100% { opacity: 1; }
+  45%      { opacity: 0.75; }
+  50%      { opacity: 1; }
+  55%      { opacity: 0.8; }
+}
+
+@keyframes atoll-nap-breathe {
+  0%, 100% { transform: rotate(-3deg) scale(1); }
+  25%      { transform: rotate(-2deg) scale(1.01, 0.98); }
+  50%      { transform: rotate(-4deg) scale(0.99, 1.01); }
+  75%      { transform: rotate(-2.5deg) scale(1.005, 0.995); }
+}
+
+@keyframes atoll-leg-step {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+
+@keyframes atoll-leg-shift-l {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  50%      { transform: translateX(-2px) rotate(-6deg); }
+}
+
+@keyframes atoll-leg-shift-r {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  50%      { transform: translateX(2px) rotate(6deg); }
+}
+
+@keyframes atoll-code-blink {
+  0%, 40%   { opacity: 1; }
+  50%, 100% { opacity: 0.3; }
+}
+
+@keyframes atoll-code-tag-pulse {
+  0%, 100% { opacity: 0.85; }
+  50%      { opacity: 1; }
+}
+
+@keyframes atoll-screen-glow {
+  0%, 100% { opacity: 0.78; }
+  33%      { opacity: 1; }
+  66%      { opacity: 0.88; }
+}
+
+@keyframes atoll-think-show-q {
+  0%, 46%  { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@keyframes atoll-think-show-dots {
+  0%, 46%  { opacity: 0; }
+  50%, 94% { opacity: 1; }
+  100%     { opacity: 0; }
+}
+
+@keyframes atoll-dot-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.75); }
+  50%      { opacity: 1; transform: scale(1.15); }
+}
+
+@keyframes atoll-steam-rise {
+  0%   { opacity: 0; transform: translate3d(0, 20%, 0); }
+  25%  { opacity: 0.85; }
+  100% { opacity: 0; transform: translate3d(0, -130%, 0); }
+}
+
+@keyframes atoll-ray-pulse {
+  0%, 100% { opacity: 0.3; transform: scaleX(0.7); }
+  50%      { opacity: 1; transform: scaleX(1.15); }
+}
+
+@keyframes atoll-phone-scroll {
+  0%, 100% { transform: translateY(0); opacity: 0.85; }
+  25%      { transform: translateY(-1px); opacity: 1; }
+  50%      { transform: translateY(-2px); opacity: 0.9; }
+  75%      { transform: translateY(-1px); opacity: 1; }
+}
+
+@keyframes atoll-cap-pom-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-12%); }
+}
+
+@keyframes atoll-zzz-rise {
+  0%   { opacity: 0; transform: translate3d(0, 15%, 0); }
+  30%  { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(30%, -85%, 0); }
+}
 
 .atoll-logo {
   display: inline-flex;
@@ -974,63 +1321,196 @@ kbd {
   justify-content: center;
   line-height: 0;
   will-change: transform;
+  transform-origin: center bottom;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .atoll-logo-svg { overflow: visible; }
 
+.atoll-body-group,
+.atoll-limb,
+.atoll-prop,
 .atoll-steam,
 .atoll-z,
 .atoll-ray,
-.atoll-fish {
+.atoll-book-page,
+.atoll-book-line,
+.atoll-book-thumb,
+.atoll-code-tag,
+.atoll-code-line,
+.atoll-cursor,
+.atoll-key,
+.atoll-phone-scroll,
+.atoll-phone-grip,
+.atoll-coffee-grip,
+.atoll-mug-group,
+.atoll-cap-pom,
+.atoll-sunglasses {
   transform-box: fill-box;
-  transform-origin: center;
+  backface-visibility: hidden;
 }
 
-/* -- body state animations -- */
-.atoll-logo.is-idle { animation: atoll-float 3.6s ease-in-out infinite; }
-.atoll-logo.is-coding { animation: atoll-typing-nod 1.6s ease-in-out infinite; }
-.atoll-logo.is-reading { animation: atoll-reading-sway 4s ease-in-out infinite; }
-.atoll-logo.is-thinking { animation: atoll-thinking-bob 4.8s ease-in-out infinite; }
-.atoll-logo.is-coffee { animation: atoll-coffee-breathe 5s ease-in-out infinite; }
-.atoll-logo.is-idea { animation: atoll-idea-pop 1.2s ease-in-out infinite; }
-.atoll-logo.is-slacking { animation: atoll-slacking-shift 3s ease-in-out infinite; }
-.atoll-logo.is-napping { animation: atoll-rock 4.4s ease-in-out infinite; }
+.atoll-body-group { transform-origin: center 82%; }
+.atoll-leg-left  { transform-origin: top center; }
+.atoll-leg-right { transform-origin: top center; }
 
-/* -- coding: blinking code lines staggered -- */
-.atoll-code-line { animation: atoll-code-blink 1.2s step-end infinite; }
-.atoll-code-0 { animation-delay: 0s; }
-.atoll-code-1 { animation-delay: 0.3s; }
-.atoll-code-2 { animation-delay: 0.6s; }
-.atoll-code-3 { animation-delay: 0.9s; }
+/* ── idle ── */
+.atoll-logo.is-idle.is-phase-loop { animation: atoll-idle-float-pos 2.2s ease-in-out infinite; }
+.atoll-logo.is-idle.is-phase-enter { animation: atoll-from-idle-rest 0.88s ease-out both; }
+.atoll-logo.is-idle.is-phase-exit  { animation: atoll-to-idle-rest 0.68s ease-in both; }
 
-/* -- coffee: rising steam -- */
-.atoll-steam { opacity: 0; }
-.atoll-steam-0 { animation: atoll-steam-rise 1.8s ease-out infinite; }
-.atoll-steam-1 { animation: atoll-steam-rise 1.8s ease-out infinite 0.6s; }
-.atoll-steam-2 { animation: atoll-steam-rise 1.8s ease-out infinite 1.2s; }
+/* ── coding: 隐形手打字 ── */
+.atoll-logo.is-coding.is-phase-enter { animation: atoll-enter-coding-body 0.88s cubic-bezier(0.34, 1.1, 0.64, 1) both; }
+.atoll-logo.is-coding.is-phase-exit  { animation: atoll-exit-coding-body 0.68s ease-in both; }
+.atoll-logo.is-coding.is-phase-loop  { animation: atoll-desk-shake 0.48s linear infinite; }
 
-/* -- thinking: pulsing dots -- */
-.atoll-dot { opacity: 0.25; }
-.atoll-dot-0 { animation: atoll-dot-pulse 1.6s ease-in-out infinite; }
-.atoll-dot-1 { animation: atoll-dot-pulse 1.6s ease-in-out infinite 0.4s; }
-.atoll-dot-2 { animation: atoll-dot-pulse 1.6s ease-in-out infinite 0.8s; }
+.atoll-logo.is-coding.is-phase-enter .atoll-leg-left  { animation: atoll-leg-grow 0.42s cubic-bezier(0.34, 1.2, 0.64, 1) 0.12s both; }
+.atoll-logo.is-coding.is-phase-enter .atoll-leg-right { animation: atoll-leg-grow 0.42s cubic-bezier(0.34, 1.2, 0.64, 1) 0.2s both; }
+.atoll-logo.is-coding.is-phase-exit .atoll-leg-left,
+.atoll-logo.is-coding.is-phase-exit .atoll-leg-right { animation: atoll-leg-shrink 0.38s ease-in both; }
+.atoll-logo.is-coding.is-phase-enter .atoll-desk { animation: atoll-prop-rise 0.55s ease-out 0.18s both; }
+.atoll-logo.is-coding.is-phase-exit  .atoll-desk { animation: atoll-prop-sink 0.48s ease-in both; }
 
-/* -- idea: flashing bulb and rays -- */
-.atoll-bulb { animation: atoll-bulb-flash 0.8s ease-in-out infinite; }
-.atoll-ray { opacity: 0.3; }
-.atoll-ray-0 { animation: atoll-ray-pulse 0.8s ease-in-out infinite; }
-.atoll-ray-1 { animation: atoll-ray-pulse 0.8s ease-in-out infinite 0.25s; }
-.atoll-ray-2 { animation: atoll-ray-pulse 0.8s ease-in-out infinite 0.5s; }
+.atoll-logo.is-coding.is-phase-loop .atoll-body-group { animation: atoll-coding-body-type 0.96s linear infinite; }
+.atoll-logo.is-coding.is-phase-loop .atoll-leg-left  { animation: atoll-leg-step 0.48s linear infinite; }
+.atoll-logo.is-coding.is-phase-loop .atoll-leg-right { animation: atoll-leg-step 0.48s linear infinite 0.12s; }
+.atoll-logo.is-coding.is-phase-loop .atoll-screen { animation: atoll-screen-glow 1.2s ease-in-out infinite; }
+.atoll-logo.is-coding.is-phase-loop .atoll-code-line { animation: atoll-code-blink 0.9s step-end infinite; }
+.atoll-logo.is-coding.is-phase-loop .atoll-code-0 { animation-delay: 0s; }
+.atoll-logo.is-coding.is-phase-loop .atoll-code-1 { animation-delay: 0.15s; }
+.atoll-logo.is-coding.is-phase-loop .atoll-code-2 { animation-delay: 0.3s; }
+.atoll-logo.is-coding.is-phase-loop .atoll-code-3 { animation-delay: 0.45s; }
+.atoll-logo.is-coding.is-phase-loop .atoll-code-tag { animation: atoll-code-tag-pulse 1.2s ease-in-out infinite; }
+.atoll-logo.is-coding.is-phase-loop .atoll-cursor { animation: atoll-cursor-move 1.44s steps(5) infinite; }
+.atoll-logo.is-coding.is-phase-loop .atoll-key-0 { animation: atoll-key-tap 0.48s linear infinite; }
+.atoll-logo.is-coding.is-phase-loop .atoll-key-1 { animation: atoll-key-tap 0.48s linear infinite 0.08s; }
+.atoll-logo.is-coding.is-phase-loop .atoll-key-2 { animation: atoll-key-tap 0.48s linear infinite 0.16s; }
+.atoll-logo.is-coding.is-phase-loop .atoll-key-3 { animation: atoll-key-tap 0.48s linear infinite 0.24s; }
+.atoll-logo.is-coding.is-phase-loop .atoll-key-4 { animation: atoll-key-tap 0.48s linear infinite 0.32s; }
 
-/* -- slacking: fish swimming across -- */
-.atoll-fish-0 { animation: atoll-fish-swim 3.5s linear infinite; }
-.atoll-fish-1 { animation: atoll-fish-swim 4.5s linear infinite 1.5s; }
+/* ── reading: 隐形手捧书 ── */
+.atoll-logo.is-reading.is-phase-enter { animation: atoll-enter-reading-body 0.88s ease-out both; }
+.atoll-logo.is-reading.is-phase-exit  { animation: atoll-exit-reading-body 0.68s ease-in both; }
+.atoll-logo.is-reading.is-phase-loop  { animation: atoll-reading-cradle 2.8s ease-in-out infinite; }
 
-/* -- napping: zzz -- */
-.atoll-z { opacity: 0; }
-.atoll-z-0 { animation: atoll-zzz-rise 2.2s ease-in-out infinite; }
-.atoll-z-1 { animation: atoll-zzz-rise 2.2s ease-in-out infinite 0.6s; }
-.atoll-z-2 { animation: atoll-zzz-rise 2.2s ease-in-out infinite 1.2s; }
+.atoll-logo.is-reading.is-phase-enter .atoll-leg-left  { animation: atoll-leg-grow 0.42s ease-out 0.1s both; }
+.atoll-logo.is-reading.is-phase-enter .atoll-leg-right { animation: atoll-leg-grow 0.42s ease-out 0.18s both; }
+.atoll-logo.is-reading.is-phase-exit .atoll-leg-left,
+.atoll-logo.is-reading.is-phase-exit .atoll-leg-right { animation: atoll-leg-shrink 0.38s ease-in both; }
+.atoll-logo.is-reading.is-phase-enter .atoll-book { animation: atoll-prop-rise 0.58s ease-out 0.25s both; }
+.atoll-logo.is-reading.is-phase-exit  .atoll-book { animation: atoll-prop-sink 0.48s ease-in both; }
+
+.atoll-logo.is-reading.is-phase-loop .atoll-body-group { animation: atoll-book-hold-breathe 2.4s ease-in-out infinite; }
+.atoll-logo.is-reading.is-phase-loop .atoll-leg-left  { animation: atoll-leg-shift-l 2.8s ease-in-out infinite; }
+.atoll-logo.is-reading.is-phase-loop .atoll-leg-right { animation: atoll-leg-shift-r 2.8s ease-in-out infinite; }
+.atoll-logo.is-reading.is-phase-loop .atoll-book-left  { animation: atoll-book-page-turn-l 3.2s ease-in-out infinite; }
+.atoll-logo.is-reading.is-phase-loop .atoll-book-right { animation: atoll-book-page-turn-r 3.2s ease-in-out infinite 0.2s; }
+.atoll-logo.is-reading.is-phase-loop .atoll-book-thumb,
+.atoll-logo.is-reading.is-phase-loop .atoll-book-thumb-r { animation: atoll-thumb-pulse 1.2s ease-in-out infinite; }
+.atoll-logo.is-reading.is-phase-loop .atoll-book-line-0 { animation: atoll-book-line-scan 2.4s ease-in-out infinite; }
+.atoll-logo.is-reading.is-phase-loop .atoll-book-line-1 { animation: atoll-book-line-scan 2.4s ease-in-out infinite 0.3s; }
+.atoll-logo.is-reading.is-phase-loop .atoll-book-line-2 { animation: atoll-book-line-scan 2.4s ease-in-out infinite 0.6s; }
+.atoll-logo.is-reading.is-phase-loop .atoll-book-line-3 { animation: atoll-book-line-scan 2.4s ease-in-out infinite 0.15s; }
+.atoll-logo.is-reading.is-phase-loop .atoll-book-line-4 { animation: atoll-book-line-scan 2.4s ease-in-out infinite 0.45s; }
+
+/* ── thinking: 隐形手托腮 ── */
+.atoll-logo.is-thinking.is-phase-enter { animation: atoll-enter-thinking-body 0.88s cubic-bezier(0.34, 1.1, 0.64, 1) both; }
+.atoll-logo.is-thinking.is-phase-exit  { animation: atoll-exit-thinking-body 0.68s ease-in both; }
+
+.atoll-logo.is-thinking.is-phase-enter .atoll-leg-left  { animation: atoll-leg-grow 0.42s ease-out 0.14s both; }
+.atoll-logo.is-thinking.is-phase-enter .atoll-leg-right { animation: atoll-leg-grow 0.42s ease-out 0.22s both; }
+.atoll-logo.is-thinking.is-phase-exit .atoll-leg-left,
+.atoll-logo.is-thinking.is-phase-exit .atoll-leg-right { animation: atoll-leg-shrink 0.38s ease-in both; }
+.atoll-logo.is-thinking.is-phase-enter .atoll-thought { animation: atoll-prop-pop 0.52s cubic-bezier(0.34, 1.2, 0.64, 1) 0.2s both; }
+.atoll-logo.is-thinking.is-phase-exit  .atoll-thought { animation: atoll-prop-vanish 0.45s ease-in both; }
+
+.atoll-logo.is-thinking.is-phase-loop .atoll-body-group { animation: atoll-think-chin-tap 2.4s ease-in-out infinite; }
+.atoll-logo.is-thinking.is-phase-loop .atoll-thought { animation: atoll-bubble-bob 1.8s ease-in-out infinite; }
+.atoll-logo.is-thinking.is-phase-loop .atoll-leg-left  { animation: atoll-leg-shift-r 2.4s ease-in-out infinite; }
+.atoll-logo.is-thinking.is-phase-loop .atoll-leg-right { animation: atoll-leg-shift-l 2.4s ease-in-out infinite; }
+.atoll-logo.is-thinking.is-phase-loop .atoll-think-q { animation: atoll-think-show-q 2s ease-in-out infinite; }
+.atoll-logo.is-thinking.is-phase-loop .atoll-think-dots { animation: atoll-think-show-dots 2s ease-in-out infinite; }
+.atoll-logo.is-thinking.is-phase-loop .atoll-dot-0 { animation: atoll-dot-pulse 1s ease-in-out infinite; }
+.atoll-logo.is-thinking.is-phase-loop .atoll-dot-1 { animation: atoll-dot-pulse 1s ease-in-out infinite 0.2s; }
+.atoll-logo.is-thinking.is-phase-loop .atoll-dot-2 { animation: atoll-dot-pulse 1s ease-in-out infinite 0.4s; }
+
+/* ── coffee: 隐形手举杯 ── */
+.atoll-logo.is-coffee.is-phase-enter { animation: atoll-enter-coffee-body 0.88s ease-out both; }
+.atoll-logo.is-coffee.is-phase-exit  { animation: atoll-exit-coffee-body 0.68s ease-in both; }
+
+.atoll-logo.is-coffee.is-phase-enter .atoll-leg-left  { animation: atoll-leg-grow 0.42s ease-out 0.1s both; }
+.atoll-logo.is-coffee.is-phase-enter .atoll-leg-right { animation: atoll-leg-grow 0.42s ease-out 0.18s both; }
+.atoll-logo.is-coffee.is-phase-exit .atoll-leg-left,
+.atoll-logo.is-coffee.is-phase-exit .atoll-leg-right { animation: atoll-leg-shrink 0.38s ease-in both; }
+.atoll-logo.is-coffee.is-phase-enter .atoll-coffee-stand { animation: atoll-prop-slide-right-in 0.58s ease-out 0.22s both; }
+.atoll-logo.is-coffee.is-phase-exit  .atoll-coffee-stand { animation: atoll-prop-slide-right-out 0.48s ease-in both; }
+
+.atoll-logo.is-coffee.is-phase-loop .atoll-body-group { animation: atoll-coffee-sip-body 3.6s ease-in-out infinite; }
+.atoll-logo.is-coffee.is-phase-loop .atoll-mug-group { animation: atoll-mug-to-mouth 3.6s ease-in-out infinite; transform-origin: left bottom; }
+.atoll-logo.is-coffee.is-phase-loop .atoll-coffee-grip { animation: atoll-grip-squeeze 3.6s ease-in-out infinite; transform-origin: center bottom; }
+.atoll-logo.is-coffee.is-phase-loop .atoll-leg-left { animation: atoll-leg-shift-l 3.6s ease-in-out infinite; }
+.atoll-logo.is-coffee.is-phase-loop .atoll-steam { opacity: 0; }
+.atoll-logo.is-coffee.is-phase-loop .atoll-steam-0 { animation: atoll-steam-rise 1.6s ease-out infinite; }
+.atoll-logo.is-coffee.is-phase-loop .atoll-steam-1 { animation: atoll-steam-rise 1.6s ease-out infinite 0.5s; }
+
+/* ── idea: 隐形手举顶 ── */
+.atoll-logo.is-idea.is-phase-enter { animation: atoll-enter-idea-body 0.88s cubic-bezier(0.34, 1.1, 0.64, 1) both; }
+.atoll-logo.is-idea.is-phase-exit  { animation: atoll-exit-idea-body 0.68s ease-in both; }
+
+.atoll-logo.is-idea.is-phase-enter .atoll-leg-left  { animation: atoll-leg-grow 0.42s ease-out 0.15s both; }
+.atoll-logo.is-idea.is-phase-enter .atoll-leg-right { animation: atoll-leg-grow 0.42s ease-out 0.22s both; }
+.atoll-logo.is-idea.is-phase-exit .atoll-leg-left,
+.atoll-logo.is-idea.is-phase-exit .atoll-leg-right { animation: atoll-leg-shrink 0.38s ease-in both; }
+.atoll-logo.is-idea.is-phase-enter .atoll-bulb { animation: atoll-prop-pop 0.58s cubic-bezier(0.34, 1.3, 0.64, 1) 0.16s both; }
+.atoll-logo.is-idea.is-phase-exit  .atoll-bulb { animation: atoll-prop-vanish 0.48s ease-in both; }
+
+.atoll-logo.is-idea.is-phase-loop .atoll-body-group { animation: atoll-idea-excite 1.8s cubic-bezier(0.34, 1.1, 0.64, 1) infinite; }
+.atoll-logo.is-idea.is-phase-loop .atoll-leg-left,
+.atoll-logo.is-idea.is-phase-loop .atoll-leg-right { animation: atoll-leg-step 0.6s linear infinite; }
+.atoll-logo.is-idea.is-phase-loop .atoll-bulb { animation: atoll-bulb-flash-fast 1.2s ease-in-out infinite; }
+.atoll-logo.is-idea.is-phase-loop .atoll-ray { opacity: 0.35; }
+.atoll-logo.is-idea.is-phase-loop .atoll-ray-0 { animation: atoll-ray-pulse 0.9s ease-in-out infinite; }
+.atoll-logo.is-idea.is-phase-loop .atoll-ray-1 { animation: atoll-ray-pulse 0.9s ease-in-out infinite 0.15s; }
+.atoll-logo.is-idea.is-phase-loop .atoll-ray-2 { animation: atoll-ray-pulse 0.9s ease-in-out infinite 0.3s; }
+
+/* ── slacking: 隐形手刷手机 ── */
+.atoll-logo.is-slacking.is-phase-enter { animation: atoll-enter-slacking-body 0.88s ease-out both; }
+.atoll-logo.is-slacking.is-phase-exit  { animation: atoll-exit-slacking-body 0.68s ease-in both; }
+
+.atoll-logo.is-slacking.is-phase-enter .atoll-leg-left  { animation: atoll-leg-grow 0.42s ease-out 0.12s both; }
+.atoll-logo.is-slacking.is-phase-enter .atoll-leg-right { animation: atoll-leg-grow 0.42s ease-out 0.2s both; }
+.atoll-logo.is-slacking.is-phase-exit .atoll-leg-left,
+.atoll-logo.is-slacking.is-phase-exit .atoll-leg-right { animation: atoll-leg-shrink 0.38s ease-in both; }
+.atoll-logo.is-slacking.is-phase-enter .atoll-sunglasses { animation: atoll-prop-drop-in 0.48s ease-out 0.12s both; }
+.atoll-logo.is-slacking.is-phase-enter .atoll-phone { animation: atoll-prop-rise 0.52s ease-out 0.28s both; }
+.atoll-logo.is-slacking.is-phase-exit  .atoll-sunglasses { animation: atoll-prop-lift-out 0.42s ease-in both; }
+.atoll-logo.is-slacking.is-phase-exit  .atoll-phone { animation: atoll-prop-sink 0.45s ease-in both; }
+
+.atoll-logo.is-slacking.is-phase-loop .atoll-body-group { animation: atoll-slacking-slouch 2.8s ease-in-out infinite; }
+.atoll-logo.is-slacking.is-phase-loop .atoll-phone { animation: atoll-slacking-phone-lift 2.8s ease-in-out infinite; transform-origin: center bottom; }
+.atoll-logo.is-slacking.is-phase-loop .atoll-phone-grip { animation: atoll-grip-squeeze 2.8s ease-in-out infinite; transform-origin: center; }
+.atoll-logo.is-slacking.is-phase-loop .atoll-leg-left  { animation: atoll-leg-shift-l 2.8s ease-in-out infinite; }
+.atoll-logo.is-slacking.is-phase-loop .atoll-leg-right { animation: atoll-leg-shift-r 2.8s ease-in-out infinite; }
+.atoll-logo.is-slacking.is-phase-loop .atoll-sunglasses { animation: atoll-shades-glint 2.8s ease-in-out infinite; }
+.atoll-logo.is-slacking.is-phase-loop .atoll-phone-scroll { animation: atoll-phone-scroll 0.72s linear infinite; }
+.atoll-logo.is-slacking.is-phase-loop .atoll-phone-scroll-2 { animation-delay: 0.18s; }
+
+/* ── napping ── */
+.atoll-logo.is-napping.is-phase-enter { animation: atoll-enter-nap-body 0.88s ease-out both; }
+.atoll-logo.is-napping.is-phase-exit  { animation: atoll-exit-nap-body 0.68s ease-in both; }
+
+.atoll-logo.is-napping.is-phase-enter .atoll-sleep-cap { animation: atoll-prop-drop-in 0.55s cubic-bezier(0.34, 1.1, 0.64, 1) 0.1s both; }
+.atoll-logo.is-napping.is-phase-exit  .atoll-sleep-cap { animation: atoll-prop-lift-out 0.48s ease-in both; }
+
+.atoll-logo.is-napping.is-phase-loop .atoll-body-group { animation: atoll-nap-breathe 3.6s ease-in-out infinite; }
+.atoll-logo.is-napping.is-phase-loop .atoll-cap-pom { animation: atoll-cap-pom-bob 2.4s ease-in-out infinite; }
+.atoll-logo.is-napping.is-phase-loop .atoll-z { opacity: 0; }
+.atoll-logo.is-napping.is-phase-loop .atoll-z-0 { animation: atoll-zzz-rise 2s ease-in-out infinite 0.2s; }
+.atoll-logo.is-napping.is-phase-loop .atoll-z-1 { animation: atoll-zzz-rise 2s ease-in-out infinite 0.55s; }
+.atoll-logo.is-napping.is-phase-loop .atoll-z-2 { animation: atoll-zzz-rise 2s ease-in-out infinite 0.9s; }
+.atoll-logo.is-napping.is-phase-enter .atoll-z,
+.atoll-logo.is-napping.is-phase-exit  .atoll-z { opacity: 0; animation: none; }
 
 /* ─── Clawd Mascot ────────────────────────────────────────────── */
 
@@ -2004,7 +2484,7 @@ kbd {
 .tauri-runtime.has-notch .is-compact:not(.is-dormant) .header-main {
   justify-content: flex-start;
   min-width: 0;
-  padding-left: 8px;
+  padding-left: 0;
   padding-right: var(--compact-notch-inner-gap, 4px);
   overflow: visible;
 }
@@ -2846,10 +3326,23 @@ kbd {
 .is-expanded .header-main.has-subview-nav {
   position: relative;
   height: var(--compact-height);
-  padding-left: 44px;
   padding-right: 4px;
   min-width: 0;
   overflow: hidden;
+}
+
+.is-session-subview .session-detail-nav {
+  height: 100%;
+  align-items: center;
+}
+
+.is-session-subview .session-detail-nav .back-button,
+.is-session-subview .session-detail-nav .open-terminal-button {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
 }
 
 .session-detail-nav .session-chat-title {
