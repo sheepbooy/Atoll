@@ -173,6 +173,10 @@ fn handle_connection(app: AppHandle, mut stream: TcpStream) {
 }
 
 fn route_request(app: AppHandle, request: HttpRequest, stream: &TcpStream) -> Result<Value, String> {
+    if let Some(response) = crate::capture::route_http(&app, &request.path) {
+        return Ok(response);
+    }
+
     if request.method != "POST" || request.path != "/claude/pre-tool-use" {
         return Err("Unsupported Atoll hook endpoint".into());
     }

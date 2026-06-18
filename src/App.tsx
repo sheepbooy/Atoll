@@ -45,6 +45,7 @@ import {
 } from "./compactLayout";
 import { TokenCounter } from "./TokenCounter";
 import { getDemoMode, isGifCaptureMode, shouldAutoExpandDemo } from "./demoSnapshot";
+import { toPng } from "html-to-image";
 
 import {
   getSnapshot,
@@ -54,6 +55,9 @@ import {
   TokenUsage,
   onIslandHoverChanged,
   onIslandOpenRequested,
+  onCaptureCollapseRequested,
+  onCaptureScreenshotRequested,
+  captureProvideScreenshot,
   onSnapshotChanged,
   PermissionRequest,
   SessionSummary,
@@ -565,6 +569,8 @@ export function App() {
     let unsubscribe: () => void = () => undefined;
     let unsubscribeHover: () => void = () => undefined;
     let unsubscribeOpen: () => void = () => undefined;
+    let unsubscribeCapture: () => void = () => undefined;
+    let unsubscribeScreenshot: () => void = () => undefined;
 
     getSnapshot()
       .then(applySnapshot)
@@ -607,11 +613,35 @@ export function App() {
     }).then((cleanup) => {
       unsubscribeOpen = cleanup;
     });
+    onCaptureCollapseRequested(() => {
+      collapseIsland(true);
+    }).then((cleanup) => {
+      unsubscribeCapture = cleanup;
+    });
+    onCaptureScreenshotRequested(async () => {
+      const stage = document.querySelector<HTMLElement>(".stage");
+      if (!stage) return;
+      try {
+        const dataUrl = await toPng(stage, {
+          pixelRatio: window.devicePixelRatio || 2,
+          backgroundColor: "#0a0b0d",
+          cacheBust: true,
+        });
+        const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+        await captureProvideScreenshot(base64);
+      } catch (error) {
+        console.error("[Atoll] capture screenshot failed", error);
+      }
+    }).then((cleanup) => {
+      unsubscribeScreenshot = cleanup;
+    });
 
     return () => {
       unsubscribe();
       unsubscribeHover();
       unsubscribeOpen();
+      unsubscribeCapture();
+      unsubscribeScreenshot();
       clearTransitionWork();
       clearIdleTimer();
     };

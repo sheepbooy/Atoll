@@ -12,6 +12,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::utils::config::Color;
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalSize, State};
 
+mod capture;
 mod hook_bridge;
 
 #[cfg(target_os = "macos")]
@@ -249,6 +250,9 @@ fn get_snapshot(app: AppHandle, state: State<'_, AppState>) -> IslandSnapshot {
 
 /// Hook 已写入 Claude 设置且脚本存在，并且本地 bridge 可连接 → 在线监听。
 pub(crate) fn compute_listening_online(app: &AppHandle) -> bool {
+    if capture::listening_online() {
+        return true;
+    }
     let (installed, script_found, _, _) = hooks_readiness(app);
     installed && script_found && hook_bridge::is_bridge_reachable()
 }
@@ -934,6 +938,18 @@ struct HookStatus {
 
 #[tauri::command]
 fn get_claude_hook_status(app: AppHandle) -> Result<HookStatus, String> {
+    if capture::force_hook_uninstalled() {
+        let script_path = resolve_hook_script_path(&app).unwrap_or_default();
+        return Ok(HookStatus {
+            installed: false,
+            script_found: !script_path.is_empty()
+                && std::path::Path::new(&script_path).exists(),
+            settings_path: claude_settings_path()
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            script_path,
+        });
+    }
     let (installed, script_found, settings_path, script_path) = hooks_readiness(&app);
     Ok(HookStatus {
         installed,
@@ -1411,7 +1427,8 @@ pub fn run() {
             open_in_terminal,
             open_url,
             quit_atoll,
-            deactivate_atoll
+            deactivate_atoll,
+            capture::capture_provide_screenshot
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -1422,6 +1439,11 @@ pub fn run() {
             start_island_hover_monitor(app.handle().clone());
             start_auto_archive_timer(app.handle().clone());
             start_token_refresh_timer(app.handle().clone());
+
+            if capture::enabled() {
+                let state = app.state::<AppState>();
+                capture::seed_approval_demo(app.handle(), &state);
+            }
 
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_shadow(false);

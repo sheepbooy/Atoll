@@ -105,11 +105,11 @@ Everything runs locally. The hook bridge binds to `127.0.0.1:47777` — nothing 
 ### Menu bar capsule → expanded approval
 
 <p align="center">
-  <img src="docs/assets/compact-bar.png" alt="Compact island in the macOS menu bar with session dots and pending badge" width="92%" />
+  <img src="docs/assets/compact-bar.png" alt="Atoll compact island in the macOS menu bar (real app capture)" width="92%" />
 </p>
 
 <p align="center">
-  <img src="docs/assets/approval.png" alt="Expanded approval panel showing a Bash command with Approve, Deny, and Always buttons" width="520" />
+  <img src="docs/assets/approval.png" alt="Expanded approval panel from the real Atoll app" width="560" />
 </p>
 
 <p align="center">
@@ -119,7 +119,7 @@ Everything runs locally. The hook bridge binds to `127.0.0.1:47777` — nothing 
 ### One-click hook setup
 
 <p align="center">
-  <img src="docs/assets/idle.png" alt="Idle panel prompting to install Claude hooks" width="520" />
+  <img src="docs/assets/idle.png" alt="Idle hook install panel from the real Atoll app" width="560" />
 </p>
 
 <p align="center">
@@ -256,17 +256,20 @@ Future agent adapters should publish events into the Rust core — not couple UI
 
 Run the UI in a browser with seeded demo data (for docs / screenshots):
 
+Regenerate README screenshots and demo GIF from the **real Tauri app** (macOS only):
+
+```bash
+npm run capture:media
+```
+
+The script starts `ATOLL_CAPTURE=1 npm run tauri dev`, captures the live WebView UI via `/capture/screenshot`, then exits.
+
+Browser preview mode (for quick UI checks only):
+
 ```
 http://127.0.0.1:1420/?demo=compact
 http://127.0.0.1:1420/?demo=approval
 http://127.0.0.1:1420/?demo=idle
-http://127.0.0.1:1420/?demo=gif
-```
-
-Regenerate the README demo GIF (requires `npm run dev` in another terminal):
-
-```bash
-npm run capture:gif
 ```
 
 Regenerate hero/logo PNGs from SVG sources:

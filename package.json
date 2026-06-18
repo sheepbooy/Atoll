@@ -9,12 +9,14 @@
     "preview": "vite preview",
     "test": "vitest run",
     "tauri": "tauri",
-    "capture:gif": "node scripts/capture-demo-gif.mjs",
+    "capture:gif": "node scripts/capture-app-media.mjs",
+    "capture:media": "node scripts/capture-app-media.mjs",
     "export:assets": "node scripts/export-readme-assets.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.0.0",
     "lucide-react": "0.468.0",
+    "html-to-image": "^1.11.13",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-markdown": "^10.1.0",

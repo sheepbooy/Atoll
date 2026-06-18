@@ -312,3 +312,27 @@ export async function onIslandOpenRequested(callback: () => void) {
 
   return listen<void>("island-open-requested", () => callback());
 }
+
+export async function onCaptureCollapseRequested(callback: () => void) {
+  if (!isTauriRuntime) {
+    return () => undefined;
+  }
+
+  return listen<void>("capture-collapse", () => callback());
+}
+
+export async function onCaptureScreenshotRequested(callback: () => void | Promise<void>) {
+  if (!isTauriRuntime) {
+    return () => undefined;
+  }
+
+  return listen<void>("capture-screenshot-requested", () => callback());
+}
+
+export async function captureProvideScreenshot(pngBase64: string) {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  await invoke("capture_provide_screenshot", { pngBase64 });
+}
