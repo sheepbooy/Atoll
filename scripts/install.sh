@@ -4,14 +4,15 @@
 #   curl -fsSL https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.sh | bash
 # Pin a version:
 #   ATOLL_VERSION=0.1.0 curl -fsSL ... | bash
-# Private repo (or higher API rate limits):
-#   GH_TOKEN=... ATOLL_VERSION=0.1.0 bash scripts/install.sh
+# Private repo:
+#   GH_TOKEN=... bash scripts/install.sh
 
 set -euo pipefail
 
 REPO="sheepbooy/Atoll"
 APP_NAME="Atoll.app"
 INSTALL_DIR="${ATOLL_INSTALL_DIR:-/Applications}"
+CURL_USER_AGENT="Atoll-Installer/1.0"
 TMP_DIR=""
 MOUNT_DIR=""
 
@@ -28,17 +29,25 @@ github_token() {
   printf '%s' "${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 }
 
-github_api() {
-  local path="$1"
-  local curl_args=(-fsSL -H "Accept: application/vnd.github+json")
-  local token
-  token="$(github_token)"
+curl_download() {
+  local url="$1"
+  local dest="$2"
+  local curl_args=(-fsSL -A "$CURL_USER_AGENT")
 
-  if [[ -n "$token" ]]; then
-    curl_args+=(-H "Authorization: Bearer ${token}")
+  if [[ -n "$(github_token)" ]]; then
+    curl_args+=(-H "Authorization: Bearer $(github_token)")
   fi
 
-  curl "${curl_args[@]}" "https://api.github.com${path}"
+  curl "${curl_args[@]}" -o "$dest" "$url"
+}
+
+release_download_base() {
+  local version="${1:-}"
+  if [[ -n "$version" ]]; then
+    printf 'https://github.com/%s/releases/download/v%s' "$REPO" "$version"
+  else
+    printf 'https://github.com/%s/releases/latest/download' "$REPO"
+  fi
 }
 
 release_asset_api_url() {
@@ -54,7 +63,10 @@ import urllib.request
 
 repo, version, asset = sys.argv[1:4]
 token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-headers = {"Accept": "application/vnd.github+json"}
+headers = {
+    "Accept": "application/vnd.github+json",
+    "User-Agent": "Atoll-Installer/1.0",
+}
 if token:
     headers["Authorization"] = f"Bearer {token}"
 
@@ -70,7 +82,7 @@ except urllib.error.HTTPError as error:
     if error.code in {403, 404} and not token:
         sys.stderr.write(
             "error: could not access GitHub release metadata. "
-            "If this repository is private, set GH_TOKEN or GITHUB_TOKEN.\n"
+            "Set GH_TOKEN for private repositories.\n"
         )
     raise SystemExit(1) from error
 
@@ -104,19 +116,11 @@ detect_arch() {
   esac
 }
 
-resolve_version() {
-  if [[ -n "${ATOLL_VERSION:-}" ]]; then
-    echo "${ATOLL_VERSION#v}"
-    return
+normalize_version() {
+  local version="${1:-}"
+  if [[ -n "$version" ]]; then
+    echo "${version#v}"
   fi
-
-  local tag
-  tag="$(
-    github_api "/repos/${REPO}/releases/latest" \
-      | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"].removeprefix("v"))'
-  )"
-  [[ -n "$tag" ]] || die "could not resolve latest release version"
-  echo "$tag"
 }
 
 resolve_dmg_name() {
@@ -134,22 +138,53 @@ resolve_dmg_name() {
   esac
 }
 
-download_release_asset() {
+download_public_release_asset() {
+  local version="$1"
+  local asset="$2"
+  local dest="$3"
+  local base url
+  base="$(release_download_base "$version")"
+  url="${base}/${asset}"
+
+  curl_download "$url" "$dest"
+}
+
+download_private_release_asset() {
   local version="$1"
   local asset="$2"
   local dest="$3"
   local asset_api_url
-  local curl_args=(-fsSL -L -H "Accept: application/octet-stream")
+  local curl_args=(-fsSL -L -A "$CURL_USER_AGENT" -H "Accept: application/octet-stream")
   local token
+
+  [[ -n "$version" ]] || die "private repository installs require ATOLL_VERSION"
 
   asset_api_url="$(release_asset_api_url "$version" "$asset")"
   token="$(github_token)"
-  if [[ -n "$token" ]]; then
-    curl_args+=(-H "Authorization: Bearer ${token}")
+  curl_args+=(-H "Authorization: Bearer ${token}")
+
+  curl "${curl_args[@]}" -o "$dest" "$asset_api_url"
+}
+
+download_release_asset() {
+  local version="$1"
+  local asset="$2"
+  local dest="$3"
+  local label
+
+  if [[ -n "$version" ]]; then
+    label="v${version}"
+  else
+    label="latest"
   fi
 
-  info "Downloading ${asset} (v${version})..."
-  curl "${curl_args[@]}" -o "$dest" "$asset_api_url"
+  info "Downloading ${asset} (${label})..."
+
+  if [[ -n "$(github_token)" ]]; then
+    download_private_release_asset "$version" "$asset" "$dest"
+  else
+    download_public_release_asset "$version" "$asset" "$dest"
+  fi
 }
 
 verify_checksum() {
@@ -157,21 +192,17 @@ verify_checksum() {
   local dmg_name="$2"
   local dmg_path="$3"
   local checksum_name="${dmg_name}.sha256"
-  local checksum_api_url expected actual
-  local curl_args=(-fsSL -L -H "Accept: application/octet-stream")
-  local token
+  local checksum_path expected actual
 
-  if ! checksum_api_url="$(release_asset_api_url "$version" "$checksum_name" 2>/dev/null)"; then
+  checksum_path="$(mktemp "${TMPDIR:-/tmp}/atoll-checksum.XXXXXX")"
+  if ! download_release_asset "$version" "$checksum_name" "$checksum_path" 2>/dev/null; then
+    rm -f "$checksum_path"
     info "No published sha256 file; skipping checksum verification."
     return 0
   fi
 
-  token="$(github_token)"
-  if [[ -n "$token" ]]; then
-    curl_args+=(-H "Authorization: Bearer ${token}")
-  fi
-
-  expected="$(curl "${curl_args[@]}" "$checksum_api_url")"
+  expected="$(tr -d '[:space:]' < "$checksum_path")"
+  rm -f "$checksum_path"
   actual="$(shasum -a 256 "$dmg_path" | awk '{print $1}')"
   if [[ "$expected" != "$actual" ]]; then
     die "checksum mismatch for ${dmg_name}"
@@ -250,7 +281,7 @@ main() {
 
   local arch version dmg_name dmg_path
   arch="$(detect_arch)"
-  version="$(resolve_version)"
+  version="$(normalize_version "${ATOLL_VERSION:-}")"
   dmg_name="$(resolve_dmg_name "$arch")"
 
   TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/atoll-install.XXXXXX")"
