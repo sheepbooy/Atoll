@@ -97,6 +97,42 @@
   -webkit-font-smoothing: antialiased;
 }
 
+html.readme-demo,
+html.readme-demo body,
+html.readme-demo #root {
+  background: #0a0b0d;
+}
+
+html.readme-demo .stage {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 48px;
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 0%, rgba(56, 189, 216, 0.12), transparent),
+    #0a0b0d;
+}
+
+html.readme-demo .stage::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  background: rgba(0, 0, 0, 0.55);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+  z-index: 0;
+}
+
+html.readme-demo .island {
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+}
+
 * {
   box-sizing: border-box;
 }

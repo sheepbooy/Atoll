@@ -44,6 +44,7 @@ import {
   MIN_MAX_COMPACT_ICONS,
 } from "./compactLayout";
 import { TokenCounter } from "./TokenCounter";
+import { getDemoMode, shouldAutoExpandDemo } from "./demoSnapshot";
 
 import {
   getSnapshot,
@@ -614,6 +615,15 @@ export function App() {
       clearTransitionWork();
       clearIdleTimer();
     };
+  }, []);
+
+  useEffect(() => {
+    const demoMode = getDemoMode();
+    if (!demoMode || !shouldAutoExpandDemo(demoMode)) return;
+    const timer = window.setTimeout(() => {
+      expandIsland();
+    }, 120);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {

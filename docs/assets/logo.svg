@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="-16 -36 96 108" role="img" aria-label="Atoll mascot">
+  <rect x="8" y="18" width="48" height="26" fill="#38BDD8"/>
+  <rect x="8" y="18" width="48" height="5" fill="#5FD8EC"/>
+  <rect x="20" y="44" width="6" height="12" fill="#2A8FA8"/>
+  <rect x="38" y="44" width="6" height="12" fill="#2A8FA8"/>
+  <rect x="18" y="24" width="11" height="11" rx="2" fill="#1a1a1a"/>
+  <rect x="35" y="24" width="11" height="11" rx="2" fill="#1a1a1a"/>
+</svg>

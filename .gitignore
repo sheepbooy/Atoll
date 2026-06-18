@@ -12,6 +12,7 @@ src-tauri/gen
 
 # Local-only (not shipped)
 docs/superpowers/
+docs/assets/.gif-frames/
 preview-logos.html
 src/preview-logos-main.tsx
 src/LogoConceptPreview.tsx

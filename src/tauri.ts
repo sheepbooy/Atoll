@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getDemoHookStatus, getDemoMode, getDemoSnapshot } from "./demoSnapshot";
 
 export type PermissionStatus = "pending" | "approved" | "denied";
 export type AgentKind = "claude" | "codex" | "gemini" | "other";
@@ -65,6 +66,11 @@ let localRequests: PermissionRequest[] = [];
 export async function getSnapshot(): Promise<IslandSnapshot> {
   if (isTauriRuntime) {
     return invoke<IslandSnapshot>("get_snapshot");
+  }
+
+  const demoMode = getDemoMode();
+  if (demoMode) {
+    return getDemoSnapshot(demoMode);
   }
 
   return {
@@ -174,6 +180,11 @@ export async function getClaudeHookStatus(): Promise<HookStatus> {
     return invoke<HookStatus>("get_claude_hook_status");
   }
 
+  const demoMode = getDemoMode();
+  if (demoMode) {
+    return getDemoHookStatus(demoMode);
+  }
+
   return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
 }
 
@@ -238,6 +249,10 @@ export interface NotchMetrics {
 export async function getNotchMetrics(): Promise<NotchMetrics> {
   if (isTauriRuntime) {
     return invoke<NotchMetrics>("get_notch_metrics");
+  }
+
+  if (getDemoMode() === "compact") {
+    return { hasNotch: true, width: 180, height: 32, leftAreaWidth: 120, rightAreaWidth: 120 };
   }
 
   return { hasNotch: false, width: 0, height: 0 };
