@@ -75,6 +75,20 @@ const demoHookMissing: HookStatus = {
   scriptPath: "/Applications/Atoll.app/.../atoll-claude-hook.mjs",
 };
 
+const demoCodexHookInstalled: HookStatus = {
+  installed: true,
+  scriptFound: true,
+  settingsPath: "~/.codex/hooks.json",
+  scriptPath: "/Applications/Atoll.app/.../atoll-codex-hook.mjs",
+};
+
+const demoCodexHookMissing: HookStatus = {
+  installed: false,
+  scriptFound: true,
+  settingsPath: "~/.codex/hooks.json",
+  scriptPath: "/Applications/Atoll.app/.../atoll-codex-hook.mjs",
+};
+
 export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {
   const base: IslandSnapshot = {
     online: true,
@@ -118,6 +132,10 @@ export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {
 
 export function getDemoHookStatus(mode: DemoMode): HookStatus {
   return mode === "idle" ? demoHookMissing : demoHookInstalled;
+}
+
+export function getDemoCodexHookStatus(mode: DemoMode): HookStatus {
+  return mode === "idle" ? demoCodexHookMissing : demoCodexHookInstalled;
 }
 
 export function shouldAutoExpandDemo(mode: DemoMode): boolean {

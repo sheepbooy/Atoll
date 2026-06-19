@@ -24,6 +24,7 @@
   <a href="#-screenshots">Screenshots</a> ·
   <a href="#-todo">TODO</a> ·
   <a href="#-connect-claude-code">Claude Code</a> ·
+  <a href="#-connect-codex">Codex</a> ·
   <a href="#-development">Development</a>
 </p>
 
@@ -43,9 +44,9 @@
 - 有权限请求时自动展开，展示命令详情
 - 你点 **Approve / Deny / Always**，不用回到终端或 IDE
 
-目前专注 **macOS + Claude Code**，通过本地 Hook 桥接（`127.0.0.1:47777`），**数据不出本机**。
+目前专注 **macOS + Claude Code + Codex CLI**，通过本地 Hook 桥接（`127.0.0.1:47777`），**数据不出本机**。
 
-> **Status:** Early desktop shell — first release targets the floating island + Claude Code hook bridge.
+> **Status:** Early desktop shell — floating island + Claude Code and Codex CLI hook bridges.
 
 ---
 
@@ -137,24 +138,32 @@ Everything runs locally. The hook bridge binds to `127.0.0.1:47777` — nothing 
 ```mermaid
 flowchart LR
   CC["Claude Code"]
-  SH["atoll-claude-hook.mjs"]
+  CX["Codex CLI"]
+  SHC["atoll-claude-hook.mjs"]
+  SHX["atoll-codex-hook.mjs"]
   BR["Hook bridge\n127.0.0.1:47777"]
   UI["Floating island UI"]
 
-  CC -->|"PermissionRequest\nPostToolUse · Stop"| SH
-  SH --> BR
+  CC -->|"PermissionRequest\nPostToolUse · Stop"| SHC
+  CX -->|"PermissionRequest\nPostToolUse · Stop"| SHX
+  SHC --> BR
+  SHX --> BR
   BR --> UI
   UI -->|"approve / deny"| BR
-  BR --> SH
-  SH --> CC
+  BR --> SHC
+  BR --> SHX
+  SHC --> CC
+  SHX --> CX
 ```
 
 | Layer | Role |
 | --- | --- |
-| `scripts/atoll-claude-hook.mjs` | Hook shim bundled in the app; registered into `~/.claude/settings.json` |
+| `scripts/atoll-claude-hook.mjs` | Claude hook shim bundled in the app; registered into `~/.claude/settings.json` |
+| `scripts/atoll-codex-hook.mjs` | Codex hook shim bundled in the app; registered into `~/.codex/hooks.json` |
 | `src-tauri/src/hook_bridge.rs` | Local HTTP server — receives events, tracks sessions & tokens |
 | `src/` | React + TypeScript island UI (compact ↔ expanded transitions) |
 | `src-tauri/src/lib.rs` | Rust core — tray menu, window geometry, request state |
+| `src-tauri/src/transcript.rs` | Claude + Codex JSONL transcript and token parsing |
 
 ---
 
@@ -212,7 +221,7 @@ Atoll listens on **`127.0.0.1:47777`** and ships a **one-click hook installer**.
 | Step | Action |
 | --- | --- |
 | 1 | Open Atoll → click the tray / island menu |
-| 2 | Click **Install hooks** |
+| 2 | Open **⋯** → **Settings** → **Agent hooks** → **Install Claude Code** |
 
 Atoll writes into `~/.claude/settings.json`, pointing at the bundled hook shim:
 
@@ -222,9 +231,32 @@ node <app-bundle>/…/atoll-claude-hook.mjs
 
 Registered hooks: `PermissionRequest`, `PostToolUse`, `Stop`, `SubagentStop` — so requests from **any** Claude Code working directory reach the island in real time.
 
-To disconnect: same menu → **Uninstall hooks**.
+To disconnect: same menu → **Settings** → **Agent hooks** → **Uninstall** (or **Uninstall all**).
 
 > Override the bridge URL with `ATOLL_HOOK_URL` if you change the port.
+
+---
+
+## 🔌 Connect Codex
+
+Atoll uses the same local bridge (`127.0.0.1:47777`) with a Codex-specific shim.
+
+| Step | Action |
+| --- | --- |
+| 1 | Open Atoll → expand the island → **⋯** menu |
+| 2 | Open **⋯** → **Agent hooks** (or **Settings** → **Agent hooks**) |
+
+Atoll writes into `~/.codex/hooks.json`, pointing at the bundled hook shim:
+
+```
+node <app-bundle>/…/atoll-codex-hook.mjs
+```
+
+Registered hooks: `PermissionRequest`, `PostToolUse`, `Stop`, `SubagentStop`.
+
+**Important:** Codex requires you to **review and trust** non-managed hooks before they run. After installing, open Codex and run `/hooks`, then trust the Atoll hook definition. Until trusted, Codex will skip the hook and approvals stay in the TUI.
+
+To disconnect: **Settings** → **Agent hooks** → **Uninstall Codex** (or **Uninstall all**).
 
 ---
 
@@ -246,8 +278,10 @@ src/                          React + TypeScript island UI
   tauri.ts                    frontend ↔ Tauri bridge
   TokenCounter.tsx            per-session token display
 src-tauri/src/lib.rs          tray, window geometry, request state
-src-tauri/src/hook_bridge.rs  Claude Code hook bridge (HTTP)
+src-tauri/src/hook_bridge.rs  Claude + Codex hook bridge (HTTP)
+src-tauri/src/transcript.rs   Claude + Codex JSONL transcript parsing
 scripts/atoll-claude-hook.mjs hook shim (bundled + auto-installed)
+scripts/atoll-codex-hook.mjs  Codex hook shim (bundled + auto-installed)
 ```
 
 Future agent adapters should publish events into the Rust core — not couple UI directly to a specific CLI.
@@ -319,7 +353,7 @@ Intel (`x86_64`) builds are not published yet. See [Releases](https://github.com
 - [ ] Add `LICENSE` file to the repository
 
 ### Agent integrations
-- [ ] Codex hook adapter（UI 已预留 agent tab，桥接待接入）
+- [x] Codex hook adapter（PermissionRequest 审批 + 会话同步 + transcript/token 解析）
 - [ ] Gemini hook adapter
 - [ ] Cursor / OpenCode / 其他本地 agent 通用事件协议
 - [ ] 自动检测未安装的 hook 并在托盘提醒

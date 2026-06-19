@@ -8,14 +8,16 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
-    build_snapshot, iso_timestamp_now, refresh_session_token_usage, register_known_session,
-    roll_over_token_usage_if_needed, show_main_window_for_approval, touch_session_last_seen,
-    AgentKind, AppState, Decision, DecisionWithNote, PermissionRequest, PermissionStatus,
+    build_snapshot, iso_timestamp_now, is_codex_internal_session, purge_tracked_session,
+    refresh_session_token_usage, register_known_session, roll_over_token_usage_if_needed,
+    show_main_window_for_approval, touch_session_last_seen, AgentKind, AppState, Decision,
+    DecisionWithNote, PermissionRequest, PermissionStatus,
 };
 
 const HOOK_BIND_ADDR: &str = "127.0.0.1:47777";
 const HOOK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const BRIDGE_PROBE_TIMEOUT: Duration = Duration::from_millis(200);
+const HOOK_POLL_INTERVAL: Duration = Duration::from_millis(180);
 
 /// True when the local hook bridge accepts TCP connections on its bind address.
 pub(crate) fn is_bridge_reachable() -> bool {
@@ -58,10 +60,55 @@ pub(crate) fn permission_request_from_claude_payload(
         return None;
     }
 
+    permission_request_from_tool_payload(id, payload, requested_at, AgentKind::Claude, true)
+}
+
+pub(crate) fn permission_request_from_codex_payload(
+    id: String,
+    payload: Value,
+    requested_at: String,
+) -> Option<PermissionRequest> {
+    let event_name = payload.get("hook_event_name")?.as_str()?;
+    if event_name != "PermissionRequest" {
+        return None;
+    }
+
+    let cwd = payload
+        .get("cwd")
+        .and_then(Value::as_str)
+        .unwrap_or(".");
+    if is_codex_internal_session(&AgentKind::Codex, cwd) {
+        return None;
+    }
+
+    permission_request_from_tool_payload(id, payload, requested_at, AgentKind::Codex, false)
+}
+
+fn permission_request_from_tool_payload(
+    id: String,
+    payload: Value,
+    requested_at: String,
+    agent: AgentKind,
+    supports_always_from_suggestions: bool,
+) -> Option<PermissionRequest> {
     let tool_name = payload.get("tool_name")?.as_str()?.to_string();
     let tool_input = payload.get("tool_input").cloned().unwrap_or(Value::Null);
     let command = command_label(&tool_name, &tool_input);
     let detail = detail_label(&tool_name, &tool_input);
+    let default_session = match agent {
+        AgentKind::Codex => "codex",
+        _ => "claude-code",
+    };
+
+    let supports_always = if supports_always_from_suggestions {
+        payload
+            .get("permission_suggestions")
+            .and_then(Value::as_array)
+            .map(|arr| !arr.is_empty())
+            .unwrap_or(false)
+    } else {
+        false
+    };
 
     Some(PermissionRequest {
         id,
@@ -69,11 +116,11 @@ pub(crate) fn permission_request_from_claude_payload(
             .get("tool_use_id")
             .and_then(Value::as_str)
             .map(str::to_string),
-        agent: AgentKind::Claude,
+        agent,
         session: payload
             .get("session_id")
             .and_then(Value::as_str)
-            .unwrap_or("claude-code")
+            .unwrap_or(default_session)
             .to_string(),
         command,
         detail,
@@ -85,11 +132,7 @@ pub(crate) fn permission_request_from_claude_payload(
         requested_at,
         status: PermissionStatus::Pending,
         archived: false,
-        supports_always: payload
-            .get("permission_suggestions")
-            .and_then(Value::as_array)
-            .map(|arr| !arr.is_empty())
-            .unwrap_or(false),
+        supports_always,
         transcript_path: payload
             .get("transcript_path")
             .and_then(Value::as_str)
@@ -97,7 +140,7 @@ pub(crate) fn permission_request_from_claude_payload(
     })
 }
 
-pub(crate) fn claude_hook_response(hook_event_name: &str, decision: Decision, note: &str) -> Value {
+pub(crate) fn permission_hook_response(hook_event_name: &str, decision: Decision, note: &str) -> Value {
     if hook_event_name == "PermissionRequest" {
         let decision = match decision {
             Decision::Approved => json!({ "behavior": "allow" }),
@@ -142,7 +185,11 @@ pub(crate) fn claude_hook_response(hook_event_name: &str, decision: Decision, no
     })
 }
 
-pub(crate) fn claude_hook_ask_response(hook_event_name: &str, reason: &str) -> Value {
+pub(crate) fn claude_hook_response(hook_event_name: &str, decision: Decision, note: &str) -> Value {
+    permission_hook_response(hook_event_name, decision, note)
+}
+
+pub(crate) fn hook_defer_response(hook_event_name: &str, reason: &str) -> Value {
     if matches!(
         hook_event_name,
         "PermissionRequest"
@@ -164,6 +211,10 @@ pub(crate) fn claude_hook_ask_response(hook_event_name: &str, reason: &str) -> V
     })
 }
 
+pub(crate) fn claude_hook_ask_response(hook_event_name: &str, reason: &str) -> Value {
+    hook_defer_response(hook_event_name, reason)
+}
+
 fn handle_connection(app: AppHandle, mut stream: TcpStream) {
     let result = read_http_request(&mut stream)
         .and_then(|request| route_request(app, request, &stream))
@@ -177,10 +228,22 @@ fn route_request(app: AppHandle, request: HttpRequest, stream: &TcpStream) -> Re
         return Ok(response);
     }
 
-    if request.method != "POST" || request.path != "/claude/pre-tool-use" {
+    if request.method != "POST" {
         return Err("Unsupported Atoll hook endpoint".into());
     }
 
+    match request.path.as_str() {
+        "/claude/pre-tool-use" => route_claude_request(app, request, stream),
+        "/codex/hook" => route_codex_request(app, request, stream),
+        _ => Err("Unsupported Atoll hook endpoint".into()),
+    }
+}
+
+fn route_claude_request(
+    app: AppHandle,
+    request: HttpRequest,
+    stream: &TcpStream,
+) -> Result<Value, String> {
     let payload: Value = serde_json::from_slice(&request.body)
         .map_err(|error| format!("Invalid Claude hook payload: {error}"))?;
 
@@ -191,39 +254,73 @@ fn route_request(app: AppHandle, request: HttpRequest, stream: &TcpStream) -> Re
         .to_string();
 
     match hook_event_name.as_str() {
-        "PreToolUse" | "PermissionRequest" => {
-            submit_claude_pre_tool_request(app, payload, stream)
-                .or_else(|error| Ok(fallback_hook_response(&hook_event_name, &error)))
-        }
+        "PreToolUse" | "PermissionRequest" => submit_blocking_permission_request(
+            app,
+            payload,
+            stream,
+            |id, payload, at| permission_request_from_claude_payload(id, payload, at),
+            &hook_event_name,
+        )
+        .or_else(|error| Ok(hook_defer_response(&hook_event_name, &error))),
         "PostToolUse" | "PostToolUseFailure" => {
-            sync_claude_tool_completion(app, payload)?;
+            sync_tool_completion(app, payload, AgentKind::Claude)?;
             Ok(json!({}))
         }
         "Stop" | "StopFailure" | "SubagentStop" => {
-            sync_claude_turn_completion(app, payload)?;
+            sync_turn_completion(app, payload, AgentKind::Claude)?;
             Ok(json!({}))
         }
         _ => Ok(json!({})),
     }
 }
 
-const HOOK_POLL_INTERVAL: Duration = Duration::from_millis(180);
-
-fn submit_claude_pre_tool_request(
+fn route_codex_request(
     app: AppHandle,
-    payload: Value,
+    request: HttpRequest,
     stream: &TcpStream,
 ) -> Result<Value, String> {
-    let request_id = uuid::Uuid::new_v4().to_string();
+    let payload: Value = serde_json::from_slice(&request.body)
+        .map_err(|error| format!("Invalid Codex hook payload: {error}"))?;
+
     let hook_event_name = payload
         .get("hook_event_name")
         .and_then(Value::as_str)
-        .unwrap_or("PreToolUse")
+        .unwrap_or("PermissionRequest")
         .to_string();
-    let request =
-        permission_request_from_claude_payload(request_id.clone(), payload, iso_timestamp_now())
-            .ok_or_else(|| "Unsupported Claude hook event".to_string())?;
+
+    match hook_event_name.as_str() {
+        "PermissionRequest" => submit_blocking_permission_request(
+            app,
+            payload,
+            stream,
+            |id, payload, at| permission_request_from_codex_payload(id, payload, at),
+            &hook_event_name,
+        )
+        .or_else(|error| Ok(hook_defer_response(&hook_event_name, &error))),
+        "PostToolUse" => {
+            sync_tool_completion(app, payload, AgentKind::Codex)?;
+            Ok(json!({}))
+        }
+        "Stop" | "SubagentStop" => {
+            sync_turn_completion(app, payload, AgentKind::Codex)?;
+            Ok(json!({}))
+        }
+        _ => Ok(json!({})),
+    }
+}
+
+fn submit_blocking_permission_request(
+    app: AppHandle,
+    payload: Value,
+    stream: &TcpStream,
+    build_request: impl FnOnce(String, Value, String) -> Option<PermissionRequest>,
+    hook_event_name: &str,
+) -> Result<Value, String> {
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let request = build_request(request_id.clone(), payload, iso_timestamp_now())
+        .ok_or_else(|| "Unsupported hook event".to_string())?;
     let state = app.state::<AppState>();
+    let agent_label = agent_resolved_label(&request.agent);
 
     let is_auto_approved = state
         .auto_approve_sessions
@@ -243,7 +340,7 @@ fn submit_claude_pre_tool_request(
         }
         let snapshot = build_snapshot(&app, &state);
         let _ = app.emit("snapshot-changed", &snapshot);
-        return Ok(claude_hook_response(&hook_event_name, Decision::Approved, ""));
+        return Ok(permission_hook_response(hook_event_name, Decision::Approved, ""));
     }
 
     let (sender, receiver) = mpsc::sync_channel(1);
@@ -272,19 +369,16 @@ fn submit_claude_pre_tool_request(
     loop {
         match receiver.recv_timeout(HOOK_POLL_INTERVAL) {
             Ok(DecisionWithNote { decision, note }) => {
-                return Ok(claude_hook_response(&hook_event_name, decision, &note))
+                return Ok(permission_hook_response(hook_event_name, decision, &note))
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 remove_pending_waiter(&state, &request_id);
-                return Ok(claude_hook_ask_response(
-                    &hook_event_name,
-                    "Atoll internal error",
-                ));
+                return Ok(hook_defer_response(hook_event_name, "Atoll internal error"));
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 if is_peer_disconnected(stream) {
                     remove_pending_waiter(&state, &request_id);
-                    mark_request_completed_externally(&state, &app, &request_id);
+                    mark_request_completed_externally(&state, &app, &request_id, agent_label);
                     return Ok(json!({}));
                 }
                 if Instant::now() >= deadline {
@@ -295,13 +389,21 @@ fn submit_claude_pre_tool_request(
                         &request_id,
                         "Timed out waiting for Atoll approval.",
                     );
-                    return Ok(claude_hook_ask_response(
-                        &hook_event_name,
+                    return Ok(hook_defer_response(
+                        hook_event_name,
                         "Atoll approval timed out",
                     ));
                 }
             }
         }
+    }
+}
+
+fn agent_resolved_label(agent: &AgentKind) -> &'static str {
+    match agent {
+        AgentKind::Codex => "Codex",
+        AgentKind::Claude => "Claude",
+        _ => "Agent",
     }
 }
 
@@ -328,33 +430,40 @@ fn mark_request_completed_externally(
     state: &AppState,
     app: &AppHandle,
     request_id: &str,
+    agent_label: &str,
 ) {
-    let (resolved_session_id, resolved_transcript_path) = {
+    let resolved_suffix = format!("Resolved in {agent_label}.");
+    let (resolved_session_id, resolved_transcript_path, resolved_agent) = {
         let Ok(mut requests) = state.requests.lock() else {
             return;
         };
 
         let mut resolved_session_id: Option<String> = None;
         let mut resolved_transcript_path: Option<String> = None;
+        let mut resolved_agent: Option<AgentKind> = None;
         if let Some(request) = requests.iter_mut().find(|r| r.id == request_id) {
             if request.status == PermissionStatus::Pending {
                 request.status = PermissionStatus::Approved;
-                if !request.detail.contains("Resolved in Claude.") {
-                    request.detail = format!("{} Resolved in Claude.", request.detail);
+                if !request.detail.contains(&resolved_suffix) {
+                    request.detail = format!("{} {resolved_suffix}", request.detail);
                 }
                 touch_session_last_seen(state, &request.session);
                 resolved_session_id = Some(request.session.clone());
                 resolved_transcript_path = request.transcript_path.clone();
+                resolved_agent = Some(request.agent.clone());
             }
         }
         roll_over_token_usage_if_needed(state);
-        (resolved_session_id, resolved_transcript_path)
+        (resolved_session_id, resolved_transcript_path, resolved_agent)
     };
 
     if let Some(session_id) = resolved_session_id.as_deref() {
-        if let Err(error) =
-            refresh_session_token_usage(state, session_id, resolved_transcript_path.as_deref())
-        {
+        if let Err(error) = refresh_session_token_usage(
+            state,
+            session_id,
+            resolved_transcript_path.as_deref(),
+            resolved_agent.as_ref(),
+        ) {
             eprintln!("Atoll token usage refresh failed: {error}");
         }
     }
@@ -382,28 +491,45 @@ fn mark_request_denied(state: &AppState, app: &AppHandle, request_id: &str, note
     let _ = app.emit("snapshot-changed", &snapshot);
 }
 
-fn sync_claude_tool_completion(app: AppHandle, payload: Value) -> Result<(), String> {
+fn sync_tool_completion(
+    app: AppHandle,
+    payload: Value,
+    agent: AgentKind,
+) -> Result<(), String> {
     let state = app.state::<AppState>();
+    let agent_label = agent_resolved_label(&agent);
+    let completed_suffix = format!("Completed in {agent_label}.");
     let mut completed_session_id = payload_session_id(&payload).map(str::to_string);
     let mut completed_transcript_path = payload_transcript_path(&payload).map(str::to_string);
+    let cwd = payload
+        .get("cwd")
+        .and_then(Value::as_str)
+        .unwrap_or(".");
+    let codex_internal =
+        matches!(agent, AgentKind::Codex) && is_codex_internal_session(&agent, cwd);
 
     if let Some(session_id) = completed_session_id.as_deref() {
-        let cwd = payload
-            .get("cwd")
-            .and_then(Value::as_str)
-            .unwrap_or(".");
-        register_known_session(
-            &state,
-            session_id,
-            AgentKind::Claude,
-            cwd,
-            completed_transcript_path.as_deref(),
-        );
+        if codex_internal {
+            purge_tracked_session(
+                &state,
+                session_id,
+                completed_transcript_path.as_deref(),
+            );
+        } else {
+            register_known_session(
+                &state,
+                session_id,
+                agent.clone(),
+                cwd,
+                completed_transcript_path.as_deref(),
+            );
+        }
     }
 
     let completed_request_id = {
         let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
-        let completed_request_id = mark_matching_pending_request_complete(&mut requests, &payload);
+        let completed_request_id =
+            mark_matching_pending_request_complete(&mut requests, &payload, &completed_suffix);
 
         if let Some(request_id) = completed_request_id.as_deref() {
             if let Some(completed_request) = requests.iter().find(|request| request.id == request_id) {
@@ -428,13 +554,16 @@ fn sync_claude_tool_completion(app: AppHandle, payload: Value) -> Result<(), Str
     };
 
     if let Some(session_id) = completed_session_id.as_deref() {
-        touch_session_last_seen(&state, session_id);
-        if let Err(error) = refresh_session_token_usage(
-            &state,
-            session_id,
-            completed_transcript_path.as_deref(),
-        ) {
-            eprintln!("Atoll token usage refresh failed: {error}");
+        if !codex_internal {
+            touch_session_last_seen(&state, session_id);
+            if let Err(error) = refresh_session_token_usage(
+                &state,
+                session_id,
+                completed_transcript_path.as_deref(),
+                Some(&agent),
+            ) {
+                eprintln!("Atoll token usage refresh failed: {error}");
+            }
         }
     }
 
@@ -457,8 +586,14 @@ fn sync_claude_tool_completion(app: AppHandle, payload: Value) -> Result<(), Str
     Ok(())
 }
 
-fn sync_claude_turn_completion(app: AppHandle, payload: Value) -> Result<(), String> {
+fn sync_turn_completion(
+    app: AppHandle,
+    payload: Value,
+    agent: AgentKind,
+) -> Result<(), String> {
     let state = app.state::<AppState>();
+    let agent_label = agent_resolved_label(&agent);
+    let completed_suffix = format!("Completed in {agent_label}.");
     let session_id = payload_session_id(&payload).map(str::to_string);
     let transcript_path = payload_transcript_path(&payload).map(str::to_string);
     let cwd = payload
@@ -466,6 +601,8 @@ fn sync_claude_turn_completion(app: AppHandle, payload: Value) -> Result<(), Str
         .and_then(Value::as_str)
         .unwrap_or(".");
     let mut completed_request_id: Option<String> = None;
+    let codex_internal =
+        matches!(agent, AgentKind::Codex) && is_codex_internal_session(&agent, cwd);
 
     if let Some(session_id) = session_id.as_deref() {
         {
@@ -475,25 +612,32 @@ fn sync_claude_turn_completion(app: AppHandle, payload: Value) -> Result<(), Str
                     .get_mut(index)
                     .expect("index from latest_pending_request_index should be valid");
                 request.status = PermissionStatus::Approved;
-                if !request.detail.contains("Completed in Claude.") {
-                    request.detail = format!("{} Completed in Claude.", request.detail);
+                if !request.detail.contains(&completed_suffix) {
+                    request.detail = format!("{} {completed_suffix}", request.detail);
                 }
                 completed_request_id = Some(request.id.clone());
             }
         }
 
-        touch_session_last_seen(&state, session_id);
-        register_known_session(
-            &state,
-            session_id,
-            AgentKind::Claude,
-            cwd,
-            transcript_path.as_deref(),
-        );
-        if let Err(error) =
-            refresh_session_token_usage(&state, session_id, transcript_path.as_deref())
-        {
-            eprintln!("Atoll token usage refresh failed: {error}");
+        if codex_internal {
+            purge_tracked_session(&state, session_id, transcript_path.as_deref());
+        } else {
+            touch_session_last_seen(&state, session_id);
+            register_known_session(
+                &state,
+                session_id,
+                agent.clone(),
+                cwd,
+                transcript_path.as_deref(),
+            );
+            if let Err(error) = refresh_session_token_usage(
+                &state,
+                session_id,
+                transcript_path.as_deref(),
+                Some(&agent),
+            ) {
+                eprintln!("Atoll token usage refresh failed: {error}");
+            }
         }
     }
 
@@ -533,6 +677,7 @@ fn payload_transcript_path(payload: &Value) -> Option<&str> {
 pub(crate) fn mark_matching_pending_request_complete(
     requests: &mut [PermissionRequest],
     payload: &Value,
+    completed_suffix: &str,
 ) -> Option<String> {
     let payload_tool_use_id = payload.get("tool_use_id").and_then(Value::as_str);
     let payload_session = payload.get("session_id").and_then(Value::as_str);
@@ -569,8 +714,8 @@ pub(crate) fn mark_matching_pending_request_complete(
     let request = requests.get_mut(fallback_index?)?;
 
     request.status = PermissionStatus::Approved;
-    if !request.detail.contains("Completed in Claude.") {
-        request.detail = format!("{} Completed in Claude.", request.detail);
+    if !request.detail.contains(completed_suffix) {
+        request.detail = format!("{} {completed_suffix}", request.detail);
     }
     Some(request.id.clone())
 }
@@ -610,7 +755,7 @@ fn latest_pending_request_index(
 }
 
 fn fallback_hook_response(hook_event_name: &str, reason: &str) -> Value {
-    claude_hook_ask_response(hook_event_name, reason)
+    hook_defer_response(hook_event_name, reason)
 }
 
 struct HttpRequest {
@@ -679,6 +824,12 @@ fn command_label(tool_name: &str, tool_input: &Value) -> String {
     if tool_name == "Bash" {
         if let Some(command) = tool_input.get("command").and_then(Value::as_str) {
             return format!("Bash: {command}");
+        }
+    }
+
+    if tool_name == "apply_patch" {
+        if let Some(command) = tool_input.get("command").and_then(Value::as_str) {
+            return format!("Edit: {command}");
         }
     }
 

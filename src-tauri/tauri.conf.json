@@ -36,7 +36,8 @@
     "active": true,
     "targets": "all",
     "resources": {
-      "../scripts/atoll-claude-hook.mjs": "scripts/atoll-claude-hook.mjs"
+      "../scripts/atoll-claude-hook.mjs": "scripts/atoll-claude-hook.mjs",
+      "../scripts/atoll-codex-hook.mjs": "scripts/atoll-codex-hook.mjs"
     }
   }
 }

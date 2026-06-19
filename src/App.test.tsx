@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import { computeCollapsedWindowWidth } from "./compactLayout";
 
 const request = {
   id: "request-1",
@@ -26,9 +27,13 @@ const bridge = vi.hoisted(() => ({
   deactivateAtoll: vi.fn(),
   resolvePermissionRequest: vi.fn(),
   setIslandPresentation: vi.fn(),
+  setCompactLayout: vi.fn(),
   getClaudeHookStatus: vi.fn(),
   installClaudeHooks: vi.fn(),
   uninstallClaudeHooks: vi.fn(),
+  getCodexHookStatus: vi.fn(),
+  installCodexHooks: vi.fn(),
+  uninstallCodexHooks: vi.fn(),
   setSessionAutoApprove: vi.fn(),
   archiveAllResolved: vi.fn(),
   archiveRequest: vi.fn(),
@@ -44,6 +49,8 @@ const windowBridge = vi.hoisted(() => ({
 }));
 
 let emitIslandHover: ((state: { hovering: boolean }) => void) | null = null;
+let emitSnapshot: ((snapshot: import("./tauri").IslandSnapshot) => void) | null =
+  null;
 
 vi.mock("./tauri", () => bridge);
 vi.mock("@tauri-apps/api/window", () => ({
@@ -53,6 +60,8 @@ vi.mock("@tauri-apps/api/window", () => ({
 describe("App", () => {
   beforeEach(() => {
     vi.useRealTimers();
+    emitIslandHover = null;
+    emitSnapshot = null;
     bridge.getSnapshot.mockResolvedValue({
       online: true,
       pendingCount: 1,
@@ -60,8 +69,10 @@ describe("App", () => {
       recent: [request],
       sessions: [],
     });
-    bridge.onSnapshotChanged.mockResolvedValue(() => undefined);
-    emitIslandHover = null;
+    bridge.onSnapshotChanged.mockImplementation(async (callback) => {
+      emitSnapshot = callback;
+      return () => undefined;
+    });
     bridge.onIslandHoverChanged.mockImplementation(async (callback) => {
       emitIslandHover = callback;
       return () => undefined;
@@ -70,6 +81,7 @@ describe("App", () => {
     bridge.onCaptureCollapseRequested.mockResolvedValue(() => undefined);
     bridge.onCaptureScreenshotRequested.mockResolvedValue(() => undefined);
     bridge.setIslandPresentation.mockResolvedValue(undefined);
+    bridge.setCompactLayout.mockResolvedValue(undefined);
     bridge.quitAtoll.mockResolvedValue(undefined);
     bridge.deactivateAtoll.mockResolvedValue(undefined);
     bridge.resolvePermissionRequest.mockResolvedValue({
@@ -80,6 +92,12 @@ describe("App", () => {
       sessions: [],
     });
     bridge.getClaudeHookStatus.mockResolvedValue({
+      installed: true,
+      scriptFound: true,
+      settingsPath: "",
+      scriptPath: "",
+    });
+    bridge.getCodexHookStatus.mockResolvedValue({
       installed: true,
       scriptFound: true,
       settingsPath: "",
@@ -99,6 +117,18 @@ describe("App", () => {
       scriptPath: "",
     });
     bridge.uninstallClaudeHooks.mockResolvedValue({
+      installed: false,
+      scriptFound: false,
+      settingsPath: "",
+      scriptPath: "",
+    });
+    bridge.installCodexHooks.mockResolvedValue({
+      installed: true,
+      scriptFound: true,
+      settingsPath: "",
+      scriptPath: "",
+    });
+    bridge.uninstallCodexHooks.mockResolvedValue({
       installed: false,
       scriptFound: false,
       settingsPath: "",
@@ -146,8 +176,9 @@ describe("App", () => {
     await vi.advanceTimersByTimeAsync(420);
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
       "expanded",
-      undefined,
+      expect.any(Number),
       false,
+      expect.any(Number),
     );
     expect(container.querySelector(".is-expanded")).not.toBeNull();
     vi.useRealTimers();
@@ -219,6 +250,102 @@ describe("App", () => {
     );
   });
 
+  it("collapses once after returning from a session even if tokens update mid-animation", async () => {
+    const session = {
+      sessionId: "session-1",
+      agent: "claude" as const,
+      cwd: "/tmp/project",
+      pendingCount: 0,
+      totalCount: 2,
+      lastActivity: "2026-06-10T08:00:00Z",
+      transcriptPath: null,
+    };
+    const lowTokens = {
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    };
+    const highTokens = {
+      inputTokens: 50_000_000,
+      outputTokens: 50_000_000,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    };
+    const noNotch = { hasNotch: false, width: 0, height: 0 };
+    const expectedCompactWidth = computeCollapsedWindowWidth(
+      noNotch,
+      1,
+      3,
+      highTokens.inputTokens + highTokens.outputTokens,
+      0,
+    );
+
+    const baseSnapshot = {
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [session],
+      dailyTokens: lowTokens,
+    };
+    bridge.getSnapshot.mockResolvedValue(baseSnapshot);
+    bridge.getSessionRequests.mockResolvedValue([]);
+    bridge.getSessionTranscript.mockResolvedValue([]);
+
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+    const island = screen.getByLabelText("Atoll");
+
+    fireEvent.pointerEnter(island);
+    await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+
+    await user.click(await screen.findByRole("button", { name: /project/i }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Collapse Atoll" })).toBeInTheDocument(),
+    );
+
+    await act(async () => {
+      emitSnapshot?.({
+        ...baseSnapshot,
+        dailyTokens: highTokens,
+      });
+    });
+
+    bridge.setIslandPresentation.mockClear();
+    bridge.setCompactLayout.mockClear();
+
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Atoll" }));
+    expect(container.querySelector(".is-closing")).not.toBeNull();
+
+    await act(async () => {
+      emitSnapshot?.({
+        ...baseSnapshot,
+        dailyTokens: {
+          inputTokens: 99_000_000,
+          outputTokens: 99_000_000,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        },
+      });
+    });
+
+    await vi.advanceTimersByTimeAsync(420);
+
+    const compactAnimatedCalls = bridge.setIslandPresentation.mock.calls.filter(
+      (call) => call[0] === "compact",
+    );
+    expect(compactAnimatedCalls).toHaveLength(1);
+    expect(compactAnimatedCalls[0]?.[1]).toBe(expectedCompactWidth);
+    expect(container.querySelector(".is-compact")).not.toBeNull();
+    vi.useRealTimers();
+  });
+
   it("does not reopen from a stale hover event after manual collapse", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const { container } = render(<App />);
@@ -247,8 +374,9 @@ describe("App", () => {
     await vi.advanceTimersByTimeAsync(420);
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
       "expanded",
-      undefined,
+      expect.any(Number),
       false,
+      expect.any(Number),
     );
     vi.useRealTimers();
   });

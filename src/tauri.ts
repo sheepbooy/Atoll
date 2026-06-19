@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getDemoHookStatus, getDemoMode, getDemoSnapshot } from "./demoSnapshot";
+import { getDemoCodexHookStatus, getDemoHookStatus, getDemoMode, getDemoSnapshot } from "./demoSnapshot";
 
 export type PermissionStatus = "pending" | "approved" | "denied";
 export type AgentKind = "claude" | "codex" | "gemini" | "other";
@@ -204,6 +204,35 @@ export async function uninstallClaudeHooks(): Promise<HookStatus> {
   return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
 }
 
+export async function getCodexHookStatus(): Promise<HookStatus> {
+  if (isTauriRuntime) {
+    return invoke<HookStatus>("get_codex_hook_status");
+  }
+
+  const demoMode = getDemoMode();
+  if (demoMode) {
+    return getDemoCodexHookStatus(demoMode);
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
+export async function installCodexHooks(): Promise<HookStatus> {
+  if (isTauriRuntime) {
+    return invoke<HookStatus>("install_codex_hooks");
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
+export async function uninstallCodexHooks(): Promise<HookStatus> {
+  if (isTauriRuntime) {
+    return invoke<HookStatus>("uninstall_codex_hooks");
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
 export async function quitAtoll() {
   if (!isTauriRuntime) {
     return;
@@ -225,6 +254,7 @@ export async function setIslandPresentation(
   compactWidth?: number,
   expandedIdle?: boolean,
   compactLeftWidth?: number,
+  animate = true,
 ) {
   if (!isTauriRuntime) {
     return;
@@ -235,6 +265,24 @@ export async function setIslandPresentation(
     compactWidth,
     compactLeftWidth,
     expandedIdle,
+    animate,
+  });
+}
+
+/** Persist compact layout metrics without triggering a native window animation. */
+export async function setCompactLayout(
+  compactWidth: number,
+  compactLeftWidth: number,
+) {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  return invoke<void>("set_island_presentation", {
+    mode: "compact",
+    compactWidth,
+    compactLeftWidth,
+    animate: false,
   });
 }
 

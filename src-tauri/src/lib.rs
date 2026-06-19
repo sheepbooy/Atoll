@@ -14,6 +14,7 @@ use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalS
 
 mod capture;
 mod hook_bridge;
+mod transcript;
 
 #[cfg(target_os = "macos")]
 mod panel_store {
@@ -237,8 +238,13 @@ fn get_snapshot(app: AppHandle, state: State<'_, AppState>) -> IslandSnapshot {
         let known_sessions = state.known_sessions.lock().expect("state mutex poisoned");
         collect_session_transcript_paths(&requests, &known_sessions)
     };
-    for (session_id, transcript_path) in tracked_sessions {
-        let _ = refresh_session_token_usage(&state, &session_id, Some(transcript_path.as_str()));
+    for (session_id, transcript_path, agent) in tracked_sessions {
+        let _ = refresh_session_token_usage(
+            &state,
+            &session_id,
+            Some(transcript_path.as_str()),
+            Some(&agent),
+        );
     }
 
     let snapshot = build_snapshot(&app, &state);
@@ -248,13 +254,16 @@ fn get_snapshot(app: AppHandle, state: State<'_, AppState>) -> IslandSnapshot {
     snapshot
 }
 
-/// Hook 已写入 Claude 设置且脚本存在，并且本地 bridge 可连接 → 在线监听。
+/// 任一 Agent hook 已安装且 shim 存在，并且本地 bridge 可连接 → 在线监听。
 pub(crate) fn compute_listening_online(app: &AppHandle) -> bool {
     if capture::listening_online() {
         return true;
     }
-    let (installed, script_found, _, _) = hooks_readiness(app);
-    installed && script_found && hook_bridge::is_bridge_reachable()
+    let claude_ready = claude_hooks_readiness(app);
+    let codex_ready = codex_hooks_readiness(app);
+    let any_installed = claude_ready.0 || codex_ready.0;
+    let any_script_found = claude_ready.1 || codex_ready.1;
+    any_installed && any_script_found && hook_bridge::is_bridge_reachable()
 }
 
 pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapshot {
@@ -302,9 +311,11 @@ fn sync_listening_online_snapshot(app: &AppHandle, state: &AppState) {
     }
 }
 
-fn hooks_readiness(app: &AppHandle) -> (bool, bool, String, String) {
-    let script_path = resolve_hook_script_path(app).unwrap_or_default();
-    let script_found = !script_path.is_empty() && std::path::Path::new(&script_path).exists();
+fn claude_hooks_readiness(app: &AppHandle) -> (bool, bool, String, String) {
+    let script_path =
+        resolve_hook_script_path(app, "atoll-claude-hook.mjs").unwrap_or_default();
+    let script_found =
+        !script_path.is_empty() && std::path::Path::new(&script_path).exists();
     let settings_path = claude_settings_path()
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default();
@@ -314,10 +325,30 @@ fn hooks_readiness(app: &AppHandle) -> (bool, bool, String, String) {
         std::fs::read_to_string(&settings_path)
             .ok()
             .and_then(|content| serde_json::from_str::<Value>(&content).ok())
-            .map(|settings| has_atoll_hooks(&settings))
+            .map(|settings| has_atoll_claude_hooks(&settings))
             .unwrap_or(false)
     };
     (installed, script_found, settings_path, script_path)
+}
+
+fn codex_hooks_readiness(app: &AppHandle) -> (bool, bool, String, String) {
+    let script_path =
+        resolve_hook_script_path(app, "atoll-codex-hook.mjs").unwrap_or_default();
+    let script_found =
+        !script_path.is_empty() && std::path::Path::new(&script_path).exists();
+    let hooks_path = codex_hooks_path()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let installed = if hooks_path.is_empty() || !std::path::Path::new(&hooks_path).exists() {
+        false
+    } else {
+        std::fs::read_to_string(&hooks_path)
+            .ok()
+            .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+            .map(|config| has_atoll_codex_hooks(&config))
+            .unwrap_or(false)
+    };
+    (installed, script_found, hooks_path, script_path)
 }
 
 #[tauri::command]
@@ -374,6 +405,7 @@ async fn set_island_presentation(
     compact_width: Option<f64>,
     compact_left_width: Option<f64>,
     expanded_idle: Option<bool>,
+    animate: Option<bool>,
 ) -> Result<(), String> {
     let Some(window) = app.get_webview_window("main") else {
         return Ok(());
@@ -397,6 +429,10 @@ async fn set_island_presentation(
         } else {
             0.0
         };
+    }
+
+    if animate == Some(false) {
+        return Ok(());
     }
 
     let generation = state.presentation_generation.fetch_add(1, Ordering::SeqCst) + 1;
@@ -502,63 +538,81 @@ fn get_session_transcript(transcript_path: String) -> Result<Vec<ChatMessage>, S
     use std::fs::File;
     use std::io::{BufRead, BufReader};
 
+    let format = transcript::detect_transcript_format(&transcript_path);
     let file = File::open(&transcript_path)
         .map_err(|e| format!("Cannot open transcript: {e}"))?;
     let reader = BufReader::new(file);
 
     let mut messages: Vec<ChatMessage> = Vec::new();
 
-    for line in reader.lines() {
-        let line = line.map_err(|e| format!("Read error: {e}"))?;
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
+    if format == transcript::TranscriptFormat::Codex {
+        let lines: Vec<String> = reader
+            .lines()
+            .map(|line| line.map_err(|e| format!("Read error: {e}")))
+            .collect::<Result<Vec<_>, _>>()?;
+        for parsed in transcript::parse_codex_messages(&lines) {
+            if parsed.content.is_empty() && parsed.tool_name.is_none() {
+                continue;
+            }
+            messages.push(ChatMessage {
+                role: parsed.role,
+                content: parsed.content,
+                tool_name: parsed.tool_name,
+            });
         }
-
-        let entry: Value = match serde_json::from_str(trimmed) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-
-        let Some(msg_type) = entry.get("type").and_then(Value::as_str) else {
-            continue;
-        };
-
-        match msg_type {
-            "human" | "user" => {
-                let content = extract_transcript_text(&entry);
-                if !content.is_empty() {
-                    messages.push(ChatMessage {
-                        role: "user".into(),
-                        content,
-                        tool_name: None,
-                    });
-                }
+    } else {
+        for line in reader.lines() {
+            let line = line.map_err(|e| format!("Read error: {e}"))?;
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
             }
-            "assistant" => {
-                let content = extract_transcript_text(&entry);
-                let tool_name = entry
-                    .get("message")
-                    .and_then(|m| m.get("content"))
-                    .and_then(Value::as_array)
-                    .and_then(|arr| {
-                        arr.iter().find_map(|block| {
-                            if block.get("type")?.as_str()? == "tool_use" {
-                                block.get("name").and_then(Value::as_str).map(String::from)
-                            } else {
-                                None
-                            }
-                        })
-                    });
-                if !content.is_empty() || tool_name.is_some() {
-                    messages.push(ChatMessage {
-                        role: "assistant".into(),
-                        content,
-                        tool_name,
-                    });
+
+            let entry: Value = match serde_json::from_str(trimmed) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            let Some(msg_type) = entry.get("type").and_then(Value::as_str) else {
+                continue;
+            };
+
+            match msg_type {
+                "human" | "user" => {
+                    let content = extract_transcript_text(&entry);
+                    if !content.is_empty() {
+                        messages.push(ChatMessage {
+                            role: "user".into(),
+                            content,
+                            tool_name: None,
+                        });
+                    }
                 }
+                "assistant" => {
+                    let content = extract_transcript_text(&entry);
+                    let tool_name = entry
+                        .get("message")
+                        .and_then(|m| m.get("content"))
+                        .and_then(Value::as_array)
+                        .and_then(|arr| {
+                            arr.iter().find_map(|block| {
+                                if block.get("type")?.as_str()? == "tool_use" {
+                                    block.get("name").and_then(Value::as_str).map(String::from)
+                                } else {
+                                    None
+                                }
+                            })
+                        });
+                    if !content.is_empty() || tool_name.is_some() {
+                        messages.push(ChatMessage {
+                            role: "assistant".into(),
+                            content,
+                            tool_name,
+                        });
+                    }
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 
@@ -593,15 +647,15 @@ fn extract_transcript_text(entry: &Value) -> String {
 fn collect_session_transcript_paths(
     requests: &[PermissionRequest],
     known_sessions: &HashMap<String, KnownSession>,
-) -> Vec<(String, String)> {
-    let mut session_paths: HashMap<String, String> = HashMap::new();
+) -> Vec<(String, String, AgentKind)> {
+    let mut session_paths: HashMap<String, (String, AgentKind)> = HashMap::new();
     for request in requests {
         let Some(transcript_path) = request.transcript_path.as_deref() else {
             continue;
         };
         session_paths
             .entry(request.session.clone())
-            .or_insert_with(|| transcript_path.to_string());
+            .or_insert_with(|| (transcript_path.to_string(), request.agent.clone()));
     }
     for (session_id, known_session) in known_sessions {
         let Some(transcript_path) = known_session.transcript_path.as_deref() else {
@@ -609,9 +663,12 @@ fn collect_session_transcript_paths(
         };
         session_paths
             .entry(session_id.clone())
-            .or_insert_with(|| transcript_path.to_string());
+            .or_insert_with(|| (transcript_path.to_string(), known_session.agent.clone()));
     }
-    session_paths.into_iter().collect()
+    session_paths
+        .into_iter()
+        .map(|(session_id, (path, agent))| (session_id, path, agent))
+        .collect()
 }
 
 fn current_utc_day_key() -> String {
@@ -680,7 +737,7 @@ fn token_usage_from_transcript_entry(entry: &Value, today_key: &str) -> TokenUsa
     }
 }
 
-fn parse_token_usage_from_transcript(
+fn parse_claude_token_usage_from_transcript(
     transcript_path: &str,
     offset: u64,
     today_key: &str,
@@ -729,10 +786,46 @@ fn parse_token_usage_from_transcript(
     Ok((usage, next_offset, is_full_scan))
 }
 
+fn token_usage_from_codex_delta(delta: transcript::TokenUsageDelta) -> TokenUsage {
+    TokenUsage {
+        input_tokens: delta.input_tokens,
+        output_tokens: delta.output_tokens,
+        cache_read_tokens: delta.cache_read_tokens,
+        cache_creation_tokens: delta.cache_creation_tokens,
+    }
+}
+
+fn parse_codex_token_usage_from_transcript(
+    transcript_path: &str,
+    offset: u64,
+    today_key: &str,
+) -> Result<(TokenUsage, u64, bool), String> {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+
+    let file =
+        File::open(transcript_path).map_err(|error| format!("Cannot open transcript: {error}"))?;
+    let file_len = file
+        .metadata()
+        .map_err(|error| format!("Cannot read transcript metadata: {error}"))?
+        .len();
+    let start_offset = if offset > file_len { 0 } else { offset };
+    let is_full_scan = start_offset == 0;
+
+    let mut reader = BufReader::new(file);
+    let parsed = transcript::parse_codex_tokens_from_reader(&mut reader, start_offset, today_key)?;
+    Ok((
+        token_usage_from_codex_delta(parsed.daily_delta),
+        parsed.next_offset,
+        is_full_scan,
+    ))
+}
+
 pub(crate) fn refresh_session_token_usage(
     state: &AppState,
     session_id: &str,
     transcript_path: Option<&str>,
+    agent: Option<&AgentKind>,
 ) -> Result<(), String> {
     let Some(transcript_path) = transcript_path else {
         return Ok(());
@@ -748,8 +841,20 @@ pub(crate) fn refresh_session_token_usage(
         .copied()
         .unwrap_or(0);
 
-    let (parsed_usage, next_offset, is_full_scan) =
-        parse_token_usage_from_transcript(transcript_path, last_offset, &today_key)?;
+    let format = match agent {
+        Some(AgentKind::Codex) => transcript::TranscriptFormat::Codex,
+        Some(AgentKind::Claude) => transcript::TranscriptFormat::Claude,
+        _ => transcript::detect_transcript_format(transcript_path),
+    };
+
+    let (parsed_usage, next_offset, is_full_scan) = match format {
+        transcript::TranscriptFormat::Codex => {
+            parse_codex_token_usage_from_transcript(transcript_path, last_offset, &today_key)?
+        }
+        transcript::TranscriptFormat::Claude => {
+            parse_claude_token_usage_from_transcript(transcript_path, last_offset, &today_key)?
+        }
+    };
 
     {
         let mut offsets = state
@@ -891,6 +996,44 @@ fn set_session_retention(
     secs
 }
 
+/// Codex background threads (memories, subagents, etc.) often omit `cwd` in hook payloads.
+/// Atoll defaults missing cwd to `"."`, which would show up as a stray "." session.
+/// Paths under `~/.codex/` are Codex app internals, not user workspace roots.
+pub(crate) fn is_codex_internal_session(agent: &AgentKind, cwd: &str) -> bool {
+    if !matches!(agent, AgentKind::Codex) {
+        return false;
+    }
+    let normalized = cwd.replace('\\', "/");
+    if normalized.is_empty() || normalized == "." || normalized == "./" {
+        return true;
+    }
+    if let Some(home) = dirs::home_dir() {
+        let codex_home = home.join(".codex");
+        let codex_home_str = codex_home.to_string_lossy().replace('\\', "/");
+        if normalized == codex_home_str || normalized.starts_with(&(codex_home_str.clone() + "/")) {
+            return true;
+        }
+    }
+    false
+}
+
+pub(crate) fn purge_tracked_session(state: &AppState, session_id: &str, transcript_path: Option<&str>) {
+    if let Ok(mut known) = state.known_sessions.lock() {
+        known.remove(session_id);
+    }
+    if let Ok(mut last_seen) = state.session_last_seen.lock() {
+        last_seen.remove(session_id);
+    }
+    if let Ok(mut usage) = state.session_token_usage.lock() {
+        usage.remove(session_id);
+    }
+    if let Some(path) = transcript_path {
+        if let Ok(mut offsets) = state.token_usage_file_offsets.lock() {
+            offsets.remove(path);
+        }
+    }
+}
+
 pub(crate) fn register_known_session(
     state: &AppState,
     session_id: &str,
@@ -898,6 +1041,10 @@ pub(crate) fn register_known_session(
     cwd: &str,
     transcript_path: Option<&str>,
 ) {
+    if is_codex_internal_session(&agent, cwd) {
+        purge_tracked_session(state, session_id, transcript_path);
+        return;
+    }
     if let Ok(mut known) = state.known_sessions.lock() {
         let entry = known
             .entry(session_id.to_string())
@@ -939,7 +1086,8 @@ struct HookStatus {
 #[tauri::command]
 fn get_claude_hook_status(app: AppHandle) -> Result<HookStatus, String> {
     if capture::force_hook_uninstalled() {
-        let script_path = resolve_hook_script_path(&app).unwrap_or_default();
+        let script_path =
+            resolve_hook_script_path(&app, "atoll-claude-hook.mjs").unwrap_or_default();
         return Ok(HookStatus {
             installed: false,
             script_found: !script_path.is_empty()
@@ -950,7 +1098,7 @@ fn get_claude_hook_status(app: AppHandle) -> Result<HookStatus, String> {
             script_path,
         });
     }
-    let (installed, script_found, settings_path, script_path) = hooks_readiness(&app);
+    let (installed, script_found, settings_path, script_path) = claude_hooks_readiness(&app);
     Ok(HookStatus {
         installed,
         script_found,
@@ -961,7 +1109,7 @@ fn get_claude_hook_status(app: AppHandle) -> Result<HookStatus, String> {
 
 #[tauri::command]
 fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let script_path = resolve_hook_script_path(&app)
+    let script_path = resolve_hook_script_path(&app, "atoll-claude-hook.mjs")
         .ok_or_else(|| "Cannot locate hook script".to_string())?;
 
     if !std::path::Path::new(&script_path).exists() {
@@ -1134,12 +1282,277 @@ fn claude_settings_path() -> Option<std::path::PathBuf> {
     dirs::home_dir().map(|home| home.join(".claude").join("settings.json"))
 }
 
-fn resolve_hook_script_path(app: &AppHandle) -> Option<String> {
+fn codex_hooks_path() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|home| home.join(".codex").join("hooks.json"))
+}
+
+#[tauri::command]
+fn get_codex_hook_status(app: AppHandle) -> Result<HookStatus, String> {
+    if capture::force_hook_uninstalled() {
+        let script_path =
+            resolve_hook_script_path(&app, "atoll-codex-hook.mjs").unwrap_or_default();
+        return Ok(HookStatus {
+            installed: false,
+            script_found: !script_path.is_empty()
+                && std::path::Path::new(&script_path).exists(),
+            settings_path: codex_hooks_path()
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            script_path,
+        });
+    }
+    let (installed, script_found, settings_path, script_path) = codex_hooks_readiness(&app);
+    Ok(HookStatus {
+        installed,
+        script_found,
+        settings_path,
+        script_path,
+    })
+}
+
+#[tauri::command]
+fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
+    let script_path = resolve_hook_script_path(&app, "atoll-codex-hook.mjs")
+        .ok_or_else(|| "Cannot locate hook script".to_string())?;
+
+    if !std::path::Path::new(&script_path).exists() {
+        return Err(format!("Hook script not found at: {script_path}"));
+    }
+
+    let hooks_path = codex_hooks_path()
+        .ok_or_else(|| "Cannot determine home directory".to_string())?;
+
+    if let Some(parent) = hooks_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Cannot create ~/.codex directory: {e}"))?;
+    }
+
+    let mut config: Value = if hooks_path.exists() {
+        let content = std::fs::read_to_string(&hooks_path)
+            .map_err(|e| format!("Cannot read hooks: {e}"))?;
+        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()))
+    } else {
+        Value::Object(Default::default())
+    };
+
+    let hook_command = format_codex_hook_command(&script_path);
+    let atoll_hooks = serde_json::json!({
+        "PermissionRequest": [
+            {
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": hook_command,
+                        "timeout": 1800,
+                        "statusMessage": "Atoll approval"
+                    }
+                ]
+            }
+        ],
+        "PostToolUse": [
+            {
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": hook_command,
+                        "timeout": 30,
+                        "statusMessage": "Atoll session sync"
+                    }
+                ]
+            }
+        ],
+        "Stop": [
+            {
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": hook_command,
+                        "timeout": 30,
+                        "statusMessage": "Atoll session sync"
+                    }
+                ]
+            }
+        ],
+        "SubagentStop": [
+            {
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": hook_command,
+                        "timeout": 30,
+                        "statusMessage": "Atoll session sync"
+                    }
+                ]
+            }
+        ]
+    });
+
+    let config_obj = config
+        .as_object_mut()
+        .ok_or_else(|| "hooks.json is not a JSON object".to_string())?;
+    let hooks_obj = config_obj
+        .entry("hooks")
+        .or_insert_with(|| Value::Object(Default::default()));
+    upsert_codex_hook_events(hooks_obj, &atoll_hooks);
+
+    let formatted = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Cannot serialize hooks: {e}"))?;
+    std::fs::write(&hooks_path, formatted)
+        .map_err(|e| format!("Cannot write hooks: {e}"))?;
+
+    let written = std::fs::read_to_string(&hooks_path)
+        .map_err(|e| format!("Cannot verify hooks: {e}"))?;
+    let verify: Value = serde_json::from_str(&written)
+        .map_err(|e| format!("Cannot parse hooks after write: {e}"))?;
+    if !has_atoll_codex_hooks(&verify) {
+        return Err(
+            "Codex hooks were not saved correctly. Check permissions on ~/.codex/hooks.json."
+                .into(),
+        );
+    }
+
+    let state = app.state::<AppState>();
+    let snapshot = build_snapshot(&app, &state);
+    if let Ok(mut last) = state.last_listening_online.lock() {
+        *last = Some(snapshot.online);
+    }
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+
+    Ok(HookStatus {
+        installed: true,
+        script_found: true,
+        settings_path: hooks_path.to_string_lossy().into(),
+        script_path,
+    })
+}
+
+#[tauri::command]
+fn uninstall_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
+    let hooks_path = codex_hooks_path()
+        .ok_or_else(|| "Cannot determine home directory".to_string())?;
+
+    if !hooks_path.exists() {
+        return Ok(HookStatus {
+            installed: false,
+            script_found: false,
+            settings_path: hooks_path.to_string_lossy().into(),
+            script_path: String::new(),
+        });
+    }
+
+    let content = std::fs::read_to_string(&hooks_path)
+        .map_err(|e| format!("Cannot read hooks: {e}"))?;
+    let mut config: Value =
+        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()));
+
+    if let Some(hooks) = config.get_mut("hooks") {
+        remove_atoll_codex_hooks(hooks);
+    }
+
+    let formatted = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Cannot serialize hooks: {e}"))?;
+    std::fs::write(&hooks_path, formatted)
+        .map_err(|e| format!("Cannot write hooks: {e}"))?;
+
+    let state = app.state::<AppState>();
+    let snapshot = build_snapshot(&app, &state);
+    if let Ok(mut last) = state.last_listening_online.lock() {
+        *last = Some(snapshot.online);
+    }
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+
+    Ok(HookStatus {
+        installed: false,
+        script_found: false,
+        settings_path: hooks_path.to_string_lossy().into(),
+        script_path: String::new(),
+    })
+}
+
+fn format_codex_hook_command(script_path: &str) -> String {
+    format!("node \"{}\"", script_path.replace('"', "\\\""))
+}
+
+fn upsert_codex_hook_events(existing_hooks: &mut Value, atoll_hooks: &Value) {
+    let Some(atoll_map) = atoll_hooks.as_object() else {
+        return;
+    };
+    let hooks_obj = existing_hooks
+        .as_object_mut()
+        .expect("hooks value should be object");
+
+    for (event, atoll_matchers) in atoll_map {
+        let Some(atoll_array) = atoll_matchers.as_array() else {
+            continue;
+        };
+
+        let mut merged: Vec<Value> = hooks_obj
+            .get(event)
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter(|matcher| !matcher_group_has_atoll_codex(matcher))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        for matcher in atoll_array {
+            merged.push(matcher.clone());
+        }
+
+        hooks_obj.insert(event.clone(), Value::Array(merged));
+    }
+}
+
+fn remove_atoll_codex_hooks(hooks: &mut Value) {
+    let Some(hooks_obj) = hooks.as_object_mut() else {
+        return;
+    };
+
+    for matchers in hooks_obj.values_mut() {
+        if let Some(arr) = matchers.as_array_mut() {
+            for matcher in arr.iter_mut() {
+                if let Some(hook_arr) = matcher.get_mut("hooks").and_then(Value::as_array_mut) {
+                    hook_arr.retain(|hook| {
+                        !hook
+                            .get("command")
+                            .and_then(Value::as_str)
+                            .map(|cmd| cmd.contains("atoll-codex-hook"))
+                            .unwrap_or(false)
+                    });
+                }
+            }
+            arr.retain(|matcher| {
+                matcher
+                    .get("hooks")
+                    .and_then(Value::as_array)
+                    .map(|hooks| !hooks.is_empty())
+                    .unwrap_or(false)
+            });
+        }
+    }
+
+    hooks_obj.retain(|_, matchers| {
+        matchers
+            .as_array()
+            .map(|arr| !arr.is_empty())
+            .unwrap_or(false)
+    });
+}
+
+fn resolve_hook_script_path(app: &AppHandle, script_name: &str) -> Option<String> {
     let resource_path = app
         .path()
         .resource_dir()
         .ok()
-        .map(|dir| dir.join("scripts").join("atoll-claude-hook.mjs"));
+        .map(|dir| dir.join("scripts").join(script_name));
     if let Some(ref path) = resource_path {
         if path.exists() {
             return Some(path.to_string_lossy().into());
@@ -1148,7 +1561,7 @@ fn resolve_hook_script_path(app: &AppHandle) -> Option<String> {
 
     if let Ok(exe) = std::env::current_exe() {
         for ancestor in exe.ancestors().skip(1) {
-            let candidate = ancestor.join("scripts").join("atoll-claude-hook.mjs");
+            let candidate = ancestor.join("scripts").join(script_name);
             if candidate.exists() {
                 return Some(candidate.to_string_lossy().into());
             }
@@ -1161,7 +1574,7 @@ fn resolve_hook_script_path(app: &AppHandle) -> Option<String> {
     None
 }
 
-fn has_atoll_hooks(settings: &Value) -> bool {
+fn has_atoll_claude_hooks(settings: &Value) -> bool {
     let Some(hooks) = settings.get("hooks").and_then(Value::as_object) else {
         return false;
     };
@@ -1192,6 +1605,41 @@ fn has_atoll_hooks(settings: &Value) -> bool {
     ["PermissionRequest", "PostToolUse", "Stop"]
         .iter()
         .all(|event| hooks.get(*event).map(has_atoll_command).unwrap_or(false))
+}
+
+fn has_atoll_codex_hooks(config: &Value) -> bool {
+    let Some(hooks) = config.get("hooks").and_then(Value::as_object) else {
+        return false;
+    };
+
+    ["PermissionRequest", "PostToolUse", "Stop", "SubagentStop"]
+        .iter()
+        .all(|event| {
+            hooks
+                .get(*event)
+                .map(|matchers| {
+                    matchers
+                        .as_array()
+                        .map(|arr| arr.iter().any(matcher_group_has_atoll_codex))
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false)
+        })
+}
+
+fn matcher_group_has_atoll_codex(matcher: &Value) -> bool {
+    matcher
+        .get("hooks")
+        .and_then(Value::as_array)
+        .map(|hook_arr| {
+            hook_arr.iter().any(|hook| {
+                hook.get("command")
+                    .and_then(Value::as_str)
+                    .map(|cmd| cmd.contains("atoll-codex-hook"))
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -1422,6 +1870,9 @@ pub fn run() {
             get_claude_hook_status,
             install_claude_hooks,
             uninstall_claude_hooks,
+            get_codex_hook_status,
+            install_codex_hooks,
+            uninstall_codex_hooks,
             get_session_retention,
             set_session_retention,
             open_in_terminal,
@@ -1607,10 +2058,13 @@ fn start_token_refresh_timer(app: AppHandle) {
             .unwrap_or_else(|e| e.into_inner())
             .clone();
 
-        for (session_id, transcript_path) in tracked_sessions {
-            if let Err(error) =
-                refresh_session_token_usage(&state, &session_id, Some(transcript_path.as_str()))
-            {
+        for (session_id, transcript_path, agent) in tracked_sessions {
+            if let Err(error) = refresh_session_token_usage(
+                &state,
+                &session_id,
+                Some(transcript_path.as_str()),
+                Some(&agent),
+            ) {
                 eprintln!("Atoll token usage refresh failed: {error}");
             }
         }
@@ -2695,6 +3149,9 @@ fn snapshot_from(
             if active_session_ids.contains(request.session.as_str()) {
                 continue;
             }
+            if is_codex_internal_session(&request.agent, &request.cwd) {
+                continue;
+            }
             // Pinned sessions are always retained regardless of time.
             let is_pinned = pinned_sessions.contains(&request.session);
             if !is_pinned {
@@ -2760,6 +3217,9 @@ fn snapshot_from(
             if existing_ids.contains(session_id.as_str()) {
                 continue;
             }
+            if is_codex_internal_session(&info.agent, &info.cwd) {
+                continue;
+            }
             // Pinned sessions always included; non-pinned filtered by retention.
             let is_pinned = pinned_sessions.contains(session_id);
             if !is_pinned && retention_secs > 0 {
@@ -2811,6 +3271,9 @@ fn build_session_summaries(visible: &[&PermissionRequest]) -> Vec<SessionSummary
         HashMap::new();
 
     for request in visible {
+        if is_codex_internal_session(&request.agent, &request.cwd) {
+            continue;
+        }
         let entry = session_map.entry(&request.session).or_insert_with(|| {
             (
                 request.cwd.clone(),
@@ -2976,6 +3439,57 @@ mod core_tests {
         );
 
         assert!(snapshot.sessions.is_empty());
+    }
+
+    #[test]
+    fn codex_memories_background_session_is_ignored() {
+        let memories_cwd = dirs::home_dir()
+            .expect("home dir")
+            .join(".codex")
+            .join("memories")
+            .to_string_lossy()
+            .into_owned();
+        let known_sessions = HashMap::from([
+            (
+                "memories-thread".into(),
+                KnownSession {
+                    agent: AgentKind::Codex,
+                    cwd: memories_cwd.clone(),
+                    transcript_path: None,
+                    last_activity: iso_timestamp_now(),
+                },
+            ),
+            (
+                "real-session".into(),
+                KnownSession {
+                    agent: AgentKind::Codex,
+                    cwd: "/Users/test/project".into(),
+                    transcript_path: None,
+                    last_activity: iso_timestamp_now(),
+                },
+            ),
+        ]);
+
+        let snapshot = snapshot_from(
+            &[],
+            &HashMap::new(),
+            900,
+            &HashMap::new(),
+            &known_sessions,
+            &HashSet::new(),
+            true,
+        );
+
+        assert_eq!(snapshot.sessions.len(), 1);
+        assert_eq!(snapshot.sessions[0].session_id, "real-session");
+        assert!(is_codex_internal_session(&AgentKind::Codex, &memories_cwd));
+        assert!(is_codex_internal_session(&AgentKind::Codex, "."));
+        assert!(is_codex_internal_session(&AgentKind::Codex, ""));
+        assert!(!is_codex_internal_session(&AgentKind::Codex, "/Users/test/project"));
+        assert!(!is_codex_internal_session(
+            &AgentKind::Codex,
+            "/Users/test/code/Atoll/.codex"
+        ));
     }
 
     #[test]
@@ -3253,7 +3767,11 @@ mod hook_bridge_tests {
         });
 
         let completed_id =
-            crate::hook_bridge::mark_matching_pending_request_complete(&mut requests, &payload);
+            crate::hook_bridge::mark_matching_pending_request_complete(
+                &mut requests,
+                &payload,
+                "Completed in Claude.",
+            );
 
         assert_eq!(completed_id.as_deref(), Some("request-123"));
         assert_eq!(requests[0].status, crate::PermissionStatus::Approved);
@@ -3283,7 +3801,11 @@ mod hook_bridge_tests {
         });
 
         let completed_id =
-            crate::hook_bridge::mark_matching_pending_request_complete(&mut requests, &payload);
+            crate::hook_bridge::mark_matching_pending_request_complete(
+                &mut requests,
+                &payload,
+                "Completed in Claude.",
+            );
 
         assert_eq!(completed_id.as_deref(), Some("request-123"));
         assert_eq!(requests[0].status, crate::PermissionStatus::Approved);
@@ -3331,7 +3853,11 @@ mod hook_bridge_tests {
         });
 
         let completed_id =
-            crate::hook_bridge::mark_matching_pending_request_complete(&mut requests, &payload);
+            crate::hook_bridge::mark_matching_pending_request_complete(
+                &mut requests,
+                &payload,
+                "Completed in Claude.",
+            );
 
         assert_eq!(completed_id.as_deref(), Some("request-newer"));
         assert_eq!(requests[0].status, crate::PermissionStatus::Approved);
@@ -3411,6 +3937,96 @@ mod hook_bridge_tests {
     }
 
     #[test]
+    fn maps_codex_permission_request_payload_to_permission_request() {
+        let payload = json!({
+            "session_id": "codex-session-1",
+            "cwd": "/Users/test/project",
+            "hook_event_name": "PermissionRequest",
+            "tool_name": "exec_command",
+            "tool_input": {
+                "command": "npm test",
+                "description": "Run tests"
+            },
+            "tool_use_id": "tool-codex-1"
+        });
+
+        let request = crate::hook_bridge::permission_request_from_codex_payload(
+            "request-codex-1".into(),
+            payload,
+            "2026-06-19T09:00:00Z".into(),
+        )
+        .expect("payload should map to a request");
+
+        assert_eq!(request.id, "request-codex-1");
+        assert!(matches!(request.agent, crate::AgentKind::Codex));
+        assert_eq!(request.session, "codex-session-1");
+        assert_eq!(request.command, "exec_command");
+        assert_eq!(request.detail, "Run tests");
+        assert_eq!(request.cwd, "/Users/test/project");
+        assert_eq!(request.tool_use_id.as_deref(), Some("tool-codex-1"));
+        assert!(!request.supports_always);
+    }
+
+    #[test]
+    fn encodes_codex_permission_allow_and_deny_responses() {
+        let approved = crate::hook_bridge::permission_hook_response(
+            "PermissionRequest",
+            crate::Decision::Approved,
+            "",
+        );
+        assert_eq!(
+            approved,
+            json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "PermissionRequest",
+                    "decision": {
+                        "behavior": "allow"
+                    }
+                }
+            })
+        );
+
+        let denied = crate::hook_bridge::permission_hook_response(
+            "PermissionRequest",
+            crate::Decision::Denied,
+            "too risky",
+        );
+        assert_eq!(
+            denied,
+            json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "PermissionRequest",
+                    "decision": {
+                        "behavior": "deny",
+                        "message": "Denied from Atoll: too risky"
+                    }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn codex_internal_permission_request_is_ignored() {
+        let payload = json!({
+            "session_id": "internal-thread",
+            "hook_event_name": "PermissionRequest",
+            "tool_name": "exec_command",
+            "tool_input": {
+                "command": "echo hi",
+                "description": "internal"
+            }
+        });
+
+        let request = crate::hook_bridge::permission_request_from_codex_payload(
+            "request-internal".into(),
+            payload,
+            "2026-06-19T09:00:00Z".into(),
+        );
+
+        assert!(request.is_none());
+    }
+
+    #[test]
     fn encodes_permission_request_ask_as_empty_response() {
         let ask =
             crate::hook_bridge::claude_hook_ask_response("PermissionRequest", "Atoll unavailable");
@@ -3431,6 +4047,86 @@ mod hook_bridge_tests {
                     "permissionDecisionReason": "Atoll unavailable"
                 }
             })
+        );
+    }
+}
+
+#[cfg(test)]
+mod codex_hooks_tests {
+    use super::{
+        format_codex_hook_command, has_atoll_codex_hooks, remove_atoll_codex_hooks,
+        upsert_codex_hook_events,
+    };
+    use serde_json::json;
+
+    fn sample_atoll_codex_hooks() -> serde_json::Value {
+        json!({
+            "PermissionRequest": [{
+                "matcher": "",
+                "hooks": [{
+                    "type": "command",
+                    "command": "node \"/tmp/atoll-codex-hook.mjs\"",
+                    "timeout": 1800,
+                    "statusMessage": "Atoll approval"
+                }]
+            }],
+            "PostToolUse": [{
+                "matcher": "",
+                "hooks": [{
+                    "type": "command",
+                    "command": "node \"/tmp/atoll-codex-hook.mjs\"",
+                    "timeout": 30
+                }]
+            }],
+            "Stop": [{
+                "matcher": "",
+                "hooks": [{
+                    "type": "command",
+                    "command": "node \"/tmp/atoll-codex-hook.mjs\"",
+                    "timeout": 30
+                }]
+            }],
+            "SubagentStop": [{
+                "matcher": "",
+                "hooks": [{
+                    "type": "command",
+                    "command": "node \"/tmp/atoll-codex-hook.mjs\"",
+                    "timeout": 30
+                }]
+            }]
+        })
+    }
+
+    #[test]
+    fn upsert_installs_into_empty_codex_hook_arrays() {
+        let mut hooks = json!({
+            "PermissionRequest": [],
+            "PostToolUse": [],
+            "Stop": [],
+            "SubagentStop": []
+        });
+        let atoll = sample_atoll_codex_hooks();
+
+        upsert_codex_hook_events(&mut hooks, &atoll);
+
+        let config = json!({ "hooks": hooks });
+        assert!(has_atoll_codex_hooks(&config));
+    }
+
+    #[test]
+    fn uninstall_removes_atoll_codex_hooks_and_empty_events() {
+        let mut hooks = sample_atoll_codex_hooks();
+        remove_atoll_codex_hooks(&mut hooks);
+
+        assert!(hooks.as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn format_codex_hook_command_quotes_paths_with_spaces() {
+        let command = format_codex_hook_command("/Applications/Atoll.app/scripts/atoll-codex-hook.mjs");
+        assert_eq!(
+            command,
+            "node \"/Applications/Atoll.app/scripts/atoll-codex-hook.mjs\""
         );
     }
 }

@@ -31,7 +31,8 @@ import {
   IDLE_COLLAPSE_DELAY_MS,
   PresentationPhase,
 } from "./islandPresentation";
-import { ClawdMascot, type ClawdMood } from "./ClawdMascot";
+import { AgentMascot } from "./AgentMascot";
+import type { ClawdMood } from "./ClawdMascot";
 import { AtollLogo, type AtollActivity } from "./AtollLogo";
 import { deriveAppLogoState, deriveAtollActivity } from "./logoStates";
 import {
@@ -70,12 +71,16 @@ import {
   quitAtoll,
   resolvePermissionRequest,
   setIslandPresentation,
+  setCompactLayout,
   setSessionAutoApprove,
   getNotchMetrics,
   NotchMetrics,
   getClaudeHookStatus,
   installClaudeHooks,
   uninstallClaudeHooks,
+  getCodexHookStatus,
+  installCodexHooks,
+  uninstallCodexHooks,
   getSessionRetention,
   setSessionRetention,
   openInTerminal,
@@ -87,7 +92,7 @@ type AgentKind = PermissionRequest["agent"];
 type PanelView =
   | { kind: "home" }
   | { kind: "session"; sessionId: string }
-  | { kind: "settings" };
+  | { kind: "settings"; page: "main" | "hooks" };
 
 const COMPACT_ICON_SETTING_KEY = "atoll.maxCompactIcons";
 const RETENTION_SETTING_KEY = "atoll.sessionRetentionMinutes";
@@ -405,6 +410,14 @@ function applyWindowMetrics(notch: NotchMetrics) {
     : 0;
   root.style.setProperty("--notch-height", `${coverHeight}px`);
   root.style.setProperty("--notch-width", `${Math.max(0, notch.width)}px`);
+  if (notch.leftAreaWidth) {
+    root.style.setProperty(
+      "--notch-left-area-width",
+      `${Math.max(0, notch.leftAreaWidth)}px`,
+    );
+  } else {
+    root.style.removeProperty("--notch-left-area-width");
+  }
   root.style.setProperty("--compact-notch-inner-gap", `${COMPACT_NOTCH_INNER_GAP}px`);
   root.classList.toggle("has-notch", notch.hasNotch);
 }
@@ -442,8 +455,10 @@ export function App() {
 
   const [panelView, setPanelView] = useState<PanelView>({ kind: "home" });
   const [sessionRequests, setSessionRequests] = useState<PermissionRequest[]>([]);
-  const [hookStatus, setHookStatus] = useState<HookStatus | null>(null);
+  const [claudeHookStatus, setClaudeHookStatus] = useState<HookStatus | null>(null);
+  const [codexHookStatus, setCodexHookStatus] = useState<HookStatus | null>(null);
   const [hookBusy, setHookBusy] = useState(false);
+  const [hooksBackTarget, setHooksBackTarget] = useState<"home" | "settings-main">("home");
   const [selectedAgent, setSelectedAgent] = useState<AgentKind | null>(null);
   const [notchMetrics, setNotchMetrics] = useState<NotchMetrics>(EMPTY_NOTCH_METRICS);
   const [maxCompactIcons, setMaxCompactIcons] = useState<number>(() => readCompactIconLimit());
@@ -481,23 +496,6 @@ export function App() {
     () => computeMaxCompactIconLimit(notchMetrics),
     [notchMetrics],
   );
-  const compactHeaderLayout = useMemo(
-    () =>
-      computeCompactHeaderLayout(
-        notchMetrics,
-        sessions.length,
-        maxCompactIcons,
-        dailyTokenTotal,
-        snapshot.pendingCount,
-      ),
-    [
-      notchMetrics,
-      sessions.length,
-      maxCompactIcons,
-      dailyTokenTotal,
-      snapshot.pendingCount,
-    ],
-  );
   const collapsedWindowWidth = useMemo(
     () =>
       computeCollapsedWindowWidth(
@@ -515,16 +513,8 @@ export function App() {
       snapshot.pendingCount,
     ],
   );
-  const compactLeftPaneWidth = useMemo(
-    () => computeCompactLeftPaneWidth(compactHeaderLayout),
-    [compactHeaderLayout],
-  );
-  // With no active sessions the island super-collapses into a tiny top-edge
-  // drawer handle instead of showing a capsule.
   const collapsedMode: "compact" | "dormant" =
     sessions.length === 0 && snapshot.pendingCount === 0 ? "dormant" : "compact";
-  const collapsedModeRef = useRef<"compact" | "dormant">("compact");
-  collapsedModeRef.current = collapsedMode;
   const tabAgents = useMemo(() => {
     const seen = new Set<AgentKind>();
     sessions.forEach((session) => seen.add(session.agent));
@@ -565,6 +555,36 @@ export function App() {
     return counts;
   }, [sessions]);
 
+  const compactHeaderLayout = useMemo(
+    () =>
+      computeCompactHeaderLayout(
+        notchMetrics,
+        sessions.length,
+        maxCompactIcons,
+        dailyTokenTotal,
+        snapshot.pendingCount,
+      ),
+    [
+      notchMetrics,
+      sessions.length,
+      maxCompactIcons,
+      dailyTokenTotal,
+      snapshot.pendingCount,
+    ],
+  );
+
+  const compactLeftPaneWidth = useMemo(
+    () => computeCompactLeftPaneWidth(compactHeaderLayout),
+    [compactHeaderLayout],
+  );
+
+  const collapsedModeRef = useRef<"compact" | "dormant">("compact");
+  collapsedModeRef.current = collapsedMode;
+  const collapsedWindowWidthRef = useRef(collapsedWindowWidth);
+  collapsedWindowWidthRef.current = collapsedWindowWidth;
+  const compactLeftPaneWidthRef = useRef(compactLeftPaneWidth);
+  compactLeftPaneWidthRef.current = compactLeftPaneWidth;
+
   useEffect(() => {
     let unsubscribe: () => void = () => undefined;
     let unsubscribeHover: () => void = () => undefined;
@@ -576,7 +596,10 @@ export function App() {
       .then(applySnapshot)
       .catch(() => undefined);
     getClaudeHookStatus()
-      .then(setHookStatus)
+      .then(setClaudeHookStatus)
+      .catch(() => undefined);
+    getCodexHookStatus()
+      .then(setCodexHookStatus)
       .catch(() => undefined);
     getNotchMetrics()
       .then((notch) => {
@@ -889,8 +912,9 @@ export function App() {
 
     const nativeTransition = setIslandPresentation(
       "expanded",
-      undefined,
+      collapsedWindowWidthRef.current,
       idleExpanded,
+      compactLeftPaneWidthRef.current,
     );
     transitionTimerRef.current = window.setTimeout(async () => {
       transitionTimerRef.current = null;
@@ -935,18 +959,20 @@ export function App() {
 
     lastNativePresentationKeyRef.current = compactPresentationKey(
       collapsedModeRef.current,
-      collapsedWindowWidth,
-      compactLeftPaneWidth,
+      collapsedWindowWidthRef.current,
+      compactLeftPaneWidthRef.current,
     );
 
+    const compactWidth = collapsedWindowWidthRef.current;
+    const compactLeftWidth = compactLeftPaneWidthRef.current;
     const nativeTransition =
       collapsedModeRef.current === "dormant"
         ? setIslandPresentation("dormant")
         : setIslandPresentation(
             "compact",
-            collapsedWindowWidth,
+            compactWidth,
             undefined,
-            compactLeftPaneWidth,
+            compactLeftWidth,
           );
     transitionTimerRef.current = window.setTimeout(async () => {
       transitionTimerRef.current = null;
@@ -955,6 +981,11 @@ export function App() {
       try {
         await nativeTransition;
         if (phaseRef.current === "closing") {
+          lastNativePresentationKeyRef.current = compactPresentationKey(
+            collapsedModeRef.current,
+            collapsedWindowWidthRef.current,
+            compactLeftPaneWidthRef.current,
+          );
           setPresentationPhase(finishCollapse("closing"));
         }
       } catch {
@@ -1045,11 +1076,11 @@ export function App() {
     scheduleIdleCollapse();
   }
 
-  async function handleInstallHooks() {
+  async function handleInstallClaudeHooks() {
     setHookBusy(true);
     try {
       const status = await installClaudeHooks();
-      setHookStatus(status);
+      setClaudeHookStatus(status);
       const nextSnapshot = await getSnapshot().catch(() => null);
       if (nextSnapshot) applySnapshot(nextSnapshot);
       if (status.installed) {
@@ -1062,12 +1093,50 @@ export function App() {
     }
   }
 
-  async function handleUninstallHooks() {
+  async function handleInstallCodexHooks() {
+    setHookBusy(true);
+    try {
+      const status = await installCodexHooks();
+      setCodexHookStatus(status);
+      const nextSnapshot = await getSnapshot().catch(() => null);
+      if (nextSnapshot) applySnapshot(nextSnapshot);
+      if (status.installed) {
+        collapseIsland(true);
+      }
+    } catch {
+      // keep previous status
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
+  async function handleInstallAllHooks() {
+    setHookBusy(true);
+    try {
+      const [claudeStatus, codexStatus] = await Promise.all([
+        installClaudeHooks(),
+        installCodexHooks(),
+      ]);
+      setClaudeHookStatus(claudeStatus);
+      setCodexHookStatus(codexStatus);
+      const nextSnapshot = await getSnapshot().catch(() => null);
+      if (nextSnapshot) applySnapshot(nextSnapshot);
+      if (claudeStatus.installed || codexStatus.installed) {
+        collapseIsland(true);
+      }
+    } catch {
+      // keep previous status
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
+  async function handleUninstallClaudeHooks() {
     setMenuOpen(false);
     setHookBusy(true);
     try {
       const status = await uninstallClaudeHooks();
-      setHookStatus(status);
+      setClaudeHookStatus(status);
       const nextSnapshot = await getSnapshot().catch(() => null);
       if (nextSnapshot) applySnapshot(nextSnapshot);
     } catch {
@@ -1076,6 +1145,72 @@ export function App() {
       setHookBusy(false);
     }
   }
+
+  async function handleUninstallCodexHooks() {
+    setMenuOpen(false);
+    setHookBusy(true);
+    try {
+      const status = await uninstallCodexHooks();
+      setCodexHookStatus(status);
+      const nextSnapshot = await getSnapshot().catch(() => null);
+      if (nextSnapshot) applySnapshot(nextSnapshot);
+    } catch {
+      // keep previous status
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
+  async function handleUninstallHooks() {
+    setMenuOpen(false);
+    setHookBusy(true);
+    try {
+      const [claudeStatus, codexStatus] = await Promise.all([
+        uninstallClaudeHooks(),
+        uninstallCodexHooks(),
+      ]);
+      setClaudeHookStatus(claudeStatus);
+      setCodexHookStatus(codexStatus);
+      const nextSnapshot = await getSnapshot().catch(() => null);
+      if (nextSnapshot) applySnapshot(nextSnapshot);
+    } catch {
+      // keep previous status
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
+  const hookMenuAgents: HookMenuAgent[] = [
+    {
+      key: "claude",
+      label: "Claude Code",
+      status: claudeHookStatus,
+      note: "Registers hooks in ~/.claude/settings.json.",
+      onInstall: handleInstallClaudeHooks,
+      onUninstall: handleUninstallClaudeHooks,
+    },
+    {
+      key: "codex",
+      label: "Codex",
+      status: codexHookStatus,
+      note: "After install, run /hooks in Codex and trust the Atoll hook.",
+      onInstall: handleInstallCodexHooks,
+      onUninstall: handleUninstallCodexHooks,
+    },
+  ];
+
+  const hooksNeedSetup = hookMenuAgents.some(
+    (agent) => agent.status && !agent.status.installed,
+  );
+  const hooksInstalledCount = hookMenuAgents.filter(
+    (agent) => agent.status?.installed,
+  ).length;
+  const hooksSetupSummary =
+    hooksInstalledCount === 0
+      ? "Not connected"
+      : hooksInstalledCount === hookMenuAgents.length
+        ? "All agents connected"
+        : `${hooksInstalledCount} of ${hookMenuAgents.length} connected`;
 
   async function handleQuit() {
     setMenuOpen(false);
@@ -1113,7 +1248,29 @@ export function App() {
 
   function handleOpenSettings() {
     setMenuOpen(false);
-    setPanelView({ kind: "settings" });
+    setPanelView({ kind: "settings", page: "main" });
+  }
+
+  function openHooksPage(backTarget: "home" | "settings-main") {
+    setMenuOpen(false);
+    setHooksBackTarget(backTarget);
+    setPanelView({ kind: "settings", page: "hooks" });
+  }
+
+  function handleOpenHooks() {
+    openHooksPage("home");
+  }
+
+  function handleOpenHooksFromSettings() {
+    openHooksPage("settings-main");
+  }
+
+  function navigateBackFromHooks() {
+    if (hooksBackTarget === "settings-main") {
+      setPanelView({ kind: "settings", page: "main" });
+    } else {
+      navigateBack();
+    }
   }
 
   const isExpanded = phase === "opening" || phase === "expanded";
@@ -1149,6 +1306,15 @@ export function App() {
     panelView.kind === "session"
       ? sessions.find((session) => session.sessionId === panelView.sessionId)
       : undefined;
+
+  // Keep Rust-side compact metrics current while expanded so collapse targets
+  // the latest width without a follow-up resize animation.
+  useEffect(() => {
+    if (collapsedMode === "dormant") return;
+    setCompactLayout(collapsedWindowWidth, compactLeftPaneWidth).catch(
+      () => undefined,
+    );
+  }, [collapsedMode, collapsedWindowWidth, compactLeftPaneWidth]);
 
   // Keep the native window in sync when compact/expanded layout inputs change.
   // collapseIsland / expandIsland pre-mark the matching key so we do not replay
@@ -1207,6 +1373,17 @@ export function App() {
     }
 
     if (panelView.kind === "settings") {
+      if (panelView.page === "hooks") {
+        return (
+          <HooksView
+            agents={hookMenuAgents}
+            hookBusy={hookBusy}
+            onInstallAll={handleInstallAllHooks}
+            onUninstallAll={handleUninstallHooks}
+          />
+        );
+      }
+
       return (
         <SettingsView
           maxCompactIcons={maxCompactIcons}
@@ -1222,6 +1399,8 @@ export function App() {
           onChangeIdleInterval={(v) => setIdleIntervalSec(clampIdleInterval(v))}
           idleDurationSec={idleDurationSec}
           onChangeIdleDuration={(v) => setIdleDurationSec(clampIdleDuration(v))}
+          onOpenHooks={handleOpenHooksFromSettings}
+          hooksSummary={hooksSetupSummary}
         />
       );
     }
@@ -1256,9 +1435,8 @@ export function App() {
 
     return (
       <IdleView
-        hookStatus={hookStatus}
-        hookBusy={hookBusy}
-        onInstall={handleInstallHooks}
+        needsHookSetup={hooksNeedSetup}
+        onOpenHooks={handleOpenHooks}
       />
     );
   }
@@ -1313,6 +1491,11 @@ export function App() {
               <SessionSubviewNav
                 cwd={subviewSession?.cwd ?? ""}
                 onBack={navigateBack}
+              />
+            ) : panelView.kind === "settings" && panelView.page === "hooks" ? (
+              <HooksSubviewNav
+                onBack={navigateBackFromHooks}
+                backLabel={hooksBackTarget === "settings-main" ? "Settings" : "Back"}
               />
             ) : panelView.kind === "settings" ? (
               <SettingsSubviewNav onBack={navigateBack} />
@@ -1400,27 +1583,14 @@ export function App() {
             </button>
             {menuOpen ? (
               <div className="more-menu" role="menu">
-                {hookStatus?.installed ? (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={handleUninstallHooks}
-                    disabled={hookBusy}
-                  >
-                    <Trash2 size={14} />
-                    Uninstall hooks
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => { setMenuOpen(false); handleInstallHooks(); }}
-                    disabled={hookBusy}
-                  >
-                    <Download size={14} />
-                    Install hooks
-                  </button>
-                )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleOpenHooks}
+                >
+                  <Download size={14} />
+                  Agent hooks
+                </button>
                 <button
                   type="button"
                   role="menuitem"
@@ -1502,7 +1672,8 @@ function CompactSessionStack({
               session.cwd,
             )}`}
           >
-            <ClawdMascot
+            <AgentMascot
+              agent={session.agent}
               mood={deriveSessionMood(session, activeRequest, justResolved)}
               accent={sessionColor.accent}
               accentDark={sessionColor.accentDark}
@@ -1523,6 +1694,7 @@ interface AgentTabBarProps {
   selectedAgent: AgentKind | null;
   pendingCountByAgent: Record<AgentKind, number>;
   showTabs: boolean;
+  compact?: boolean;
   online: boolean;
   onSelectAgent: (agent: AgentKind) => void;
 }
@@ -1532,6 +1704,7 @@ function AgentTabBar({
   selectedAgent,
   pendingCountByAgent,
   showTabs,
+  compact = false,
   online,
   onSelectAgent,
 }: AgentTabBarProps) {
@@ -1548,21 +1721,22 @@ function AgentTabBar({
     const pending = pendingCountByAgent[active] ?? 0;
     const mood: ClawdMood = pending > 0 ? "alert" : "calm";
     return (
-      <span className={`agent-tab is-static ${agentTone[active]}`} data-no-drag>
-        <ClawdMascot
+      <span className={`agent-tab is-static ${agentTone[active]}${compact ? " is-compact" : ""}`} data-no-drag>
+        <AgentMascot
+          agent={active}
           mood={mood}
           accent={agentMascotAccent[active]}
           accentDark={agentMascotDark[active]}
-          size={16}
+          size={compact ? 14 : 16}
         />
-        <span>{agentLabels[active]}</span>
+        {!compact ? <span>{agentLabels[active]}</span> : null}
         {pending > 0 ? <span className="agent-tab-pending">{pending}</span> : null}
       </span>
     );
   }
 
   return (
-    <div className="agent-tabbar" data-no-drag>
+    <div className={`agent-tabbar${compact ? " is-compact" : ""}`} data-no-drag>
       {agents.map((agent) => {
         const pending = pendingCountByAgent[agent] ?? 0;
         const isActive = agent === active;
@@ -1571,16 +1745,19 @@ function AgentTabBar({
           <button
             key={agent}
             type="button"
-            className={`agent-tab ${isActive ? "is-active" : ""} ${agentTone[agent]}`}
+            className={`agent-tab ${isActive ? "is-active" : ""} ${agentTone[agent]}${compact ? " is-compact" : ""}`}
             onClick={() => onSelectAgent(agent)}
+            aria-label={agentLabels[agent]}
+            title={agentLabels[agent]}
           >
-            <ClawdMascot
+            <AgentMascot
+              agent={agent}
               mood={mood}
               accent={agentMascotAccent[agent]}
               accentDark={agentMascotDark[agent]}
-              size={16}
+              size={compact ? 14 : 16}
             />
-            <span>{agentLabels[agent]}</span>
+            {!compact ? <span>{agentLabels[agent]}</span> : null}
             {pending > 0 ? <span className="agent-tab-pending">{pending}</span> : null}
           </button>
         );
@@ -1678,7 +1855,8 @@ function SessionListView({ sessions, activeRequest, justResolved, isExpanded, on
               >
                 <div className="session-item-left">
                   <span className="session-clawd">
-                    <ClawdMascot
+                    <AgentMascot
+                      agent={session.agent}
                       mood={deriveSessionMood(session, activeRequest, justResolved)}
                       accent={sessionColor.accent}
                       accentDark={sessionColor.accentDark}
@@ -1745,6 +1923,8 @@ interface SettingsViewProps {
   onChangeIdleInterval: (value: number) => void;
   idleDurationSec: number;
   onChangeIdleDuration: (value: number) => void;
+  onOpenHooks: () => void;
+  hooksSummary: string;
 }
 
 function SettingsSlider({
@@ -1807,10 +1987,33 @@ function SettingsView({
   onChangeIdleInterval,
   idleDurationSec,
   onChangeIdleDuration,
+  onOpenHooks,
+  hooksSummary,
 }: SettingsViewProps) {
   return (
     <div className="settings-view" data-no-drag>
       <div className="settings-body">
+        <div className="settings-section">
+          <span className="settings-section-label">Integrations</span>
+          <button
+            type="button"
+            className="settings-nav-card"
+            onClick={onOpenHooks}
+            data-no-drag
+          >
+            <div className="settings-nav-card-copy">
+              <span className="settings-card-title">Agent hooks</span>
+              <span className="settings-card-desc">
+                Connect Claude Code, Codex, and future local agents.
+              </span>
+            </div>
+            <div className="settings-nav-card-meta">
+              <span className="settings-hook-badge is-summary">{hooksSummary}</span>
+              <ChevronRight size={14} className="settings-nav-chevron" />
+            </div>
+          </button>
+        </div>
+
         <div className="settings-section">
           <span className="settings-section-label">Display</span>
           <SettingsSlider
@@ -1886,7 +2089,8 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
       <div className="request-main">
         <div className="request-kicker">
           <span className="kicker-label">
-            <ClawdMascot
+            <AgentMascot
+              agent={request.agent}
               mood={mascotMood}
               accent={sessionColor.accent}
               accentDark={sessionColor.accentDark}
@@ -2047,55 +2251,191 @@ function SessionChatView({ transcriptPath, requests }: SessionChatViewProps) {
   );
 }
 
+/* ─── Hooks View ──────────────────────────────────────────────── */
+
+interface HookMenuAgent {
+  key: string;
+  label: string;
+  status: HookStatus | null;
+  note?: string;
+  onInstall: () => void;
+  onUninstall: () => void;
+}
+
+interface HooksViewProps {
+  agents: HookMenuAgent[];
+  hookBusy: boolean;
+  onInstallAll: () => void;
+  onUninstallAll: () => void;
+}
+
+function HooksSubviewNav({
+  onBack,
+  backLabel,
+}: {
+  onBack: () => void;
+  backLabel: string;
+}) {
+  return (
+    <div className="settings-subview-nav" data-no-drag>
+      <button type="button" className="back-button" onClick={onBack}>
+        <ArrowLeft size={13} />
+        <span>{backLabel}</span>
+      </button>
+      <span className="settings-header-title">
+        <Download size={14} />
+        <span>Agent hooks</span>
+      </span>
+    </div>
+  );
+}
+
+function HooksView({
+  agents,
+  hookBusy,
+  onInstallAll,
+  onUninstallAll,
+}: HooksViewProps) {
+  const installedCount = agents.filter((agent) => agent.status?.installed).length;
+  const missingCount = agents.filter(
+    (agent) => agent.status && !agent.status.installed,
+  ).length;
+
+  return (
+    <div className="settings-view" data-no-drag>
+      <div className="settings-body">
+        <div className="settings-section">
+          <span className="settings-section-label">Agents</span>
+          {missingCount > 0 || installedCount > 1 ? (
+            <div className="settings-hook-bulk">
+              {missingCount > 0 ? (
+                <button
+                  type="button"
+                  className="settings-hook-button"
+                  onClick={onInstallAll}
+                  disabled={hookBusy}
+                  data-no-drag
+                >
+                  <Download size={13} />
+                  Install all
+                </button>
+              ) : null}
+              {installedCount > 1 ? (
+                <button
+                  type="button"
+                  className="settings-hook-button is-muted"
+                  onClick={onUninstallAll}
+                  disabled={hookBusy}
+                  data-no-drag
+                >
+                  <Trash2 size={13} />
+                  Uninstall all
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {agents.map((agent) => {
+            const installed = Boolean(agent.status?.installed);
+            const scriptMissing = agent.status && !agent.status.scriptFound;
+            return (
+              <div key={agent.key} className="settings-card settings-hook-card">
+                <div className="settings-card-head">
+                  <span className="settings-card-title">{agent.label}</span>
+                  <span
+                    className={`settings-hook-badge${installed ? " is-installed" : " is-missing"}`}
+                  >
+                    {installed ? "Connected" : "Not installed"}
+                  </span>
+                </div>
+                {agent.status?.settingsPath ? (
+                  <span className="settings-card-desc settings-hook-path">
+                    {agent.status.settingsPath}
+                  </span>
+                ) : null}
+                {agent.note && (!installed || agent.key === "codex") ? (
+                  <span className="settings-card-desc">{agent.note}</span>
+                ) : null}
+                {scriptMissing ? (
+                  <span className="settings-card-desc settings-hook-warning">
+                    Hook script missing from the app bundle. Reinstall Atoll if install fails.
+                  </span>
+                ) : null}
+                <div className="settings-hook-actions">
+                  {installed ? (
+                    <button
+                      type="button"
+                      className="settings-hook-button is-muted"
+                      onClick={agent.onUninstall}
+                      disabled={hookBusy}
+                      data-no-drag
+                    >
+                      <Trash2 size={13} />
+                      Uninstall
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="settings-hook-button"
+                      onClick={agent.onInstall}
+                      disabled={hookBusy || Boolean(scriptMissing)}
+                      data-no-drag
+                    >
+                      <Download size={13} />
+                      {hookBusy ? "Installing…" : "Install"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Idle View ───────────────────────────────────────────────── */
 
 interface IdleViewProps {
-  hookStatus: HookStatus | null;
-  hookBusy: boolean;
-  onInstall: () => void;
+  needsHookSetup: boolean;
+  onOpenHooks: () => void;
 }
 
-function IdleView({ hookStatus, hookBusy, onInstall }: IdleViewProps) {
-  if (hookStatus && !hookStatus.installed) {
-    const scriptMissing = !hookStatus.scriptFound;
+function IdleView({ needsHookSetup, onOpenHooks }: IdleViewProps) {
+  if (!needsHookSetup) {
     return (
-      <div className="idle-view setup-view">
-        <div className="setup-card">
-          <div className="setup-head">
-            <div className="idle-icon setup-icon">
-              <Download size={16} />
-            </div>
-            <div className="setup-copy">
-              <h2>Install Claude hooks</h2>
-              <p>Forward approval requests and token usage updates to Atoll.</p>
-              {scriptMissing ? (
-                <p className="setup-warning">
-                  Hook script not found. If install fails, reinstall Atoll and try again.
-                </p>
-              ) : null}
-            </div>
-          </div>
-          <p className="setup-footnote">Once installed, this panel will auto-switch to waiting mode.</p>
-          <button
-            type="button"
-            className="install-button"
-            onClick={onInstall}
-            disabled={hookBusy}
-            data-no-drag
-          >
-            <Download size={14} />
-            <span>{hookBusy ? "Installing..." : "Install hooks"}</span>
-          </button>
+      <div className="idle-view">
+        <div className="idle-content">
+          <span className="idle-dot" />
+          <span className="idle-text">Waiting for requests…</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="idle-view">
-      <div className="idle-content">
-        <span className="idle-dot" />
-        <span className="idle-text">Waiting for requests…</span>
+    <div className="idle-view setup-view">
+      <div className="setup-card">
+        <div className="setup-head">
+          <div className="idle-icon setup-icon">
+            <Download size={16} />
+          </div>
+          <div className="setup-copy">
+            <h2>Connect your agents</h2>
+            <p>
+              Install hooks for Claude Code, Codex, and other local agents from one place.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="install-button"
+          onClick={onOpenHooks}
+          data-no-drag
+        >
+          <Download size={14} />
+          <span>Open agent hooks</span>
+        </button>
       </div>
     </div>
   );
