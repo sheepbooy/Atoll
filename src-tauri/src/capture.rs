@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
-    build_snapshot, iso_timestamp_now, touch_session_last_seen, AgentKind, AppState,
+    build_snapshot, iso_timestamp_now, touch_session_activity, AgentKind, AppState,
     PermissionRequest, PermissionStatus, TokenUsage,
 };
 
@@ -109,7 +109,7 @@ pub fn seed_approval_demo(app: &AppHandle, state: &AppState) {
     }
 
     for session in ["session-atoll", "session-api", "session-docs"] {
-        touch_session_last_seen(state, session);
+        touch_session_activity(state, session);
     }
 
     let snapshot = build_snapshot(app, state);

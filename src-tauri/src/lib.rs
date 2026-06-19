@@ -388,7 +388,7 @@ fn resolve_permission_request(
         });
     }
 
-    touch_session_last_seen(&state, &session_id);
+    touch_session_activity(&state, &session_id);
     roll_over_token_usage_if_needed(&state);
     drop(requests);
     let snapshot = build_snapshot(&app, &state);
@@ -650,6 +650,9 @@ fn collect_session_transcript_paths(
 ) -> Vec<(String, String, AgentKind)> {
     let mut session_paths: HashMap<String, (String, AgentKind)> = HashMap::new();
     for request in requests {
+        if request.archived {
+            continue;
+        }
         let Some(transcript_path) = request.transcript_path.as_deref() else {
             continue;
         };
@@ -801,7 +804,7 @@ fn parse_codex_token_usage_from_transcript(
     today_key: &str,
 ) -> Result<(TokenUsage, u64, bool), String> {
     use std::fs::File;
-    use std::io::{BufRead, BufReader};
+    use std::io::BufReader;
 
     let file =
         File::open(transcript_path).map_err(|error| format!("Cannot open transcript: {error}"))?;
@@ -1054,7 +1057,6 @@ pub(crate) fn register_known_session(
                 transcript_path: transcript_path.map(str::to_string),
                 last_activity: iso_timestamp_now(),
             });
-        entry.last_activity = iso_timestamp_now();
         if !cwd.is_empty() && cwd != "." {
             entry.cwd = cwd.to_string();
         }
@@ -1071,6 +1073,17 @@ pub(crate) fn touch_session_last_seen(state: &AppState, session_id: &str) {
         .as_secs();
     if let Ok(mut last_seen) = state.session_last_seen.lock() {
         last_seen.insert(session_id.to_string(), now);
+    }
+}
+
+/// Bumps retention clocks for user-visible session activity (turn end, approvals).
+pub(crate) fn touch_session_activity(state: &AppState, session_id: &str) {
+    touch_session_last_seen(state, session_id);
+    let now_iso = iso_timestamp_now();
+    if let Ok(mut known) = state.known_sessions.lock() {
+        if let Some(entry) = known.get_mut(session_id) {
+            entry.last_activity = now_iso;
+        }
     }
 }
 
@@ -1972,13 +1985,14 @@ fn tray_menu_entries() -> [(&'static str, &'static str); 2] {
 
 const AUTO_ARCHIVE_INTERVAL: Duration = Duration::from_secs(10);
 const TOKEN_REFRESH_INTERVAL: Duration = Duration::from_millis(900);
+const TOKEN_SNAPSHOT_MIN_INTERVAL: Duration = Duration::from_secs(2);
 
 fn start_auto_archive_timer(app: AppHandle) {
     thread::spawn(move || loop {
         thread::sleep(AUTO_ARCHIVE_INTERVAL);
 
         let state = app.state::<AppState>();
-        let changed = {
+        let _changed = {
             let Ok(mut requests) = state.requests.lock() else {
                 continue;
             };
@@ -2006,11 +2020,12 @@ fn start_auto_archive_timer(app: AppHandle) {
                 }
             }
 
-            // Also auto-archive non-pinned known sessions that exceeded retention.
-            {
+            // Collect expired known sessions while locks are held; purge after dropping
+            // all guards so purge_tracked_session can acquire them independently.
+            let expired = {
                 let last_seen = state.session_last_seen.lock().unwrap_or_else(|e| e.into_inner());
                 let mut known = state.known_sessions.lock().unwrap_or_else(|e| e.into_inner());
-                let before_len = known.len();
+                let mut expired: Vec<(String, Option<String>)> = Vec::new();
                 known.retain(|session_id, info| {
                     if pinned.contains(session_id) {
                         return true;
@@ -2019,15 +2034,25 @@ fn start_auto_archive_timer(app: AppHandle) {
                         .get(session_id)
                         .copied()
                         .unwrap_or_else(|| parse_iso_timestamp_secs(&info.last_activity));
-                    now.saturating_sub(last_seen_ts) < retention_secs
+                    if now.saturating_sub(last_seen_ts) >= retention_secs {
+                        expired.push((session_id.clone(), info.transcript_path.clone()));
+                        false
+                    } else {
+                        true
+                    }
                 });
-                if known.len() != before_len {
-                    changed = true;
-                }
+                expired
+            };
+            if !expired.is_empty() {
+                changed = true;
+            }
+
+            drop(requests);
+            for (session_id, transcript_path) in expired {
+                purge_tracked_session(&state, &session_id, transcript_path.as_deref());
             }
 
             if changed {
-                drop(requests);
                 roll_over_token_usage_if_needed(&state);
                 let snapshot = build_snapshot(&app, &state);
                 let _ = app.emit("snapshot-changed", &snapshot);
@@ -2039,49 +2064,57 @@ fn start_auto_archive_timer(app: AppHandle) {
 }
 
 fn start_token_refresh_timer(app: AppHandle) {
-    thread::spawn(move || loop {
-        thread::sleep(TOKEN_REFRESH_INTERVAL);
+    thread::spawn(move || {
+        let mut last_snapshot_emit = Instant::now() - TOKEN_SNAPSHOT_MIN_INTERVAL;
 
-        let state = app.state::<AppState>();
-        let tracked_sessions = {
-            let requests = state.requests.lock().unwrap_or_else(|e| e.into_inner());
-            let known_sessions = state.known_sessions.lock().unwrap_or_else(|e| e.into_inner());
-            collect_session_transcript_paths(&requests, &known_sessions)
-        };
-        if tracked_sessions.is_empty() {
-            continue;
-        }
+        loop {
+            thread::sleep(TOKEN_REFRESH_INTERVAL);
 
-        let usage_before = state
-            .session_token_usage
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
-
-        for (session_id, transcript_path, agent) in tracked_sessions {
-            if let Err(error) = refresh_session_token_usage(
-                &state,
-                &session_id,
-                Some(transcript_path.as_str()),
-                Some(&agent),
-            ) {
-                eprintln!("Atoll token usage refresh failed: {error}");
+            let state = app.state::<AppState>();
+            let tracked_sessions = {
+                let requests = state.requests.lock().unwrap_or_else(|e| e.into_inner());
+                let known_sessions = state.known_sessions.lock().unwrap_or_else(|e| e.into_inner());
+                collect_session_transcript_paths(&requests, &known_sessions)
+            };
+            if tracked_sessions.is_empty() {
+                continue;
             }
-        }
 
-        let usage_after = state
-            .session_token_usage
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
-        if usage_after == usage_before {
-            // Avoid noisy snapshot events when token usage has not changed.
-            continue;
-        }
+            let usage_before = state
+                .session_token_usage
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone();
 
-        roll_over_token_usage_if_needed(&state);
-        let snapshot = build_snapshot(&app, &state);
-        let _ = app.emit("snapshot-changed", &snapshot);
+            for (session_id, transcript_path, agent) in tracked_sessions {
+                if let Err(error) = refresh_session_token_usage(
+                    &state,
+                    &session_id,
+                    Some(transcript_path.as_str()),
+                    Some(&agent),
+                ) {
+                    eprintln!("Atoll token usage refresh failed: {error}");
+                }
+            }
+
+            let usage_after = state
+                .session_token_usage
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone();
+            if usage_after == usage_before {
+                continue;
+            }
+
+            roll_over_token_usage_if_needed(&state);
+            let now = Instant::now();
+            if now.duration_since(last_snapshot_emit) < TOKEN_SNAPSHOT_MIN_INTERVAL {
+                continue;
+            }
+            last_snapshot_emit = now;
+            let snapshot = build_snapshot(&app, &state);
+            let _ = app.emit("snapshot-changed", &snapshot);
+        }
     });
 }
 
@@ -3866,7 +3899,7 @@ mod hook_bridge_tests {
 
     #[test]
     fn encodes_hook_decision_for_claude_hook_event() {
-        let approved = crate::hook_bridge::claude_hook_response(
+        let approved = crate::hook_bridge::permission_hook_response(
             "PermissionRequest",
             crate::Decision::Approved,
             "",
@@ -3884,7 +3917,7 @@ mod hook_bridge_tests {
         );
 
         let denied =
-            crate::hook_bridge::claude_hook_response("PermissionRequest", crate::Decision::Denied, "");
+            crate::hook_bridge::permission_hook_response("PermissionRequest", crate::Decision::Denied, "");
         assert_eq!(
             denied,
             json!({
@@ -3901,7 +3934,7 @@ mod hook_bridge_tests {
 
     #[test]
     fn encodes_hook_decision_with_note_for_claude_hook_event() {
-        let denied = crate::hook_bridge::claude_hook_response(
+        let denied = crate::hook_bridge::permission_hook_response(
             "PermissionRequest",
             crate::Decision::Denied,
             "Please use a safer command",
@@ -3923,7 +3956,7 @@ mod hook_bridge_tests {
     #[test]
     fn encodes_hook_decision_for_claude_pre_tool_use() {
         let approved =
-            crate::hook_bridge::claude_hook_response("PreToolUse", crate::Decision::Approved, "");
+            crate::hook_bridge::permission_hook_response("PreToolUse", crate::Decision::Approved, "");
         assert_eq!(
             approved,
             json!({
@@ -4029,14 +4062,14 @@ mod hook_bridge_tests {
     #[test]
     fn encodes_permission_request_ask_as_empty_response() {
         let ask =
-            crate::hook_bridge::claude_hook_ask_response("PermissionRequest", "Atoll unavailable");
+            crate::hook_bridge::hook_defer_response("PermissionRequest", "Atoll unavailable");
 
         assert_eq!(ask, json!({}));
     }
 
     #[test]
     fn encodes_pre_tool_use_ask_response() {
-        let ask = crate::hook_bridge::claude_hook_ask_response("PreToolUse", "Atoll unavailable");
+        let ask = crate::hook_bridge::hook_defer_response("PreToolUse", "Atoll unavailable");
 
         assert_eq!(
             ask,

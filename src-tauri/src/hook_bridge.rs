@@ -10,7 +10,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::{
     build_snapshot, iso_timestamp_now, is_codex_internal_session, purge_tracked_session,
     refresh_session_token_usage, register_known_session, roll_over_token_usage_if_needed,
-    show_main_window_for_approval, touch_session_last_seen, AgentKind, AppState, Decision,
+    show_main_window_for_approval, touch_session_activity, AgentKind, AppState, Decision,
     DecisionWithNote, PermissionRequest, PermissionStatus,
 };
 
@@ -185,10 +185,6 @@ pub(crate) fn permission_hook_response(hook_event_name: &str, decision: Decision
     })
 }
 
-pub(crate) fn claude_hook_response(hook_event_name: &str, decision: Decision, note: &str) -> Value {
-    permission_hook_response(hook_event_name, decision, note)
-}
-
 pub(crate) fn hook_defer_response(hook_event_name: &str, reason: &str) -> Value {
     if matches!(
         hook_event_name,
@@ -209,10 +205,6 @@ pub(crate) fn hook_defer_response(hook_event_name: &str, reason: &str) -> Value 
             "permissionDecisionReason": reason
         }
     })
-}
-
-pub(crate) fn claude_hook_ask_response(hook_event_name: &str, reason: &str) -> Value {
-    hook_defer_response(hook_event_name, reason)
 }
 
 fn handle_connection(app: AppHandle, mut stream: TcpStream) {
@@ -334,7 +326,7 @@ fn submit_blocking_permission_request(
             let mut auto_request = request;
             auto_request.status = PermissionStatus::Approved;
             auto_request.detail = format!("{} Auto-approved.", auto_request.detail);
-            touch_session_last_seen(&state, &auto_request.session);
+            touch_session_activity(&state, &auto_request.session);
             requests.insert(0, auto_request);
             roll_over_token_usage_if_needed(&state);
         }
@@ -355,7 +347,7 @@ fn submit_blocking_permission_request(
 
     {
         let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
-        touch_session_last_seen(&state, &request.session);
+        touch_session_activity(&state, &request.session);
         requests.insert(0, request);
         roll_over_token_usage_if_needed(&state);
     }
@@ -447,7 +439,7 @@ fn mark_request_completed_externally(
                 if !request.detail.contains(&resolved_suffix) {
                     request.detail = format!("{} {resolved_suffix}", request.detail);
                 }
-                touch_session_last_seen(state, &request.session);
+                touch_session_activity(state, &request.session);
                 resolved_session_id = Some(request.session.clone());
                 resolved_transcript_path = request.transcript_path.clone();
                 resolved_agent = Some(request.agent.clone());
@@ -481,7 +473,7 @@ fn mark_request_denied(state: &AppState, app: &AppHandle, request_id: &str, note
         if let Some(request) = requests.iter_mut().find(|request| request.id == request_id) {
             request.status = PermissionStatus::Denied;
             request.detail = format!("{} {note}", request.detail);
-            touch_session_last_seen(state, &request.session);
+            touch_session_activity(state, &request.session);
         }
 
         roll_over_token_usage_if_needed(state);
@@ -555,7 +547,6 @@ fn sync_tool_completion(
 
     if let Some(session_id) = completed_session_id.as_deref() {
         if !codex_internal {
-            touch_session_last_seen(&state, session_id);
             if let Err(error) = refresh_session_token_usage(
                 &state,
                 session_id,
@@ -622,7 +613,7 @@ fn sync_turn_completion(
         if codex_internal {
             purge_tracked_session(&state, session_id, transcript_path.as_deref());
         } else {
-            touch_session_last_seen(&state, session_id);
+            touch_session_activity(&state, session_id);
             register_known_session(
                 &state,
                 session_id,

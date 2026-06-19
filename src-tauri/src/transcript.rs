@@ -7,6 +7,7 @@ pub enum TranscriptFormat {
 }
 
 pub struct CodexTokenParseResult {
+    #[allow(dead_code)] // parsed for correctness; session UI uses daily_delta increments
     pub session_total: TokenUsageDelta,
     pub daily_delta: TokenUsageDelta,
     pub next_offset: u64,
@@ -161,7 +162,7 @@ pub fn parse_codex_tokens_from_reader<R: std::io::BufRead + std::io::Seek>(
     offset: u64,
     today_key: &str,
 ) -> Result<CodexTokenParseResult, String> {
-    use std::io::{Seek, SeekFrom};
+    use std::io::SeekFrom;
 
     let mut session_total = TokenUsageDelta::default();
     let mut daily_delta = TokenUsageDelta::default();
