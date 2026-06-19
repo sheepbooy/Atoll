@@ -898,6 +898,29 @@ kbd {
   animation-duration: 0.5s;
 }
 
+.compact-session-dot .codex.is-calm {
+  animation: session-dot-breathe 3.2s ease-in-out infinite;
+}
+
+.compact-session-dot .codex.is-sleeping {
+  animation: session-dot-breathe 3.6s ease-in-out infinite;
+}
+
+.compact-session-dot .codex.is-alert {
+  animation-name: clawd-alert-hop;
+  animation-duration: 0.85s;
+}
+
+.compact-session-dot .codex.is-happy {
+  animation-name: clawd-bounce;
+  animation-duration: 0.6s;
+}
+
+.compact-session-dot .codex.is-worried {
+  animation-name: clawd-tremble;
+  animation-duration: 0.5s;
+}
+
 @keyframes session-dot-breathe {
   0%, 100% {
     transform: scale(0.96) translateY(2%);
@@ -1724,8 +1747,8 @@ kbd {
 
 .codex .codex-svg {
   filter:
-    drop-shadow(0 0 1px rgba(158, 220, 255, 0.75))
-    drop-shadow(0 0 6px rgba(56, 168, 220, 0.28));
+    drop-shadow(0 0 1px var(--codex-glow-inner, rgba(158, 220, 255, 0.75)))
+    drop-shadow(0 0 6px var(--codex-glow-outer, rgba(56, 168, 220, 0.28)));
 }
 
 .codex-claw,
@@ -4183,6 +4206,7 @@ kbd {
   .compact-empty-logo,
   .compact-session-dot,
   .compact-session-dot .clawd,
+  .compact-session-dot .codex,
   .token-counter-tooltip,
   .token-counter-wrap--compact.token-counter-wrap--live .token-counter,
   .token-counter-wrap--compact.token-counter-wrap--settle .token-counter,
@@ -4193,7 +4217,9 @@ kbd {
   .token-odo-roll-enter,
   .token-counter-delta,
   .clawd,
-  .clawd * {
+  .clawd *,
+  .codex,
+  .codex * {
     animation: none !important;
   }
 }

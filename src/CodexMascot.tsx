@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { ClawdMood } from "./ClawdMascot";
 
 const BODY = "#4a9fd4";
@@ -15,6 +16,95 @@ const OUTLINE_SICK = "#d4f5d4";
 const BEZEL_RIM = "#5ab4dc";
 
 const MONO = "ui-monospace, 'SF Mono', Menlo, monospace";
+
+interface CodexPalette {
+  body: string;
+  bodyTop: string;
+  dark: string;
+  bezel: string;
+  bezelRim: string;
+  outline: string;
+  prompt: string;
+  promptDim: string;
+  blush: string;
+  sparkle: string;
+  sweat: string;
+  glowInner: string;
+  glowOuter: string;
+}
+
+function parseHex(hex: string): [number, number, number] | null {
+  const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!match) return null;
+  const value = Number.parseInt(match[1], 16);
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+}
+
+function rgbHex(r: number, g: number, b: number): string {
+  const clamp = (channel: number) =>
+    Math.max(0, Math.min(255, Math.round(channel)));
+  return `#${[clamp(r), clamp(g), clamp(b)]
+    .map((channel) => channel.toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+function mixHex(from: string, to: string, amount: number): string {
+  const source = parseHex(from);
+  const target = parseHex(to);
+  if (!source || !target) return from;
+  return rgbHex(
+    source[0] + (target[0] - source[0]) * amount,
+    source[1] + (target[1] - source[1]) * amount,
+    source[2] + (target[2] - source[2]) * amount,
+  );
+}
+
+function defaultCodexPalette(): CodexPalette {
+  return {
+    body: BODY,
+    bodyTop: BODY_TOP,
+    dark: DARK,
+    bezel: BEZEL,
+    bezelRim: BEZEL_RIM,
+    outline: OUTLINE,
+    prompt: PROMPT,
+    promptDim: PROMPT_DIM,
+    blush: BLUSH,
+    sparkle: "#d4f8ff",
+    sweat: "#7cc4ff",
+    glowInner: "rgba(158, 220, 255, 0.75)",
+    glowOuter: "rgba(56, 168, 220, 0.28)",
+  };
+}
+
+function deriveCodexPalette(accent?: string, accentDark?: string): CodexPalette {
+  if (!accent) return defaultCodexPalette();
+
+  const dark = accentDark ?? mixHex(accent, "#000000", 0.35);
+  const glowRgb = parseHex(accent);
+  const glowOuter = glowRgb
+    ? `rgba(${glowRgb[0]}, ${glowRgb[1]}, ${glowRgb[2]}, 0.28)`
+    : "rgba(56, 168, 220, 0.28)";
+  const glowInner = glowRgb
+    ? `rgba(${Math.min(glowRgb[0] + 40, 255)}, ${Math.min(glowRgb[1] + 40, 255)}, ${Math.min(glowRgb[2] + 40, 255)}, 0.75)`
+    : "rgba(158, 220, 255, 0.75)";
+
+  return {
+    body: accent,
+    bodyTop: mixHex(accent, "#ffffff", 0.18),
+    dark,
+    bezel: mixHex(dark, "#000000", 0.22),
+    bezelRim: mixHex(accent, "#ffffff", 0.12),
+    outline: mixHex(accent, "#ffffff", 0.42),
+    prompt: mixHex(accent, "#ffffff", 0.55),
+    promptDim: mixHex(accent, "#000000", 0.38),
+    blush: mixHex(accent, "#ffffff", 0.45),
+    sparkle: mixHex(accent, "#ffffff", 0.62),
+    sweat: mixHex(accent, "#ffffff", 0.35),
+    glowInner,
+    glowOuter,
+  };
+}
 
 const VIEWBOX = { x: -20, y: -34, w: 152, h: 136 };
 const ASPECT = VIEWBOX.w / VIEWBOX.h;
@@ -115,19 +205,32 @@ export function CodexMascot({
   accentDark,
 }: CodexMascotProps) {
   const isSick = mood === "worried";
-  const body = isSick ? SICK : accent ?? BODY;
-  const bodyTop = isSick ? SICK : accent ?? BODY_TOP;
-  const dark = isSick ? SICK_DARK : accentDark ?? DARK;
-  const rim = isSick ? OUTLINE_SICK : OUTLINE;
-  const prompt = isSick
-    ? "#e8ffe8"
-    : mood === "sleeping"
-      ? PROMPT_DIM
-      : PROMPT;
+  const palette = isSick
+    ? {
+        ...defaultCodexPalette(),
+        body: SICK,
+        bodyTop: SICK,
+        dark: SICK_DARK,
+        outline: OUTLINE_SICK,
+        bezel: SICK_DARK,
+        bezelRim: OUTLINE_SICK,
+        prompt: "#e8ffe8",
+        promptDim: "#c8e8c8",
+        blush: "#d4f5d4",
+        sparkle: "#e8ffe8",
+        sweat: "#a8d8a8",
+        glowInner: "rgba(212, 245, 212, 0.75)",
+        glowOuter: "rgba(124, 185, 124, 0.28)",
+      }
+    : deriveCodexPalette(accent, accentDark);
+  const prompt =
+    mood === "sleeping" ? palette.promptDim : palette.prompt;
 
-  const wrapperStyle = size
-    ? { width: size * ASPECT, height: size }
-    : undefined;
+  const wrapperStyle = {
+    ...(size ? { width: size * ASPECT, height: size } : {}),
+    "--codex-glow-inner": palette.glowInner,
+    "--codex-glow-outer": palette.glowOuter,
+  } as CSSProperties;
 
   return (
     <span
@@ -152,10 +255,24 @@ export function CodexMascot({
         />
 
         <g className="codex-body" shapeRendering="crispEdges">
-          <RimRect x={38} y={-5} width={32} height={6} fill={body} stroke={rim} />
+          <RimRect
+            x={38}
+            y={-5}
+            width={32}
+            height={6}
+            fill={palette.body}
+            stroke={palette.outline}
+          />
 
-          <RimRect x={16} y={0} width={88} height={56} fill={body} stroke={rim} />
-          <rect x={16} y={0} width={88} height={6} fill={bodyTop} />
+          <RimRect
+            x={16}
+            y={0}
+            width={88}
+            height={56}
+            fill={palette.body}
+            stroke={palette.outline}
+          />
+          <rect x={16} y={0} width={88} height={6} fill={palette.bodyTop} />
 
           <RimRect
             className="codex-screen"
@@ -163,8 +280,8 @@ export function CodexMascot({
             y={5}
             width={84}
             height={49}
-            fill={BEZEL}
-            stroke={BEZEL_RIM}
+            fill={palette.bezel}
+            stroke={palette.bezelRim}
           />
           <rect x={20} y={7} width={80} height={45} fill={SCREEN} />
 
@@ -178,7 +295,7 @@ export function CodexMascot({
                 width={12}
                 height={2.4}
                 fill={SCREEN}
-                stroke={rim}
+                stroke={palette.outline}
                 strokeWidth={1.2}
                 transform="rotate(-14 26 3.2)"
               />
@@ -188,7 +305,7 @@ export function CodexMascot({
                 width={12}
                 height={2.4}
                 fill={SCREEN}
-                stroke={rim}
+                stroke={palette.outline}
                 strokeWidth={1.2}
                 transform="rotate(14 86 3.2)"
               />
@@ -197,8 +314,8 @@ export function CodexMascot({
 
           {(mood === "happy" || mood === "alert") && (
             <>
-              <ellipse cx={20} cy={51} rx={5} ry={2.8} fill={BLUSH} opacity={0.5} />
-              <ellipse cx={100} cy={51} rx={5} ry={2.8} fill={BLUSH} opacity={0.5} />
+              <ellipse cx={20} cy={51} rx={5} ry={2.8} fill={palette.blush} opacity={0.5} />
+              <ellipse cx={100} cy={51} rx={5} ry={2.8} fill={palette.blush} opacity={0.5} />
             </>
           )}
 
@@ -208,8 +325,8 @@ export function CodexMascot({
             y={56}
             width={9.6}
             height={20}
-            fill={dark}
-            stroke={rim}
+            fill={palette.dark}
+            stroke={palette.outline}
           />
           <RimRect
             className="codex-leg codex-leg-1"
@@ -217,8 +334,8 @@ export function CodexMascot({
             y={56}
             width={9.6}
             height={20}
-            fill={dark}
-            stroke={rim}
+            fill={palette.dark}
+            stroke={palette.outline}
           />
         </g>
 
@@ -234,16 +351,16 @@ export function CodexMascot({
             <path
               className="codex-heart"
               d="M56 -14 C 51 -22 41 -17 56 -4 C 71 -17 61 -22 56 -14 Z"
-              fill="#8de8ff"
+              fill={palette.sparkle}
             />
             <g transform="translate(-6 12)">
-              <Star className="codex-star codex-star-0" />
+              <Star className="codex-star codex-star-0" fill={palette.sparkle} />
             </g>
             <g transform="translate(118 6)">
-              <Star className="codex-star codex-star-1" />
+              <Star className="codex-star codex-star-1" fill={palette.sparkle} />
             </g>
             <g transform="translate(96 -24)">
-              <Star className="codex-star codex-star-2" />
+              <Star className="codex-star codex-star-2" fill={palette.sparkle} />
             </g>
           </>
         )}
@@ -269,7 +386,11 @@ export function CodexMascot({
 
         {mood === "worried" && (
           <g transform="translate(108 -4)">
-            <path className="codex-sweat" d="M4 0 C 8 7 0 7 4 0 Z" fill="#7cc4ff" />
+            <path
+              className="codex-sweat"
+              d="M4 0 C 8 7 0 7 4 0 Z"
+              fill={palette.sweat}
+            />
           </g>
         )}
       </svg>
@@ -277,12 +398,12 @@ export function CodexMascot({
   );
 }
 
-function Star({ className }: { className?: string }) {
+function Star({ className, fill }: { className?: string; fill: string }) {
   return (
     <polygon
       className={className}
       points="0,-6 1.6,-1.6 6,0 1.6,1.6 0,6 -1.6,1.6 -6,0 -1.6,-1.6"
-      fill="#d4f8ff"
+      fill={fill}
     />
   );
 }
