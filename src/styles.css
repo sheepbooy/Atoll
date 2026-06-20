@@ -3766,6 +3766,11 @@ kbd {
   color: var(--text-muted);
 }
 
+.settings-hook-badge.is-warning {
+  background: rgba(255, 196, 96, 0.12);
+  color: rgba(255, 208, 128, 0.95);
+}
+
 .settings-hook-badge.is-summary {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-secondary);

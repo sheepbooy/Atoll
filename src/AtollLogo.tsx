@@ -19,6 +19,7 @@ const IDLE_PALETTE: Palette = { body: "#38BDD8", top: "#5FD8EC", limb: "#2A8FA8"
 const DEAD_PALETTE: Palette = { body: "#6E8A94", top: "#8AA4AE", limb: "#4E6670" };
 
 const EYE = "#1a1a1a";
+const DEAD_EYE = "#050505";
 const BX = 8;
 const BY = 18;
 const BW = 48;
@@ -88,10 +89,10 @@ function MascotBody({
       <g className="atoll-eyes">
         {eyeVariant === "dead" ? (
           <>
-            <line x1={18 + eyeOffsetX} y1={eyeY} x2={24 + eyeOffsetX} y2={eyeY + 10} stroke={EYE} strokeWidth={2} strokeLinecap="round" />
-            <line x1={24 + eyeOffsetX} y1={eyeY} x2={18 + eyeOffsetX} y2={eyeY + 10} stroke={EYE} strokeWidth={2} strokeLinecap="round" />
-            <line x1={38 + eyeOffsetX} y1={eyeY} x2={44 + eyeOffsetX} y2={eyeY + 10} stroke={EYE} strokeWidth={2} strokeLinecap="round" />
-            <line x1={44 + eyeOffsetX} y1={eyeY} x2={38 + eyeOffsetX} y2={eyeY + 10} stroke={EYE} strokeWidth={2} strokeLinecap="round" />
+            <line x1={16.5 + eyeOffsetX} y1={eyeY - 1} x2={25.5 + eyeOffsetX} y2={eyeY + 12} stroke={DEAD_EYE} strokeWidth={3} strokeLinecap="round" />
+            <line x1={25.5 + eyeOffsetX} y1={eyeY - 1} x2={16.5 + eyeOffsetX} y2={eyeY + 12} stroke={DEAD_EYE} strokeWidth={3} strokeLinecap="round" />
+            <line x1={36.5 + eyeOffsetX} y1={eyeY - 1} x2={45.5 + eyeOffsetX} y2={eyeY + 12} stroke={DEAD_EYE} strokeWidth={3} strokeLinecap="round" />
+            <line x1={45.5 + eyeOffsetX} y1={eyeY - 1} x2={36.5 + eyeOffsetX} y2={eyeY + 12} stroke={DEAD_EYE} strokeWidth={3} strokeLinecap="round" />
           </>
         ) : eyeVariant === "happy" && !blinking ? (
           <>

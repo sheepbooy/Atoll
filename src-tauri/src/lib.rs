@@ -255,6 +255,7 @@ fn get_snapshot(app: AppHandle, state: State<'_, AppState>) -> IslandSnapshot {
     if let Ok(mut last) = state.last_listening_online.lock() {
         *last = Some(snapshot.online);
     }
+    remember_hook_health(&state, &snapshot.hook_health);
     snapshot
 }
 
@@ -318,6 +319,12 @@ fn sync_listening_online_snapshot(app: &AppHandle, state: &AppState) {
     }
 }
 
+fn remember_hook_health(state: &AppState, hook_health: &HookHealthSnapshot) {
+    if let Ok(mut last) = state.last_hook_health.lock() {
+        *last = Some(hook_health.clone());
+    }
+}
+
 fn sync_hook_health_snapshot(app: &AppHandle, state: &AppState) {
     let hook_health = build_hook_health(app);
     let should_emit = {
@@ -336,6 +343,7 @@ fn sync_hook_health_snapshot(app: &AppHandle, state: &AppState) {
     };
     if should_emit {
         let snapshot = build_snapshot(app, state);
+        remember_hook_health(state, &snapshot.hook_health);
         let _ = app.emit("snapshot-changed", &snapshot);
     }
 }
@@ -390,42 +398,30 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
 }
 
 fn claude_hooks_readiness(app: &AppHandle) -> (bool, bool, String, String) {
-    let script_path =
-        resolve_hook_script_path(app, "atoll-claude-hook.mjs").unwrap_or_default();
-    let script_found =
-        !script_path.is_empty() && std::path::Path::new(&script_path).exists();
     let settings_path = claude_settings_path()
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let installed = if settings_path.is_empty() || !std::path::Path::new(&settings_path).exists() {
-        false
-    } else {
-        std::fs::read_to_string(&settings_path)
-            .ok()
-            .and_then(|content| serde_json::from_str::<Value>(&content).ok())
-            .map(|settings| has_atoll_claude_hooks(&settings))
-            .unwrap_or(false)
-    };
+    let settings = read_json_file(&settings_path);
+    let installed = settings
+        .as_ref()
+        .map(|config| has_atoll_claude_hooks(config))
+        .unwrap_or(false);
+    let (script_path, script_found) =
+        resolve_hook_script_readiness(app, "atoll-claude-hook.mjs", settings.as_ref());
     (installed, script_found, settings_path, script_path)
 }
 
 fn codex_hooks_readiness(app: &AppHandle) -> (bool, bool, String, String) {
-    let script_path =
-        resolve_hook_script_path(app, "atoll-codex-hook.mjs").unwrap_or_default();
-    let script_found =
-        !script_path.is_empty() && std::path::Path::new(&script_path).exists();
     let hooks_path = codex_hooks_path()
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let installed = if hooks_path.is_empty() || !std::path::Path::new(&hooks_path).exists() {
-        false
-    } else {
-        std::fs::read_to_string(&hooks_path)
-            .ok()
-            .and_then(|content| serde_json::from_str::<Value>(&content).ok())
-            .map(|config| has_atoll_codex_hooks(&config))
-            .unwrap_or(false)
-    };
+    let config = read_json_file(&hooks_path);
+    let installed = config
+        .as_ref()
+        .map(|hooks| has_atoll_codex_hooks(hooks))
+        .unwrap_or(false);
+    let (script_path, script_found) =
+        resolve_hook_script_readiness(app, "atoll-codex-hook.mjs", config.as_ref());
     (installed, script_found, hooks_path, script_path)
 }
 
@@ -1403,6 +1399,7 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
     if let Ok(mut last) = state.last_listening_online.lock() {
         *last = Some(snapshot.online);
     }
+    remember_hook_health(&state, &snapshot.hook_health);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
 
@@ -1447,6 +1444,7 @@ fn uninstall_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
     if let Ok(mut last) = state.last_listening_online.lock() {
         *last = Some(snapshot.online);
     }
+    remember_hook_health(&state, &snapshot.hook_health);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
 
@@ -1600,6 +1598,7 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
     if let Ok(mut last) = state.last_listening_online.lock() {
         *last = Some(snapshot.online);
     }
+    remember_hook_health(&state, &snapshot.hook_health);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
 
@@ -1644,6 +1643,7 @@ fn uninstall_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
     if let Ok(mut last) = state.last_listening_online.lock() {
         *last = Some(snapshot.online);
     }
+    remember_hook_health(&state, &snapshot.hook_health);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
 
@@ -1727,27 +1727,94 @@ fn remove_atoll_codex_hooks(hooks: &mut Value) {
     });
 }
 
-fn resolve_hook_script_path(app: &AppHandle, script_name: &str) -> Option<String> {
-    let resource_path = app
-        .path()
-        .resource_dir()
+fn read_json_file(path: &str) -> Option<Value> {
+    if path.is_empty() || !std::path::Path::new(path).exists() {
+        return None;
+    }
+    std::fs::read_to_string(path)
         .ok()
-        .map(|dir| dir.join("scripts").join(script_name));
-    if let Some(ref path) = resource_path {
-        if path.exists() {
-            return Some(path.to_string_lossy().into());
+        .and_then(|content| serde_json::from_str(&content).ok())
+}
+
+fn extract_node_script_path(command: &str) -> Option<String> {
+    let rest = command.trim().strip_prefix("node ")?.trim();
+    if rest.starts_with('"') {
+        let inner = &rest[1..];
+        let end = inner.find('"')?;
+        return Some(inner[..end].replace("\\\"", "\""));
+    }
+    Some(rest.to_string())
+}
+
+fn configured_atoll_hook_script_path(config: &Value, marker: &str) -> Option<String> {
+    let hooks = config.get("hooks")?.as_object()?;
+    for matchers in hooks.values() {
+        let arr = matchers.as_array()?;
+        for matcher in arr {
+            let hook_arr = matcher.get("hooks")?.as_array()?;
+            for hook in hook_arr {
+                let cmd = hook.get("command")?.as_str()?;
+                if cmd.contains(marker) {
+                    if let Some(path) = extract_node_script_path(cmd) {
+                        return Some(path);
+                    }
+                }
+            }
         }
+    }
+    None
+}
+
+fn resolve_hook_script_readiness(
+    app: &AppHandle,
+    script_name: &str,
+    config: Option<&Value>,
+) -> (String, bool) {
+    let marker = script_name.trim_end_matches(".mjs");
+    let mut script_path = resolve_hook_script_path(app, script_name).unwrap_or_default();
+    let mut script_found =
+        !script_path.is_empty() && std::path::Path::new(&script_path).exists();
+
+    if !script_found {
+        if let Some(configured) = config.and_then(|cfg| configured_atoll_hook_script_path(cfg, marker))
+        {
+            if std::path::Path::new(&configured).exists() {
+                script_found = true;
+                if script_path.is_empty() {
+                    script_path = configured;
+                }
+            }
+        }
+    }
+
+    (script_path, script_found)
+}
+
+fn resolve_hook_script_path(app: &AppHandle, script_name: &str) -> Option<String> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        candidates.push(resource_dir.join("scripts").join(script_name));
     }
 
     if let Ok(exe) = std::env::current_exe() {
         for ancestor in exe.ancestors().skip(1) {
-            let candidate = ancestor.join("scripts").join(script_name);
-            if candidate.exists() {
-                return Some(candidate.to_string_lossy().into());
-            }
+            candidates.push(
+                ancestor
+                    .join("Resources")
+                    .join("scripts")
+                    .join(script_name),
+            );
+            candidates.push(ancestor.join("scripts").join(script_name));
             if ancestor.join("src-tauri").exists() {
-                return Some(candidate.to_string_lossy().into());
+                candidates.push(ancestor.join("scripts").join(script_name));
             }
+        }
+    }
+
+    for candidate in candidates {
+        if candidate.exists() {
+            return Some(candidate.to_string_lossy().into());
         }
     }
 
@@ -4386,6 +4453,47 @@ mod hook_bridge_tests {
                     "permissionDecisionReason": "Atoll unavailable"
                 }
             })
+        );
+    }
+}
+
+#[cfg(test)]
+mod hook_script_path_tests {
+    use super::{configured_atoll_hook_script_path, extract_node_script_path};
+    use serde_json::json;
+
+    #[test]
+    fn extract_node_script_path_handles_quoted_and_unquoted_commands() {
+        assert_eq!(
+            extract_node_script_path(
+                "node \"/Applications/Atoll.app/Contents/Resources/scripts/atoll-codex-hook.mjs\""
+            ),
+            Some("/Applications/Atoll.app/Contents/Resources/scripts/atoll-codex-hook.mjs".into())
+        );
+        assert_eq!(
+            extract_node_script_path(
+                "node /Applications/Atoll.app/Contents/Resources/scripts/atoll-claude-hook.mjs"
+            ),
+            Some("/Applications/Atoll.app/Contents/Resources/scripts/atoll-claude-hook.mjs".into())
+        );
+    }
+
+    #[test]
+    fn configured_atoll_hook_script_path_reads_hooks_json() {
+        let config = json!({
+            "hooks": {
+                "PermissionRequest": [{
+                    "matcher": "",
+                    "hooks": [{
+                        "command": "node \"/Applications/Atoll.app/Contents/Resources/scripts/atoll-codex-hook.mjs\""
+                    }]
+                }]
+            }
+        });
+
+        assert_eq!(
+            configured_atoll_hook_script_path(&config, "atoll-codex-hook"),
+            Some("/Applications/Atoll.app/Contents/Resources/scripts/atoll-codex-hook.mjs".into())
         );
     }
 }

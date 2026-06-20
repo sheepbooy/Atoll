@@ -519,7 +519,32 @@ describe("App", () => {
     await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
   });
 
-  it("shows dead agent mascot in header when one hook is disconnected", async () => {
+  it("shows dead agent mascot in header when one installed hook drifts", async () => {
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: {
+        claude: {
+          installed: true,
+          scriptFound: false,
+          settingsPath: "",
+          scriptPath: "",
+        },
+        codex: connectedHookHealth.codex,
+      },
+    });
+    const { container } = render(<App />);
+
+    await waitFor(() => {
+      expect(container.querySelector(".header-agent-logo.clawd.is-dead")).not.toBeNull();
+    });
+    expect(container.querySelector(".atoll-logo.is-dead")).toBeNull();
+  });
+
+  it("shows dead agent mascot in header when one hook is uninstalled", async () => {
     bridge.getSnapshot.mockResolvedValue({
       online: true,
       pendingCount: 0,

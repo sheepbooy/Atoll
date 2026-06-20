@@ -26,6 +26,7 @@ import {
   analyzeHookHealth,
   deriveHeaderLogoDisplay,
   hookAttentionTitle,
+  isHookReady,
   type HeaderLogoDisplay,
 } from "./hookHealth";
 import {
@@ -919,6 +920,13 @@ export function App() {
   function applySnapshot(nextSnapshot: IslandSnapshot) {
     snapshotRef.current = nextSnapshot;
     if (phaseRef.current === "opening" || phaseRef.current === "closing") {
+      // Hook health must update immediately after install — waiting for the
+      // presentation transition leaves the header logo stuck in the dead state.
+      setSnapshot((previous) => ({
+        ...previous,
+        hookHealth: nextSnapshot.hookHealth,
+        online: nextSnapshot.online,
+      }));
       return;
     }
     setSnapshot(nextSnapshot);
@@ -2525,14 +2533,17 @@ function HooksView({
           {agents.map((agent) => {
             const installed = Boolean(agent.status?.installed);
             const scriptMissing = agent.status && !agent.status.scriptFound;
+            const ready = isHookReady(agent.status);
             return (
               <div key={agent.key} className="settings-card settings-hook-card">
                 <div className="settings-card-head">
                   <span className="settings-card-title">{agent.label}</span>
                   <span
-                    className={`settings-hook-badge${installed ? " is-installed" : " is-missing"}`}
+                    className={`settings-hook-badge${
+                      ready ? " is-installed" : installed ? " is-warning" : " is-missing"
+                    }`}
                   >
-                    {installed ? "Connected" : "Not installed"}
+                    {ready ? "Connected" : installed ? "Shim missing" : "Not installed"}
                   </span>
                 </div>
                 {agent.status?.settingsPath ? (

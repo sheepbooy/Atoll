@@ -179,9 +179,23 @@ function ScreenPrompt({
     );
   }
 
-  if (mood === "dead" || mood === "worried") {
+  if (mood === "dead") {
     return (
-      <text {...base} fill={color} opacity={mood === "dead" ? 0.45 : 1}>
+      <text
+        {...base}
+        fill={color}
+        opacity={0.95}
+        fontSize={PROMPT_SIZE + 10}
+        letterSpacing={-1}
+      >
+        xx
+      </text>
+    );
+  }
+
+  if (mood === "worried") {
+    return (
+      <text {...base} fill={color} opacity={1}>
         xx
       </text>
     );

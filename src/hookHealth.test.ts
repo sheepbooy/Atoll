@@ -3,6 +3,8 @@ import {
   analyzeHookHealth,
   deriveHeaderLogoDisplay,
   hookAttentionTitle,
+  isHookDisconnected,
+  isHookDrifted,
   isHookReady,
 } from "./hookHealth";
 import type { HookHealthSnapshot } from "./tauri";
@@ -21,6 +23,13 @@ const missing = {
   scriptPath: "/tmp/atoll-claude-hook.mjs",
 };
 
+const drifted = {
+  installed: true,
+  scriptFound: false,
+  settingsPath: "/tmp/settings.json",
+  scriptPath: "",
+};
+
 describe("hookHealth", () => {
   it("detects first-time setup when no agents are connected", () => {
     const analysis = analyzeHookHealth({
@@ -30,12 +39,27 @@ describe("hookHealth", () => {
 
     expect(analysis.needsFirstTimeSetup).toBe(true);
     expect(analysis.needsReconnect).toBe(false);
+    expect(analysis.disconnectedAgents).toEqual([]);
     expect(analysis.summary).toBe("Not connected");
   });
 
-  it("detects partial drift when one agent disconnects", () => {
+  it("flags an uninstalled agent when another agent stays connected", () => {
     const analysis = analyzeHookHealth({
       claude: missing,
+      codex: ready,
+    });
+
+    expect(analysis.needsFirstTimeSetup).toBe(false);
+    expect(analysis.needsReconnect).toBe(true);
+    expect(analysis.connectedCount).toBe(1);
+    expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["claude"]);
+    expect(analysis.summary).toBe("1 of 2 connected");
+    expect(hookAttentionTitle(analysis)).toContain("Claude Code");
+  });
+
+  it("detects partial drift when one installed agent loses its shim", () => {
+    const analysis = analyzeHookHealth({
+      claude: drifted,
       codex: ready,
     });
 
@@ -46,13 +70,12 @@ describe("hookHealth", () => {
     expect(hookAttentionTitle(analysis)).toContain("Claude Code");
   });
 
-  it("treats missing scripts as not ready", () => {
-    expect(
-      isHookReady({
-        ...ready,
-        scriptFound: false,
-      }),
-    ).toBe(false);
+  it("treats missing scripts as drift only when hooks were installed", () => {
+    expect(isHookReady(drifted)).toBe(false);
+    expect(isHookDrifted(drifted)).toBe(true);
+    expect(isHookDrifted(missing)).toBe(false);
+    expect(isHookDisconnected(missing, true)).toBe(true);
+    expect(isHookDisconnected(missing, false)).toBe(false);
   });
 
   it("handles undefined health gracefully", () => {
@@ -69,8 +92,17 @@ describe("hookHealth", () => {
     });
   });
 
-  it("derives dead agent logo for a single disconnected agent", () => {
+  it("derives dead agent logo when one agent is uninstalled", () => {
     const analysis = analyzeHookHealth({ claude: missing, codex: ready });
+    expect(deriveHeaderLogoDisplay(analysis, "coding")).toEqual({
+      kind: "agent",
+      agent: "claude",
+      mood: "dead",
+    });
+  });
+
+  it("derives dead agent logo for a single drifted agent", () => {
+    const analysis = analyzeHookHealth({ claude: drifted, codex: ready });
     expect(deriveHeaderLogoDisplay(analysis, "coding")).toEqual({
       kind: "agent",
       agent: "claude",

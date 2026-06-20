@@ -9,6 +9,7 @@ const DEAD_BODY = "#8a8a8a";
 const DEAD_BODY_TOP = "#9a9a9a";
 const DEAD_DARK = "#666666";
 const EYE = "#1a1a1a";
+const DEAD_EYE = "#050505";
 const SICK = "#7cb97c";
 const SICK_DARK = "#5a8b5a";
 const BLUSH = "#ffb4b4";
@@ -81,7 +82,14 @@ export function ClawdMascot({
           <rect x={8} y={0} width={96} height={56} fill={body} />
           <rect x={8} y={0} width={96} height={9} fill={bodyTop} />
 
-          {mood === "dead" || isSick ? (
+          {mood === "dead" ? (
+            <>
+              <line x1={26} y1={10} x2={38} y2={30} stroke={DEAD_EYE} strokeWidth={3.2} strokeLinecap="round" />
+              <line x1={38} y1={10} x2={26} y2={30} stroke={DEAD_EYE} strokeWidth={3.2} strokeLinecap="round" />
+              <line x1={74} y1={10} x2={86} y2={30} stroke={DEAD_EYE} strokeWidth={3.2} strokeLinecap="round" />
+              <line x1={86} y1={10} x2={74} y2={30} stroke={DEAD_EYE} strokeWidth={3.2} strokeLinecap="round" />
+            </>
+          ) : isSick ? (
             <>
               <line x1={28} y1={12} x2={36} y2={28} stroke={EYE} strokeWidth={2.4} strokeLinecap="round" />
               <line x1={36} y1={12} x2={28} y2={28} stroke={EYE} strokeWidth={2.4} strokeLinecap="round" />

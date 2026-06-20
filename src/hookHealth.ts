@@ -23,6 +23,21 @@ export function isHookReady(status: HookStatus | null | undefined): boolean {
   return Boolean(status?.installed && status?.scriptFound);
 }
 
+/** Hook was installed via Atoll but is now broken (e.g. shim missing after update). */
+export function isHookDrifted(status: HookStatus | null | undefined): boolean {
+  return Boolean(status?.installed && !isHookReady(status));
+}
+
+/** Agent is absent while at least one other agent remains connected (uninstall or drift). */
+export function isHookDisconnected(
+  status: HookStatus,
+  otherAgentReady: boolean,
+): boolean {
+  if (isHookReady(status)) return false;
+  if (isHookDrifted(status)) return true;
+  return otherAgentReady;
+}
+
 export function analyzeHookHealth(
   health: HookHealthSnapshot | undefined,
 ): HookHealthAnalysis {
@@ -40,12 +55,15 @@ export function analyzeHookHealth(
   );
 
   const readyAgents = agents.filter((agent) => isHookReady(agent.status));
-  const disconnectedAgents = agents.filter((agent) => !isHookReady(agent.status));
+  const disconnectedAgents = agents.filter((agent) => {
+    const otherAgentReady = readyAgents.some((ready) => ready.key !== agent.key);
+    return isHookDisconnected(agent.status, otherAgentReady);
+  });
   const connectedCount = readyAgents.length;
   const totalCount = agents.length;
 
   let summary = "Not connected";
-  if (connectedCount === totalCount && totalCount > 0) {
+  if (connectedCount > 0 && disconnectedAgents.length === 0) {
     summary = "All agents connected";
   } else if (connectedCount > 0) {
     summary = `${connectedCount} of ${totalCount} connected`;
@@ -55,7 +73,7 @@ export function analyzeHookHealth(
     connectedCount,
     totalCount,
     anyConnected: connectedCount > 0,
-    allConnected: connectedCount === totalCount && totalCount > 0,
+    allConnected: connectedCount > 0 && disconnectedAgents.length === 0,
     needsFirstTimeSetup: connectedCount === 0,
     needsReconnect: connectedCount > 0 && disconnectedAgents.length > 0,
     summary,
@@ -82,10 +100,13 @@ export function deriveHeaderLogoDisplay(
   analysis: HookHealthAnalysis,
   activity: AtollActivity,
 ): HeaderLogoDisplay {
+  if (analysis.needsFirstTimeSetup) {
+    return { kind: "atoll", activity: "dead" };
+  }
   if (analysis.disconnectedAgents.length === 0) {
     return { kind: "atoll", activity };
   }
-  if (analysis.needsFirstTimeSetup || analysis.disconnectedAgents.length >= 2) {
+  if (analysis.disconnectedAgents.length >= 2) {
     return { kind: "atoll", activity: "dead" };
   }
   return {
