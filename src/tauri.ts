@@ -67,7 +67,7 @@ let localRequests: PermissionRequest[] = [];
 
 export async function getSnapshot(): Promise<IslandSnapshot> {
   if (isTauriRuntime) {
-    return invoke<IslandSnapshot>("get_snapshot");
+    return normalizeSnapshot(await invoke<IslandSnapshot>("get_snapshot"));
   }
 
   const demoMode = getDemoMode();
@@ -120,7 +120,9 @@ export async function resolvePermissionRequest(
   note = "",
 ): Promise<IslandSnapshot> {
   if (isTauriRuntime) {
-    return invoke<IslandSnapshot>("resolve_permission_request", { id, decision, note });
+    return normalizeSnapshot(
+      await invoke<IslandSnapshot>("resolve_permission_request", { id, decision, note }),
+    );
   }
 
   localRequests = localRequests.map((request) =>
@@ -140,7 +142,7 @@ export async function setSessionAutoApprove(session: string, enabled: boolean) {
 
 export async function archiveRequest(id: string): Promise<IslandSnapshot> {
   if (isTauriRuntime) {
-    return invoke<IslandSnapshot>("archive_request", { id });
+    return normalizeSnapshot(await invoke<IslandSnapshot>("archive_request", { id }));
   }
 
   localRequests = localRequests.map((request) =>
@@ -151,7 +153,7 @@ export async function archiveRequest(id: string): Promise<IslandSnapshot> {
 
 export async function archiveAllResolved(): Promise<IslandSnapshot> {
   if (isTauriRuntime) {
-    return invoke<IslandSnapshot>("archive_all_resolved");
+    return normalizeSnapshot(await invoke<IslandSnapshot>("archive_all_resolved"));
   }
 
   localRequests = localRequests.map((request) =>
@@ -162,7 +164,7 @@ export async function archiveAllResolved(): Promise<IslandSnapshot> {
 
 export async function archiveSession(sessionId: string): Promise<IslandSnapshot> {
   if (isTauriRuntime) {
-    return invoke<IslandSnapshot>("archive_session", { sessionId });
+    return normalizeSnapshot(await invoke<IslandSnapshot>("archive_session", { sessionId }));
   }
 
   localRequests = localRequests.filter((request) => request.session !== sessionId);
@@ -171,7 +173,7 @@ export async function archiveSession(sessionId: string): Promise<IslandSnapshot>
 
 export async function pinSession(sessionId: string, pinned: boolean): Promise<IslandSnapshot> {
   if (isTauriRuntime) {
-    return invoke<IslandSnapshot>("pin_session", { sessionId, pinned });
+    return normalizeSnapshot(await invoke<IslandSnapshot>("pin_session", { sessionId, pinned }));
   }
 
   return getSnapshot();
@@ -204,9 +206,59 @@ export const EMPTY_HOOK_HEALTH: HookHealthSnapshot = {
   },
 };
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function readBool(record: Record<string, unknown>, camel: string, snake: string): boolean {
+  const value = record[camel] ?? record[snake];
+  return Boolean(value);
+}
+
+function readString(record: Record<string, unknown>, camel: string, snake: string): string {
+  const value = record[camel] ?? record[snake];
+  return typeof value === "string" ? value : "";
+}
+
+export function normalizeHookStatus(raw: unknown): HookStatus {
+  const record = asRecord(raw);
+  if (!record) {
+    return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+  }
+  return {
+    installed: readBool(record, "installed", "installed"),
+    scriptFound: readBool(record, "scriptFound", "script_found"),
+    settingsPath: readString(record, "settingsPath", "settings_path"),
+    scriptPath: readString(record, "scriptPath", "script_path"),
+  };
+}
+
+export function normalizeHookHealth(raw: unknown): HookHealthSnapshot {
+  const record = asRecord(raw);
+  if (!record) {
+    return EMPTY_HOOK_HEALTH;
+  }
+  return {
+    claude: normalizeHookStatus(record.claude),
+    codex: normalizeHookStatus(record.codex),
+  };
+}
+
+export function normalizeSnapshot(raw: IslandSnapshot): IslandSnapshot {
+  const record = asRecord(raw);
+  const hookHealthRaw = record?.hookHealth ?? record?.hook_health;
+  return {
+    ...raw,
+    hookHealth: hookHealthRaw ? normalizeHookHealth(hookHealthRaw) : EMPTY_HOOK_HEALTH,
+  };
+}
+
 export async function getClaudeHookStatus(): Promise<HookStatus> {
   if (isTauriRuntime) {
-    return invoke<HookStatus>("get_claude_hook_status");
+    return normalizeHookStatus(await invoke<HookStatus>("get_claude_hook_status"));
   }
 
   const demoMode = getDemoMode();
@@ -219,7 +271,7 @@ export async function getClaudeHookStatus(): Promise<HookStatus> {
 
 export async function installClaudeHooks(): Promise<HookStatus> {
   if (isTauriRuntime) {
-    return invoke<HookStatus>("install_claude_hooks");
+    return normalizeHookStatus(await invoke<HookStatus>("install_claude_hooks"));
   }
 
   return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
@@ -227,7 +279,7 @@ export async function installClaudeHooks(): Promise<HookStatus> {
 
 export async function uninstallClaudeHooks(): Promise<HookStatus> {
   if (isTauriRuntime) {
-    return invoke<HookStatus>("uninstall_claude_hooks");
+    return normalizeHookStatus(await invoke<HookStatus>("uninstall_claude_hooks"));
   }
 
   return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
@@ -235,7 +287,7 @@ export async function uninstallClaudeHooks(): Promise<HookStatus> {
 
 export async function getCodexHookStatus(): Promise<HookStatus> {
   if (isTauriRuntime) {
-    return invoke<HookStatus>("get_codex_hook_status");
+    return normalizeHookStatus(await invoke<HookStatus>("get_codex_hook_status"));
   }
 
   const demoMode = getDemoMode();
@@ -248,7 +300,7 @@ export async function getCodexHookStatus(): Promise<HookStatus> {
 
 export async function installCodexHooks(): Promise<HookStatus> {
   if (isTauriRuntime) {
-    return invoke<HookStatus>("install_codex_hooks");
+    return normalizeHookStatus(await invoke<HookStatus>("install_codex_hooks"));
   }
 
   return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
@@ -256,7 +308,7 @@ export async function installCodexHooks(): Promise<HookStatus> {
 
 export async function uninstallCodexHooks(): Promise<HookStatus> {
   if (isTauriRuntime) {
-    return invoke<HookStatus>("uninstall_codex_hooks");
+    return normalizeHookStatus(await invoke<HookStatus>("uninstall_codex_hooks"));
   }
 
   return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
@@ -373,7 +425,9 @@ export async function onSnapshotChanged(callback: (snapshot: IslandSnapshot) => 
     return () => undefined;
   }
 
-  return listen<IslandSnapshot>("snapshot-changed", (event) => callback(event.payload));
+  return listen<IslandSnapshot>("snapshot-changed", (event) =>
+    callback(normalizeSnapshot(event.payload)),
+  );
 }
 
 export async function onIslandHoverChanged(callback: (state: IslandHoverChanged) => void) {

@@ -19,6 +19,52 @@ const connectedHookHealth = {
   },
 };
 
+const emptyHookHealth = {
+  claude: {
+    installed: false,
+    scriptFound: false,
+    settingsPath: "",
+    scriptPath: "",
+  },
+  codex: {
+    installed: false,
+    scriptFound: false,
+    settingsPath: "",
+    scriptPath: "",
+  },
+};
+
+const emptySnapshot = {
+  online: false,
+  pendingCount: 0,
+  archivedCount: 0,
+  activeRequest: null,
+  recent: [],
+  sessions: [],
+  dailyTokens: {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+  },
+  activeSessionTokens: {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+  },
+  hookHealth: emptyHookHealth,
+};
+
+async function waitForExpandedPanel(container: HTMLElement) {
+  const island = screen.getByLabelText("Atoll");
+  fireEvent.pointerEnter(island);
+  await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+  await waitFor(() => expect(container.querySelector(".island-panel")).not.toBeNull(), {
+    timeout: 1500,
+  });
+}
+
 const request = {
   id: "request-1",
   agent: "claude" as const,
@@ -567,6 +613,32 @@ describe("App", () => {
       expect(container.querySelector(".header-agent-logo.clawd.is-dead")).not.toBeNull();
     });
     expect(container.querySelector(".atoll-logo.is-dead")).toBeNull();
+  });
+
+  it("shows dead atoll logo before first-time hook install", async () => {
+    bridge.getSnapshot.mockResolvedValue(emptySnapshot);
+    const { container } = render(<App />);
+
+    await waitFor(() => {
+      expect(container.querySelector(".atoll-logo.is-dead")).not.toBeNull();
+    });
+  });
+
+  it("shows live logo after installing all hooks on first setup", async () => {
+    bridge.getSnapshot.mockResolvedValue(emptySnapshot);
+    const { container } = render(<App />);
+
+    await waitForExpandedPanel(container);
+    fireEvent.click(screen.getByRole("button", { name: /Open agent hooks/i }));
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: /Install all/i }));
+    });
+
+    await waitFor(() => expect(bridge.installClaudeHooks).toHaveBeenCalledOnce());
+    await waitFor(() => {
+      expect(container.querySelector(".atoll-logo.is-dead")).toBeNull();
+    });
+    expect(bridge.installCodexHooks).toHaveBeenCalledOnce();
   });
 
   it("releases focus after dragging so leaving can collapse the island", async () => {

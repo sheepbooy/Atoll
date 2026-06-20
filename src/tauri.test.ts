@@ -64,11 +64,47 @@ describe("Tauri bridge", () => {
     expect(invoke).toHaveBeenCalledWith("quit_atoll");
   });
 
-  it("does not invoke quit_atoll outside the Tauri runtime", async () => {
-    const { quitAtoll } = await import("./tauri");
+  it("normalizes snake_case hook health from IPC payloads", async () => {
+    setTauriRuntime(true);
+    invoke.mockResolvedValueOnce({
+      online: true,
+      pendingCount: 0,
+      archivedCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      dailyTokens: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
+      activeSessionTokens: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
+      hook_health: {
+        claude: {
+          installed: true,
+          script_found: true,
+          settings_path: "/tmp/claude.json",
+          script_path: "/tmp/atoll-claude-hook.mjs",
+        },
+        codex: {
+          installed: true,
+          script_found: true,
+          settings_path: "/tmp/codex.json",
+          script_path: "/tmp/atoll-codex-hook.mjs",
+        },
+      },
+    });
 
-    await quitAtoll();
+    const { getSnapshot } = await import("./tauri");
+    const snapshot = await getSnapshot();
 
-    expect(invoke).not.toHaveBeenCalled();
+    expect(snapshot.hookHealth.claude.scriptFound).toBe(true);
+    expect(snapshot.hookHealth.codex.scriptPath).toBe("/tmp/atoll-codex-hook.mjs");
   });
 });

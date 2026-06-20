@@ -20,7 +20,30 @@ export interface HookHealthAnalysis {
 }
 
 export function isHookReady(status: HookStatus | null | undefined): boolean {
-  return Boolean(status?.installed && status?.scriptFound);
+  if (!status?.installed) return false;
+  return Boolean(status.scriptFound || status.scriptPath);
+}
+
+/** Keep the most connected hook status when overlapping snapshot loads race. */
+export function preferHookStatus(a: HookStatus, b: HookStatus): HookStatus {
+  if (isHookReady(a)) return a;
+  if (isHookReady(b)) return b;
+  return {
+    installed: a.installed || b.installed,
+    scriptFound: a.scriptFound || b.scriptFound,
+    settingsPath: b.settingsPath || a.settingsPath,
+    scriptPath: b.scriptPath || a.scriptPath,
+  };
+}
+
+export function mergeHookHealthPreferReady(
+  base: HookHealthSnapshot,
+  upgrade: HookHealthSnapshot,
+): HookHealthSnapshot {
+  return {
+    claude: preferHookStatus(base.claude, upgrade.claude),
+    codex: preferHookStatus(base.codex, upgrade.codex),
+  };
 }
 
 /** Hook was installed via Atoll but is now broken (e.g. shim missing after update). */
@@ -61,6 +84,7 @@ export function analyzeHookHealth(
   });
   const connectedCount = readyAgents.length;
   const totalCount = agents.length;
+  const anyHookInstalled = agents.some((agent) => agent.status.installed);
 
   let summary = "Not connected";
   if (connectedCount > 0 && disconnectedAgents.length === 0) {
@@ -74,7 +98,7 @@ export function analyzeHookHealth(
     totalCount,
     anyConnected: connectedCount > 0,
     allConnected: connectedCount > 0 && disconnectedAgents.length === 0,
-    needsFirstTimeSetup: connectedCount === 0,
+    needsFirstTimeSetup: connectedCount === 0 && !anyHookInstalled,
     needsReconnect: connectedCount > 0 && disconnectedAgents.length > 0,
     summary,
     disconnectedAgents,

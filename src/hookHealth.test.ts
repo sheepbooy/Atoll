@@ -6,6 +6,8 @@ import {
   isHookDisconnected,
   isHookDrifted,
   isHookReady,
+  mergeHookHealthPreferReady,
+  preferHookStatus,
 } from "./hookHealth";
 import type { HookHealthSnapshot } from "./tauri";
 
@@ -76,6 +78,49 @@ describe("hookHealth", () => {
     expect(isHookDrifted(missing)).toBe(false);
     expect(isHookDisconnected(missing, true)).toBe(true);
     expect(isHookDisconnected(missing, false)).toBe(false);
+  });
+
+  it("treats installed hooks with a script path as ready even without scriptFound", () => {
+    const pathOnly = {
+      installed: true,
+      scriptFound: false,
+      settingsPath: "/tmp/settings.json",
+      scriptPath: "/Applications/Atoll.app/Contents/Resources/scripts/atoll-claude-hook.mjs",
+    };
+    expect(isHookReady(pathOnly)).toBe(true);
+    const analysis = analyzeHookHealth({ claude: pathOnly, codex: ready });
+    expect(analysis.needsFirstTimeSetup).toBe(false);
+    expect(analysis.allConnected).toBe(true);
+  });
+
+  it("does not treat first-time setup when hooks are installed but not ready", () => {
+    const analysis = analyzeHookHealth({ claude: drifted, codex: drifted });
+    expect(analysis.needsFirstTimeSetup).toBe(false);
+    expect(analysis.needsReconnect).toBe(false);
+    expect(deriveHeaderLogoDisplay(analysis, "idle")).toEqual({
+      kind: "atoll",
+      activity: "dead",
+    });
+  });
+
+  it("prefers a ready hook status when snapshot loads race", () => {
+    const merged = mergeHookHealthPreferReady(
+      { claude: drifted, codex: missing },
+      { claude: ready, codex: ready },
+    );
+    expect(merged.claude).toEqual(ready);
+    expect(merged.codex).toEqual(ready);
+    expect(preferHookStatus(drifted, ready)).toEqual(ready);
+    expect(preferHookStatus(ready, drifted)).toEqual(ready);
+  });
+
+  it("does not downgrade ready hook health to an empty startup snapshot", () => {
+    const merged = mergeHookHealthPreferReady(
+      { claude: ready, codex: ready },
+      { claude: missing, codex: missing },
+    );
+    expect(merged).toEqual({ claude: ready, codex: ready });
+    expect(analyzeHookHealth(merged).allConnected).toBe(true);
   });
 
   it("handles undefined health gracefully", () => {

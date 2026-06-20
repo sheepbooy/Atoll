@@ -27,6 +27,7 @@ import {
   deriveHeaderLogoDisplay,
   hookAttentionTitle,
   isHookReady,
+  mergeHookHealthPreferReady,
   type HeaderLogoDisplay,
 } from "./hookHealth";
 import {
@@ -57,6 +58,7 @@ import { toPng } from "html-to-image";
 
 import {
   getSnapshot,
+  normalizeSnapshot,
   getSessionRequests,
   getSessionTranscript,
   IslandSnapshot,
@@ -72,6 +74,7 @@ import {
   SessionSummary,
   ChatMessage,
   HookStatus,
+  HookHealthSnapshot,
   EMPTY_HOOK_HEALTH,
   archiveAllResolved,
   archiveSession,
@@ -453,6 +456,7 @@ export function App() {
   const suppressHoverExpandRef = useRef(false);
   const transitionTimerRef = useRef<number | null>(null);
   const idleTimerRef = useRef<number | null>(null);
+  const snapshotLoadSeqRef = useRef(0);
   const lastNativePresentationKeyRef = useRef<string | null>(null);
   const [busyDecision, setBusyDecision] = useState<Decision | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -614,9 +618,47 @@ export function App() {
     let unsubscribeCaptureHooks: () => void = () => undefined;
     let unsubscribeScreenshot: () => void = () => undefined;
 
-    getSnapshot()
-      .then(applySnapshot)
-      .catch(() => undefined);
+    const loadSnapshot = () => {
+      const seq = snapshotLoadSeqRef.current;
+      getSnapshot()
+        .then((nextSnapshot) => {
+          if (seq !== snapshotLoadSeqRef.current) return;
+          const normalized = normalizeSnapshot(nextSnapshot);
+          applySnapshot({
+            ...normalized,
+            hookHealth: mergeHookHealthPreferReady(
+              snapshotRef.current.hookHealth,
+              normalized.hookHealth,
+            ),
+          });
+        })
+        .catch(() => undefined);
+    };
+
+    const refreshHookHealth = () => {
+      getSnapshot()
+        .then((nextSnapshot) => {
+          const normalized = normalizeSnapshot(nextSnapshot);
+          const mergedHookHealth = mergeHookHealthPreferReady(
+            snapshotRef.current.hookHealth,
+            normalized.hookHealth,
+          );
+          snapshotRef.current = {
+            ...snapshotRef.current,
+            hookHealth: mergedHookHealth,
+            online: normalized.online,
+          };
+          setSnapshot((previous) => ({
+            ...previous,
+            hookHealth: mergedHookHealth,
+            online: normalized.online,
+          }));
+        })
+        .catch(() => undefined);
+    };
+
+    loadSnapshot();
+    const retryTimer = window.setTimeout(refreshHookHealth, 750);
     getNotchMetrics()
       .then((notch) => {
         setNotchMetrics(notch);
@@ -718,6 +760,8 @@ export function App() {
     });
 
     return () => {
+      snapshotLoadSeqRef.current += 1;
+      window.clearTimeout(retryTimer);
       unsubscribe();
       unsubscribeHover();
       unsubscribeOpen();
@@ -918,18 +962,19 @@ export function App() {
   }
 
   function applySnapshot(nextSnapshot: IslandSnapshot) {
-    snapshotRef.current = nextSnapshot;
+    const normalized = normalizeSnapshot(nextSnapshot);
+    snapshotRef.current = normalized;
     if (phaseRef.current === "opening" || phaseRef.current === "closing") {
       // Hook health must update immediately after install — waiting for the
       // presentation transition leaves the header logo stuck in the dead state.
       setSnapshot((previous) => ({
         ...previous,
-        hookHealth: nextSnapshot.hookHealth,
-        online: nextSnapshot.online,
+        hookHealth: normalized.hookHealth,
+        online: normalized.online,
       }));
       return;
     }
-    setSnapshot(nextSnapshot);
+    setSnapshot(normalized);
 
     if (nextSnapshot.pendingCount > 0) {
       expandIsland();
@@ -1166,22 +1211,45 @@ export function App() {
     scheduleIdleCollapse();
   }
 
+  function invalidatePendingSnapshotLoads() {
+    snapshotLoadSeqRef.current += 1;
+  }
+
+  function applyHookInstallSnapshot(statuses: Partial<Record<"claude" | "codex", HookStatus>>) {
+    invalidatePendingSnapshotLoads();
+    const installedHealth: HookHealthSnapshot = {
+      claude: statuses.claude ?? snapshotRef.current.hookHealth.claude,
+      codex: statuses.codex ?? snapshotRef.current.hookHealth.codex,
+    };
+    const optimisticHookHealth = mergeHookHealthPreferReady(
+      snapshotRef.current.hookHealth,
+      installedHealth,
+    );
+    applySnapshot({
+      ...snapshotRef.current,
+      hookHealth: optimisticHookHealth,
+      online: true,
+    });
+    return getSnapshot()
+      .catch(() => null)
+      .then((nextSnapshot) => {
+        if (!nextSnapshot) return;
+        applySnapshot({
+          ...nextSnapshot,
+          hookHealth: mergeHookHealthPreferReady(
+            nextSnapshot.hookHealth,
+            installedHealth,
+          ),
+          online: nextSnapshot.online || true,
+        });
+      });
+  }
+
   async function handleInstallClaudeHooks() {
     setHookBusy(true);
     try {
       const status = await installClaudeHooks();
-      const nextSnapshot = await getSnapshot().catch(() => null);
-      if (nextSnapshot) {
-        applySnapshot(nextSnapshot);
-      } else {
-        applySnapshot({
-          ...snapshotRef.current,
-          hookHealth: {
-            ...snapshotRef.current.hookHealth,
-            claude: status,
-          },
-        });
-      }
+      await applyHookInstallSnapshot({ claude: status });
       if (status.installed) {
         collapseIsland(true);
       }
@@ -1196,18 +1264,7 @@ export function App() {
     setHookBusy(true);
     try {
       const status = await installCodexHooks();
-      const nextSnapshot = await getSnapshot().catch(() => null);
-      if (nextSnapshot) {
-        applySnapshot(nextSnapshot);
-      } else {
-        applySnapshot({
-          ...snapshotRef.current,
-          hookHealth: {
-            ...snapshotRef.current.hookHealth,
-            codex: status,
-          },
-        });
-      }
+      await applyHookInstallSnapshot({ codex: status });
       if (status.installed) {
         collapseIsland(true);
       }
@@ -1225,18 +1282,10 @@ export function App() {
         installClaudeHooks(),
         installCodexHooks(),
       ]);
-      const nextSnapshot = await getSnapshot().catch(() => null);
-      if (nextSnapshot) {
-        applySnapshot(nextSnapshot);
-      } else {
-        applySnapshot({
-          ...snapshotRef.current,
-          hookHealth: {
-            claude: claudeStatus,
-            codex: codexStatus,
-          },
-        });
-      }
+      await applyHookInstallSnapshot({
+        claude: claudeStatus,
+        codex: codexStatus,
+      });
       if (claudeStatus.installed || codexStatus.installed) {
         collapseIsland(true);
       }
