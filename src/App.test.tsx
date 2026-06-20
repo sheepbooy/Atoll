@@ -21,6 +21,7 @@ const bridge = vi.hoisted(() => ({
   onIslandHoverChanged: vi.fn(),
   onIslandOpenRequested: vi.fn(),
   onCaptureCollapseRequested: vi.fn(),
+  onCaptureOpenHooksRequested: vi.fn(),
   onCaptureScreenshotRequested: vi.fn(),
   captureProvideScreenshot: vi.fn(),
   quitAtoll: vi.fn(),
@@ -79,6 +80,7 @@ describe("App", () => {
     });
     bridge.onIslandOpenRequested.mockResolvedValue(() => undefined);
     bridge.onCaptureCollapseRequested.mockResolvedValue(() => undefined);
+    bridge.onCaptureOpenHooksRequested.mockResolvedValue(() => undefined);
     bridge.onCaptureScreenshotRequested.mockResolvedValue(() => undefined);
     bridge.setIslandPresentation.mockResolvedValue(undefined);
     bridge.setCompactLayout.mockResolvedValue(undefined);

@@ -57,6 +57,7 @@ import {
   onIslandHoverChanged,
   onIslandOpenRequested,
   onCaptureCollapseRequested,
+  onCaptureOpenHooksRequested,
   onCaptureScreenshotRequested,
   captureProvideScreenshot,
   onSnapshotChanged,
@@ -590,6 +591,7 @@ export function App() {
     let unsubscribeHover: () => void = () => undefined;
     let unsubscribeOpen: () => void = () => undefined;
     let unsubscribeCapture: () => void = () => undefined;
+    let unsubscribeCaptureHooks: () => void = () => undefined;
     let unsubscribeScreenshot: () => void = () => undefined;
 
     getSnapshot()
@@ -641,9 +643,54 @@ export function App() {
     }).then((cleanup) => {
       unsubscribeCapture = cleanup;
     });
+    onCaptureOpenHooksRequested(() => {
+      Promise.all([getClaudeHookStatus(), getCodexHookStatus()])
+        .then(([claude, codex]) => {
+          setClaudeHookStatus(claude);
+          setCodexHookStatus(codex);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          openHooksPage("home");
+          suppressHoverExpandRef.current = false;
+          expandIsland();
+        });
+    }).then((cleanup) => {
+      unsubscribeCaptureHooks = cleanup;
+    });
     onCaptureScreenshotRequested(async () => {
       const stage = document.querySelector<HTMLElement>(".stage");
       if (!stage) return;
+
+      const phase = phaseRef.current;
+      if (phase === "compact" && collapsedModeRef.current !== "dormant") {
+        await setIslandPresentation(
+          "compact",
+          collapsedWindowWidthRef.current,
+          undefined,
+          compactLeftPaneWidthRef.current,
+          false,
+          true,
+        );
+      } else if (phase === "expanded") {
+        const idleExpanded =
+          snapshotRef.current.pendingCount === 0 &&
+          snapshotRef.current.sessions.length === 0;
+        await setIslandPresentation(
+          "expanded",
+          collapsedWindowWidthRef.current,
+          idleExpanded,
+          compactLeftPaneWidthRef.current,
+          false,
+          true,
+        );
+      }
+
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 120));
+
       try {
         const dataUrl = await toPng(stage, {
           pixelRatio: window.devicePixelRatio || 2,
@@ -664,6 +711,7 @@ export function App() {
       unsubscribeHover();
       unsubscribeOpen();
       unsubscribeCapture();
+      unsubscribeCaptureHooks();
       unsubscribeScreenshot();
       clearTransitionWork();
       clearIdleTimer();

@@ -24,6 +24,7 @@ const BRIDGE = "http://127.0.0.1:47777";
 const ANIM_MS = 420;
 const FRAME_MS = 35;
 const ANIM_FRAMES = Math.ceil(ANIM_MS / FRAME_MS);
+const SETTLE_MS = ANIM_MS + 250;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -185,22 +186,20 @@ async function main() {
     await sleep(400);
 
     await capturePost("/capture/collapse");
-    await sleep(ANIM_MS + 150);
+    await sleep(SETTLE_MS);
     await shotApp(join(ASSETS, "compact-bar.png"));
     console.log("Wrote docs/assets/compact-bar.png");
 
     await capturePost("/capture/expand");
-    await sleep(ANIM_MS + 150);
+    await sleep(SETTLE_MS);
     await shotApp(join(ASSETS, "approval.png"));
     console.log("Wrote docs/assets/approval.png");
 
     await capturePost("/capture/collapse");
-    await sleep(ANIM_MS + 150);
+    await sleep(SETTLE_MS);
 
-    await capturePost("/capture/idle");
-    await sleep(300);
-    await capturePost("/capture/expand");
-    await sleep(ANIM_MS + 150);
+    await capturePost("/capture/hooks");
+    await sleep(SETTLE_MS);
     await shotApp(join(ASSETS, "idle.png"));
     console.log("Wrote docs/assets/idle.png");
 

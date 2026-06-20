@@ -371,6 +371,14 @@ export async function onCaptureCollapseRequested(callback: () => void) {
   return listen<void>("capture-collapse", () => callback());
 }
 
+export async function onCaptureOpenHooksRequested(callback: () => void) {
+  if (!isTauriRuntime) {
+    return () => undefined;
+  }
+
+  return listen<void>("capture-open-hooks", () => callback());
+}
+
 export async function onCaptureScreenshotRequested(callback: () => void | Promise<void>) {
   if (!isTauriRuntime) {
     return () => undefined;

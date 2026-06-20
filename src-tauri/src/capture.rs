@@ -233,6 +233,11 @@ pub fn route_http(app: &AppHandle, path: &str) -> Option<Value> {
             seed_idle_demo(app, &state);
             Some(json!({ "ok": true }))
         }
+        "/capture/hooks" => {
+            seed_idle_demo(app, &state);
+            let _ = app.emit("capture-open-hooks", ());
+            Some(json!({ "ok": true }))
+        }
         _ => None,
     }
 }
