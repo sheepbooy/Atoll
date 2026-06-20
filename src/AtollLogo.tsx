@@ -11,10 +11,12 @@ export type AtollActivity =
   | "coffee"
   | "idea"
   | "slacking"
-  | "napping";
+  | "napping"
+  | "dead";
 
 interface Palette { body: string; top: string; limb: string }
 const IDLE_PALETTE: Palette = { body: "#38BDD8", top: "#5FD8EC", limb: "#2A8FA8" };
+const DEAD_PALETTE: Palette = { body: "#6E8A94", top: "#8AA4AE", limb: "#4E6670" };
 
 const EYE = "#1a1a1a";
 const BX = 8;
@@ -40,7 +42,7 @@ interface AtollLogoProps {
   motionPaused?: boolean;
 }
 
-type EyeVariant = "normal" | "closed" | "happy" | "wide";
+type EyeVariant = "normal" | "closed" | "happy" | "wide" | "dead";
 
 interface MascotBodyProps {
   body: string;
@@ -84,7 +86,14 @@ function MascotBody({
         </g>
       )}
       <g className="atoll-eyes">
-        {eyeVariant === "happy" && !blinking ? (
+        {eyeVariant === "dead" ? (
+          <>
+            <line x1={18 + eyeOffsetX} y1={eyeY} x2={24 + eyeOffsetX} y2={eyeY + 10} stroke={EYE} strokeWidth={2} strokeLinecap="round" />
+            <line x1={24 + eyeOffsetX} y1={eyeY} x2={18 + eyeOffsetX} y2={eyeY + 10} stroke={EYE} strokeWidth={2} strokeLinecap="round" />
+            <line x1={38 + eyeOffsetX} y1={eyeY} x2={44 + eyeOffsetX} y2={eyeY + 10} stroke={EYE} strokeWidth={2} strokeLinecap="round" />
+            <line x1={44 + eyeOffsetX} y1={eyeY} x2={38 + eyeOffsetX} y2={eyeY + 10} stroke={EYE} strokeWidth={2} strokeLinecap="round" />
+          </>
+        ) : eyeVariant === "happy" && !blinking ? (
           <>
             <rect x={18 + eyeOffsetX} y={eyeY} width={8} height={2} fill={EYE} />
             <rect x={38 + eyeOffsetX} y={eyeY} width={8} height={2} fill={EYE} />
@@ -152,15 +161,15 @@ export function AtollLogo({
     };
   }, [activity, idleIntervalSec, idleDurationSec, motionPaused]);
 
-  const palette = IDLE_PALETTE;
-  const showLimbs = renderAct !== "idle" && renderAct !== "napping";
+  const palette = renderAct === "dead" ? DEAD_PALETTE : IDLE_PALETTE;
+  const showLimbs = renderAct !== "idle" && renderAct !== "napping" && renderAct !== "dead";
 
   useEffect(() => {
     if (motionPaused) {
       setBlinking(false);
       return;
     }
-    if (renderAct === "napping") return;
+    if (renderAct === "napping" || renderAct === "dead") return;
     let timer: number;
     const blinkOnce = (onDone: () => void) => {
       setBlinking(true);
@@ -192,7 +201,8 @@ export function AtollLogo({
   }, [renderAct]);
 
   const eyeVariant: EyeVariant =
-    renderAct === "napping" ? "closed"
+    renderAct === "dead" ? "dead"
+    : renderAct === "napping" ? "closed"
     : renderAct === "coffee" ? "happy"
     : renderAct === "idea" ? "wide"
     : "normal";

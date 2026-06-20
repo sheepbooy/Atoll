@@ -23,6 +23,12 @@ import {
   X,
 } from "lucide-react";
 import {
+  analyzeHookHealth,
+  deriveHeaderLogoDisplay,
+  hookAttentionTitle,
+  type HeaderLogoDisplay,
+} from "./hookHealth";
+import {
   beginCollapse,
   beginExpand,
   COLLAPSE_ANIMATION_MS,
@@ -65,6 +71,7 @@ import {
   SessionSummary,
   ChatMessage,
   HookStatus,
+  EMPTY_HOOK_HEALTH,
   archiveAllResolved,
   archiveSession,
   pinSession,
@@ -76,10 +83,8 @@ import {
   setSessionAutoApprove,
   getNotchMetrics,
   NotchMetrics,
-  getClaudeHookStatus,
   installClaudeHooks,
   uninstallClaudeHooks,
-  getCodexHookStatus,
   installCodexHooks,
   uninstallCodexHooks,
   getSessionRetention,
@@ -262,6 +267,7 @@ const initialSnapshot: IslandSnapshot = {
   sessions: [],
   dailyTokens: ZERO_TOKEN_USAGE,
   activeSessionTokens: ZERO_TOKEN_USAGE,
+  hookHealth: EMPTY_HOOK_HEALTH,
 };
 
 const agentLabels: Record<AgentKind, string> = {
@@ -457,8 +463,6 @@ export function App() {
 
   const [panelView, setPanelView] = useState<PanelView>({ kind: "home" });
   const [sessionRequests, setSessionRequests] = useState<PermissionRequest[]>([]);
-  const [claudeHookStatus, setClaudeHookStatus] = useState<HookStatus | null>(null);
-  const [codexHookStatus, setCodexHookStatus] = useState<HookStatus | null>(null);
   const [hookBusy, setHookBusy] = useState(false);
   const [hooksBackTarget, setHooksBackTarget] = useState<"home" | "settings-main">("home");
   const [selectedAgent, setSelectedAgent] = useState<AgentKind | null>(null);
@@ -474,6 +478,13 @@ export function App() {
 
   const activeRequest = snapshot.activeRequest;
   const sessions = snapshot.sessions;
+  const hookHealthAnalysis = useMemo(
+    () => analyzeHookHealth(snapshot.hookHealth),
+    [snapshot.hookHealth],
+  );
+  const claudeHookStatus = snapshot.hookHealth?.claude ?? null;
+  const codexHookStatus = snapshot.hookHealth?.codex ?? null;
+  const hookAttention = hookAttentionTitle(hookHealthAnalysis);
   const atollActivity = useMemo(
     () =>
       deriveAtollActivity({
@@ -491,6 +502,10 @@ export function App() {
         sessionCount: sessions.length,
       }),
     [snapshot.online, snapshot.pendingCount, sessions.length],
+  );
+  const headerLogo = useMemo(
+    () => deriveHeaderLogoDisplay(hookHealthAnalysis, atollActivity),
+    [hookHealthAnalysis, atollActivity],
   );
   const dailyTokens = snapshot.dailyTokens ?? ZERO_TOKEN_USAGE;
   const dailyTokenTotal = dailyTokens.inputTokens + dailyTokens.outputTokens;
@@ -601,12 +616,6 @@ export function App() {
     getSnapshot()
       .then(applySnapshot)
       .catch(() => undefined);
-    getClaudeHookStatus()
-      .then(setClaudeHookStatus)
-      .catch(() => undefined);
-    getCodexHookStatus()
-      .then(setCodexHookStatus)
-      .catch(() => undefined);
     getNotchMetrics()
       .then((notch) => {
         setNotchMetrics(notch);
@@ -648,11 +657,8 @@ export function App() {
       unsubscribeCapture = cleanup;
     });
     onCaptureOpenHooksRequested(() => {
-      Promise.all([getClaudeHookStatus(), getCodexHookStatus()])
-        .then(([claude, codex]) => {
-          setClaudeHookStatus(claude);
-          setCodexHookStatus(codex);
-        })
+      getSnapshot()
+        .then(applySnapshot)
         .catch(() => undefined)
         .finally(() => {
           openHooksPage("home");
@@ -1156,9 +1162,18 @@ export function App() {
     setHookBusy(true);
     try {
       const status = await installClaudeHooks();
-      setClaudeHookStatus(status);
       const nextSnapshot = await getSnapshot().catch(() => null);
-      if (nextSnapshot) applySnapshot(nextSnapshot);
+      if (nextSnapshot) {
+        applySnapshot(nextSnapshot);
+      } else {
+        applySnapshot({
+          ...snapshotRef.current,
+          hookHealth: {
+            ...snapshotRef.current.hookHealth,
+            claude: status,
+          },
+        });
+      }
       if (status.installed) {
         collapseIsland(true);
       }
@@ -1173,9 +1188,18 @@ export function App() {
     setHookBusy(true);
     try {
       const status = await installCodexHooks();
-      setCodexHookStatus(status);
       const nextSnapshot = await getSnapshot().catch(() => null);
-      if (nextSnapshot) applySnapshot(nextSnapshot);
+      if (nextSnapshot) {
+        applySnapshot(nextSnapshot);
+      } else {
+        applySnapshot({
+          ...snapshotRef.current,
+          hookHealth: {
+            ...snapshotRef.current.hookHealth,
+            codex: status,
+          },
+        });
+      }
       if (status.installed) {
         collapseIsland(true);
       }
@@ -1193,10 +1217,18 @@ export function App() {
         installClaudeHooks(),
         installCodexHooks(),
       ]);
-      setClaudeHookStatus(claudeStatus);
-      setCodexHookStatus(codexStatus);
       const nextSnapshot = await getSnapshot().catch(() => null);
-      if (nextSnapshot) applySnapshot(nextSnapshot);
+      if (nextSnapshot) {
+        applySnapshot(nextSnapshot);
+      } else {
+        applySnapshot({
+          ...snapshotRef.current,
+          hookHealth: {
+            claude: claudeStatus,
+            codex: codexStatus,
+          },
+        });
+      }
       if (claudeStatus.installed || codexStatus.installed) {
         collapseIsland(true);
       }
@@ -1212,9 +1244,18 @@ export function App() {
     setHookBusy(true);
     try {
       const status = await uninstallClaudeHooks();
-      setClaudeHookStatus(status);
       const nextSnapshot = await getSnapshot().catch(() => null);
-      if (nextSnapshot) applySnapshot(nextSnapshot);
+      if (nextSnapshot) {
+        applySnapshot(nextSnapshot);
+      } else {
+        applySnapshot({
+          ...snapshotRef.current,
+          hookHealth: {
+            ...snapshotRef.current.hookHealth,
+            claude: status,
+          },
+        });
+      }
     } catch {
       // keep previous status
     } finally {
@@ -1227,9 +1268,18 @@ export function App() {
     setHookBusy(true);
     try {
       const status = await uninstallCodexHooks();
-      setCodexHookStatus(status);
       const nextSnapshot = await getSnapshot().catch(() => null);
-      if (nextSnapshot) applySnapshot(nextSnapshot);
+      if (nextSnapshot) {
+        applySnapshot(nextSnapshot);
+      } else {
+        applySnapshot({
+          ...snapshotRef.current,
+          hookHealth: {
+            ...snapshotRef.current.hookHealth,
+            codex: status,
+          },
+        });
+      }
     } catch {
       // keep previous status
     } finally {
@@ -1245,10 +1295,18 @@ export function App() {
         uninstallClaudeHooks(),
         uninstallCodexHooks(),
       ]);
-      setClaudeHookStatus(claudeStatus);
-      setCodexHookStatus(codexStatus);
       const nextSnapshot = await getSnapshot().catch(() => null);
-      if (nextSnapshot) applySnapshot(nextSnapshot);
+      if (nextSnapshot) {
+        applySnapshot(nextSnapshot);
+      } else {
+        applySnapshot({
+          ...snapshotRef.current,
+          hookHealth: {
+            claude: claudeStatus,
+            codex: codexStatus,
+          },
+        });
+      }
     } catch {
       // keep previous status
     } finally {
@@ -1275,18 +1333,10 @@ export function App() {
     },
   ];
 
-  const hooksNeedSetup = hookMenuAgents.some(
-    (agent) => agent.status && !agent.status.installed,
-  );
-  const hooksInstalledCount = hookMenuAgents.filter(
-    (agent) => agent.status?.installed,
-  ).length;
-  const hooksSetupSummary =
-    hooksInstalledCount === 0
-      ? "Not connected"
-      : hooksInstalledCount === hookMenuAgents.length
-        ? "All agents connected"
-        : `${hooksInstalledCount} of ${hookMenuAgents.length} connected`;
+  const hooksNeedSetup = hookHealthAnalysis.needsFirstTimeSetup;
+  const hooksNeedAttention =
+    hookHealthAnalysis.needsFirstTimeSetup || hookHealthAnalysis.needsReconnect;
+  const hooksSetupSummary = hookHealthAnalysis.summary;
 
   async function handleQuit() {
     setMenuOpen(false);
@@ -1493,6 +1543,7 @@ export function App() {
           onChangeIdleDuration={(v) => setIdleDurationSec(clampIdleDuration(v))}
           onOpenHooks={handleOpenHooksFromSettings}
           hooksSummary={hooksSetupSummary}
+          hooksNeedAttention={hooksNeedAttention}
         />
       );
     }
@@ -1528,6 +1579,8 @@ export function App() {
     return (
       <IdleView
         needsHookSetup={hooksNeedSetup}
+        needsReconnect={hookHealthAnalysis.needsReconnect}
+        disconnectedAgents={hookHealthAnalysis.disconnectedAgents}
         onOpenHooks={handleOpenHooks}
       />
     );
@@ -1553,18 +1606,42 @@ export function App() {
           <div
             className={`header-main ${showPanelAgentTabs ? "has-agent-tabs" : ""}${isSubview ? " has-subview-nav" : ""}`}
           >
-            <span
-              className={`atoll-indicator is-app-${appLogoState} ${snapshot.online ? "is-online" : "is-offline"}`}
-              title={snapshot.online ? "Listening" : "Offline"}
-            >
-              <span className="atoll-indicator-inner">
-                <AtollLogo
-                  size={menuBarLogoSize}
-                  activity={atollActivity}
-                  idleIntervalSec={idleIntervalSec * 60}
-                  idleDurationSec={idleDurationSec * 60}
-                  motionPaused={isPresentationTransition}
-                />
+            <span className="atoll-indicator-wrap">
+              <span
+                className={`atoll-indicator is-app-${appLogoState} ${snapshot.online ? "is-online" : "is-offline"}${hooksNeedAttention ? " is-hook-attention" : ""}`}
+                title={hookAttention}
+                role={hooksNeedAttention ? "button" : undefined}
+                tabIndex={hooksNeedAttention ? 0 : undefined}
+                onClick={
+                  hooksNeedAttention
+                    ? (event) => {
+                        event.stopPropagation();
+                        handleOpenHooks();
+                      }
+                    : undefined
+                }
+                onKeyDown={
+                  hooksNeedAttention
+                    ? (event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          handleOpenHooks();
+                        }
+                      }
+                    : undefined
+                }
+                data-no-drag
+              >
+                <span className="atoll-indicator-inner">
+                  <HeaderLogo
+                    display={headerLogo}
+                    size={menuBarLogoSize}
+                    idleIntervalSec={idleIntervalSec * 60}
+                    idleDurationSec={idleDurationSec * 60}
+                    motionPaused={isPresentationTransition}
+                  />
+                </span>
               </span>
             </span>
             {collapsedMode !== "dormant" &&
@@ -2028,6 +2105,7 @@ interface SettingsViewProps {
   onChangeIdleDuration: (value: number) => void;
   onOpenHooks: () => void;
   hooksSummary: string;
+  hooksNeedAttention: boolean;
 }
 
 function SettingsSlider({
@@ -2092,6 +2170,7 @@ function SettingsView({
   onChangeIdleDuration,
   onOpenHooks,
   hooksSummary,
+  hooksNeedAttention,
 }: SettingsViewProps) {
   return (
     <div className="settings-view" data-no-drag>
@@ -2111,7 +2190,13 @@ function SettingsView({
               </span>
             </div>
             <div className="settings-nav-card-meta">
-              <span className="settings-hook-badge is-summary">{hooksSummary}</span>
+              <span
+                className={`settings-hook-badge is-summary${
+                  hooksNeedAttention ? " is-missing" : hooksSummary === "All agents connected" ? " is-installed" : ""
+                }`}
+              >
+                {hooksSummary}
+              </span>
               <ChevronRight size={14} className="settings-nav-chevron" />
             </div>
           </button>
@@ -2499,18 +2584,87 @@ function HooksView({
 
 /* ─── Idle View ───────────────────────────────────────────────── */
 
+interface HeaderLogoProps {
+  display: HeaderLogoDisplay;
+  size: number;
+  idleIntervalSec: number;
+  idleDurationSec: number;
+  motionPaused: boolean;
+}
+
+function HeaderLogo({
+  display,
+  size,
+  idleIntervalSec,
+  idleDurationSec,
+  motionPaused,
+}: HeaderLogoProps) {
+  if (display.kind === "agent") {
+    return (
+      <AgentMascot
+        agent={display.agent}
+        mood={display.mood}
+        size={size}
+        className="header-agent-logo"
+      />
+    );
+  }
+
+  return (
+    <AtollLogo
+      size={size}
+      activity={display.activity}
+      idleIntervalSec={idleIntervalSec}
+      idleDurationSec={idleDurationSec}
+      motionPaused={motionPaused}
+    />
+  );
+}
+
 interface IdleViewProps {
   needsHookSetup: boolean;
+  needsReconnect: boolean;
+  disconnectedAgents: Array<{ key: "claude" | "codex"; label: string; status: HookStatus }>;
   onOpenHooks: () => void;
 }
 
-function IdleView({ needsHookSetup, onOpenHooks }: IdleViewProps) {
+function IdleView({
+  needsHookSetup,
+  needsReconnect,
+  disconnectedAgents,
+  onOpenHooks,
+}: IdleViewProps) {
   if (!needsHookSetup) {
     return (
-      <div className="idle-view">
-        <div className="idle-content">
-          <span className="idle-dot" />
-          <span className="idle-text">Waiting for requests…</span>
+      <div className={`idle-view${needsReconnect ? " idle-view--alert" : ""}`}>
+        <div className="idle-stack">
+          {needsReconnect ? (
+            <div className="idle-reconnect-banner">
+              <div className="idle-reconnect-icon" aria-hidden="true">
+                <TriangleAlert size={14} />
+              </div>
+              <div className="idle-reconnect-copy">
+                <strong>
+                  {disconnectedAgents.map((agent) => agent.label).join(", ")} disconnected
+                </strong>
+                <span>
+                  Hooks were removed or changed outside Atoll. Reconnect to restore approvals.
+                </span>
+              </div>
+              <button
+                type="button"
+                className="install-button is-compact"
+                onClick={onOpenHooks}
+                data-no-drag
+              >
+                Reconnect
+              </button>
+            </div>
+          ) : null}
+          <div className="idle-content">
+            <span className="idle-dot" />
+            <span className="idle-text">Waiting for requests…</span>
+          </div>
         </div>
       </div>
     );

@@ -35,6 +35,7 @@ export interface IslandSnapshot {
   sessions: SessionSummary[];
   dailyTokens: TokenUsage;
   activeSessionTokens: TokenUsage;
+  hookHealth: HookHealthSnapshot;
 }
 
 export interface SessionSummary {
@@ -93,6 +94,7 @@ export async function getSnapshot(): Promise<IslandSnapshot> {
       cacheReadTokens: 0,
       cacheCreationTokens: 0,
     },
+    hookHealth: EMPTY_HOOK_HEALTH,
   };
 }
 
@@ -181,6 +183,26 @@ export interface HookStatus {
   settingsPath: string;
   scriptPath: string;
 }
+
+export interface HookHealthSnapshot {
+  claude: HookStatus;
+  codex: HookStatus;
+}
+
+export const EMPTY_HOOK_HEALTH: HookHealthSnapshot = {
+  claude: {
+    installed: false,
+    scriptFound: false,
+    settingsPath: "",
+    scriptPath: "",
+  },
+  codex: {
+    installed: false,
+    scriptFound: false,
+    settingsPath: "",
+    scriptPath: "",
+  },
+};
 
 export async function getClaudeHookStatus(): Promise<HookStatus> {
   if (isTauriRuntime) {

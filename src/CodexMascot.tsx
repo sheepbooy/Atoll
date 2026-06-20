@@ -179,9 +179,9 @@ function ScreenPrompt({
     );
   }
 
-  if (mood === "worried") {
+  if (mood === "dead" || mood === "worried") {
     return (
-      <text {...base} fill={color}>
+      <text {...base} fill={color} opacity={mood === "dead" ? 0.45 : 1}>
         xx
       </text>
     );
@@ -204,8 +204,26 @@ export function CodexMascot({
   accent,
   accentDark,
 }: CodexMascotProps) {
+  const isDead = mood === "dead";
   const isSick = mood === "worried";
-  const palette = isSick
+  const deadPalette: CodexPalette = {
+    body: "#7a8488",
+    bodyTop: "#929a9e",
+    dark: "#565c60",
+    bezel: "#4a5256",
+    bezelRim: "#6a7276",
+    outline: "#8a9296",
+    prompt: "#b0b8bc",
+    promptDim: "#888f93",
+    blush: "#9aa0a4",
+    sparkle: "#b0b8bc",
+    sweat: "#9aa0a4",
+    glowInner: "rgba(140, 148, 152, 0.45)",
+    glowOuter: "rgba(80, 88, 92, 0.28)",
+  };
+  const palette = isDead
+    ? deadPalette
+    : isSick
     ? {
         ...defaultCodexPalette(),
         body: SICK,
@@ -287,7 +305,7 @@ export function CodexMascot({
 
           <ScreenPrompt mood={mood} color={prompt} />
 
-          {mood === "sad" && (
+          {mood === "sad" && mood !== "dead" && (
             <>
               <rect
                 x={20}

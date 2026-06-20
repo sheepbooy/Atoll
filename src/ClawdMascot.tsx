@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 
-export type ClawdMood = "sleeping" | "calm" | "alert" | "worried" | "happy" | "sad";
+export type ClawdMood = "sleeping" | "calm" | "alert" | "worried" | "happy" | "sad" | "dead";
 
 const BODY = "#c27c5c";
 const BODY_TOP = "#d08a68";
 const DARK = "#8b5a42";
+const DEAD_BODY = "#8a8a8a";
+const DEAD_BODY_TOP = "#9a9a9a";
+const DEAD_DARK = "#666666";
 const EYE = "#1a1a1a";
 const SICK = "#7cb97c";
 const SICK_DARK = "#5a8b5a";
@@ -33,7 +36,7 @@ export function ClawdMascot({
   const [blinking, setBlinking] = useState(false);
 
   useEffect(() => {
-    if (mood === "sleeping") return;
+    if (mood === "sleeping" || mood === "dead") return;
     let timer: number;
     const loop = () => {
       setBlinking(true);
@@ -44,10 +47,11 @@ export function ClawdMascot({
     return () => window.clearTimeout(timer);
   }, [mood]);
 
+  const isDead = mood === "dead";
   const isSick = mood === "worried";
-  const body = isSick ? SICK : accent ?? BODY;
-  const bodyTop = isSick ? SICK : accent ?? BODY_TOP;
-  const dark = isSick ? SICK_DARK : accentDark ?? DARK;
+  const body = isDead ? DEAD_BODY : isSick ? SICK : accent ?? BODY;
+  const bodyTop = isDead ? DEAD_BODY_TOP : isSick ? SICK : accent ?? BODY_TOP;
+  const dark = isDead ? DEAD_DARK : isSick ? SICK_DARK : accentDark ?? DARK;
   const eyeHeight = blinking ? 2.4 : 16;
 
   const wrapperStyle = size
@@ -77,17 +81,17 @@ export function ClawdMascot({
           <rect x={8} y={0} width={96} height={56} fill={body} />
           <rect x={8} y={0} width={96} height={9} fill={bodyTop} />
 
-          {mood === "sleeping" ? (
-            <>
-              <rect x={28} y={16} width={9.6} height={2.4} fill={EYE} />
-              <rect x={74.4} y={16} width={9.6} height={2.4} fill={EYE} />
-            </>
-          ) : isSick ? (
+          {mood === "dead" || isSick ? (
             <>
               <line x1={28} y1={12} x2={36} y2={28} stroke={EYE} strokeWidth={2.4} strokeLinecap="round" />
               <line x1={36} y1={12} x2={28} y2={28} stroke={EYE} strokeWidth={2.4} strokeLinecap="round" />
               <line x1={76} y1={12} x2={84} y2={28} stroke={EYE} strokeWidth={2.4} strokeLinecap="round" />
               <line x1={84} y1={12} x2={76} y2={28} stroke={EYE} strokeWidth={2.4} strokeLinecap="round" />
+            </>
+          ) : mood === "sleeping" ? (
+            <>
+              <rect x={28} y={16} width={9.6} height={2.4} fill={EYE} />
+              <rect x={74.4} y={16} width={9.6} height={2.4} fill={EYE} />
             </>
           ) : (
             <>

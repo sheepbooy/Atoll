@@ -109,6 +109,10 @@ export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {
       cacheReadTokens: 890_000,
       cacheCreationTokens: 12_400,
     },
+    hookHealth: {
+      claude: demoHookInstalled,
+      codex: demoCodexHookInstalled,
+    },
   };
 
   switch (mode) {

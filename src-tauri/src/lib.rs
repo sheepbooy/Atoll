@@ -83,6 +83,7 @@ struct IslandSnapshot {
     sessions: Vec<SessionSummary>,
     daily_tokens: TokenUsage,
     active_session_tokens: TokenUsage,
+    hook_health: HookHealthSnapshot,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -196,6 +197,8 @@ struct AppState {
     previous_app_pid: Mutex<Option<i32>>,
     /// Last emitted listening-online flag; used to push snapshot updates when hook/bridge health changes.
     last_listening_online: Mutex<Option<bool>>,
+    /// Last emitted hook-health snapshot; used to detect external config drift.
+    last_hook_health: Mutex<Option<HookHealthSnapshot>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -282,7 +285,8 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
         .expect("state mutex poisoned");
     let pinned = state.pinned_sessions.lock().expect("state mutex poisoned");
     let online = compute_listening_online(app);
-    snapshot_from(
+    let hook_health = build_hook_health(app);
+    let mut snapshot = snapshot_from(
         &requests,
         &last_seen,
         retention,
@@ -290,7 +294,9 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
         &known_sessions,
         &pinned,
         online,
-    )
+    );
+    snapshot.hook_health = hook_health;
+    snapshot
 }
 
 fn sync_listening_online_snapshot(app: &AppHandle, state: &AppState) {
@@ -309,6 +315,77 @@ fn sync_listening_online_snapshot(app: &AppHandle, state: &AppState) {
     if should_emit {
         let snapshot = build_snapshot(app, state);
         let _ = app.emit("snapshot-changed", &snapshot);
+    }
+}
+
+fn sync_hook_health_snapshot(app: &AppHandle, state: &AppState) {
+    let hook_health = build_hook_health(app);
+    let should_emit = {
+        let mut last = state
+            .last_hook_health
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let changed = last
+            .as_ref()
+            .map(|previous| previous != &hook_health)
+            .unwrap_or(true);
+        if changed {
+            *last = Some(hook_health);
+        }
+        changed
+    };
+    if should_emit {
+        let snapshot = build_snapshot(app, state);
+        let _ = app.emit("snapshot-changed", &snapshot);
+    }
+}
+
+fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
+    if capture::force_hook_uninstalled() {
+        let claude_script_path =
+            resolve_hook_script_path(app, "atoll-claude-hook.mjs").unwrap_or_default();
+        let codex_script_path =
+            resolve_hook_script_path(app, "atoll-codex-hook.mjs").unwrap_or_default();
+        return HookHealthSnapshot {
+            claude: HookStatus {
+                installed: false,
+                script_found: !claude_script_path.is_empty()
+                    && std::path::Path::new(&claude_script_path).exists(),
+                settings_path: claude_settings_path()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                script_path: claude_script_path,
+            },
+            codex: HookStatus {
+                installed: false,
+                script_found: !codex_script_path.is_empty()
+                    && std::path::Path::new(&codex_script_path).exists(),
+                settings_path: codex_hooks_path()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                script_path: codex_script_path,
+            },
+        };
+    }
+
+    let (claude_installed, claude_script_found, claude_settings_path, claude_script_path) =
+        claude_hooks_readiness(app);
+    let (codex_installed, codex_script_found, codex_settings_path, codex_script_path) =
+        codex_hooks_readiness(app);
+
+    HookHealthSnapshot {
+        claude: HookStatus {
+            installed: claude_installed,
+            script_found: claude_script_found,
+            settings_path: claude_settings_path,
+            script_path: claude_script_path,
+        },
+        codex: HookStatus {
+            installed: codex_installed,
+            script_found: codex_script_found,
+            settings_path: codex_settings_path,
+            script_path: codex_script_path,
+        },
     }
 }
 
@@ -1159,13 +1236,31 @@ pub(crate) fn touch_session_activity(state: &AppState, session_id: &str) {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct HookStatus {
     installed: bool,
     script_found: bool,
     settings_path: String,
     script_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+struct HookHealthSnapshot {
+    claude: HookStatus,
+    codex: HookStatus,
+}
+
+impl Default for HookStatus {
+    fn default() -> Self {
+        Self {
+            installed: false,
+            script_found: false,
+            settings_path: String::new(),
+            script_path: String::new(),
+        }
+    }
 }
 
 #[tauri::command]
@@ -1939,6 +2034,7 @@ pub fn run() {
             pinned_sessions: Mutex::new(HashSet::new()),
             previous_app_pid: Mutex::new(None),
             last_listening_online: Mutex::new(None),
+            last_hook_health: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -2174,6 +2270,7 @@ fn start_auto_archive_timer(app: AppHandle) {
             let snapshot = build_snapshot(&app, &state);
             let _ = app.emit("snapshot-changed", &snapshot);
         }
+        sync_hook_health_snapshot(&app, &state);
         sync_listening_online_snapshot(&app, &state);
     });
 }
@@ -3420,6 +3517,7 @@ fn snapshot_from(
         sessions,
         daily_tokens,
         active_session_tokens,
+        hook_health: HookHealthSnapshot::default(),
     }
 }
 
@@ -3704,15 +3802,17 @@ mod core_tests {
 
     #[test]
     fn archived_session_tokens_still_count_toward_daily_total() {
-        let token_usage = HashMap::from([(
-            "session-archived".into(),
-            TokenUsage {
-                input_tokens: 400,
-                output_tokens: 100,
-                cache_read_tokens: 0,
-                cache_creation_tokens: 0,
-            },
-        )]);
+        let token_usage = HashMap::from([
+            (
+                "session-archived".into(),
+                TokenUsage {
+                    input_tokens: 400,
+                    output_tokens: 100,
+                    cache_read_tokens: 0,
+                    cache_creation_tokens: 0,
+                },
+            ),
+        ]);
 
         let snapshot = snapshot_from(
             &[],

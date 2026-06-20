@@ -500,7 +500,12 @@ kbd {
 
 .is-expanded.is-idle .idle-view {
   height: auto;
+  width: 100%;
   padding: 0;
+}
+
+.is-expanded.is-idle .idle-stack {
+  width: min(100%, 440px);
 }
 
 .is-expanded.is-idle .setup-view {
@@ -576,6 +581,13 @@ kbd {
 }
 
 /* Atoll logo — inline in header row, aligned with session mascots. */
+.atoll-indicator-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
 .atoll-indicator {
   display: inline-flex;
   flex: 0 0 auto;
@@ -654,6 +666,38 @@ kbd {
 
 .is-dormant .atoll-indicator:has(.atoll-logo.is-napping) .atoll-indicator-inner {
   transform: translateY(0);
+}
+
+/* Dead pose: slump within compact clip (hook disconnect) */
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-dead),
+.is-closing:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-dead),
+.is-compact:not(.is-dormant) .atoll-indicator:has(.header-agent-logo.is-dead),
+.is-closing:not(.is-dormant) .atoll-indicator:has(.header-agent-logo.is-dead) {
+  height: 32px;
+  margin-top: -1px;
+  overflow: hidden;
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-dead) .atoll-indicator-inner,
+.is-closing:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-dead) .atoll-indicator-inner,
+.is-compact:not(.is-dormant) .atoll-indicator:has(.header-agent-logo.is-dead) .atoll-indicator-inner,
+.is-closing:not(.is-dormant) .atoll-indicator:has(.header-agent-logo.is-dead) .atoll-indicator-inner {
+  transform: translateY(-2px);
+}
+
+.is-dormant .atoll-indicator:has(.atoll-logo.is-dead) .atoll-indicator-inner,
+.is-dormant .atoll-indicator:has(.header-agent-logo.is-dead) .atoll-indicator-inner {
+  transform: translateY(-1px);
+}
+
+.header-agent-logo {
+  display: inline-flex;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.atoll-indicator.is-hook-attention {
+  cursor: pointer;
 }
 
 @keyframes atoll-idle-float-menu-open {
@@ -1717,6 +1761,17 @@ kbd {
 .atoll-logo.is-napping.is-phase-enter .atoll-z,
 .atoll-logo.is-napping.is-phase-exit  .atoll-z { opacity: 0; animation: none; }
 
+/* ── dead (hook disconnect) ── */
+@keyframes atoll-dead-slump {
+  0%, 100% { transform: rotate(-2deg) translateY(0) scale(1, 0.98); }
+  50%      { transform: rotate(-3deg) translateY(2%) scale(0.99, 0.96); }
+}
+
+.atoll-logo.is-dead.is-phase-loop .atoll-body-group {
+  animation: atoll-dead-slump 4.2s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
 /* ─── Clawd Mascot ────────────────────────────────────────────── */
 
 @keyframes clawd-float { 0%, 100% { transform: translateY(6%); } 50% { transform: translateY(-6%); } }
@@ -1760,6 +1815,16 @@ kbd {
 .clawd.is-happy { animation: clawd-bounce 0.6s ease-in-out infinite; }
 .clawd.is-worried { animation: clawd-tremble 0.5s ease-in-out infinite; }
 .clawd.is-sad { transform: translateY(8%); }
+
+@keyframes mascot-dead-slump {
+  0%, 100% { transform: translateY(6%) rotate(-1deg); }
+  50%      { transform: translateY(10%) rotate(1deg); }
+}
+
+.atoll-indicator .clawd.is-dead,
+.atoll-indicator .codex.is-dead {
+  animation: mascot-dead-slump 4.5s ease-in-out infinite;
+}
 
 .clawd.is-alert .clawd-claw-left,
 .clawd.is-happy .clawd-claw-left { transform-origin: right center; animation: clawd-claw-wave-l 0.5s ease-in-out infinite; }
@@ -2024,6 +2089,81 @@ kbd {
   border-radius: 50%;
   border: 1px solid var(--color-online);
   animation: pulse-ring 3s ease-out infinite;
+}
+
+.idle-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: min(100%, 420px);
+}
+
+.idle-view--alert {
+  align-items: stretch;
+  justify-content: center;
+  width: 100%;
+}
+
+.is-expanded.is-idle .idle-view--alert {
+  padding: 0 4px;
+}
+
+.idle-reconnect-banner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "icon copy"
+    "action action";
+  gap: 8px 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(245, 166, 35, 0.28);
+  background: rgba(245, 166, 35, 0.08);
+  color: var(--text-primary);
+}
+
+.idle-reconnect-icon {
+  grid-area: icon;
+  display: inline-flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 1px;
+  color: var(--color-warning, #f5a623);
+}
+
+.idle-reconnect-copy {
+  grid-area: copy;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.idle-reconnect-banner .install-button.is-compact {
+  grid-area: action;
+  justify-self: end;
+  min-height: 28px;
+  padding: 0 12px;
+  font-size: 11px;
+}
+
+.idle-reconnect-copy strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.idle-reconnect-copy span {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.install-button.is-compact {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
 }
 
 .meta-divider {

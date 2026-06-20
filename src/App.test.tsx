@@ -4,6 +4,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { computeCollapsedWindowWidth } from "./compactLayout";
 
+const connectedHookHealth = {
+  claude: {
+    installed: true,
+    scriptFound: true,
+    settingsPath: "",
+    scriptPath: "",
+  },
+  codex: {
+    installed: true,
+    scriptFound: true,
+    settingsPath: "",
+    scriptPath: "",
+  },
+};
+
 const request = {
   id: "request-1",
   agent: "claude" as const,
@@ -53,7 +68,13 @@ let emitIslandHover: ((state: { hovering: boolean }) => void) | null = null;
 let emitSnapshot: ((snapshot: import("./tauri").IslandSnapshot) => void) | null =
   null;
 
-vi.mock("./tauri", () => bridge);
+vi.mock("./tauri", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./tauri")>();
+  return {
+    ...actual,
+    ...bridge,
+  };
+});
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => windowBridge,
 }));
@@ -69,6 +90,7 @@ describe("App", () => {
       activeRequest: request,
       recent: [request],
       sessions: [],
+      hookHealth: connectedHookHealth,
     });
     bridge.onSnapshotChanged.mockImplementation(async (callback) => {
       emitSnapshot = callback;
@@ -92,6 +114,7 @@ describe("App", () => {
       activeRequest: null,
       recent: [{ ...request, status: "approved" }],
       sessions: [],
+      hookHealth: connectedHookHealth,
     });
     bridge.getClaudeHookStatus.mockResolvedValue({
       installed: true,
@@ -143,6 +166,7 @@ describe("App", () => {
       activeRequest: null,
       recent: [],
       sessions: [],
+      hookHealth: connectedHookHealth,
     });
     windowBridge.startDragging.mockResolvedValue(undefined);
   });
@@ -195,6 +219,7 @@ describe("App", () => {
       activeRequest: null,
       recent: [],
       sessions: [],
+      hookHealth: connectedHookHealth,
     });
     const user = userEvent.setup();
     const { container } = render(<App />);
@@ -232,6 +257,7 @@ describe("App", () => {
       activeRequest: null,
       recent: [],
       sessions: [session],
+      hookHealth: connectedHookHealth,
     });
     bridge.getSessionRequests.mockResolvedValue([]);
     bridge.getSessionTranscript.mockResolvedValue([]);
@@ -296,6 +322,7 @@ describe("App", () => {
       sessions: [session],
       dailyTokens: lowTokens,
       activeSessionTokens: lowTokens,
+      hookHealth: connectedHookHealth,
     };
     bridge.getSnapshot.mockResolvedValue(baseSnapshot);
     bridge.getSessionRequests.mockResolvedValue([]);
@@ -480,6 +507,7 @@ describe("App", () => {
       activeRequest: null,
       recent: [],
       sessions: [],
+      hookHealth: connectedHookHealth,
     });
     const { container } = render(<App />);
     const island = screen.getByLabelText("Atoll");
@@ -489,6 +517,31 @@ describe("App", () => {
     fireEvent.click(island);
 
     await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+  });
+
+  it("shows dead agent mascot in header when one hook is disconnected", async () => {
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: {
+        claude: {
+          installed: false,
+          scriptFound: true,
+          settingsPath: "",
+          scriptPath: "",
+        },
+        codex: connectedHookHealth.codex,
+      },
+    });
+    const { container } = render(<App />);
+
+    await waitFor(() => {
+      expect(container.querySelector(".header-agent-logo.clawd.is-dead")).not.toBeNull();
+    });
+    expect(container.querySelector(".atoll-logo.is-dead")).toBeNull();
   });
 
   it("releases focus after dragging so leaving can collapse the island", async () => {
@@ -502,6 +555,7 @@ describe("App", () => {
       activeRequest: null,
       recent: [],
       sessions: [],
+      hookHealth: connectedHookHealth,
     });
     render(<App />);
     const island = screen.getByLabelText("Atoll");

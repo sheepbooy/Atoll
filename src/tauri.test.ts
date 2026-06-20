@@ -29,7 +29,7 @@ describe("Tauri bridge", () => {
   });
 
   it("starts with an empty browser fallback snapshot", async () => {
-    const { getSnapshot } = await import("./tauri");
+    const { EMPTY_HOOK_HEALTH, getSnapshot } = await import("./tauri");
 
     await expect(getSnapshot()).resolves.toEqual({
       online: true,
@@ -50,6 +50,7 @@ describe("Tauri bridge", () => {
         cacheReadTokens: 0,
         cacheCreationTokens: 0,
       },
+      hookHealth: EMPTY_HOOK_HEALTH,
     });
   });
 
