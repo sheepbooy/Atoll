@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./App";
+import { BrandExportPage, getBrandExportMode } from "./BrandExport";
 import { getDemoMode } from "./demoSnapshot";
 import "./styles.css";
 
@@ -15,8 +16,18 @@ if (demoMode === "gif") {
   document.documentElement.classList.add("readme-demo");
 }
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+const root = ReactDOM.createRoot(document.getElementById("root")!);
+
+if (getBrandExportMode()) {
+  root.render(
+    <React.StrictMode>
+      <BrandExportPage />
+    </React.StrictMode>,
+  );
+} else {
+  root.render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  );
+}

@@ -19,6 +19,7 @@
 <p align="center">
   <a href="#安装">安装</a> ·
   <a href="#接入-agent">接入 Agent</a> ·
+  <a href="#视觉">视觉</a> ·
   <a href="#开发">开发</a> ·
   <a href="#路线图">路线图</a>
 </p>
@@ -26,11 +27,11 @@
 <br/>
 
 <p align="center">
-  <img src="docs/assets/demo.gif" alt="Atoll demo" width="560" />
+  <img src="docs/assets/demo.gif" alt="Atoll demo: 权限审批、置顶、归档" width="560" />
 </p>
 
 <p align="center">
-  <em>浮岛展开 → 查看命令 → Approve / Deny → 自动收回</em>
+  <em>权限请求 → 展开审批 → 置顶 / 归档 → 自动收回</em>
 </p>
 
 ---
@@ -83,6 +84,10 @@ sudo xattr -cr /Applications/Atoll.app
 
 Atoll 通过应用内 **一键安装 Hook**，无需手动编辑配置文件。
 
+<p align="center">
+  <img src="docs/assets/setup.gif" alt="首次安装 Hook 全流程" width="560" />
+</p>
+
 | Agent | 安装路径 | 额外步骤 |
 | --- | --- | --- |
 | **Claude Code** | 菜单 → Settings → Agent hooks → Install | 无 |
@@ -104,10 +109,35 @@ Hook 注册 `PermissionRequest`、`PostToolUse`、`Stop` 等事件，写入 `~/.
 
 ---
 
-## 截图
+## 视觉
+
+### Atoll Logo 状态
+
+菜单栏 Logo 反映 App 全局状态（与 Agent 无关）：
 
 <p align="center">
-  <img src="docs/assets/compact-bar.png" alt="菜单栏胶囊" width="92%" />
+  <img src="docs/assets/atoll-states.png" alt="Atoll Logo: 空闲 / 待审批 / 工作中 / 离线" width="560" />
+</p>
+
+| 状态 | 含义 |
+| --- | --- |
+| 空闲 | 在线监听，无 session、无 pending |
+| 待审批 | 有权限请求等待处理 |
+| 工作中 | 有活跃 Agent 会话 |
+| 离线 | Hook 未就绪或 bridge 不可达 |
+
+### Agent 形象
+
+每个 Agent 有独立的像素风 mascot；Gemini 复用 Clawd 造型并着色为绿色：
+
+<p align="center">
+  <img src="docs/assets/agent-mascots.png" alt="Claude / Codex / Gemini mascots" width="420" />
+</p>
+
+### 多 Session 与终端
+
+<p align="center">
+  <img src="docs/assets/session-overview.png" alt="多 session 菜单栏 + Claude Code 终端" width="92%" />
 </p>
 
 <p align="center">
@@ -140,7 +170,8 @@ scripts/atoll-*-hook.mjs      Hook shim（随应用分发）
 重新生成 README 截图（macOS）：
 
 ```bash
-npm run capture:media
+npm run capture:media    # 浮岛 UI 截图 + demo GIF
+npm run export:brand     # Logo 状态 + Agent 形象
 ```
 
 发布新版本：

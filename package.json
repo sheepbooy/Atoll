@@ -11,7 +11,8 @@
     "tauri": "tauri",
     "capture:gif": "node scripts/capture-app-media.mjs",
     "capture:media": "node scripts/capture-app-media.mjs",
-    "export:assets": "node scripts/export-readme-assets.mjs"
+    "export:assets": "node scripts/export-readme-assets.mjs",
+    "export:brand": "node scripts/export-brand-assets.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.0.0",
