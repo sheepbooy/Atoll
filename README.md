@@ -140,12 +140,6 @@ Hook 注册 `PermissionRequest`、`PostToolUse`、`Stop` 等事件，写入 `~/.
   <img src="docs/assets/session-overview.png" alt="多 session 菜单栏 + Claude Code 终端" width="92%" />
 </p>
 
-<p align="center">
-  <img src="docs/assets/approval.png" alt="审批面板" width="560" />
-  &nbsp;&nbsp;
-  <img src="docs/assets/idle.png" alt="Hook 安装面板" width="560" />
-</p>
-
 ---
 
 ## 开发
