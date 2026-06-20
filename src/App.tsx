@@ -860,6 +860,9 @@ export function App() {
 
   function applySnapshot(nextSnapshot: IslandSnapshot) {
     snapshotRef.current = nextSnapshot;
+    if (phaseRef.current === "opening" || phaseRef.current === "closing") {
+      return;
+    }
     setSnapshot(nextSnapshot);
 
     if (nextSnapshot.pendingCount > 0) {
@@ -882,6 +885,9 @@ export function App() {
   function setPresentationPhase(next: PresentationPhase) {
     phaseRef.current = next;
     setPhase(next);
+    if (next === "expanded" || next === "compact") {
+      setSnapshot(snapshotRef.current);
+    }
   }
 
   function clearTransitionWork() {
@@ -903,13 +909,12 @@ export function App() {
     const next = beginExpand(phaseRef.current);
     if (next === phaseRef.current) return;
     clearTransitionWork();
-    setPresentationPhase(next);
 
     const idleExpanded =
       snapshotRef.current.pendingCount === 0 &&
       snapshotRef.current.sessions.length === 0;
     lastNativePresentationKeyRef.current = expandedPresentationKey(idleExpanded);
-
+    setPresentationPhase(next);
     const nativeTransition = setIslandPresentation(
       "expanded",
       collapsedWindowWidthRef.current,
@@ -981,6 +986,25 @@ export function App() {
       try {
         await nativeTransition;
         if (phaseRef.current === "closing") {
+          if (collapsedModeRef.current === "dormant") {
+            await setIslandPresentation(
+              "dormant",
+              undefined,
+              undefined,
+              undefined,
+              false,
+              true,
+            );
+          } else {
+            await setIslandPresentation(
+              "compact",
+              collapsedWindowWidthRef.current,
+              undefined,
+              compactLeftPaneWidthRef.current,
+              false,
+              true,
+            );
+          }
           lastNativePresentationKeyRef.current = compactPresentationKey(
             collapsedModeRef.current,
             collapsedWindowWidthRef.current,
@@ -1273,11 +1297,18 @@ export function App() {
     }
   }
 
+  const isOpening = phase === "opening";
+  const isClosing = phase === "closing";
+  const isPresentationTransition = isOpening || isClosing;
   const isExpanded = phase === "opening" || phase === "expanded";
-  const showAgentTabs = isExpanded && tabAgents.length > 1;
+  const isExpandedChrome = phase === "expanded";
+  const showAgentTabs = isExpandedChrome && tabAgents.length > 1;
   const showPanelAgentTabs =
-    isExpanded && panelView.kind === "home" && tabAgents.length > 1;
+    isExpandedChrome && panelView.kind === "home" && tabAgents.length > 1;
   const isDormant = !isExpanded && collapsedMode === "dormant";
+  const showCompactHeaderMetrics =
+    !isDormant && !isExpanded && !isPresentationTransition;
+  const showTokenCounter = dailyTokenTotal > 0;
   const showCompactNotchSpacer =
     collapsedMode === "compact" && !isExpanded && notchMetrics.hasNotch;
   const compactLeftSessions = sessions.slice(0, compactHeaderLayout.leftIconCount);
@@ -1296,11 +1327,11 @@ export function App() {
       ? compactHeaderLayout.overflowCount
       : 0;
   const isIdleExpanded =
-    isExpanded &&
+    isExpandedChrome &&
     panelView.kind === "home" &&
     sessions.length === 0 &&
     snapshot.pendingCount === 0;
-  const isSubview = isExpanded && panelView.kind !== "home";
+  const isSubview = isExpandedChrome && panelView.kind !== "home";
   const menuBarLogoSize = isExpanded ? 36 : 34;
   const subviewSession =
     panelView.kind === "session"
@@ -1309,6 +1340,14 @@ export function App() {
 
   // Keep Rust-side compact metrics current while expanded so collapse targets
   // the latest width without a follow-up resize animation.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.style.setProperty(
+      "--compact-left-pane-width",
+      `${compactLeftPaneWidth}px`,
+    );
+  }, [compactLeftPaneWidth]);
+
   useEffect(() => {
     if (collapsedMode === "dormant") return;
     setCompactLayout(collapsedWindowWidth, compactLeftPaneWidth).catch(
@@ -1425,7 +1464,7 @@ export function App() {
           sessions={filteredSessions}
           activeRequest={selectedAgentRequest}
           justResolved={justResolved}
-          isExpanded={isExpanded}
+          isExpanded={isExpandedChrome}
           onSelectSession={navigateToSession}
           onArchiveSession={handleArchiveSession}
           onPinSession={handlePinSession}
@@ -1444,7 +1483,7 @@ export function App() {
   return (
     <main className="stage">
       <section
-        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpanded && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" ? "is-session-subview" : ""}`}
+        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" ? "is-session-subview" : ""}`}
         aria-label="Atoll"
         tabIndex={0}
         onClick={handleIslandClick}
@@ -1471,10 +1510,13 @@ export function App() {
                   activity={atollActivity}
                   idleIntervalSec={idleIntervalSec * 60}
                   idleDurationSec={idleDurationSec * 60}
+                  motionPaused={isPresentationTransition}
                 />
               </span>
             </span>
-            {collapsedMode !== "dormant" && !isExpanded ? (
+            {collapsedMode !== "dormant" &&
+            !isExpanded &&
+            !isPresentationTransition ? (
               <>
                 <span
                   className={`listener-dot ${snapshot.online ? "online" : ""}`}
@@ -1517,8 +1559,12 @@ export function App() {
             <span className="header-notch-spacer" aria-hidden="true" />
           ) : null}
 
-          {!isDormant && !isExpanded ? (
-            <div className="header-metrics">
+          {showCompactHeaderMetrics ? (
+            <div
+              className={`header-metrics${
+                isPresentationTransition ? ` is-${phase}` : ""
+              }`}
+            >
               {compactRightSessions.length > 0 ? (
                 <CompactSessionStack
                   placement="right"
@@ -1528,17 +1574,23 @@ export function App() {
                   justResolved={justResolved}
                 />
               ) : null}
-              <TokenCounter
-                value={dailyTokenTotal}
-                usage={dailyTokens}
-                variant="compact"
-                sessionCount={sessions.length}
-                maxCompactIcons={maxCompactIcons}
-                compactTokenLevel={compactHeaderLayout.tokenCompactLevel}
-              />
+              {showTokenCounter ? (
+                <TokenCounter
+                  value={dailyTokenTotal}
+                  usage={dailyTokens}
+                  variant="compact"
+                  suppressAnimations={isPresentationTransition}
+                  sessionCount={sessions.length}
+                  maxCompactIcons={maxCompactIcons}
+                  compactTokenLevel={compactHeaderLayout.tokenCompactLevel}
+                />
+              ) : null}
               {snapshot.pendingCount > 0 ? (
                 <span className="pending-badge-slot">
-                  <span className="pending-badge" aria-label={`${snapshot.pendingCount} pending`}>
+                  <span
+                    className="pending-badge"
+                    aria-label={`${snapshot.pendingCount} pending`}
+                  >
                     {snapshot.pendingCount}
                   </span>
                 </span>
@@ -1546,14 +1598,14 @@ export function App() {
             </div>
           ) : null}
 
-          {panelView.kind !== "session" ? (
+          {isExpandedChrome && panelView.kind !== "session" ? (
           <div
             className="header-actions"
             data-no-drag
             ref={menuRef}
             onMouseDown={handleControlMouseDown}
           >
-            {!isDormant && isExpanded ? (
+            {showTokenCounter && !isDormant ? (
               <TokenCounter
                 value={dailyTokenTotal}
                 usage={dailyTokens}
@@ -1567,7 +1619,7 @@ export function App() {
               type="button"
               onClick={() => collapseIsland(true)}
               aria-label="Collapse Atoll"
-              tabIndex={isExpanded ? 0 : -1}
+              tabIndex={isExpandedChrome ? 0 : -1}
             >
               <ChevronUp size={16} />
             </button>
@@ -1577,7 +1629,7 @@ export function App() {
               onClick={() => setMenuOpen((open) => !open)}
               aria-label="More options"
               aria-expanded={menuOpen}
-              tabIndex={isExpanded ? 0 : -1}
+              tabIndex={isExpandedChrome ? 0 : -1}
             >
               <Ellipsis size={17} />
             </button>
@@ -1624,9 +1676,9 @@ export function App() {
 
         </header>
 
-        <div className="island-panel">
-          {renderPanel()}
-        </div>
+        {!isPresentationTransition ? (
+          <div className="island-panel">{renderPanel()}</div>
+        ) : null}
       </section>
     </main>
   );

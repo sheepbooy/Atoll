@@ -169,6 +169,8 @@ describe("App", () => {
       expect.any(Number),
       undefined,
       expect.any(Number),
+      false,
+      true,
     );
     expect(container.querySelector(".is-compact")).not.toBeNull();
 
@@ -197,7 +199,9 @@ describe("App", () => {
     const island = screen.getByLabelText("Atoll");
 
     fireEvent.pointerEnter(island);
-    await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+    await waitFor(() =>
+      expect(container.querySelector(".is-expanded:not(.is-opening)")).not.toBeNull(),
+    );
 
     const moreButton = screen.getByRole("button", { name: "More options" });
     await user.click(moreButton);
@@ -338,7 +342,7 @@ describe("App", () => {
     await vi.advanceTimersByTimeAsync(420);
 
     const compactAnimatedCalls = bridge.setIslandPresentation.mock.calls.filter(
-      (call) => call[0] === "compact",
+      (call) => call[0] === "compact" && call[4] !== false,
     );
     expect(compactAnimatedCalls).toHaveLength(1);
     expect(compactAnimatedCalls[0]?.[1]).toBe(expectedCompactWidth);
@@ -366,6 +370,8 @@ describe("App", () => {
       expect.any(Number),
       undefined,
       expect.any(Number),
+      false,
+      true,
     );
     expect(container.querySelector(".is-compact")).not.toBeNull();
 
@@ -447,14 +453,16 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
-        "compact",
-        expect.any(Number),
+        "dormant",
         undefined,
-        expect.any(Number),
+        undefined,
+        undefined,
+        false,
+        true,
       );
     });
     await waitFor(
-      () => expect(container.querySelector(".is-compact")).not.toBeNull(),
+      () => expect(container.querySelector(".is-dormant")).not.toBeNull(),
       { timeout: 1000 },
     );
   });
@@ -501,8 +509,16 @@ describe("App", () => {
     vi.useFakeTimers();
     fireEvent.pointerLeave(island);
     await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(420);
     // No active sessions → super-collapses into the dormant drawer.
-    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith("dormant");
+    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
+      "dormant",
+      undefined,
+      undefined,
+      undefined,
+      false,
+      true,
+    );
     vi.useRealTimers();
     Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   });

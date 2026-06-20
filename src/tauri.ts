@@ -255,6 +255,7 @@ export async function setIslandPresentation(
   expandedIdle?: boolean,
   compactLeftWidth?: number,
   animate = true,
+  snap = false,
 ) {
   if (!isTauriRuntime) {
     return;
@@ -266,6 +267,7 @@ export async function setIslandPresentation(
     compactLeftWidth,
     expandedIdle,
     animate,
+    snap,
   });
 }
 

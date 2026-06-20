@@ -406,6 +406,7 @@ async fn set_island_presentation(
     compact_left_width: Option<f64>,
     expanded_idle: Option<bool>,
     animate: Option<bool>,
+    snap: Option<bool>,
 ) -> Result<(), String> {
     let Some(window) = app.get_webview_window("main") else {
         return Ok(());
@@ -432,6 +433,40 @@ async fn set_island_presentation(
     }
 
     if animate == Some(false) {
+        if snap == Some(true) && matches!(mode, IslandWindowMode::Compact | IslandWindowMode::Dormant)
+        {
+            let compact_width = *state
+                .compact_width
+                .lock()
+                .map_err(|error| error.to_string())?;
+            let compact_left_width = *state
+                .compact_left_width
+                .lock()
+                .map_err(|error| error.to_string())?;
+            // apply_island_window_mode touches AppKit; must run on the main thread.
+            let (sync_tx, sync_rx) = std::sync::mpsc::sync_channel::<Result<Option<HomeWindowBounds>, String>>(0);
+            let frame_window = window.clone();
+            window
+                .run_on_main_thread(move || {
+                    let result = apply_island_window_mode(
+                        &frame_window,
+                        mode,
+                        compact_width,
+                        compact_left_width,
+                    )
+                    .map_err(|error| error.to_string());
+                    let _ = sync_tx.send(result);
+                })
+                .map_err(|error| error.to_string())?;
+            let home = sync_rx
+                .recv()
+                .map_err(|error| error.to_string())??;
+            if let Some(home) = home {
+                if let Ok(mut home_bounds) = state.home_bounds.lock() {
+                    *home_bounds = Some(home);
+                }
+            }
+        }
         return Ok(());
     }
 
@@ -983,6 +1018,42 @@ fn pin_session(
 
 const DEFAULT_SESSION_RETENTION_SECS: u64 = 900;
 
+fn atoll_settings_path() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|home| home.join(".atoll").join("settings.json"))
+}
+
+fn load_persisted_retention_secs() -> u64 {
+    let Some(path) = atoll_settings_path() else {
+        return DEFAULT_SESSION_RETENTION_SECS;
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return DEFAULT_SESSION_RETENTION_SECS;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+        return DEFAULT_SESSION_RETENTION_SECS;
+    };
+    let minutes = value
+        .get("sessionRetentionMinutes")
+        .and_then(Value::as_u64)
+        .unwrap_or(DEFAULT_SESSION_RETENTION_SECS / 60);
+    minutes.clamp(1, 60) * 60
+}
+
+fn persist_retention_minutes(minutes: u64) {
+    let Some(path) = atoll_settings_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let config = serde_json::json!({
+        "sessionRetentionMinutes": minutes.clamp(1, 60)
+    });
+    if let Ok(formatted) = serde_json::to_string_pretty(&config) {
+        let _ = std::fs::write(path, formatted);
+    }
+}
+
 #[tauri::command]
 fn get_session_retention(state: State<'_, AppState>) -> u64 {
     *state.session_retention_secs.lock().expect("state mutex poisoned")
@@ -993,9 +1064,11 @@ fn set_session_retention(
     state: State<'_, AppState>,
     minutes: u64,
 ) -> u64 {
-    let secs = minutes.clamp(1, 60) * 60;
+    let clamped_minutes = minutes.clamp(1, 60);
+    let secs = clamped_minutes * 60;
     let mut retention = state.session_retention_secs.lock().expect("state mutex poisoned");
     *retention = secs;
+    persist_retention_minutes(clamped_minutes);
     secs
 }
 
@@ -1901,6 +1974,14 @@ pub fn run() {
             build_tray(app.handle())?;
             hook_bridge::start_server(app.handle().clone());
             start_island_hover_monitor(app.handle().clone());
+            {
+                let state = app.state::<AppState>();
+                let retention = load_persisted_retention_secs();
+                *state
+                    .session_retention_secs
+                    .lock()
+                    .expect("state mutex poisoned") = retention;
+            }
             start_auto_archive_timer(app.handle().clone());
             start_token_refresh_timer(app.handle().clone());
 
@@ -1992,12 +2073,17 @@ fn start_auto_archive_timer(app: AppHandle) {
         thread::sleep(AUTO_ARCHIVE_INTERVAL);
 
         let state = app.state::<AppState>();
-        let _changed = {
+        let (changed, expired, stale_pending_ids) = {
             let Ok(mut requests) = state.requests.lock() else {
                 continue;
             };
-            let retention_secs = *state.session_retention_secs.lock().unwrap_or_else(|e| e.into_inner());
+            let retention_secs =
+                *state.session_retention_secs.lock().unwrap_or_else(|e| e.into_inner());
             let pinned = state.pinned_sessions.lock().unwrap_or_else(|e| e.into_inner());
+            let last_seen_map = state
+                .session_last_seen
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
 
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -2005,25 +2091,42 @@ fn start_auto_archive_timer(app: AppHandle) {
                 .as_secs();
 
             let mut changed = false;
+            let mut stale_pending_ids: Vec<String> = Vec::new();
             for request in requests.iter_mut() {
-                if request.archived || request.status == PermissionStatus::Pending {
+                if request.archived {
                     continue;
                 }
                 // Skip pinned sessions from auto-archive.
                 if pinned.contains(&request.session) {
                     continue;
                 }
-                let requested_at_secs = parse_iso_timestamp_secs(&request.requested_at);
-                if now.saturating_sub(requested_at_secs) >= retention_secs {
-                    request.archived = true;
-                    changed = true;
+                let last_seen_ts = last_seen_map
+                    .get(&request.session)
+                    .copied()
+                    .unwrap_or_else(|| parse_iso_timestamp_secs(&request.requested_at));
+                if now.saturating_sub(last_seen_ts) < retention_secs {
+                    continue;
                 }
+                if request.status == PermissionStatus::Pending {
+                    request.status = PermissionStatus::Denied;
+                    if !request.detail.contains("Auto-archived") {
+                        request.detail =
+                            format!("{} Auto-archived after idle timeout.", request.detail);
+                    }
+                    stale_pending_ids.push(request.id.clone());
+                }
+                request.archived = true;
+                changed = true;
             }
+            drop(last_seen_map);
 
             // Collect expired known sessions while locks are held; purge after dropping
             // all guards so purge_tracked_session can acquire them independently.
             let expired = {
-                let last_seen = state.session_last_seen.lock().unwrap_or_else(|e| e.into_inner());
+                let last_seen = state
+                    .session_last_seen
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
                 let mut known = state.known_sessions.lock().unwrap_or_else(|e| e.into_inner());
                 let mut expired: Vec<(String, Option<String>)> = Vec::new();
                 known.retain(|session_id, info| {
@@ -2047,18 +2150,31 @@ fn start_auto_archive_timer(app: AppHandle) {
                 changed = true;
             }
 
-            drop(requests);
-            for (session_id, transcript_path) in expired {
-                purge_tracked_session(&state, &session_id, transcript_path.as_deref());
-            }
-
-            if changed {
-                roll_over_token_usage_if_needed(&state);
-                let snapshot = build_snapshot(&app, &state);
-                let _ = app.emit("snapshot-changed", &snapshot);
-            }
-            changed
+            (changed, expired, stale_pending_ids)
         };
+
+        if !stale_pending_ids.is_empty() {
+            if let Ok(mut waiters) = state.hook_waiters.lock() {
+                for request_id in stale_pending_ids {
+                    if let Some(waiter) = waiters.remove(&request_id) {
+                        let _ = waiter.send(DecisionWithNote {
+                            decision: Decision::Denied,
+                            note: "Auto-archived after idle timeout.".into(),
+                        });
+                    }
+                }
+            }
+        }
+
+        for (session_id, transcript_path) in expired {
+            purge_tracked_session(&state, &session_id, transcript_path.as_deref());
+        }
+
+        if changed {
+            roll_over_token_usage_if_needed(&state);
+            let snapshot = build_snapshot(&app, &state);
+            let _ = app.emit("snapshot-changed", &snapshot);
+        }
         sync_listening_online_snapshot(&app, &state);
     });
 }
@@ -3192,7 +3308,7 @@ fn snapshot_from(
                     .get(&request.session)
                     .copied()
                     .unwrap_or_else(|| parse_iso_timestamp_secs(&request.requested_at));
-                if now.saturating_sub(last_seen_ts) > retention_secs {
+                if now.saturating_sub(last_seen_ts) >= retention_secs {
                     continue;
                 }
             }
@@ -3260,7 +3376,7 @@ fn snapshot_from(
                     .get(session_id)
                     .copied()
                     .unwrap_or_else(|| parse_iso_timestamp_secs(&info.last_activity));
-                if now.saturating_sub(last_seen_ts) > retention_secs {
+                if now.saturating_sub(last_seen_ts) >= retention_secs {
                     continue;
                 }
             }

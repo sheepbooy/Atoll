@@ -133,6 +133,21 @@ export interface TokenOdometerCell {
   rollDelayMs: number;
 }
 
+export function buildStaticTokenOdometerCells(text: string): TokenOdometerCell[] {
+  return [...text].map((char) => ({
+    char,
+    prevChar: char,
+    kind: isNumericTokenChar(char)
+      ? "digit"
+      : isTokenSeparator(char)
+        ? "sep"
+        : "other",
+    changed: false,
+    entering: false,
+    rollDelayMs: 0,
+  }));
+}
+
 export function buildTokenOdometerCells(next: string, prev: string): TokenOdometerCell[] {
   if (!tokenDisplayFormatsCompatible(next, prev)) {
     return [...next].map((char) => ({

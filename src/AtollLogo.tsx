@@ -36,6 +36,8 @@ interface AtollLogoProps {
   className?: string;
   idleIntervalSec?: number;
   idleDurationSec?: number;
+  /** Pause blink / easter-egg timers during island resize animations. */
+  motionPaused?: boolean;
 }
 
 type EyeVariant = "normal" | "closed" | "happy" | "wide";
@@ -104,6 +106,7 @@ export function AtollLogo({
   className,
   idleIntervalSec = DEFAULT_IDLE_INTERVAL_SEC,
   idleDurationSec = DEFAULT_IDLE_DURATION_SEC,
+  motionPaused = false,
 }: AtollLogoProps) {
   const [playAct, setPlayAct] = useState<AtollActivity | null>(null);
   const [blinking, setBlinking] = useState(false);
@@ -113,6 +116,10 @@ export function AtollLogo({
   const { renderAct, phase } = useAtollPhase(targetAct);
 
   useEffect(() => {
+    if (motionPaused) {
+      setPlayAct(null);
+      return;
+    }
     // 彩蛋：仅当 props.activity 为「空闲」idle 时，按设置间隔从 IDLE_EASTER_EGG_ACTIVITIES 随机播放。
     if (activity !== "idle") {
       setPlayAct(null);
@@ -143,12 +150,16 @@ export function AtollLogo({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [activity, idleIntervalSec, idleDurationSec]);
+  }, [activity, idleIntervalSec, idleDurationSec, motionPaused]);
 
   const palette = IDLE_PALETTE;
   const showLimbs = renderAct !== "idle" && renderAct !== "napping";
 
   useEffect(() => {
+    if (motionPaused) {
+      setBlinking(false);
+      return;
+    }
     if (renderAct === "napping") return;
     let timer: number;
     const blinkOnce = (onDone: () => void) => {
@@ -162,7 +173,7 @@ export function AtollLogo({
     };
     timer = window.setTimeout(loop, 2000 + Math.random() * 1500);
     return () => window.clearTimeout(timer);
-  }, [renderAct]);
+  }, [renderAct, motionPaused]);
 
   useEffect(() => {
     if (renderAct !== "reading") { setScanX(0); return; }

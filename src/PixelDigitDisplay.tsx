@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
-import { buildTokenOdometerCells, type TokenOdometerCell } from "./tokenCounterFormat";
+import { buildStaticTokenOdometerCells, buildTokenOdometerCells, type TokenOdometerCell } from "./tokenCounterFormat";
 import { isPixelGlyphChar, PIXEL_GLYPH_ROWS } from "./pixelFont";
 
 function PixelGlyph({ char, live }: { char: string; live: boolean }) {
@@ -45,14 +45,19 @@ function PixelCell({
 export function PixelDigitDisplay({
   text,
   energy,
+  animateDigits = true,
 }: {
   text: string;
   energy: "idle" | "live" | "settle";
+  animateDigits?: boolean;
 }) {
   const prevTextRef = useRef(text);
   const cells = useMemo(
-    () => buildTokenOdometerCells(text, prevTextRef.current),
-    [text],
+    () =>
+      animateDigits
+        ? buildTokenOdometerCells(text, prevTextRef.current)
+        : buildStaticTokenOdometerCells(text),
+    [animateDigits, text],
   );
 
   useLayoutEffect(() => {

@@ -344,11 +344,20 @@ kbd {
     box-shadow 300ms ease;
 }
 
+.tauri-runtime .island.is-opening {
+  border-radius: 0 0 22px 22px;
+  overflow: hidden;
+  background: #000;
+}
+
+.tauri-runtime .island.is-opening,
+.tauri-runtime .island.is-closing {
+  /* Native code already animates size; CSS transitions here double-work each frame. */
+  transition: none;
+}
+
 .tauri-runtime .island.is-closing {
   border-radius: 0 0 15px 15px;
-  transition:
-    border-radius var(--duration-expand) var(--ease-window),
-    box-shadow 300ms ease;
 }
 
 .island.is-expanded {
@@ -541,6 +550,20 @@ kbd {
   padding-left: 7px;
 }
 
+/* Dormant collapse: pin the header to the menu-bar band while window height
+   animates — height:100% otherwise vertically centers the logo mid-window. */
+.is-dormant.is-closing .island-header,
+.is-dormant.is-closing .header-main {
+  height: var(--compact-height);
+}
+
+.is-opening.is-dormant .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle,
+.is-closing.is-dormant .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle,
+.island.is-opening .atoll-logo,
+.island.is-closing .atoll-logo {
+  animation: none !important;
+}
+
 .is-dormant .header-actions,
 .is-dormant .header-metrics,
 .is-dormant .pending-badge-slot {
@@ -572,24 +595,28 @@ kbd {
 }
 
 /* 折叠态：上移 + 裁切，避免腿/道具探出岛底；idle 浮沉改为向上 */
-.is-compact:not(.is-dormant) .atoll-indicator {
+.is-compact:not(.is-dormant) .atoll-indicator,
+.is-closing:not(.is-dormant) .atoll-indicator {
   height: 30px;
   margin-top: -2px;
   overflow: hidden;
 }
 
-.is-compact:not(.is-dormant) .atoll-indicator-inner {
+.is-compact:not(.is-dormant) .atoll-indicator-inner,
+.is-closing:not(.is-dormant) .atoll-indicator-inner {
   transform: translateY(-5px);
 }
 
 /* 空闲 pose：与 preview 一致，裁切框内露出双眼（保持 overflow:hidden，避免 hit area 溢出） */
-.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) {
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle),
+.is-closing:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) {
   height: 32px;
   margin-top: 0;
   overflow: hidden;
 }
 
-.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) .atoll-indicator-inner {
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) .atoll-indicator-inner,
+.is-closing:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) .atoll-indicator-inner {
   transform: translateY(-3px);
 }
 
@@ -654,13 +681,11 @@ kbd {
   to   { transform: translateY(4%); }
 }
 
-.is-expanded .atoll-indicator,
-.is-opening .atoll-indicator {
+.is-expanded .atoll-indicator {
   width: 38px;
 }
 
-.is-expanded .atoll-indicator-inner,
-.is-opening .atoll-indicator-inner {
+.is-expanded .atoll-indicator-inner {
   transform: translateY(-1px) scale(1.02);
   transform-origin: center bottom;
 }
@@ -723,19 +748,17 @@ kbd {
 
 /* Smooth content crossfade during phase transitions so content doesn't
    flash inside a still-growing window (especially dormant → expanded). */
-.is-opening .header-main {
-  animation: header-content-in 300ms var(--ease-out) 180ms both;
+.is-opening.is-dormant .header-main,
+.is-opening:not(.is-compact):not(.is-dormant) .header-main {
+  animation: none;
 }
 
 /* Same crossfade for the compact stack → expanded tabs transition */
 .is-opening .compact-session-stack,
-.is-opening .header-agent-tabs {
-  animation: header-content-in 260ms var(--ease-out) 140ms both;
-}
-
-/* Fade-out during collapse so mascots don't pop away */
+.is-opening .header-agent-tabs,
 .is-closing .compact-session-stack {
-  animation: header-content-out 200ms ease both;
+  animation: none;
+  transition: none;
 }
 
 @keyframes header-content-in {
@@ -775,6 +798,12 @@ kbd {
   justify-content: space-between;
   align-items: center;
   padding: 1px 8px 2px;
+  height: var(--compact-height);
+}
+
+.is-compact:not(.is-dormant) .header-main,
+.is-closing:not(.is-dormant) .header-main {
+  height: var(--compact-height);
 }
 
 .compact-session-stack--right {
@@ -1948,7 +1977,15 @@ kbd {
 
 /* Mirror the dormant indicator's smooth entry in compact mode */
 .is-opening .listener-dot {
-  animation: header-content-in 260ms var(--ease-out) 140ms both;
+  animation: none;
+}
+
+.is-opening .header-actions {
+  display: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate3d(6px, 0, 0) scale(0.94);
 }
 
 .is-closing .listener-dot {
@@ -1999,13 +2036,36 @@ kbd {
   justify-self: end;
 }
 
-.is-closing .header-metrics {
-  animation: header-content-out 180ms ease both;
+.island.is-opening,
+.island.is-closing {
+  /* Avoid layout containment during native window resize — it forces a full
+     relayout every frame and makes horizontal expand/collapse stutter. */
+  contain: none;
 }
 
-/* Smooth entry/exit for metrics during island transitions */
-.is-opening .header-metrics {
-  animation: header-content-in 280ms var(--ease-out) 160ms both;
+.is-opening .island-header,
+.is-closing .island-header {
+  transition: none;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.is-opening .atoll-indicator,
+.is-opening .header-main,
+.is-opening .header-metrics,
+.is-closing .atoll-indicator,
+.is-closing .header-main {
+  transition: none;
+}
+
+/* Metrics stay out of the resize path during native window animation. */
+.is-opening:not(.is-expanded) .header-metrics,
+.is-closing:not(.is-expanded) .header-metrics {
+  display: none;
+}
+
+.is-closing .header-metrics {
+  animation: none;
 }
 
 .token-counter-wrap {
@@ -2085,6 +2145,23 @@ kbd {
 
 .token-counter-wrap--compact.token-counter-wrap--settle .token-counter {
   animation: token-cash-settle 480ms var(--ease-spring);
+}
+
+.token-counter-wrap.is-present-transition .token-counter,
+.token-counter-wrap.is-present-transition .pixel-display {
+  animation: none !important;
+  filter: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.token-counter-wrap.is-present-transition .token-odo-reel-strip,
+.token-counter-wrap.is-present-transition .token-odo-roll-enter,
+.token-counter-wrap.is-present-transition .token-odo-roll-in,
+.token-counter-wrap.is-present-transition .token-odo-roll-out {
+  animation: none !important;
+  transform: none !important;
+  opacity: 1 !important;
 }
 
 .token-counter-wrap--expanded.token-counter-wrap--live .pixel-display {
@@ -2622,7 +2699,7 @@ kbd {
   left: 50%;
   width: 560px;
   height: calc(100% - 36px);
-  contain: layout paint;
+  contain: paint;
   transform: translate3d(-50%, -8px, 0);
 }
 
@@ -2637,9 +2714,16 @@ kbd {
   transform: translate3d(-50%, 0, 0);
 }
 
-.is-closing .island-panel {
+/* Keep panel out of layout while the native window width animates. */
+.island.is-opening .island-panel,
+.island.is-closing .island-panel {
+  display: none;
   opacity: 0;
   pointer-events: none;
+  transition: none;
+}
+
+.is-closing .island-panel {
   transform: translate3d(0, -8px, 0);
   transition-delay: 0ms;
 }
@@ -2665,6 +2749,7 @@ kbd {
    is pushed below the housing. Driven by --notch-height / --notch-width set
    from NSScreen safe-area metrics; absent on non-notched screens. */
 
+.tauri-runtime.has-notch .island.is-opening,
 .tauri-runtime.has-notch .island.is-expanded {
   background: #000;
 }
@@ -2695,22 +2780,33 @@ kbd {
 /* Compact pill on notched displays: split content to both visible sides of the
    notch. The header becomes two equal-width columns separated by a gap matching
    the notch width so icons land on the left and metrics on the right. */
-.tauri-runtime.has-notch .is-compact:not(.is-dormant) .island-header {
+.tauri-runtime.has-notch .is-compact:not(.is-dormant) .island-header,
+.tauri-runtime.has-notch .is-closing:not(.is-dormant) .island-header {
   grid-template-columns: auto var(--notch-width, 0px) auto;
   gap: 0;
   padding-left: 0;
   padding-right: 0;
 }
 
-.tauri-runtime.has-notch .is-compact:not(.is-dormant) .header-main {
+.tauri-runtime.has-notch .is-compact:not(.is-dormant) .header-main,
+.tauri-runtime.has-notch .is-closing:not(.is-dormant) .header-main {
+  grid-column: 1;
   justify-content: flex-start;
   min-width: 0;
+  max-width: var(--compact-left-pane-width, none);
   padding-left: 0;
   padding-right: var(--compact-notch-inner-gap, 4px);
   overflow: visible;
 }
 
-.tauri-runtime.has-notch .is-compact:not(.is-dormant) .header-metrics {
+.tauri-runtime.has-notch .is-compact:not(.is-dormant) .header-notch-spacer,
+.tauri-runtime.has-notch .is-closing:not(.is-dormant) .header-notch-spacer {
+  grid-column: 2;
+}
+
+.tauri-runtime.has-notch .is-compact:not(.is-dormant) .header-metrics,
+.tauri-runtime.has-notch .is-closing:not(.is-dormant) .header-metrics {
+  grid-column: 3;
   min-width: max-content;
   padding-right: 8px;
   padding-left: var(--compact-notch-inner-gap, 4px);

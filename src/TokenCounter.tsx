@@ -10,6 +10,7 @@ import {
 import { PixelDigitDisplay } from "./PixelDigitDisplay";
 import {
   buildDigitReelStrip,
+  buildStaticTokenOdometerCells,
   buildTokenOdometerCells,
   formatCompactTokenCount,
   stepAnimatedTokenValue,
@@ -146,14 +147,19 @@ function TokenSlotChar({ cell }: { cell: TokenOdometerCell }) {
 function TokenSlotOdometer({
   text,
   energy,
+  animateDigits,
 }: {
   text: string;
   energy: TokenCounterEnergy;
+  animateDigits: boolean;
 }) {
   const prevTextRef = useRef(text);
   const cells = useMemo(
-    () => buildTokenOdometerCells(text, prevTextRef.current),
-    [text],
+    () =>
+      animateDigits
+        ? buildTokenOdometerCells(text, prevTextRef.current)
+        : buildStaticTokenOdometerCells(text),
+    [animateDigits, text],
   );
 
   useLayoutEffect(() => {
@@ -180,6 +186,8 @@ export interface TokenCounterProps {
   maxCompactIcons?: number;
   /** When set, overrides width/session heuristics for collapsed display. */
   compactTokenLevel?: number;
+  /** Hold digits static during island open/close animations. */
+  suppressAnimations?: boolean;
 }
 
 const DEFAULT_ICON_LIMIT = 3;
@@ -191,11 +199,13 @@ export function TokenCounter({
   sessionCount = 0,
   maxCompactIcons = DEFAULT_ICON_LIMIT,
   compactTokenLevel,
+  suppressAnimations = false,
 }: TokenCounterProps) {
   const compactLevel =
     variant === "compact" && compactTokenLevel !== undefined
       ? compactTokenLevel
       : tokenDisplayCompactLevel(value, variant, sessionCount, maxCompactIcons);
+  const animateDigits = !suppressAnimations;
   const [displayText, setDisplayText] = useState(() =>
     formatCompactTokenCount(value, compactLevel, value),
   );
@@ -206,7 +216,6 @@ export function TokenCounter({
 
   const wrapRef = useRef<HTMLSpanElement>(null);
   const pointerHoverRef = useRef(false);
-  const numericRef = useRef(value);
   const displayTextRef = useRef(displayText);
   const animatedValueRef = useRef(value);
   const targetRef = useRef(value);
@@ -264,7 +273,11 @@ export function TokenCounter({
     targetRef.current = value;
     const incomingDelta = value - previousTarget;
 
-    if (incomingDelta > 0 && variant === "compact") {
+    if (
+      incomingDelta > 0 &&
+      variant === "compact" &&
+      !suppressAnimations
+    ) {
       setDeltaText(`+${formatCompactTokenCount(incomingDelta, compactLevel, value)}`);
       setDeltaKey((key) => key + 1);
       deltaTimerRef.current = window.setTimeout(() => {
@@ -278,13 +291,18 @@ export function TokenCounter({
     const publishDisplay = (nextValue: number) => {
       const rounded = Math.round(nextValue);
       const nextText = formatCompactTokenCount(rounded, compactLevel, targetRef.current);
-      numericRef.current = rounded;
       animatedValueRef.current = nextValue;
       if (nextText !== displayTextRef.current) {
         displayTextRef.current = nextText;
         setDisplayText(nextText);
       }
     };
+
+    if (suppressAnimations) {
+      publishDisplay(value);
+      setEnergy("idle");
+      return clearTimers;
+    }
 
     if (Math.abs(value - animatedValueRef.current) < 0.5) {
       publishDisplay(value);
@@ -329,7 +347,7 @@ export function TokenCounter({
       }
       clearTimers();
     };
-  }, [value, sessionCount, maxCompactIcons, compactLevel, variant]);
+  }, [value, compactLevel, variant, suppressAnimations]);
 
   function handlePointerEnter() {
     pointerHoverRef.current = true;
@@ -352,7 +370,9 @@ export function TokenCounter({
   return (
     <span
       ref={wrapRef}
-      className={`token-counter-wrap token-counter-wrap--${variant} token-counter-wrap--${energy}`}
+      className={`token-counter-wrap token-counter-wrap--${variant} token-counter-wrap--${energy}${
+        suppressAnimations ? " is-present-transition" : ""
+      }`}
       data-no-drag
       onMouseDown={handleMouseDown}
       onPointerDown={handlePointerDown}
@@ -366,9 +386,17 @@ export function TokenCounter({
         aria-describedby={tooltipVisible ? "token-counter-tooltip" : undefined}
       >
         {variant === "expanded" ? (
-          <PixelDigitDisplay text={displayText} energy={energy} />
+          <PixelDigitDisplay
+            text={displayText}
+            energy={energy}
+            animateDigits={animateDigits}
+          />
         ) : (
-          <TokenSlotOdometer text={displayText} energy={energy} />
+          <TokenSlotOdometer
+            text={displayText}
+            energy={energy}
+            animateDigits={animateDigits}
+          />
         )}
       </span>
       {deltaText ? (
