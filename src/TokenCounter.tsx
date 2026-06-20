@@ -22,9 +22,37 @@ import { onIslandHoverChanged, type TokenUsage } from "./tauri";
 type TokenCounterEnergy = "idle" | "live" | "settle";
 export type TokenCounterVariant = "compact" | "expanded";
 
-function tokenCounterTitle(value: number, usage: TokenUsage): string {
+function tokenScopeLabel(variant: TokenCounterVariant): string {
+  return variant === "expanded" ? "Today tokens" : "Active session tokens";
+}
+
+function tokenScopeShortLabel(variant: TokenCounterVariant): string {
+  return variant === "expanded" ? "Today" : "Active";
+}
+
+function TokenScopeMark({ variant }: { variant: TokenCounterVariant }) {
+  return (
+    <span
+      className={`token-counter-mark token-counter-mark--${variant}`}
+      aria-hidden="true"
+      title={tokenScopeShortLabel(variant)}
+    />
+  );
+}
+
+function tokenScopeHint(variant: TokenCounterVariant): string {
+  return variant === "expanded"
+    ? "All sessions today, including archived."
+    : "Active sessions in the island right now.";
+}
+
+function tokenCounterTitle(
+  value: number,
+  usage: TokenUsage,
+  variant: TokenCounterVariant,
+): string {
   return [
-    `Today tokens ${value.toLocaleString()}`,
+    `${tokenScopeLabel(variant)} ${value.toLocaleString()}`,
     `input ${usage.inputTokens.toLocaleString()}`,
     `output ${usage.outputTokens.toLocaleString()}`,
     `cache-read ${usage.cacheReadTokens.toLocaleString()}`,
@@ -50,10 +78,12 @@ function TokenCounterTooltip({
   value,
   usage,
   visible,
+  variant,
 }: {
   value: number;
   usage: TokenUsage;
   visible: boolean;
+  variant: TokenCounterVariant;
 }) {
   return (
     <span
@@ -63,7 +93,7 @@ function TokenCounterTooltip({
       aria-hidden={!visible}
     >
       <span className="token-counter-tooltip-headline">
-        Today tokens {value.toLocaleString()}
+        {tokenScopeLabel(variant)} {value.toLocaleString()}
       </span>
       <span className="token-counter-tooltip-detail">
         in {usage.inputTokens.toLocaleString()} · out{" "}
@@ -73,6 +103,7 @@ function TokenCounterTooltip({
         cache-read {usage.cacheReadTokens.toLocaleString()} · cache-write{" "}
         {usage.cacheCreationTokens.toLocaleString()}
       </span>
+      <span className="token-counter-tooltip-hint">{tokenScopeHint(variant)}</span>
     </span>
   );
 }
@@ -379,25 +410,33 @@ export function TokenCounter({
       onPointerEnter={handlePointerEnter}
       onPointerLeave={handlePointerLeave}
     >
-      <TokenCounterTooltip value={value} usage={usage} visible={tooltipVisible} />
-      <span
-        className="token-counter"
-        aria-label={tokenCounterTitle(value, usage)}
-        aria-describedby={tooltipVisible ? "token-counter-tooltip" : undefined}
-      >
-        {variant === "expanded" ? (
-          <PixelDigitDisplay
-            text={displayText}
-            energy={energy}
-            animateDigits={animateDigits}
-          />
-        ) : (
-          <TokenSlotOdometer
-            text={displayText}
-            energy={energy}
-            animateDigits={animateDigits}
-          />
-        )}
+      <TokenCounterTooltip
+        value={value}
+        usage={usage}
+        visible={tooltipVisible}
+        variant={variant}
+      />
+      <span className={`token-counter-body token-counter-body--${variant}`}>
+        <TokenScopeMark variant={variant} />
+        <span
+          className="token-counter"
+          aria-label={tokenCounterTitle(value, usage, variant)}
+          aria-describedby={tooltipVisible ? "token-counter-tooltip" : undefined}
+        >
+          {variant === "expanded" ? (
+            <PixelDigitDisplay
+              text={displayText}
+              energy={energy}
+              animateDigits={animateDigits}
+            />
+          ) : (
+            <TokenSlotOdometer
+              text={displayText}
+              energy={energy}
+              animateDigits={animateDigits}
+            />
+          )}
+        </span>
       </span>
       {deltaText ? (
         <span key={deltaKey} className="token-counter-delta" aria-hidden="true">

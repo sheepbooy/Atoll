@@ -283,7 +283,7 @@ describe("App", () => {
       noNotch,
       1,
       3,
-      highTokens.inputTokens + highTokens.outputTokens,
+      lowTokens.inputTokens + lowTokens.outputTokens,
       0,
     );
 
@@ -295,6 +295,7 @@ describe("App", () => {
       recent: [],
       sessions: [session],
       dailyTokens: lowTokens,
+      activeSessionTokens: lowTokens,
     };
     bridge.getSnapshot.mockResolvedValue(baseSnapshot);
     bridge.getSessionRequests.mockResolvedValue([]);
@@ -320,6 +321,7 @@ describe("App", () => {
       emitSnapshot?.({
         ...baseSnapshot,
         dailyTokens: highTokens,
+        activeSessionTokens: lowTokens,
       });
     });
 
@@ -339,6 +341,7 @@ describe("App", () => {
           cacheReadTokens: 0,
           cacheCreationTokens: 0,
         },
+        activeSessionTokens: lowTokens,
       });
     });
 

@@ -34,6 +34,7 @@ export interface IslandSnapshot {
   recent: PermissionRequest[];
   sessions: SessionSummary[];
   dailyTokens: TokenUsage;
+  activeSessionTokens: TokenUsage;
 }
 
 export interface SessionSummary {
@@ -81,6 +82,12 @@ export async function getSnapshot(): Promise<IslandSnapshot> {
     recent: localRequests,
     sessions: [],
     dailyTokens: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    },
+    activeSessionTokens: {
       inputTokens: 0,
       outputTokens: 0,
       cacheReadTokens: 0,

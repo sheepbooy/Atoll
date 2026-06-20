@@ -44,6 +44,12 @@ describe("Tauri bridge", () => {
         cacheReadTokens: 0,
         cacheCreationTokens: 0,
       },
+      activeSessionTokens: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
     });
   });
 

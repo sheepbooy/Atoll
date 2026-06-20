@@ -82,6 +82,7 @@ struct IslandSnapshot {
     recent: Vec<PermissionRequest>,
     sessions: Vec<SessionSummary>,
     daily_tokens: TokenUsage,
+    active_session_tokens: TokenUsage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -985,9 +986,7 @@ fn archive_session(
     if let Ok(mut last_seen) = state.session_last_seen.lock() {
         last_seen.remove(&session_id);
     }
-    if let Ok(mut usage) = state.session_token_usage.lock() {
-        usage.remove(&session_id);
-    }
+    // Keep session_token_usage so archived sessions still count toward daily totals.
     roll_over_token_usage_if_needed(&state);
     let snapshot = build_snapshot(&app, &state);
     app.emit("snapshot-changed", &snapshot)
@@ -3404,6 +3403,14 @@ fn snapshot_from(
         daily_tokens.add_assign(*usage);
     }
 
+    let active_ids: HashSet<&str> = sessions.iter().map(|s| s.session_id.as_str()).collect();
+    let mut active_session_tokens = TokenUsage::default();
+    for (session_id, usage) in session_token_usage.iter() {
+        if active_ids.contains(session_id.as_str()) {
+            active_session_tokens.add_assign(*usage);
+        }
+    }
+
     IslandSnapshot {
         online,
         pending_count,
@@ -3412,6 +3419,7 @@ fn snapshot_from(
         recent: visible.into_iter().take(12).cloned().collect(),
         sessions,
         daily_tokens,
+        active_session_tokens,
     }
 }
 
@@ -3639,6 +3647,88 @@ mod core_tests {
             &AgentKind::Codex,
             "/Users/test/code/Atoll/.codex"
         ));
+    }
+
+    #[test]
+    fn active_session_tokens_only_sum_visible_sessions() {
+        let requests = vec![PermissionRequest {
+            id: "req-active".into(),
+            tool_use_id: None,
+            agent: AgentKind::Claude,
+            session: "session-active".into(),
+            command: "Bash: ls".into(),
+            detail: String::new(),
+            cwd: "/tmp/active".into(),
+            requested_at: iso_timestamp_now(),
+            status: PermissionStatus::Approved,
+            archived: false,
+            supports_always: false,
+            transcript_path: None,
+        }];
+        let token_usage = HashMap::from([
+            (
+                "session-active".into(),
+                TokenUsage {
+                    input_tokens: 100,
+                    output_tokens: 50,
+                    cache_read_tokens: 0,
+                    cache_creation_tokens: 0,
+                },
+            ),
+            (
+                "session-expired".into(),
+                TokenUsage {
+                    input_tokens: 200,
+                    output_tokens: 80,
+                    cache_read_tokens: 0,
+                    cache_creation_tokens: 0,
+                },
+            ),
+        ]);
+
+        let snapshot = snapshot_from(
+            &requests,
+            &HashMap::new(),
+            900,
+            &token_usage,
+            &HashMap::new(),
+            &HashSet::new(),
+            true,
+        );
+
+        assert_eq!(snapshot.daily_tokens.input_tokens, 300);
+        assert_eq!(snapshot.daily_tokens.output_tokens, 130);
+        assert_eq!(snapshot.active_session_tokens.input_tokens, 100);
+        assert_eq!(snapshot.active_session_tokens.output_tokens, 50);
+    }
+
+    #[test]
+    fn archived_session_tokens_still_count_toward_daily_total() {
+        let token_usage = HashMap::from([(
+            "session-archived".into(),
+            TokenUsage {
+                input_tokens: 400,
+                output_tokens: 100,
+                cache_read_tokens: 0,
+                cache_creation_tokens: 0,
+            },
+        )]);
+
+        let snapshot = snapshot_from(
+            &[],
+            &HashMap::new(),
+            900,
+            &token_usage,
+            &HashMap::new(),
+            &HashSet::new(),
+            true,
+        );
+
+        assert!(snapshot.sessions.is_empty());
+        assert_eq!(snapshot.daily_tokens.input_tokens, 400);
+        assert_eq!(snapshot.daily_tokens.output_tokens, 100);
+        assert_eq!(snapshot.active_session_tokens.input_tokens, 0);
+        assert_eq!(snapshot.active_session_tokens.output_tokens, 0);
     }
 
     #[test]

@@ -261,6 +261,7 @@ const initialSnapshot: IslandSnapshot = {
   recent: [],
   sessions: [],
   dailyTokens: ZERO_TOKEN_USAGE,
+  activeSessionTokens: ZERO_TOKEN_USAGE,
 };
 
 const agentLabels: Record<AgentKind, string> = {
@@ -493,6 +494,9 @@ export function App() {
   );
   const dailyTokens = snapshot.dailyTokens ?? ZERO_TOKEN_USAGE;
   const dailyTokenTotal = dailyTokens.inputTokens + dailyTokens.outputTokens;
+  const activeSessionTokens = snapshot.activeSessionTokens ?? ZERO_TOKEN_USAGE;
+  const activeSessionTokenTotal =
+    activeSessionTokens.inputTokens + activeSessionTokens.outputTokens;
   const maxCompactIconLimit = useMemo(
     () => computeMaxCompactIconLimit(notchMetrics),
     [notchMetrics],
@@ -503,14 +507,14 @@ export function App() {
         notchMetrics,
         sessions.length,
         maxCompactIcons,
-        dailyTokenTotal,
+        activeSessionTokenTotal,
         snapshot.pendingCount,
       ),
     [
       notchMetrics,
       sessions.length,
       maxCompactIcons,
-      dailyTokenTotal,
+      activeSessionTokenTotal,
       snapshot.pendingCount,
     ],
   );
@@ -562,14 +566,14 @@ export function App() {
         notchMetrics,
         sessions.length,
         maxCompactIcons,
-        dailyTokenTotal,
+        activeSessionTokenTotal,
         snapshot.pendingCount,
       ),
     [
       notchMetrics,
       sessions.length,
       maxCompactIcons,
-      dailyTokenTotal,
+      activeSessionTokenTotal,
       snapshot.pendingCount,
     ],
   );
@@ -1356,7 +1360,8 @@ export function App() {
   const isDormant = !isExpanded && collapsedMode === "dormant";
   const showCompactHeaderMetrics =
     !isDormant && !isExpanded && !isPresentationTransition;
-  const showTokenCounter = dailyTokenTotal > 0;
+  const showCompactTokenCounter = activeSessionTokenTotal > 0;
+  const showExpandedTokenCounter = dailyTokenTotal > 0;
   const showCompactNotchSpacer =
     collapsedMode === "compact" && !isExpanded && notchMetrics.hasNotch;
   const compactLeftSessions = sessions.slice(0, compactHeaderLayout.leftIconCount);
@@ -1622,10 +1627,10 @@ export function App() {
                   justResolved={justResolved}
                 />
               ) : null}
-              {showTokenCounter ? (
+              {showCompactTokenCounter ? (
                 <TokenCounter
-                  value={dailyTokenTotal}
-                  usage={dailyTokens}
+                  value={activeSessionTokenTotal}
+                  usage={activeSessionTokens}
                   variant="compact"
                   suppressAnimations={isPresentationTransition}
                   sessionCount={sessions.length}
@@ -1653,13 +1658,11 @@ export function App() {
             ref={menuRef}
             onMouseDown={handleControlMouseDown}
           >
-            {showTokenCounter && !isDormant ? (
+            {showExpandedTokenCounter && !isDormant ? (
               <TokenCounter
                 value={dailyTokenTotal}
                 usage={dailyTokens}
                 variant="expanded"
-                sessionCount={sessions.length}
-                maxCompactIcons={maxCompactIcons}
               />
             ) : null}
             <button

@@ -103,6 +103,12 @@ export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {
       cacheReadTokens: 890_000,
       cacheCreationTokens: 12_400,
     },
+    activeSessionTokens: {
+      inputTokens: 128_400,
+      outputTokens: 42_180,
+      cacheReadTokens: 890_000,
+      cacheCreationTokens: 12_400,
+    },
   };
 
   switch (mode) {
