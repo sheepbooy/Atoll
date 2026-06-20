@@ -38,6 +38,7 @@ export const ACTIVITY_LABELS: Record<AtollActivity, string> = {
   idea: "idea",
   slacking: "slacking",
   napping: "napping",
+  dead: "dead",
 };
 
 export const ACTIVITY_HINTS: Record<AtollActivity, string> = {
@@ -49,6 +50,7 @@ export const ACTIVITY_HINTS: Record<AtollActivity, string> = {
   idea: "头顶灯泡 · 隐形手举顶",
   slacking: "墨镜 + 举手机 · 隐形手",
   napping: "睡帽 zzz · 无腿",
+  dead: "Hook 断开 · 灰化瘫倒",
 };
 
 /** 四种应用态 → Logo pose（由 App 条件直接驱动，非随机）。 */

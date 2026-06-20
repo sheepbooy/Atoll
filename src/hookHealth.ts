@@ -26,13 +26,17 @@ export function isHookReady(status: HookStatus | null | undefined): boolean {
 export function analyzeHookHealth(
   health: HookHealthSnapshot | undefined,
 ): HookHealthAnalysis {
-  const agents = (
-    [
-      { key: "claude" as const, label: HOOK_AGENT_LABELS.claude, status: health?.claude },
-      { key: "codex" as const, label: HOOK_AGENT_LABELS.codex, status: health?.codex },
-    ] satisfies Array<{ key: HookAgentKey; label: string; status: HookStatus | undefined }>
-  ).filter((agent): agent is { key: HookAgentKey; label: string; status: HookStatus } =>
-    Boolean(agent.status),
+  const agentEntries: Array<{
+    key: HookAgentKey;
+    label: string;
+    status: HookStatus | undefined;
+  }> = [
+    { key: "claude", label: HOOK_AGENT_LABELS.claude, status: health?.claude },
+    { key: "codex", label: HOOK_AGENT_LABELS.codex, status: health?.codex },
+  ];
+  const agents = agentEntries.filter(
+    (agent): agent is { key: HookAgentKey; label: string; status: HookStatus } =>
+      agent.status != null,
   );
 
   const readyAgents = agents.filter((agent) => isHookReady(agent.status));

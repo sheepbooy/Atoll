@@ -305,7 +305,7 @@ export function CodexMascot({
 
           <ScreenPrompt mood={mood} color={prompt} />
 
-          {mood === "sad" && mood !== "dead" && (
+          {mood === "sad" && (
             <>
               <rect
                 x={20}
