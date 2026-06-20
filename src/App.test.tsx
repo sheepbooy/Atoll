@@ -288,6 +288,7 @@ describe("App", () => {
     const baseSnapshot = {
       online: true,
       pendingCount: 0,
+      archivedCount: 0,
       activeRequest: null,
       recent: [],
       sessions: [session],
