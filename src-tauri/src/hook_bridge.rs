@@ -258,8 +258,12 @@ fn route_claude_request(
             sync_tool_completion(app, payload, AgentKind::Claude)?;
             Ok(json!({}))
         }
-        "Stop" | "StopFailure" | "SubagentStop" => {
-            sync_turn_completion(app, payload, AgentKind::Claude)?;
+        "Stop" | "StopFailure" => {
+            sync_turn_completion(app, payload, AgentKind::Claude, true)?;
+            Ok(json!({}))
+        }
+        "SubagentStop" => {
+            sync_turn_completion(app, payload, AgentKind::Claude, false)?;
             Ok(json!({}))
         }
         _ => Ok(json!({})),
@@ -293,8 +297,12 @@ fn route_codex_request(
             sync_tool_completion(app, payload, AgentKind::Codex)?;
             Ok(json!({}))
         }
-        "Stop" | "SubagentStop" => {
-            sync_turn_completion(app, payload, AgentKind::Codex)?;
+        "Stop" => {
+            sync_turn_completion(app, payload, AgentKind::Codex, true)?;
+            Ok(json!({}))
+        }
+        "SubagentStop" => {
+            sync_turn_completion(app, payload, AgentKind::Codex, false)?;
             Ok(json!({}))
         }
         _ => Ok(json!({})),
@@ -581,6 +589,7 @@ fn sync_turn_completion(
     app: AppHandle,
     payload: Value,
     agent: AgentKind,
+    touch_activity: bool,
 ) -> Result<(), String> {
     let state = app.state::<AppState>();
     let agent_label = agent_resolved_label(&agent);
@@ -613,7 +622,9 @@ fn sync_turn_completion(
         if codex_internal {
             purge_tracked_session(&state, session_id, transcript_path.as_deref());
         } else {
-            touch_session_activity(&state, session_id);
+            if touch_activity {
+                touch_session_activity(&state, session_id);
+            }
             register_known_session(
                 &state,
                 session_id,
