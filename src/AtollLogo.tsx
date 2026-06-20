@@ -225,14 +225,6 @@ export function AtollLogo({
           </g>
         )}
 
-        {renderAct === "napping" && (
-          <g className="atoll-prop atoll-sleep-cap">
-            <polygon points="22,16 54,16 58,-6" fill="#6B5B9A" />
-            <rect x="20" y="14" width="36" height="5" fill="#8070B0" />
-            <circle className="atoll-cap-pom" cx="60" cy="-8" r="4" fill="#E8E0F0" />
-          </g>
-        )}
-
         <MascotBody
           body={palette.body}
           top={palette.top}
@@ -337,13 +329,20 @@ export function AtollLogo({
           </>
         )}
 
-        {/* ── napping: zzz ── */}
+        {/* ── napping: sleep cap + zzz (in front of body) ── */}
         {renderAct === "napping" && (
-          <g className="atoll-prop atoll-zzz" fill="#aab4ff" fontFamily="var(--font-mono, monospace)" fontWeight="700">
-            <text className="atoll-z atoll-z-0" x="48" y="8" fontSize="12">z</text>
-            <text className="atoll-z atoll-z-1" x="56" y="-4" fontSize="15">z</text>
-            <text className="atoll-z atoll-z-2" x="64" y="-18" fontSize="18">z</text>
-          </g>
+          <>
+            <g className="atoll-prop atoll-sleep-cap">
+              <polygon points="22,16 54,16 58,-6" fill="#6B5B9A" />
+              <rect x="20" y="14" width="36" height="5" fill="#8070B0" />
+              <circle className="atoll-cap-pom" cx="60" cy="-8" r="4" fill="#E8E0F0" />
+            </g>
+            <g className="atoll-prop atoll-zzz" fill="#aab4ff" fontFamily="var(--font-mono, monospace)" fontWeight="700">
+              <text className="atoll-z atoll-z-0" x="48" y="8" fontSize="12">z</text>
+              <text className="atoll-z atoll-z-1" x="56" y="-4" fontSize="15">z</text>
+              <text className="atoll-z atoll-z-2" x="64" y="-18" fontSize="18">z</text>
+            </g>
+          </>
         )}
       </svg>
     </span>

@@ -639,6 +639,23 @@ kbd {
   animation: atoll-to-idle-rest-menu-open 0.68s ease-in both;
 }
 
+/* Napping pose: reveal sleep cap + rising zzz above the head in compact clip */
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-napping),
+.is-closing:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-napping) {
+  height: 34px;
+  margin-top: -4px;
+  overflow: hidden;
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-napping) .atoll-indicator-inner,
+.is-closing:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-napping) .atoll-indicator-inner {
+  transform: translateY(2px);
+}
+
+.is-dormant .atoll-indicator:has(.atoll-logo.is-napping) .atoll-indicator-inner {
+  transform: translateY(0);
+}
+
 @keyframes atoll-idle-float-menu-open {
   0%, 100% { transform: translate3d(0, -2%, 0); }
   50%      { transform: translate3d(0, -8%, 0); }
@@ -1688,7 +1705,10 @@ kbd {
 .atoll-logo.is-napping.is-phase-enter .atoll-sleep-cap { animation: atoll-prop-drop-in 0.55s cubic-bezier(0.34, 1.1, 0.64, 1) 0.1s both; }
 .atoll-logo.is-napping.is-phase-exit  .atoll-sleep-cap { animation: atoll-prop-lift-out 0.48s ease-in both; }
 
-.atoll-logo.is-napping.is-phase-loop .atoll-body-group { animation: atoll-nap-breathe 3.6s ease-in-out infinite; }
+.atoll-logo.is-napping.is-phase-loop .atoll-body-group,
+.atoll-logo.is-napping.is-phase-loop .atoll-sleep-cap,
+.atoll-logo.is-napping.is-phase-loop .atoll-zzz { animation: atoll-nap-breathe 3.6s ease-in-out infinite; }
+.atoll-logo.is-napping.is-phase-loop .atoll-sleep-cap { opacity: 1; }
 .atoll-logo.is-napping.is-phase-loop .atoll-cap-pom { animation: atoll-cap-pom-bob 2.4s ease-in-out infinite; }
 .atoll-logo.is-napping.is-phase-loop .atoll-z { opacity: 0; }
 .atoll-logo.is-napping.is-phase-loop .atoll-z-0 { animation: atoll-zzz-rise 2s ease-in-out infinite 0.2s; }

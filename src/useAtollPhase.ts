@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import type { AtollActivity } from "./AtollLogo";
+import { isAppStatePose } from "./logoStates";
 import { ATOLL_ENTER_MS, ATOLL_EXIT_MS, type AtollPhase } from "./atollTransitions";
+
+function initialPhase(targetAct: AtollActivity): AtollPhase {
+  if (targetAct === "idle" || isAppStatePose(targetAct)) return "loop";
+  return "enter";
+}
 
 export function useAtollPhase(targetAct: AtollActivity) {
   const [renderAct, setRenderAct] = useState<AtollActivity>(targetAct);
-  const [phase, setPhase] = useState<AtollPhase>(() =>
-    targetAct === "idle" ? "loop" : "enter",
-  );
+  const [phase, setPhase] = useState<AtollPhase>(() => initialPhase(targetAct));
   const timersRef = useRef<number[]>([]);
   const prevTargetRef = useRef(targetAct);
   const renderActRef = useRef(renderAct);
