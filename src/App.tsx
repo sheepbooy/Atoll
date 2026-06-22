@@ -1980,7 +1980,7 @@ export function App() {
                 <TokenCounter
                   value={activeSessionTokenTotal}
                   usage={activeSessionTokens}
-                  variant="compact"
+                  variant={isMicro ? "micro" : "compact"}
                   suppressAnimations={isPresentationTransition}
                   sessionCount={sessions.length}
                   maxCompactIcons={maxCompactIcons}

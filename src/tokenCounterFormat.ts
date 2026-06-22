@@ -51,12 +51,12 @@ export function tokenCompactLevel(sessionCount: number, maxCompactIcons: number)
  */
 export function tokenDisplayCompactLevel(
   value: number,
-  variant: "compact" | "expanded",
+  variant: "compact" | "expanded" | "micro",
   sessionCount: number,
   maxCompactIcons: number,
   maxDisplayChars = variant === "expanded" ? 11 : 999,
 ): number {
-  if (variant === "compact") {
+  if (variant === "compact" || variant === "micro") {
     const sessionLevel = tokenCompactLevel(sessionCount, maxCompactIcons);
     const fullText = formatCompactTokenCount(value, 0, value);
     if (fullText.length <= maxDisplayChars) return sessionLevel;

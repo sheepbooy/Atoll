@@ -20,7 +20,7 @@ import {
 import { onIslandHoverChanged, type TokenUsage } from "./tauri";
 
 type TokenCounterEnergy = "idle" | "live" | "settle";
-export type TokenCounterVariant = "compact" | "expanded";
+export type TokenCounterVariant = "compact" | "expanded" | "micro";
 
 function tokenScopeLabel(variant: TokenCounterVariant): string {
   return variant === "expanded" ? "Today tokens" : "Active session tokens";
@@ -232,8 +232,9 @@ export function TokenCounter({
   compactTokenLevel,
   suppressAnimations = false,
 }: TokenCounterProps) {
+  const isCollapsedVariant = variant === "compact" || variant === "micro";
   const compactLevel =
-    variant === "compact" && compactTokenLevel !== undefined
+    isCollapsedVariant && compactTokenLevel !== undefined
       ? compactTokenLevel
       : tokenDisplayCompactLevel(value, variant, sessionCount, maxCompactIcons);
   const animateDigits = !suppressAnimations;
@@ -306,7 +307,7 @@ export function TokenCounter({
 
     if (
       incomingDelta > 0 &&
-      variant === "compact" &&
+      isCollapsedVariant &&
       !suppressAnimations
     ) {
       setDeltaText(`+${formatCompactTokenCount(incomingDelta, compactLevel, value)}`);
