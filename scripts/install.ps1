@@ -1,8 +1,10 @@
 # Install Atoll from the latest GitHub Release (Windows).
-# Usage:
+# Usage (cmd / PowerShell / Windows Terminal — recommended):
+#   powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex"
+# PowerShell only:
 #   irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex
 # Pin a version:
-#   $env:ATOLL_VERSION = "0.1.11"; irm .../install.ps1 | iex
+#   set ATOLL_VERSION=0.1.11 (cmd)  or  $env:ATOLL_VERSION = "0.1.11" (PowerShell)
 # Private repo:
 #   $env:GH_TOKEN = "..."; $env:ATOLL_VERSION = "0.1.11"; irm .../install.ps1 | iex
 

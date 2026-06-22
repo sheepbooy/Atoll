@@ -82,13 +82,25 @@ sudo xattr -cr /Applications/Atoll.app
 
 ### Windows
 
-**推荐 — PowerShell 一行安装：**
+**推荐 — 一行安装**（cmd、PowerShell、Windows 终端均可）：
+
+```cmd
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex"
+```
+
+> 若在 **命令提示符 (cmd)** 中直接运行 `irm ... | iex` 会报错 `'irm' 不是内部或外部命令`——`irm` / `iex` 是 PowerShell 别名，cmd 无法识别。请使用上面的命令，或先打开 PowerShell 再安装。
+
+已在 PowerShell 中时，可简写为：
 
 ```powershell
 irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex
 ```
 
 指定版本：
+
+```cmd
+set ATOLL_VERSION=0.1.11 && powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex"
+```
 
 ```powershell
 $env:ATOLL_VERSION = "0.1.11"; irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex

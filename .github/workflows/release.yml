@@ -181,6 +181,7 @@ jobs:
           cp windows-staging/* release/
           cp scripts/install.sh release/install.sh
           cp scripts/install.ps1 release/install.ps1
+          cp scripts/install.cmd release/install.cmd
           chmod +x release/install.sh
 
           cat > release/Fix-Atoll.command <<'EOF'
@@ -209,4 +210,5 @@ jobs:
             release/Atoll-x64.msi.sha256
             release/install.sh
             release/install.ps1
+            release/install.cmd
             release/Fix-Atoll.command
