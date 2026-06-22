@@ -858,7 +858,7 @@ kbd {
   grid-template-columns: auto auto;
   justify-content: space-between;
   align-items: center;
-  gap: var(--compact-header-gap, 12px);
+  gap: var(--compact-header-gap, 18px);
   padding: 1px 8px 2px;
   height: var(--compact-height);
 }
@@ -2180,7 +2180,7 @@ kbd {
   min-width: max-content;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--compact-metrics-gap, 10px);
   overflow: visible;
   transition: gap var(--duration-expand) var(--ease-window);
 }

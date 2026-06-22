@@ -55,6 +55,7 @@ import { deriveAppLogoState, deriveAtollActivity } from "./logoStates";
 import {
   ABSOLUTE_MAX_COMPACT_ICONS,
   COMPACT_HEADER_GAP,
+  COMPACT_METRICS_GAP,
   COMPACT_NOTCH_INNER_GAP,
   computeCollapsedWindowWidth,
   computeCompactHeaderLayout,
@@ -449,6 +450,7 @@ function applyWindowMetrics(notch: NotchMetrics) {
     "--compact-header-gap",
     `${notch.hasNotch ? 0 : COMPACT_HEADER_GAP}px`,
   );
+  root.style.setProperty("--compact-metrics-gap", `${COMPACT_METRICS_GAP}px`);
   root.classList.toggle("has-notch", notch.hasNotch);
 }
 

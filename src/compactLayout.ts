@@ -18,9 +18,10 @@ export const COMPACT_OVERFLOW_SLOT = 28;
 export const COMPACT_OUTER_PADDING = 8;
 export const COMPACT_NOTCH_INNER_GAP = 6;
 /** Space between left sessions and right metrics on non-notched displays. */
-export const COMPACT_HEADER_GAP = 12;
+export const COMPACT_HEADER_GAP = 18;
 export const COMPACT_PENDING_BADGE_SLOT = 28;
-export const COMPACT_METRICS_GAP = 6;
+/** Space between right session icons and the token counter in header-metrics. */
+export const COMPACT_METRICS_GAP = 10;
 
 export const MIN_MAX_COMPACT_ICONS = 1;
 export const ABSOLUTE_MAX_COMPACT_ICONS = 8;
