@@ -567,9 +567,26 @@ kbd {
   flex: 0 0 auto;
 }
 
+.is-micro .atoll-indicator {
+  width: 30px;
+  height: 28px;
+  margin-top: -1px;
+  overflow: hidden;
+}
+
 .is-micro .atoll-indicator-inner {
-  width: 24px;
-  height: 24px;
+  width: 30px;
+  height: 30px;
+  transform: translateY(-4px);
+}
+
+.is-micro .atoll-indicator:has(.atoll-logo.is-idle) {
+  height: 30px;
+  margin-top: 0;
+}
+
+.is-micro .atoll-indicator:has(.atoll-logo.is-idle) .atoll-indicator-inner {
+  transform: translateY(-2px);
 }
 
 .is-micro .atoll-indicator .atoll-logo,
@@ -603,10 +620,32 @@ kbd {
   height: 16px;
 }
 
-.is-micro .header-metrics,
 .is-micro .header-actions,
-.is-micro .pending-badge-slot,
 .is-micro .header-notch-spacer {
+  display: none;
+}
+
+.is-micro .header-metrics.is-micro-metrics {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-width: 0;
+  gap: 4px;
+}
+
+.is-micro .header-metrics.is-micro-metrics .token-counter-wrap--compact {
+  padding-top: 0;
+}
+
+.is-micro .header-metrics.is-micro-metrics .token-counter-body {
+  padding-left: 2px;
+}
+
+.is-micro .header-metrics.is-micro-metrics .token-odo {
+  font-size: 10px;
+}
+
+.is-micro .pending-badge-slot {
   display: none;
 }
 

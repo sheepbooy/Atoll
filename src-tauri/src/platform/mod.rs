@@ -12,7 +12,9 @@ mod windows;
 /// AppKit screen frame metadata (macOS) or unused defaults elsewhere.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ScreenGeometry {
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub origin_y: f64,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub height: f64,
 }
 
@@ -21,15 +23,13 @@ pub fn setup_app(app: &mut App) -> bool {
     {
         let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
     }
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
     #[cfg(target_os = "windows")]
     {
         if !windows::ensure_single_instance() {
             return false;
         }
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        let _ = app;
     }
     true
 }

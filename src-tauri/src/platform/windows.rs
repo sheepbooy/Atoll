@@ -13,7 +13,7 @@ use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetForeground
 
 use crate::{AppState, HomeWindowBounds};
 
-struct InstanceMutex(HANDLE);
+struct InstanceMutex(#[allow(dead_code)] HANDLE);
 
 unsafe impl Send for InstanceMutex {}
 unsafe impl Sync for InstanceMutex {}

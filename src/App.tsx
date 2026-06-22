@@ -421,8 +421,8 @@ function deriveSessionMood(
 // Keep in sync with COMPACT_WINDOW_HEIGHT in src-tauri/src/lib.rs.
 const COMPACT_WINDOW_HEIGHT = 36;
 // Keep in sync with MICRO_WINDOW_WIDTH / MICRO_WINDOW_HEIGHT in src-tauri/src/lib.rs.
-const MICRO_WINDOW_WIDTH = 72;
-const MICRO_WINDOW_HEIGHT = 26;
+const MICRO_WINDOW_WIDTH = 96;
+const MICRO_WINDOW_HEIGHT = 32;
 // Keep in sync with NOTCH_COVER_PADDING in src-tauri/src/lib.rs.
 const NOTCH_COVER_PADDING = 16;
 
@@ -1667,6 +1667,8 @@ export function App() {
         snapshot.pendingCount === 0));
   const showCompactHeaderMetrics =
     !isMicro && !isDormant && !isExpanded && !isPresentationTransition;
+  const showMicroTokenCounter =
+    isMicro && !isPresentationTransition && activeSessionTokenTotal > 0;
   const showCompactTokenCounter = activeSessionTokenTotal > 0;
   const showExpandedTokenCounter = dailyTokenTotal > 0;
   const showCompactNotchSpacer =
@@ -1692,7 +1694,7 @@ export function App() {
     sessions.length === 0 &&
     snapshot.pendingCount === 0;
   const isSubview = isExpandedChrome && panelView.kind !== "home";
-  const menuBarLogoSize = isExpanded ? 36 : isMicro ? 24 : 34;
+  const menuBarLogoSize = isExpanded ? 36 : isMicro ? 30 : 34;
   const subviewSession =
     panelView.kind === "session"
       ? sessions.find((session) => session.sessionId === panelView.sessionId)
@@ -1959,13 +1961,13 @@ export function App() {
             <span className="header-notch-spacer" aria-hidden="true" />
           ) : null}
 
-          {showCompactHeaderMetrics ? (
+          {showCompactHeaderMetrics || showMicroTokenCounter ? (
             <div
               className={`header-metrics${
-                isPresentationTransition ? ` is-${phase}` : ""
-              }`}
+                isMicro ? " is-micro-metrics" : ""
+              }${isPresentationTransition ? ` is-${phase}` : ""}`}
             >
-              {compactRightSessions.length > 0 ? (
+              {showCompactHeaderMetrics && compactRightSessions.length > 0 ? (
                 <CompactSessionStack
                   placement="right"
                   sessions={compactRightSessions}
@@ -1985,7 +1987,7 @@ export function App() {
                   compactTokenLevel={compactHeaderLayout.tokenCompactLevel}
                 />
               ) : null}
-              {snapshot.pendingCount > 0 ? (
+              {showCompactHeaderMetrics && snapshot.pendingCount > 0 ? (
                 <span className="pending-badge-slot">
                   <span
                     className="pending-badge"

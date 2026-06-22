@@ -20,8 +20,8 @@ mod transcript;
 const COMPACT_WINDOW_WIDTH: f64 = 132.0;
 pub(crate) const COMPACT_WINDOW_HEIGHT: f64 = 36.0;
 /// Windows-only super-collapsed strip; macOS never selects this mode.
-pub(crate) const MICRO_WINDOW_WIDTH: f64 = 72.0;
-pub(crate) const MICRO_WINDOW_HEIGHT: f64 = 26.0;
+pub(crate) const MICRO_WINDOW_WIDTH: f64 = 96.0;
+pub(crate) const MICRO_WINDOW_HEIGHT: f64 = 32.0;
 const EXPANDED_WINDOW_WIDTH: f64 = 560.0;
 pub(crate) const EXPANDED_WINDOW_HEIGHT: f64 = 320.0;
 const EXPANDED_IDLE_WINDOW_HEIGHT: f64 = 240.0;
@@ -36,6 +36,7 @@ const WINDOW_ANIMATION_FRAME: Duration = Duration::from_micros(16_667);
 // can't be read but a notch height is reported.
 pub(crate) const FALLBACK_NOTCH_WIDTH: f64 = 200.0;
 // Used when auxiliary menu-bar areas are unavailable but a housing is present.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) const FALLBACK_NOTCH_HEIGHT: f64 = 38.0;
 // Extra logical points added above the reported safe-area inset so the
 // collapsed capsule fully covers the physical camera housing.
@@ -196,9 +197,11 @@ pub(crate) struct AppState {
 pub(crate) struct HomeWindowBounds {
     position: LogicalPosition<f64>,
     compact_size: PhysicalSize<u32>,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     monitor_top_y: f64,
     monitor_center_x: f64,
     notch: NotchMetrics,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     screen_geometry: Option<platform::ScreenGeometry>,
 }
 
@@ -2705,6 +2708,7 @@ fn sanitize_compact_width(width: f64) -> f64 {
 /// A display has a camera housing ("notch") when the two menu-bar halves
 /// (auxiliary top areas) don't span the full screen width — the gap between
 /// them is the notch.
+#[cfg(test)]
 fn has_camera_housing(frame_width: f64, aux_left_width: f64, aux_right_width: f64) -> bool {
     aux_left_width > 0.0
         && aux_right_width > 0.0
@@ -2714,6 +2718,7 @@ fn has_camera_housing(frame_width: f64, aux_left_width: f64, aux_right_width: f6
 /// Notch width in logical points, derived from the gap between the auxiliary
 /// menu-bar areas (matches ping-island's detection). Falls back when the
 /// auxiliary areas are unavailable.
+#[cfg(test)]
 fn notch_logical_width(
     frame_width: f64,
     aux_left_width: f64,
