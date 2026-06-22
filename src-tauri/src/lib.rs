@@ -3863,7 +3863,7 @@ mod codex_hooks_tests {
             extract_node_script_path(
                 r#"node "C:/Program Files/Atoll/scripts/atoll-claude-hook.mjs""#
             ),
-            Some(r"C:\Program Files\Atoll\scripts\atoll-claude-hook.mjs".into())
+            Some(r"C:/Program Files/Atoll/scripts/atoll-claude-hook.mjs".into())
         );
     }
 }
