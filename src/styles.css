@@ -785,13 +785,24 @@ kbd {
   height: var(--compact-height);
 }
 
+.is-expanded .header-main.has-agent-tabs .atoll-indicator-wrap {
+  position: relative;
+  z-index: 5;
+  flex-shrink: 0;
+}
+
 .is-expanded .header-agent-tabs {
   position: absolute;
   z-index: 4;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 42px;
   display: flex;
   align-items: center;
-  padding-left: 0;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
   box-sizing: border-box;
   pointer-events: auto;
 }
@@ -1153,12 +1164,11 @@ kbd {
 
 /* Expanded agent tabs: stay in the left safe area on notched MacBooks. */
 .tauri-runtime.has-notch .is-expanded .header-main.has-agent-tabs .header-agent-tabs {
-  padding-left: 42px;
-  padding-right: 6px;
   max-width: min(
     100%,
-    calc(var(--notch-left-area-width, 280px) - var(--compact-notch-inner-gap, 6px))
+    calc(var(--notch-left-area-width, 280px) - 42px - var(--compact-notch-inner-gap, 6px))
   );
+  padding-right: 6px;
   box-sizing: border-box;
 }
 

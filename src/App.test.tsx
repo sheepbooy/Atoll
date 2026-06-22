@@ -624,6 +624,107 @@ describe("App", () => {
     });
   });
 
+  it("shows agent tab labels on non-notched expanded header", async () => {
+    const multiAgentSnapshot = {
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [
+        {
+          sessionId: "session-claude",
+          agent: "claude" as const,
+          cwd: "/tmp/claude-project",
+          pendingCount: 0,
+          totalCount: 1,
+          lastActivity: "2026-06-10T08:00:00Z",
+          transcriptPath: null,
+        },
+        {
+          sessionId: "session-codex",
+          agent: "codex" as const,
+          cwd: "/tmp/codex-project",
+          pendingCount: 0,
+          totalCount: 1,
+          lastActivity: "2026-06-10T08:00:00Z",
+          transcriptPath: null,
+        },
+      ],
+      hookHealth: connectedHookHealth,
+    };
+    bridge.getSnapshot.mockResolvedValue(multiAgentSnapshot);
+    bridge.getNotchMetrics.mockResolvedValue({
+      hasNotch: false,
+      width: 0,
+      height: 0,
+    });
+    const { container } = render(<App />);
+
+    await waitForExpandedPanel(container);
+
+    const tabbar = container.querySelector(".agent-tabbar");
+    expect(tabbar).not.toBeNull();
+    expect(tabbar?.classList.contains("is-compact")).toBe(false);
+    expect(container.querySelector(".header-main.has-agent-tabs")).not.toBeNull();
+    expect(container.querySelector(".atoll-indicator-wrap")).not.toBeNull();
+    expect(tabbar?.textContent).toContain("Claude");
+    expect(tabbar?.textContent).toContain("Codex");
+  });
+
+  it("hides agent tab labels on notched expanded header", async () => {
+    const multiAgentSnapshot = {
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [
+        {
+          sessionId: "session-claude",
+          agent: "claude" as const,
+          cwd: "/tmp/claude-project",
+          pendingCount: 0,
+          totalCount: 1,
+          lastActivity: "2026-06-10T08:00:00Z",
+          transcriptPath: null,
+        },
+        {
+          sessionId: "session-codex",
+          agent: "codex" as const,
+          cwd: "/tmp/codex-project",
+          pendingCount: 0,
+          totalCount: 1,
+          lastActivity: "2026-06-10T08:00:00Z",
+          transcriptPath: null,
+        },
+      ],
+      hookHealth: connectedHookHealth,
+    };
+    bridge.getSnapshot.mockResolvedValue(multiAgentSnapshot);
+    bridge.getNotchMetrics.mockResolvedValue({
+      hasNotch: true,
+      width: 200,
+      height: 38,
+      leftAreaWidth: 656,
+      rightAreaWidth: 656,
+    });
+    const { container } = render(<App />);
+
+    await waitForExpandedPanel(container);
+
+    const tabbar = container.querySelector(".agent-tabbar");
+    expect(tabbar).not.toBeNull();
+    expect(tabbar?.classList.contains("is-compact")).toBe(true);
+    expect(container.querySelector(".header-agent-tabs--compact")).not.toBeNull();
+    expect(tabbar?.textContent).not.toContain("Claude");
+    expect(tabbar?.textContent).not.toContain("Codex");
+    expect(
+      container.querySelectorAll(".agent-tab.is-compact[aria-label='Claude']"),
+    ).toHaveLength(1);
+    expect(
+      container.querySelectorAll(".agent-tab.is-compact[aria-label='Codex']"),
+    ).toHaveLength(1);
+  });
+
   it("shows live logo after installing all hooks on first setup", async () => {
     bridge.getSnapshot.mockResolvedValue(emptySnapshot);
     const { container } = render(<App />);

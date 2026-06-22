@@ -1753,12 +1753,16 @@ export function App() {
             ) : panelView.kind === "settings" ? (
               <SettingsSubviewNav onBack={navigateBack} />
             ) : showPanelAgentTabs ? (
-              <div className="header-agent-tabs" data-no-drag>
+              <div
+                className={`header-agent-tabs${notchMetrics.hasNotch ? " header-agent-tabs--compact" : ""}`}
+                data-no-drag
+              >
                 <AgentTabBar
                   agents={tabAgents}
                   selectedAgent={selectedAgent}
                   pendingCountByAgent={pendingCountByAgent}
                   showTabs={showAgentTabs}
+                  compact={notchMetrics.hasNotch}
                   online={snapshot.online}
                   onSelectAgent={handleSelectAgent}
                 />
