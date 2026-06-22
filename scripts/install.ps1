@@ -2,9 +2,9 @@
 # Usage:
 #   irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex
 # Pin a version:
-#   $env:ATOLL_VERSION = "0.1.9"; irm .../install.ps1 | iex
+#   $env:ATOLL_VERSION = "0.1.10"; irm .../install.ps1 | iex
 # Private repo:
-#   $env:GH_TOKEN = "..."; $env:ATOLL_VERSION = "0.1.9"; irm .../install.ps1 | iex
+#   $env:GH_TOKEN = "..."; $env:ATOLL_VERSION = "0.1.10"; irm .../install.ps1 | iex
 
 $ErrorActionPreference = "Stop"
 
