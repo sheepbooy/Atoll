@@ -124,12 +124,15 @@ jobs:
         run: npm ci
 
       - name: Build Tauri app
-        run: npm run tauri build
+        run: npm run tauri -- build --bundles msi
 
       - name: Stage Windows artifacts
         shell: bash
         run: |
           BUNDLE_DIR="src-tauri/target/release/bundle"
+          echo "Bundle contents:"
+          ls -la "$BUNDLE_DIR" || true
+          ls -la "$BUNDLE_DIR/msi/" || true
           MSI=$(ls "$BUNDLE_DIR/msi/"*.msi | head -1)
           test -f "$MSI" || { echo "msi not found"; exit 1; }
 

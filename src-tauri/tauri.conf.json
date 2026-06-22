@@ -35,6 +35,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
     "resources": {
       "../scripts/atoll-claude-hook.mjs": "scripts/atoll-claude-hook.mjs",
       "../scripts/atoll-codex-hook.mjs": "scripts/atoll-codex-hook.mjs"

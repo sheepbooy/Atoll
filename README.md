@@ -91,11 +91,12 @@ irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 |
 指定版本：
 
 ```powershell
-$env:ATOLL_VERSION = "0.1.8"; irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex
+$env:ATOLL_VERSION = "0.1.9"; irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex
 ```
 
 **手动下载** — 从 [Releases](https://github.com/sheepbooy/Atoll/releases) 下载 `Atoll-x64.msi` 并安装。
 
+> Windows 安装包（`Atoll-x64.msi`）从 **v0.1.9** 起随 Release 发布；v0.1.8 及更早版本仅含 macOS 产物。
 > 首次运行若被 SmartScreen 拦截，选择「更多信息」→「仍要运行」。Hook 安装需要本机已安装 **Node.js** 且在 PATH 中。
 
 ---
@@ -192,11 +193,13 @@ npm run capture:media    # 浮岛 UI 截图 + demo GIF
 npm run export:brand     # Logo 状态 + Agent 形象
 ```
 
-发布新版本：
+发布新版本（Git Bash / WSL / macOS）：
 
 ```bash
-./scripts/release.sh 0.2.0
+./scripts/release.sh 0.1.9
 ```
+
+推送 `v*` tag 后会并行构建 macOS DMG 与 Windows MSI，并上传到 GitHub Releases。
 
 </details>
 
