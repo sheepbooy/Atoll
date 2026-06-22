@@ -2,6 +2,15 @@ import { FocusEvent, MouseEvent, PointerEvent as ReactPointerEvent, useEffect, u
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+
+const IS_WINDOWS =
+  typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
+
+const DECISION_SHORTCUTS = {
+  deny: IS_WINDOWS ? "Del" : "⌫",
+  approve: IS_WINDOWS ? "Enter" : "↵",
+  always: IS_WINDOWS ? "Shift+Enter" : "⇧↵",
+} as const;
 import {
   Archive,
   ArrowLeft,
@@ -365,6 +374,9 @@ const DANGER_PATTERNS: RegExp[] = [
   /\b(shutdown|reboot|halt|poweroff)\b/i,
   /\bDROP\s+(TABLE|DATABASE)\b/i,
   /\bTRUNCATE\s+TABLE\b/i,
+  /Remove-Item\b[^\n]*(-Recurse|-Force)/i,
+  /\bdel\s+\/f\b/i,
+  /\bformat\s+[a-z]:/i,
 ];
 
 const CAUTION_PATTERNS: RegExp[] = [
@@ -375,6 +387,7 @@ const CAUTION_PATTERNS: RegExp[] = [
   /\b(mv|chmod|chown|ln)\b/i,
   /\bdocker\b[^\n]*\b(rm|rmi|prune|down|stop)\b/i,
   /\b(brew|apt|apt-get|yum|dnf|pacman)\s+(install|remove|uninstall)\b/i,
+  /\bpowershell\b[^\n]*(-ExecutionPolicy|-EncodedCommand)/i,
   />>?\s*[^\s|&]/,
 ];
 
@@ -1381,7 +1394,9 @@ export function App() {
       key: "claude",
       label: "Claude Code",
       status: claudeHookStatus,
-      note: "Registers hooks in ~/.claude/settings.json.",
+      note: claudeHookStatus.settingsPath
+        ? `Registers hooks in ${claudeHookStatus.settingsPath}.`
+        : "Registers Claude Code hooks for permission approval.",
       onInstall: handleInstallClaudeHooks,
       onUninstall: handleUninstallClaudeHooks,
     },
@@ -1389,7 +1404,9 @@ export function App() {
       key: "codex",
       label: "Codex",
       status: codexHookStatus,
-      note: "After install, run /hooks in Codex and trust the Atoll hook.",
+      note: codexHookStatus.settingsPath
+        ? `Registers hooks in ${codexHookStatus.settingsPath}. After install, run /hooks in Codex and trust the Atoll hook.`
+        : "After install, run /hooks in Codex and trust the Atoll hook.",
       onInstall: handleInstallCodexHooks,
       onUninstall: handleUninstallCodexHooks,
     },
@@ -2376,7 +2393,7 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
           >
             <X size={16} />
             <span>{busyDecision === "denied" ? "Denying..." : "Deny"}</span>
-            <kbd className="decision-kbd" aria-hidden="true">⌫</kbd>
+            <kbd className="decision-kbd" aria-hidden="true">{DECISION_SHORTCUTS.deny}</kbd>
           </button>
           <button
             className="decision-button approve"
@@ -2386,7 +2403,7 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
           >
             <Check size={16} />
             <span>{busyDecision === "approved" ? "Approving..." : "Approve"}</span>
-            <kbd className="decision-kbd" aria-hidden="true">↵</kbd>
+            <kbd className="decision-kbd" aria-hidden="true">{DECISION_SHORTCUTS.approve}</kbd>
           </button>
           {request.supportsAlways ? (
             <button
@@ -2398,7 +2415,7 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
             >
               <CheckCheck size={16} />
               <span>Always</span>
-              <kbd className="decision-kbd" aria-hidden="true">⇧↵</kbd>
+              <kbd className="decision-kbd" aria-hidden="true">{DECISION_SHORTCUTS.always}</kbd>
             </button>
           ) : null}
         </div>
@@ -2776,7 +2793,7 @@ function isTextEntryActive() {
 }
 
 function sessionDisplayName(cwd: string) {
-  const parts = cwd.split("/").filter(Boolean);
+  const parts = cwd.split(/[/\\]/).filter(Boolean);
   return parts[parts.length - 1] || cwd;
 }
 

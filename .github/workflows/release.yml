@@ -59,58 +59,140 @@ jobs:
         run: npm run tauri -- build --target aarch64-apple-darwin
 
       - name: Ad-hoc sign .app
-        # 没有开发者账号，用 ad-hoc 签名保证 App 结构完整。
-        # 无法过 Gatekeeper，分发端用 Homebrew --no-quarantine 解决“已损坏”问题。
         run: |
           APP="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Atoll.app"
           codesign --force --deep --sign - "$APP"
           codesign --verify --strict "$APP" && echo "ad-hoc sign OK"
 
-      - name: Stage artifacts
+      - name: Stage macOS artifacts
         run: |
           BUNDLE_DIR="src-tauri/target/aarch64-apple-darwin/release/bundle"
           DMG=$(ls "$BUNDLE_DIR/dmg/"*.dmg | head -1)
           test -f "$DMG" || { echo "dmg not found"; exit 1; }
 
           mkdir -p staging
-          # 统一重命名为 Atoll-aarch64.dmg，cask 用稳定文件名引用
           cp "$DMG" "staging/Atoll-aarch64.dmg"
-
           cd staging
           shasum -a 256 "Atoll-aarch64.dmg" | awk '{print $1}' > "Atoll-aarch64.dmg.sha256"
-          echo "## sha256 (aarch64)" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          cat "Atoll-aarch64.dmg.sha256" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "::notice::aarch64 sha256=$(cat Atoll-aarch64.dmg.sha256)"
 
-      - name: Stage install script
-        run: |
-          mkdir -p staging
-          cp scripts/install.sh staging/install.sh
-          chmod +x staging/install.sh
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release
+          path: staging/
 
-      - name: Generate Fix-Atoll.command
-        # 供直接从 Releases 页面下载 dmg 的用户使用：拖入 App 后双击此脚本即可清除隔离属性。
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version from tag
+        id: version
+        shell: bash
         run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Building Windows release ${VERSION}"
+
+      - name: Sync version files
+        shell: bash
+        run: bash scripts/sync-version.sh "${{ steps.version.outputs.value }}"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: windows-latest-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: windows-latest-cargo-
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Build Tauri app
+        run: npm run tauri build
+
+      - name: Stage Windows artifacts
+        shell: bash
+        run: |
+          BUNDLE_DIR="src-tauri/target/release/bundle"
+          MSI=$(ls "$BUNDLE_DIR/msi/"*.msi | head -1)
+          test -f "$MSI" || { echo "msi not found"; exit 1; }
+
           mkdir -p staging
-          cat > staging/Fix-Atoll.command <<'EOF'
+          cp "$MSI" "staging/Atoll-x64.msi"
+          cd staging
+          sha256sum "Atoll-x64.msi" | awk '{print $1}' > "Atoll-x64.msi.sha256"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: staging/
+
+  publish-release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-release
+          path: macos-staging
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: windows-staging
+
+      - name: Stage release files
+        run: |
+          mkdir -p release
+          cp macos-staging/* release/
+          cp windows-staging/* release/
+          cp scripts/install.sh release/install.sh
+          cp scripts/install.ps1 release/install.ps1
+          chmod +x release/install.sh
+
+          cat > release/Fix-Atoll.command <<'EOF'
           #!/bin/bash
-          # 清除 Atoll 的 macOS 隔离属性，解决“已损坏，无法打开”问题。
           set -e
           APP_PATH="/Applications/Atoll.app"
-
           if [ ! -d "$APP_PATH" ]; then
             osascript -e 'display dialog "请先把 Atoll 拖到「应用程序」文件夹，再运行本脚本。" with title "Atoll 安装修复" buttons {"好"} default button 1' >/dev/null
             exit 1
           fi
-
           echo "正在修复 Atoll（需要输入开机密码）..."
           sudo xattr -cr "$APP_PATH"
           osascript -e 'display dialog "完成！现在可以打开 Atoll 了。" with title "Atoll 安装修复" buttons {"好"} default button 1' >/dev/null
           EOF
-
-          chmod +x staging/Fix-Atoll.command
+          chmod +x release/Fix-Atoll.command
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
@@ -118,7 +200,10 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
           files: |
-            staging/Atoll-aarch64.dmg
-            staging/Atoll-aarch64.dmg.sha256
-            staging/install.sh
-            staging/Fix-Atoll.command
+            release/Atoll-aarch64.dmg
+            release/Atoll-aarch64.dmg.sha256
+            release/Atoll-x64.msi
+            release/Atoll-x64.msi.sha256
+            release/install.sh
+            release/install.ps1
+            release/Fix-Atoll.command

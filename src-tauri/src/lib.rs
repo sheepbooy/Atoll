@@ -14,27 +14,13 @@ use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalS
 
 mod capture;
 mod hook_bridge;
+mod platform;
 mod transcript;
 
-#[cfg(target_os = "macos")]
-mod panel_store {
-    use std::sync::atomic::{AtomicPtr, Ordering};
-
-    static PANEL: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
-
-    pub fn set(ptr: *mut std::ffi::c_void) {
-        PANEL.store(ptr, Ordering::Release);
-    }
-
-    pub fn get_raw() -> *mut std::ffi::c_void {
-        PANEL.load(Ordering::Acquire)
-    }
-}
-
 const COMPACT_WINDOW_WIDTH: f64 = 132.0;
-const COMPACT_WINDOW_HEIGHT: f64 = 36.0;
+pub(crate) const COMPACT_WINDOW_HEIGHT: f64 = 36.0;
 const EXPANDED_WINDOW_WIDTH: f64 = 560.0;
-const EXPANDED_WINDOW_HEIGHT: f64 = 320.0;
+pub(crate) const EXPANDED_WINDOW_HEIGHT: f64 = 320.0;
 const EXPANDED_IDLE_WINDOW_HEIGHT: f64 = 240.0;
 const MIN_COMPACT_WINDOW_WIDTH: f64 = 72.0;
 // Dormant pill height (width spans the notch + side padding on notched displays).
@@ -45,9 +31,9 @@ const WINDOW_ANIMATION_DURATION: Duration = Duration::from_millis(420);
 const WINDOW_ANIMATION_FRAME: Duration = Duration::from_micros(16_667);
 // Fallback notch width (logical pt) used when the auxiliary menu-bar areas
 // can't be read but a notch height is reported.
-const FALLBACK_NOTCH_WIDTH: f64 = 200.0;
+pub(crate) const FALLBACK_NOTCH_WIDTH: f64 = 200.0;
 // Used when auxiliary menu-bar areas are unavailable but a housing is present.
-const FALLBACK_NOTCH_HEIGHT: f64 = 38.0;
+pub(crate) const FALLBACK_NOTCH_HEIGHT: f64 = 38.0;
 // Extra logical points added above the reported safe-area inset so the
 // collapsed capsule fully covers the physical camera housing.
 const NOTCH_COVER_PADDING: f64 = 16.0;
@@ -176,7 +162,7 @@ struct KnownSession {
     last_activity: String,
 }
 
-struct AppState {
+pub(crate) struct AppState {
     requests: Mutex<Vec<PermissionRequest>>,
     hook_waiters: Mutex<HashMap<String, SyncSender<DecisionWithNote>>>,
     auto_approve_sessions: Mutex<HashSet<String>>,
@@ -192,9 +178,8 @@ struct AppState {
     token_usage_day: Mutex<String>,
     known_sessions: Mutex<HashMap<String, KnownSession>>,
     pinned_sessions: Mutex<HashSet<String>>,
-    /// pid of the app that was frontmost before Atoll grabbed focus for an
-    /// approval, so focus can be handed back when the user is done (macOS).
-    previous_app_pid: Mutex<Option<i32>>,
+    /// Platform-specific focus restore target (macOS pid / Windows HWND).
+    previous_app_pid: Mutex<Option<i64>>,
     /// Last emitted listening-online flag; used to push snapshot updates when hook/bridge health changes.
     last_listening_online: Mutex<Option<bool>>,
     /// Last emitted hook-health snapshot; used to detect external config drift.
@@ -202,14 +187,13 @@ struct AppState {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct HomeWindowBounds {
+pub(crate) struct HomeWindowBounds {
     position: LogicalPosition<f64>,
     compact_size: PhysicalSize<u32>,
     monitor_top_y: f64,
     monitor_center_x: f64,
     notch: NotchMetrics,
-    #[cfg(target_os = "macos")]
-    screen_geometry: Option<MacosScreenGeometry>,
+    screen_geometry: Option<platform::ScreenGeometry>,
 }
 
 /// Camera-housing ("notch") geometry for the display the island lives on, in
@@ -217,7 +201,7 @@ struct HomeWindowBounds {
 /// keeps its original top-edge layout.
 #[derive(Debug, Clone, Copy, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct NotchMetrics {
+pub(crate) struct NotchMetrics {
     has_notch: bool,
     width: f64,
     height: f64,
@@ -225,13 +209,6 @@ struct NotchMetrics {
     left_area_width: f64,
     #[serde(default)]
     right_area_width: f64,
-}
-
-#[cfg(target_os = "macos")]
-#[derive(Debug, Clone, Copy)]
-struct MacosScreenGeometry {
-    origin_y: f64,
-    height: f64,
 }
 
 #[tauri::command]
@@ -1308,7 +1285,7 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
         Value::Object(Default::default())
     };
 
-    let hook_command = format!("node {script_path}");
+    let hook_command = format_hook_command(&script_path);
     let hooks = serde_json::json!({
         "PermissionRequest": [
             {
@@ -1513,7 +1490,7 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
         Value::Object(Default::default())
     };
 
-    let hook_command = format_codex_hook_command(&script_path);
+    let hook_command = format_hook_command(&script_path);
     let atoll_hooks = serde_json::json!({
         "PermissionRequest": [
             {
@@ -1655,7 +1632,7 @@ fn uninstall_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
     })
 }
 
-fn format_codex_hook_command(script_path: &str) -> String {
+fn format_hook_command(script_path: &str) -> String {
     format!("node \"{}\"", script_path.replace('"', "\\\""))
 }
 
@@ -1798,6 +1775,10 @@ fn resolve_hook_script_path(app: &AppHandle, script_name: &str) -> Option<String
     }
 
     if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            candidates.push(exe_dir.join("resources").join("scripts").join(script_name));
+            candidates.push(exe_dir.join("scripts").join(script_name));
+        }
         for ancestor in exe.ancestors().skip(1) {
             candidates.push(
                 ancestor
@@ -1891,109 +1872,12 @@ fn matcher_group_has_atoll_codex(matcher: &Value) -> bool {
 
 #[tauri::command]
 fn open_in_terminal(cwd: String) -> Result<(), String> {
-    use std::process::Command;
-
-    if let Some(app) = detect_terminal_app_for_cwd(&cwd) {
-        Command::new("open")
-            .arg("-a")
-            .arg(&app)
-            .spawn()
-            .map_err(|e| format!("Failed to activate {}: {}", app, e))?;
-    } else {
-        Command::new("open")
-            .arg("-a")
-            .arg("Terminal")
-            .arg(&cwd)
-            .spawn()
-            .map_err(|e| format!("Failed to open terminal: {}", e))?;
-    }
-    Ok(())
-}
-
-fn detect_terminal_app_for_cwd(cwd: &str) -> Option<String> {
-    use std::process::Command;
-
-    let output = Command::new("lsof")
-        .args(["-d", "cwd", "+c", "0"])
-        .output()
-        .ok()?;
-    let text = String::from_utf8_lossy(&output.stdout);
-
-    let mut pids: Vec<u32> = Vec::new();
-    for line in text.lines().skip(1) {
-        if line.contains(cwd) {
-            let pid_str = line.split_whitespace().nth(1)?;
-            if let Ok(pid) = pid_str.parse::<u32>() {
-                pids.push(pid);
-            }
-        }
-    }
-
-    for pid in pids {
-        if let Some(app) = find_terminal_ancestor(pid) {
-            return Some(app);
-        }
-    }
-    None
-}
-
-const KNOWN_TERMINALS: &[(&str, &str)] = &[
-    ("ghostty", "Ghostty"),
-    ("Ghostty", "Ghostty"),
-    ("iTerm2", "iTerm2"),
-    ("iTerm2-Server", "iTerm2"),
-    ("Terminal", "Terminal"),
-    ("kitty", "kitty"),
-    ("alacritty", "Alacritty"),
-    ("Alacritty", "Alacritty"),
-    ("wezterm-gui", "WezTerm"),
-    ("WezTerm", "WezTerm"),
-    ("Hyper", "Hyper"),
-    ("tabby", "Tabby"),
-    ("rio", "Rio"),
-];
-
-fn find_terminal_ancestor(mut pid: u32) -> Option<String> {
-    use std::process::Command;
-
-    for _ in 0..20 {
-        if pid <= 1 {
-            return None;
-        }
-        let output = Command::new("ps")
-            .args(["-p", &pid.to_string(), "-o", "ppid=,comm="])
-            .output()
-            .ok()?;
-        let line = String::from_utf8_lossy(&output.stdout);
-        let line = line.trim();
-        if line.is_empty() {
-            return None;
-        }
-
-        let mut parts = line.splitn(2, char::is_whitespace);
-        let ppid_str = parts.next()?.trim();
-        let comm = parts.next()?.trim();
-
-        let basename = comm.rsplit('/').next().unwrap_or(comm);
-        for &(pattern, app_name) in KNOWN_TERMINALS {
-            if basename == pattern {
-                return Some(app_name.to_string());
-            }
-        }
-
-        pid = ppid_str.parse::<u32>().ok()?;
-    }
-    None
+    platform::open_in_terminal(&cwd)
 }
 
 #[tauri::command]
-fn open_url(url: String) -> Result<(), String> {
-    use std::process::Command;
-    Command::new("open")
-        .arg(&url)
-        .spawn()
-        .map_err(|e| format!("Failed to open URL: {}", e))?;
-    Ok(())
+fn open_url(app: AppHandle, url: String) -> Result<(), String> {
+    platform::open_url(&app, &url)
 }
 
 #[tauri::command]
@@ -2001,83 +1885,10 @@ fn quit_atoll(app: AppHandle) {
     exit_atoll(&app);
 }
 
-/// Record the currently frontmost application so focus can be restored to it
-/// once Atoll is done with an approval interaction.
-#[cfg(target_os = "macos")]
-fn remember_frontmost_app(app: &AppHandle) {
-    let own_pid = std::process::id() as i32;
-    unsafe {
-        let Some(ws_class) = objc2::runtime::AnyClass::get(c"NSWorkspace") else {
-            return;
-        };
-        let workspace: *mut objc2::runtime::AnyObject =
-            objc2::msg_send![ws_class, sharedWorkspace];
-        if workspace.is_null() {
-            return;
-        }
-        let front: *mut objc2::runtime::AnyObject =
-            objc2::msg_send![workspace, frontmostApplication];
-        if front.is_null() {
-            return;
-        }
-        let pid: i32 = objc2::msg_send![front, processIdentifier];
-        if pid <= 0 || pid == own_pid {
-            return;
-        }
-        if let Ok(mut guard) = app.state::<AppState>().previous_app_pid.lock() {
-            *guard = Some(pid);
-        }
-    }
-}
-
-/// Activate the app with the given pid (used to hand focus back). Returns
-/// whether activation was issued successfully.
-#[cfg(target_os = "macos")]
-unsafe fn activate_app_by_pid(pid: i32) -> bool {
-    let Some(cls) = objc2::runtime::AnyClass::get(c"NSRunningApplication") else {
-        return false;
-    };
-    let running: *mut objc2::runtime::AnyObject =
-        objc2::msg_send![cls, runningApplicationWithProcessIdentifier: pid];
-    if running.is_null() {
-        return false;
-    }
-    // NSApplicationActivateIgnoringOtherApps = 1 << 1
-    let options: usize = 1 << 1;
-    let ok: objc2::runtime::Bool = objc2::msg_send![running, activateWithOptions: options];
-    ok.as_bool()
-}
 
 #[tauri::command]
 fn deactivate_atoll(state: State<'_, AppState>) {
-    #[cfg(target_os = "macos")]
-    {
-        let previous = state
-            .previous_app_pid
-            .lock()
-            .ok()
-            .and_then(|mut guard| guard.take());
-        unsafe {
-            // Prefer handing focus back to the app the user came from.
-            if let Some(pid) = previous {
-                if activate_app_by_pid(pid) {
-                    return;
-                }
-            }
-            // Fallback: just resign our own activation.
-            let cls =
-                objc2::runtime::AnyClass::get(c"NSApplication").expect("NSApplication class");
-            let ns_app: *mut objc2::runtime::AnyObject =
-                objc2::msg_send![cls, sharedApplication];
-            if !ns_app.is_null() {
-                let _: () = objc2::msg_send![ns_app, deactivate];
-            }
-        }
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = state;
-    }
+    platform::restore_focus_after_approval(&state);
 }
 
 pub fn run() {
@@ -2130,8 +1941,7 @@ pub fn run() {
             capture::capture_provide_screenshot
         ])
         .setup(|app| {
-            #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            platform::setup_app(app);
 
             build_tray(app.handle())?;
             hook_bridge::start_server(app.handle().clone());
@@ -2159,7 +1969,7 @@ pub fn run() {
                 let _ = window.show();
                 // Apply island style AFTER show() so the window number is
                 // assigned and the NSPanel promotion takes effect.
-                apply_macos_island_window_style(&window);
+                platform::apply_island_window_style(&window);
                 eprintln!("[Atoll] step: island style applied, now applying mode...");
                 if let Ok(Some(home)) =
                     apply_island_window_mode(
@@ -2442,50 +2252,7 @@ fn exit_atoll(app: &AppHandle) {
 
 fn show_main_window_with_focus(app: &AppHandle, request_focus: bool) {
     if let Some(window) = app.get_webview_window("main") {
-        let window_for_main_thread = window.clone();
-        #[cfg(target_os = "macos")]
-        let app_for_focus = app.clone();
-        // Permission hooks arrive on a background thread; AppKit window APIs
-        // must run on the main thread to avoid macOS crashes.
-        let _ = window.run_on_main_thread(move || {
-            let _ = window_for_main_thread.show();
-            if request_focus {
-                // Capture who was frontmost *before* we steal focus so we can
-                // restore it after the user resolves the approval.
-                #[cfg(target_os = "macos")]
-                remember_frontmost_app(&app_for_focus);
-                let _ = window_for_main_thread.set_focus();
-            }
-            #[cfg(target_os = "macos")]
-            {
-                let panel_ptr = panel_store::get_raw();
-                if !panel_ptr.is_null() {
-                    unsafe {
-                        let panel_ptr = panel_ptr as *mut objc2::runtime::AnyObject;
-                        let _: () = objc2::msg_send![
-                            panel_ptr,
-                            orderFrontRegardless
-                        ];
-                        if request_focus {
-                            if let Some(ns_app_class) = objc2::runtime::AnyClass::get(c"NSApplication") {
-                                let ns_app: *mut objc2::runtime::AnyObject =
-                                    objc2::msg_send![ns_app_class, sharedApplication];
-                                if !ns_app.is_null() {
-                                    let _: () = objc2::msg_send![
-                                        ns_app,
-                                        activateIgnoringOtherApps: objc2::runtime::Bool::YES
-                                    ];
-                                }
-                            }
-                            let _: () = objc2::msg_send![
-                                panel_ptr,
-                                makeKeyAndOrderFront: std::ptr::null_mut::<objc2::runtime::AnyObject>()
-                            ];
-                        }
-                    }
-                }
-            }
-        });
+        platform::finish_show_for_approval(&window, app, request_focus);
         let _ = app.emit("island-open-requested", ());
     }
 }
@@ -2603,13 +2370,14 @@ fn apply_island_window_mode(
         return Ok(None);
     };
 
-    apply_macos_island_window_style(window);
+    platform::apply_island_window_style(window);
     let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
 
     let scale_factor = monitor.scale_factor();
     let monitor_position = monitor.position().to_logical::<f64>(scale_factor);
     let monitor_size = monitor.size().to_logical::<f64>(scale_factor);
-    let notch = detect_notch_metrics(window, monitor_position.x, monitor_size.width);
+    let monitor_top = platform::monitor_top_y(window, &monitor);
+    let notch = platform::detect_notch_metrics(window, monitor_position.x, monitor_size.width);
 
     window.set_size(island_window_logical_size(
         mode,
@@ -2617,7 +2385,7 @@ fn apply_island_window_mode(
         notch,
         false,
     ))?;
-    set_island_cursor_events_ignored(window, matches!(
+    platform::set_island_cursor_events_ignored(window, matches!(
         mode,
         IslandWindowMode::Compact | IslandWindowMode::Dormant
     ));
@@ -2639,7 +2407,7 @@ fn apply_island_window_mode(
     // Keep the window flush with the physical top edge so the capsule overlaps
     // the notch / menu-bar band; the actual content is pushed below the notch
     // height inside the web view. On non-notched screens this is unchanged.
-    let centered_y = monitor_position.y;
+    let centered_y = monitor_top;
     let position = LogicalPosition::new(centered_x, centered_y);
     let home = HomeWindowBounds {
         position,
@@ -2651,14 +2419,17 @@ fn apply_island_window_mode(
             (COMPACT_WINDOW_WIDTH * scale_factor).round() as u32,
             (COMPACT_WINDOW_HEIGHT * scale_factor).round() as u32,
         ),
-        monitor_top_y: monitor_position.y,
+        monitor_top_y: monitor_top,
         monitor_center_x: monitor_position.x + monitor_size.width / 2.0,
         notch,
-        #[cfg(target_os = "macos")]
-        screen_geometry: macos_screen_geometry(window, monitor_position.x, monitor_size.width),
+        screen_geometry: platform::screen_geometry_for_monitor(
+            window,
+            monitor_position.x,
+            monitor_size.width,
+        ),
     };
 
-    set_island_window_frame_now(window, position, window_size, scale_factor, home)?;
+    platform::set_island_window_frame_now(window, position, window_size, scale_factor, home)?;
     Ok(Some(home))
 }
 
@@ -2674,7 +2445,7 @@ fn animate_island_window_mode(
 ) -> tauri::Result<()> {
     let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
     if matches!(mode, IslandWindowMode::Expanded) {
-        set_island_cursor_events_ignored(window, false);
+        platform::set_island_cursor_events_ignored(window, false);
     }
 
     let scale_factor = home_bounds
@@ -2735,7 +2506,7 @@ fn animate_island_window_mode(
             interpolate_f64(start_position.y, target_y, eased),
         );
 
-        set_island_window_frame(window, position, size, scale_factor, home_bounds)?;
+        platform::set_island_window_frame(window, position, size, scale_factor, home_bounds)?;
 
         if progress >= 1.0 {
             break;
@@ -2753,7 +2524,7 @@ fn animate_island_window_mode(
     });
     let _ = sync_rx.recv();
 
-    set_island_cursor_events_ignored(window, matches!(
+    platform::set_island_cursor_events_ignored(window, matches!(
         mode,
         IslandWindowMode::Compact | IslandWindowMode::Dormant
     ));
@@ -2870,550 +2641,6 @@ fn notch_logical_width(
     } else {
         fallback
     }
-}
-
-#[cfg(target_os = "macos")]
-fn with_nsscreen_for_monitor<R>(
-    window: &tauri::WebviewWindow,
-    monitor_x: f64,
-    monitor_width: f64,
-    inspect: impl FnOnce(&objc2_app_kit::NSScreen) -> R,
-) -> Option<R> {
-    use objc2::MainThreadMarker;
-    use objc2_app_kit::{NSScreen, NSWindow};
-
-    if let Some(main_thread_marker) = MainThreadMarker::new() {
-        let screens = NSScreen::screens(main_thread_marker);
-        if let Some(screen) = screens.iter().find(|screen| {
-            let frame = screen.frame();
-            (frame.origin.x - monitor_x).abs() < 1.0
-                && (frame.size.width - monitor_width).abs() < 1.0
-        }) {
-            return Some(inspect(&screen));
-        }
-    }
-
-    let ns_window = window.ns_window().ok()?;
-    if ns_window.is_null() {
-        return None;
-    }
-
-    unsafe {
-        let ns_window = &*(ns_window.cast::<NSWindow>());
-        ns_window.screen().map(|screen| inspect(&screen))
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn macos_screen_geometry(
-    window: &tauri::WebviewWindow,
-    monitor_x: f64,
-    monitor_width: f64,
-) -> Option<MacosScreenGeometry> {
-    with_nsscreen_for_monitor(window, monitor_x, monitor_width, |screen| {
-        let frame = screen.frame();
-        MacosScreenGeometry {
-            origin_y: frame.origin.y,
-            height: frame.size.height,
-        }
-    })
-}
-
-#[cfg(target_os = "macos")]
-fn detect_notch_metrics(
-    window: &tauri::WebviewWindow,
-    monitor_x: f64,
-    monitor_width: f64,
-) -> NotchMetrics {
-    with_nsscreen_for_monitor(window, monitor_x, monitor_width, |screen| {
-        let safe_top = screen.safeAreaInsets().top;
-        let frame = screen.frame();
-        let aux_left_width = screen.auxiliaryTopLeftArea().size.width;
-        let aux_right_width = screen.auxiliaryTopRightArea().size.width;
-        let has_housing = has_camera_housing(frame.size.width, aux_left_width, aux_right_width);
-
-        if safe_top <= 0.0 && !has_housing {
-            return NotchMetrics::default();
-        }
-
-        NotchMetrics {
-            has_notch: true,
-            width: notch_logical_width(
-                frame.size.width,
-                aux_left_width,
-                aux_right_width,
-                FALLBACK_NOTCH_WIDTH,
-            ),
-            height: if safe_top > 0.0 {
-                safe_top.ceil()
-            } else {
-                FALLBACK_NOTCH_HEIGHT
-            },
-            left_area_width: aux_left_width,
-            right_area_width: aux_right_width,
-        }
-    })
-    .unwrap_or_default()
-}
-
-#[cfg(not(target_os = "macos"))]
-fn detect_notch_metrics(
-    _window: &tauri::WebviewWindow,
-    _monitor_x: f64,
-    _monitor_width: f64,
-) -> NotchMetrics {
-    NotchMetrics::default()
-}
-
-fn set_island_cursor_events_ignored(window: &tauri::WebviewWindow, ignore: bool) {
-    #[cfg(target_os = "macos")]
-    {
-        let panel_ptr = panel_store::get_raw();
-        if !panel_ptr.is_null() {
-            // setIgnoresMouseEvents: MUST run on the main thread.
-            // animate_island_window_mode calls us from a tokio worker,
-            // so dispatch via run_on_main_thread.
-            let ptr_val = panel_ptr as usize;
-            let _ = window.run_on_main_thread(move || unsafe {
-                use objc2::runtime::{AnyObject, Bool};
-                let ptr = ptr_val as *mut AnyObject;
-                let val = if ignore { Bool::YES } else { Bool::NO };
-                let _: () = objc2::msg_send![ptr, setIgnoresMouseEvents: val];
-                // Non-activating NSPanels do not deliver mouse-moved events to
-                // the WKWebView until the panel becomes key (first click). Enable
-                // mouse-moved delivery while expanded so CSS :hover works on hover.
-                let moved = if ignore { Bool::NO } else { Bool::YES };
-                let _: () = objc2::msg_send![ptr, setAcceptsMouseMovedEvents: moved];
-            });
-            return;
-        }
-    }
-    let _ = window.set_ignore_cursor_events(ignore);
-}
-
-#[cfg(target_os = "macos")]
-fn set_island_window_frame_now(
-    window: &tauri::WebviewWindow,
-    position: LogicalPosition<f64>,
-    size: PhysicalSize<u32>,
-    scale_factor: f64,
-    home: HomeWindowBounds,
-) -> tauri::Result<()> {
-    use objc2_app_kit::NSWindow;
-
-    let Some(screen_geometry) = home.screen_geometry else {
-        window.set_size(size)?;
-        return window.set_position(position);
-    };
-    let ns_window = window.ns_window()?;
-    if ns_window.is_null() {
-        return Ok(());
-    }
-
-    let logical_size = size.to_logical::<f64>(scale_factor);
-    let origin_y = appkit_window_origin_y(
-        screen_geometry.origin_y,
-        screen_geometry.height,
-        logical_size.height,
-        position.y,
-        home.monitor_top_y,
-    );
-
-    unsafe {
-        let ns_window = &*(ns_window.cast::<NSWindow>());
-        let mut frame = ns_window.frame();
-        frame.origin.x = position.x;
-        frame.origin.y = origin_y;
-        frame.size.width = logical_size.width;
-        frame.size.height = logical_size.height;
-
-        ns_window.setFrame_display(frame, true);
-
-        let height_progress = ((logical_size.height - COMPACT_WINDOW_HEIGHT)
-            / (EXPANDED_WINDOW_HEIGHT - COMPACT_WINDOW_HEIGHT))
-            .clamp(0.0, 1.0);
-        let corner_radius = 15.0 + 7.0 * height_progress;
-
-        let panel_ptr = panel_store::get_raw();
-        if !panel_ptr.is_null() {
-            let panel = &*(panel_ptr as *const NSWindow);
-            panel.setFrame_display(frame, true);
-            apply_content_view_corner_mask(panel, corner_radius);
-        } else {
-            apply_content_view_corner_mask(ns_window, corner_radius);
-        }
-    }
-
-    Ok(())
-}
-
-#[cfg(not(target_os = "macos"))]
-fn set_island_window_frame_now(
-    window: &tauri::WebviewWindow,
-    position: LogicalPosition<f64>,
-    size: PhysicalSize<u32>,
-    _scale_factor: f64,
-    _home: HomeWindowBounds,
-) -> tauri::Result<()> {
-    window.set_size(size)?;
-    window.set_position(position)
-}
-
-#[cfg(target_os = "macos")]
-fn set_island_window_frame(
-    window: &tauri::WebviewWindow,
-    position: LogicalPosition<f64>,
-    size: PhysicalSize<u32>,
-    scale_factor: f64,
-    home: Option<HomeWindowBounds>,
-) -> tauri::Result<()> {
-    let Some(home) = home else {
-        window.set_size(size)?;
-        return window.set_position(position);
-    };
-
-    let frame_window = window.clone();
-    window.run_on_main_thread(move || {
-        let _ = set_island_window_frame_now(&frame_window, position, size, scale_factor, home);
-    })?;
-
-    Ok(())
-}
-
-#[cfg(not(target_os = "macos"))]
-fn set_island_window_frame(
-    window: &tauri::WebviewWindow,
-    position: LogicalPosition<f64>,
-    size: PhysicalSize<u32>,
-    _scale_factor: f64,
-    _home: Option<HomeWindowBounds>,
-) -> tauri::Result<()> {
-    window.set_size(size)?;
-    window.set_position(position)
-}
-
-fn appkit_window_origin_y(
-    screen_origin_y: f64,
-    screen_height: f64,
-    window_height: f64,
-    desired_top_y: f64,
-    monitor_top_y: f64,
-) -> f64 {
-    screen_origin_y + screen_height - (desired_top_y - monitor_top_y) - window_height
-}
-
-#[cfg(target_os = "macos")]
-fn apply_macos_island_window_style(window: &tauri::WebviewWindow) {
-    use objc2_app_kit::{
-        NSColor, NSMainMenuWindowLevel, NSWindow, NSWindowAnimationBehavior,
-        NSWindowCollectionBehavior,
-    };
-
-    let Ok(ns_window) = window.ns_window() else {
-        return;
-    };
-    if ns_window.is_null() {
-        return;
-    }
-
-    unsafe {
-        let ns_window = &*(ns_window.cast::<NSWindow>());
-        promote_to_floating_panel(ns_window);
-        eprintln!("[Atoll] step: promote_to_floating_panel done");
-        apply_macos_unconstrained_window_class(ns_window);
-        eprintln!("[Atoll] step: unconstrained_window_class done");
-        apply_accepts_first_mouse(ns_window);
-        eprintln!("[Atoll] step: accepts_first_mouse done");
-        let clear = NSColor::clearColor();
-        ns_window.setOpaque(false);
-        ns_window.setBackgroundColor(Some(&clear));
-        ns_window.setHasShadow(false);
-        ns_window.setMovable(false);
-        ns_window.setMovableByWindowBackground(false);
-        ns_window.setCanHide(false);
-        ns_window.setAnimationBehavior(NSWindowAnimationBehavior::None);
-        ns_window.setAllowsToolTipsWhenApplicationIsInactive(true);
-        ns_window.setCollectionBehavior(
-            NSWindowCollectionBehavior::CanJoinAllSpaces
-                | NSWindowCollectionBehavior::Stationary
-                | NSWindowCollectionBehavior::FullScreenAuxiliary
-                | NSWindowCollectionBehavior::IgnoresCycle,
-        );
-        ns_window.setLevel(NSMainMenuWindowLevel + 3);
-        eprintln!("[Atoll] step: window properties set");
-
-        // Corner mask goes on the panel (where the WKWebView lives)
-        // if it exists, otherwise on the Tauri window as fallback.
-        let panel_ptr = panel_store::get_raw();
-        if !panel_ptr.is_null() {
-            apply_content_view_corner_mask(&*(panel_ptr as *const NSWindow), 15.0);
-        } else {
-            apply_content_view_corner_mask(ns_window, 15.0);
-        }
-        eprintln!("[Atoll] step: apply_macos_island_window_style complete");
-    }
-}
-
-/// Create a real NSPanel (properly initialised as a floating panel that
-/// renders above the macOS menu bar), then move the WKWebView from the
-/// Tauri window into this panel.  The Tauri window keeps an empty
-/// contentView so tao's internal bookkeeping doesn't crash, and all
-/// frame / mouse-event updates target the panel via `panel_store`.
-#[cfg(target_os = "macos")]
-fn promote_to_floating_panel(ns_window: &objc2_app_kit::NSWindow) {
-    use std::sync::OnceLock;
-
-    use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, Sel};
-    use objc2::sel;
-    use objc2_app_kit::{
-        NSColor, NSMainMenuWindowLevel, NSScreen, NSWindow, NSWindowCollectionBehavior,
-        NSWindowStyleMask,
-    };
-    use objc2_foundation::NSRect;
-
-    static DONE: OnceLock<()> = OnceLock::new();
-    DONE.get_or_init(|| unsafe {
-        let panel_cls = AnyClass::get(c"NSPanel").expect("NSPanel class");
-        let frame = ns_window.frame();
-
-        let raw: *mut AnyObject = objc2::msg_send![panel_cls, alloc];
-        let style_bits: usize =
-            NSWindowStyleMask::Borderless.0 as usize | (1usize << 7);
-        let raw: *mut AnyObject = objc2::msg_send![
-            raw,
-            initWithContentRect: frame,
-            styleMask: style_bits,
-            backing: 2usize,
-            defer: Bool::NO
-        ];
-        assert!(!raw.is_null(), "NSPanel init failed");
-
-        let _: () = objc2::msg_send![raw, setFloatingPanel: Bool::YES];
-        let _: () = objc2::msg_send![raw, setHidesOnDeactivate: Bool::NO];
-        let _: () = objc2::msg_send![raw, setOpaque: Bool::NO];
-        let clear = NSColor::clearColor();
-        let _: () = objc2::msg_send![raw, setBackgroundColor: &*clear];
-        let _: () = objc2::msg_send![raw, setHasShadow: Bool::NO];
-        let _: () = objc2::msg_send![raw, setMovable: Bool::NO];
-        let _: () = objc2::msg_send![raw, setLevel: NSMainMenuWindowLevel + 3];
-        let _: () = objc2::msg_send![raw, setCollectionBehavior:
-            NSWindowCollectionBehavior::CanJoinAllSpaces
-                | NSWindowCollectionBehavior::Stationary
-                | NSWindowCollectionBehavior::FullScreenAuxiliary
-                | NSWindowCollectionBehavior::IgnoresCycle
-        ];
-
-        // Patch NSPanel's constrainFrameRect:toScreen: so the panel
-        // is never clamped below the menu bar.
-        extern "C-unwind" fn unconstrained_panel(
-            _w: *mut NSWindow,
-            _s: Sel,
-            f: NSRect,
-            _scr: *mut NSScreen,
-        ) -> NSRect {
-            f
-        }
-        let panel_class = (&*raw).class();
-        let constrain_sel = sel!(constrainFrameRect:toScreen:);
-        if let Some(m) = panel_class.instance_method(constrain_sel) {
-            let imp: Imp = std::mem::transmute(
-                unconstrained_panel
-                    as extern "C-unwind" fn(*mut NSWindow, Sel, NSRect, *mut NSScreen) -> NSRect,
-            );
-            objc2::ffi::class_replaceMethod(
-                panel_class as *const AnyClass as *mut AnyClass,
-                constrain_sel,
-                imp,
-                objc2::ffi::method_getTypeEncoding(m),
-            );
-        }
-
-        // A borderless non-activating NSPanel reports canBecomeKeyWindow == NO
-        // by default, which silently swallows makeKeyAndOrderFront and leaves
-        // the WKWebView unable to receive keyboard input. Force it to YES so
-        // approval shortcuts work whenever we explicitly request focus.
-        extern "C-unwind" fn always_yes(_w: *mut NSWindow, _s: Sel) -> Bool {
-            Bool::YES
-        }
-        for key_sel in [sel!(canBecomeKeyWindow), sel!(canBecomeMainWindow)] {
-            if let Some(m) = panel_class.instance_method(key_sel) {
-                let imp: Imp = std::mem::transmute(
-                    always_yes as extern "C-unwind" fn(*mut NSWindow, Sel) -> Bool,
-                );
-                objc2::ffi::class_replaceMethod(
-                    panel_class as *const AnyClass as *mut AnyClass,
-                    key_sel,
-                    imp,
-                    objc2::ffi::method_getTypeEncoding(m),
-                );
-            }
-        }
-
-        // ── Move the WKWebView from the Tauri window into the panel ──
-        // We use addSubview: which automatically removes the view from
-        // its old superview.  Crucially we do NOT replace the Tauri
-        // window's contentView — tao keeps an internal reference to it
-        // and replacing it causes a crash on mouse events.
-        let content_view: *mut AnyObject = objc2::msg_send![ns_window, contentView];
-        if !content_view.is_null() {
-            let subviews: *mut AnyObject = objc2::msg_send![content_view, subviews];
-            let count: usize = objc2::msg_send![subviews, count];
-            if count > 0 {
-                let wk: *mut AnyObject =
-                    objc2::msg_send![subviews, objectAtIndex: 0usize];
-
-                // addSubview: on the panel's contentView automatically
-                // removes `wk` from the Tauri window's contentView.
-                let pcv: *mut AnyObject = objc2::msg_send![raw, contentView];
-                let _: () = objc2::msg_send![pcv, addSubview: wk];
-                let bounds: NSRect = objc2::msg_send![pcv, bounds];
-                let _: () = objc2::msg_send![wk, setFrame: bounds];
-                // NSViewWidthSizable(2) | NSViewHeightSizable(16) = 18
-                let _: () = objc2::msg_send![wk, setAutoresizingMask: 18usize];
-
-                eprintln!("[Atoll] WKWebView moved to floating panel");
-            }
-        }
-
-        // The Tauri window is now content-less; keep it permanently
-        // ignoring mouse events so it never blocks the panel.
-        let _: () = objc2::msg_send![ns_window, setIgnoresMouseEvents: Bool::YES];
-
-        // Panel starts with ignoresMouseEvents=YES (compact mode).
-        // The mode system will toggle this via set_island_cursor_events_ignored.
-        let _: () = objc2::msg_send![raw, setIgnoresMouseEvents: Bool::YES];
-        let _: () = objc2::msg_send![raw, orderFrontRegardless];
-
-        panel_store::set(raw as *mut std::ffi::c_void);
-
-        let is_floating: Bool = objc2::msg_send![raw, isFloatingPanel];
-        eprintln!(
-            "[Atoll] floating panel ready, floating={}, level={}",
-            is_floating.as_bool(),
-            { let lvl: isize = objc2::msg_send![raw, level]; lvl },
-        );
-    });
-}
-
-#[cfg(target_os = "macos")]
-fn apply_accepts_first_mouse(ns_window: &objc2_app_kit::NSWindow) {
-    use std::sync::OnceLock;
-
-    use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
-
-    extern "C-unwind" fn always_accepts(
-        _view: *mut AnyObject,
-        _sel: Sel,
-        _event: *mut AnyObject,
-    ) -> bool {
-        true
-    }
-
-    unsafe fn patch_view_class(view: *mut AnyObject) {
-        if view.is_null() {
-            return;
-        }
-        let class = (&*view).class();
-        let selector = objc2::sel!(acceptsFirstMouse:);
-        let Some(method) = class.instance_method(selector) else {
-            return;
-        };
-        let implementation: Imp = std::mem::transmute(
-            always_accepts as extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject) -> bool,
-        );
-        objc2::ffi::class_replaceMethod(
-            class as *const AnyClass as *mut AnyClass,
-            selector,
-            implementation,
-            objc2::ffi::method_getTypeEncoding(method),
-        );
-    }
-
-    static VIEW_PATCHED: OnceLock<()> = OnceLock::new();
-    VIEW_PATCHED.get_or_init(|| unsafe {
-        // Patch the Tauri window's contentView.
-        let cv: *mut AnyObject = objc2::msg_send![ns_window, contentView];
-        patch_view_class(cv);
-
-        // Also patch the floating panel's views (contentView + WKWebView).
-        let panel_ptr = panel_store::get_raw();
-        if !panel_ptr.is_null() {
-            let pcv: *mut AnyObject =
-                objc2::msg_send![panel_ptr as *mut AnyObject, contentView];
-            patch_view_class(pcv);
-            if !pcv.is_null() {
-                let subviews: *mut AnyObject = objc2::msg_send![pcv, subviews];
-                let count: usize = objc2::msg_send![subviews, count];
-                for i in 0..count {
-                    let sv: *mut AnyObject =
-                        objc2::msg_send![subviews, objectAtIndex: i];
-                    patch_view_class(sv);
-                }
-            }
-        }
-    });
-}
-
-#[cfg(target_os = "macos")]
-fn apply_macos_unconstrained_window_class(ns_window: &objc2_app_kit::NSWindow) {
-    use std::sync::OnceLock;
-
-    use objc2::runtime::{AnyClass, Imp, Sel};
-    use objc2::sel;
-    use objc2_app_kit::{NSScreen, NSWindow};
-    use objc2_foundation::NSRect;
-
-    extern "C-unwind" fn unconstrained_frame(
-        _window: *mut NSWindow,
-        _selector: Sel,
-        frame: NSRect,
-        _screen: *mut NSScreen,
-    ) -> NSRect {
-        frame
-    }
-
-    static WINDOW_CLASS_PATCHED: OnceLock<()> = OnceLock::new();
-    WINDOW_CLASS_PATCHED.get_or_init(|| {
-        let selector = sel!(constrainFrameRect:toScreen:);
-        let class = ns_window.class();
-        let method = class
-            .instance_method(selector)
-            .expect("NSWindow constrainFrameRect:toScreen: should exist");
-        unsafe {
-            let implementation: Imp = std::mem::transmute(
-                unconstrained_frame
-                    as extern "C-unwind" fn(*mut NSWindow, Sel, NSRect, *mut NSScreen) -> NSRect,
-            );
-            objc2::ffi::class_replaceMethod(
-                class as *const AnyClass as *mut AnyClass,
-                selector,
-                implementation,
-                objc2::ffi::method_getTypeEncoding(method),
-            );
-        }
-    });
-}
-
-#[cfg(not(target_os = "macos"))]
-fn apply_macos_island_window_style(_window: &tauri::WebviewWindow) {}
-
-#[cfg(target_os = "macos")]
-unsafe fn apply_content_view_corner_mask(ns_window: &objc2_app_kit::NSWindow, radius: f64) {
-    use objc2::runtime::AnyObject;
-
-    let cv: *mut AnyObject = objc2::msg_send![ns_window, contentView];
-    if cv.is_null() {
-        return;
-    }
-    let _: () = objc2::msg_send![cv, setWantsLayer: true];
-    let layer: *mut AnyObject = objc2::msg_send![cv, layer];
-    if layer.is_null() {
-        return;
-    }
-    let _: () = objc2::msg_send![layer, setCornerRadius: radius];
-    let _: () = objc2::msg_send![layer, setMasksToBounds: true];
-    // kCALayerMinXMinYCorner(1) | kCALayerMaxXMinYCorner(2) = bottom corners in CG coords
-    let _: () = objc2::msg_send![layer, setMaskedCorners: 3_usize];
 }
 
 fn snapshot_from(
@@ -4047,6 +3274,16 @@ mod core_tests {
 
     #[test]
     fn appkit_frame_places_the_window_at_the_screen_top() {
+        fn appkit_window_origin_y(
+            screen_origin_y: f64,
+            screen_height: f64,
+            window_height: f64,
+            desired_top_y: f64,
+            monitor_top_y: f64,
+        ) -> f64 {
+            screen_origin_y + screen_height - (desired_top_y - monitor_top_y) - window_height
+        }
+
         assert_eq!(appkit_window_origin_y(0.0, 1260.0, 28.0, 0.0, 0.0), 1232.0);
         assert_eq!(appkit_window_origin_y(0.0, 1260.0, 320.0, 0.0, 0.0), 940.0);
     }
@@ -4501,7 +3738,7 @@ mod hook_script_path_tests {
 #[cfg(test)]
 mod codex_hooks_tests {
     use super::{
-        format_codex_hook_command, has_atoll_codex_hooks, remove_atoll_codex_hooks,
+        format_hook_command, has_atoll_codex_hooks, remove_atoll_codex_hooks,
         upsert_codex_hook_events,
     };
     use serde_json::json;
@@ -4569,11 +3806,19 @@ mod codex_hooks_tests {
     }
 
     #[test]
-    fn format_codex_hook_command_quotes_paths_with_spaces() {
-        let command = format_codex_hook_command("/Applications/Atoll.app/scripts/atoll-codex-hook.mjs");
+    fn format_hook_command_quotes_paths_with_spaces() {
+        let command = format_hook_command("/Applications/Atoll.app/scripts/atoll-codex-hook.mjs");
         assert_eq!(
             command,
             "node \"/Applications/Atoll.app/scripts/atoll-codex-hook.mjs\""
+        );
+
+        let windows_command = format_hook_command(
+            "C:\\Program Files\\Atoll\\resources\\scripts\\atoll-claude-hook.mjs",
+        );
+        assert_eq!(
+            windows_command,
+            "node \"C:\\Program Files\\Atoll\\resources\\scripts\\atoll-claude-hook.mjs\""
         );
     }
 }

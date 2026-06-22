@@ -26,3 +26,11 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 objc2 = "0.6.4"
 objc2-app-kit = { version = "0.3.2", features = ["NSColor", "NSScreen", "NSWindow"] }
 objc2-foundation = "0.3.2"
+
+[target.'cfg(windows)'.dependencies]
+raw-window-handle = "0.6"
+windows = { version = "0.58", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_UI_WindowsAndMessaging",
+] }

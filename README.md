@@ -5,14 +5,14 @@
 <h1 align="center">Atoll</h1>
 
 <p align="center">
-  <strong>macOS 菜单栏里的 AI 权限审批浮岛</strong><br/>
+  <strong>菜单栏 / 顶栏里的 AI 权限审批浮岛</strong><br/>
   <sub>Claude Code / Codex 发起权限请求时，不用切窗口，一眼批准或拒绝</sub>
 </p>
 
 <p align="center">
   <a href="https://github.com/sheepbooy/Atoll/releases"><img src="https://img.shields.io/github/v/release/sheepbooy/Atoll?style=flat-square&color=38BDD8&label=release" alt="Release" /></a>
   <img src="https://img.shields.io/badge/license-MIT-9ee9b8?style=flat-square" alt="MIT" />
-  <img src="https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-111317?style=flat-square&logo=apple&logoColor=white" alt="macOS" />
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-111317?style=flat-square" alt="macOS | Windows" />
   <img src="https://img.shields.io/badge/privacy-100%25%20local-b2ea7e?style=flat-square" alt="100% local" />
 </p>
 
@@ -38,17 +38,19 @@
 
 ## 是什么
 
-**Atoll** 是一个轻量 macOS 桌面应用，住在菜单栏 / 刘海区域：
+**Atoll** 是一个轻量桌面应用，住在屏幕顶栏（macOS 菜单栏 / Windows 工作区顶部）：
 
 - **平时** — 紧凑胶囊，显示在线状态、活跃会话、待审批数量
 - **有请求时** — 自动展开，展示命令详情，一键 **Approve / Deny / Always**
 - **全程本地** — Hook 桥接 `127.0.0.1:47777`，数据不出本机
 
-目前支持 **Claude Code** 和 **Codex CLI**（Apple Silicon）。
+目前支持 **Claude Code** 和 **Codex CLI**（macOS Apple Silicon 与 Windows x64）。
 
 ---
 
 ## 安装
+
+### macOS
 
 **推荐 — 一行命令：**
 
@@ -59,7 +61,7 @@ curl -fsSL https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/instal
 指定版本：`ATOLL_VERSION=0.1.4 curl -fsSL .../install.sh | bash`
 
 <details>
-<summary>其他安装方式</summary>
+<summary>其他 macOS 安装方式</summary>
 
 **Homebrew**
 
@@ -77,6 +79,24 @@ sudo xattr -cr /Applications/Atoll.app
 > 应用尚未公证。首次启动若被拦截，在 Applications 中右键 **Open** 一次即可。
 
 </details>
+
+### Windows
+
+**推荐 — PowerShell 一行安装：**
+
+```powershell
+irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex
+```
+
+指定版本：
+
+```powershell
+$env:ATOLL_VERSION = "0.1.8"; irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex
+```
+
+**手动下载** — 从 [Releases](https://github.com/sheepbooy/Atoll/releases) 下载 `Atoll-x64.msi` 并安装。
+
+> 首次运行若被 SmartScreen 拦截，选择「更多信息」→「仍要运行」。Hook 安装需要本机已安装 **Node.js** 且在 PATH 中。
 
 ---
 
@@ -151,6 +171,10 @@ npm test             # 运行测试
 npm run tauri build  # 打包
 ```
 
+**Windows 额外要求：** Visual Studio Build Tools（C++ 工作负载）、WebView2 Runtime、Node.js（Hook 脚本）。
+
+**macOS 额外要求：** Xcode Command Line Tools。
+
 <details>
 <summary>项目结构 & 文档素材</summary>
 
@@ -180,7 +204,8 @@ npm run export:brand     # Logo 状态 + Agent 形象
 
 ## 路线图
 
-- [ ] Apple 签名 & 公证、Intel 构建
+- [ ] Apple 签名 & 公证、Intel Mac 构建
+- [ ] Windows 代码签名
 - [ ] Gemini / Cursor 等更多 Agent 适配
 - [ ] 新请求自动展开、通知中心提醒
 - [ ] 审批历史导出、会话搜索
