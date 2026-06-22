@@ -19,6 +19,7 @@ tauri = { version = "2", features = [ "macos-private-api", "tray-icon"] }
 tauri-plugin-opener = "2"
 uuid = { version = "1", features = ["v4"] }
 dirs = "6"
+dunce = "1"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png"] }
 

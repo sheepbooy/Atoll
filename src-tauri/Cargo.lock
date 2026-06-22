@@ -203,10 +203,11 @@ dependencies = [
 
 [[package]]
 name = "atoll"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "base64 0.22.1",
  "dirs",
+ "dunce",
  "image",
  "objc2",
  "objc2-app-kit",

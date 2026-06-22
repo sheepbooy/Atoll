@@ -1632,7 +1632,18 @@ fn uninstall_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
     })
 }
 
+fn normalize_hook_script_path(path: &str) -> String {
+    let path = path.trim();
+    if path.is_empty() {
+        return String::new();
+    }
+    dunce::simplified(std::path::Path::new(path))
+        .to_string_lossy()
+        .into_owned()
+}
+
 fn format_hook_command(script_path: &str) -> String {
+    let script_path = normalize_hook_script_path(script_path);
     format!("node \"{}\"", script_path.replace('"', "\\\""))
 }
 
@@ -1715,12 +1726,14 @@ fn read_json_file(path: &str) -> Option<Value> {
 
 fn extract_node_script_path(command: &str) -> Option<String> {
     let rest = command.trim().strip_prefix("node ")?.trim();
-    if rest.starts_with('"') {
+    let raw = if rest.starts_with('"') {
         let inner = &rest[1..];
         let end = inner.find('"')?;
-        return Some(inner[..end].replace("\\\"", "\""));
-    }
-    Some(rest.to_string())
+        inner[..end].replace("\\\"", "\"")
+    } else {
+        rest.to_string()
+    };
+    Some(normalize_hook_script_path(&raw))
 }
 
 fn configured_atoll_hook_script_path(config: &Value, marker: &str) -> Option<String> {
@@ -1795,7 +1808,9 @@ fn resolve_hook_script_path(app: &AppHandle, script_name: &str) -> Option<String
 
     for candidate in candidates {
         if candidate.exists() {
-            return Some(candidate.to_string_lossy().into());
+            return Some(normalize_hook_script_path(
+                &candidate.to_string_lossy(),
+            ));
         }
     }
 
@@ -3738,8 +3753,8 @@ mod hook_script_path_tests {
 #[cfg(test)]
 mod codex_hooks_tests {
     use super::{
-        format_hook_command, has_atoll_codex_hooks, remove_atoll_codex_hooks,
-        upsert_codex_hook_events,
+        extract_node_script_path, format_hook_command, has_atoll_codex_hooks,
+        remove_atoll_codex_hooks, upsert_codex_hook_events,
     };
     use serde_json::json;
 
@@ -3819,6 +3834,24 @@ mod codex_hooks_tests {
         assert_eq!(
             windows_command,
             "node \"C:\\Program Files\\Atoll\\resources\\scripts\\atoll-claude-hook.mjs\""
+        );
+
+        let unc_command = format_hook_command(
+            r"\\?\C:\Program Files\Atoll\scripts\atoll-claude-hook.mjs",
+        );
+        assert_eq!(
+            unc_command,
+            "node \"C:\\Program Files\\Atoll\\scripts\\atoll-claude-hook.mjs\""
+        );
+    }
+
+    #[test]
+    fn extract_node_script_path_strips_windows_unc_prefix() {
+        assert_eq!(
+            extract_node_script_path(
+                r#"node "\\?\C:\Program Files\Atoll\scripts\atoll-claude-hook.mjs""#
+            ),
+            Some(r"C:\Program Files\Atoll\scripts\atoll-claude-hook.mjs".into())
         );
     }
 }
