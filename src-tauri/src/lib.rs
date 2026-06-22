@@ -1643,7 +1643,13 @@ fn normalize_hook_script_path(path: &str) -> String {
 }
 
 fn format_hook_command(script_path: &str) -> String {
-    let script_path = normalize_hook_script_path(script_path);
+    let mut script_path = normalize_hook_script_path(script_path);
+    // Claude Code runs hooks through bash on Windows; backslashes and UNC prefixes
+    // are mangled before Node sees them. Forward slashes survive and work with Node.
+    #[cfg(windows)]
+    {
+        script_path = script_path.replace('\\', "/");
+    }
     format!("node \"{}\"", script_path.replace('"', "\\\""))
 }
 
@@ -3833,7 +3839,7 @@ mod codex_hooks_tests {
         );
         assert_eq!(
             windows_command,
-            "node \"C:\\Program Files\\Atoll\\resources\\scripts\\atoll-claude-hook.mjs\""
+            "node \"C:/Program Files/Atoll/resources/scripts/atoll-claude-hook.mjs\""
         );
 
         let unc_command = format_hook_command(
@@ -3841,7 +3847,7 @@ mod codex_hooks_tests {
         );
         assert_eq!(
             unc_command,
-            "node \"C:\\Program Files\\Atoll\\scripts\\atoll-claude-hook.mjs\""
+            "node \"C:/Program Files/Atoll/scripts/atoll-claude-hook.mjs\""
         );
     }
 
@@ -3850,6 +3856,12 @@ mod codex_hooks_tests {
         assert_eq!(
             extract_node_script_path(
                 r#"node "\\?\C:\Program Files\Atoll\scripts\atoll-claude-hook.mjs""#
+            ),
+            Some(r"C:\Program Files\Atoll\scripts\atoll-claude-hook.mjs".into())
+        );
+        assert_eq!(
+            extract_node_script_path(
+                r#"node "C:/Program Files/Atoll/scripts/atoll-claude-hook.mjs""#
             ),
             Some(r"C:\Program Files\Atoll\scripts\atoll-claude-hook.mjs".into())
         );
