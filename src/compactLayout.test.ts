@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { NotchMetrics } from "./tauri";
 import {
   ABSOLUTE_MAX_COMPACT_ICONS,
+  COMPACT_HEADER_GAP,
   COMPACT_MAX_WINDOW_WIDTH,
+  COMPACT_METRICS_GAP,
+  compactMetricsSessionTokenGap,
   computeCollapsedWindowWidth,
   computeCompactHeaderLayout,
   computeCompactLeftPaneWidth,
@@ -115,6 +118,30 @@ describe("compactLayout", () => {
     expect(computeMaxCompactIconLimit(NO_NOTCH)).toBe(ABSOLUTE_MAX_COMPACT_ICONS);
   });
 
+  it("reserves metrics gap between right sessions and token counter", () => {
+    expect(compactMetricsSessionTokenGap(2, true)).toBe(COMPACT_METRICS_GAP);
+    expect(compactMetricsSessionTokenGap(0, true)).toBe(0);
+    expect(compactMetricsSessionTokenGap(2, false)).toBe(0);
+  });
+
+  it("adds non-notch header gap between left sessions and right metrics", () => {
+    const layout = computeCompactHeaderLayout(NO_NOTCH, 2, 8, 12_345, 0);
+    const width = computeCollapsedWindowWidth(NO_NOTCH, 2, 8, 12_345, 0);
+
+    expect(layout.rightIconCount).toBe(0);
+    expect(width).toBeLessThanOrEqual(COMPACT_MAX_WINDOW_WIDTH);
+    expect(width).toBeGreaterThanOrEqual(120 + COMPACT_HEADER_GAP);
+  });
+
+  it("includes metrics gap when sessions spill to the right on non-notch displays", () => {
+    const withToken = computeCollapsedWindowWidth(NO_NOTCH, 10, 4, 12_345, 0);
+    const withoutToken = computeCollapsedWindowWidth(NO_NOTCH, 10, 4, 0, 0);
+    const layout = computeCompactHeaderLayout(NO_NOTCH, 10, 4, 12_345, 0);
+
+    expect(layout.rightIconCount).toBeGreaterThan(0);
+    expect(withToken - withoutToken).toBeGreaterThan(COMPACT_METRICS_GAP);
+  });
+
   it("keeps collapsed width within the compact window cap on notch screens", () => {
     const width = computeCollapsedWindowWidth(
       NOTCH_14,
@@ -195,7 +222,7 @@ describe("compactLayout session counts (icon limit = 8, notch)", () => {
     );
   });
 
-  it("fits 7 icons on the left when sessions = 8 (logo slot uses bar width)", () => {
+  it("fits all visible icons on the left when the notch bar is wide enough", () => {
     const layout = computeCompactHeaderLayout(
       NOTCH_14,
       8,
@@ -204,8 +231,8 @@ describe("compactLayout session counts (icon limit = 8, notch)", () => {
       0,
     );
 
-    expect(layout.leftIconCount).toBe(7);
-    expect(layout.rightIconCount).toBe(1);
+    expect(layout.leftIconCount).toBe(8);
+    expect(layout.rightIconCount).toBe(0);
     expect(layout.overflowCount).toBe(0);
   });
 });

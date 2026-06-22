@@ -45,6 +45,7 @@ import { AtollLogo, type AtollActivity } from "./AtollLogo";
 import { deriveAppLogoState, deriveAtollActivity } from "./logoStates";
 import {
   ABSOLUTE_MAX_COMPACT_ICONS,
+  COMPACT_HEADER_GAP,
   COMPACT_NOTCH_INNER_GAP,
   computeCollapsedWindowWidth,
   computeCompactHeaderLayout,
@@ -431,6 +432,10 @@ function applyWindowMetrics(notch: NotchMetrics) {
     root.style.removeProperty("--notch-left-area-width");
   }
   root.style.setProperty("--compact-notch-inner-gap", `${COMPACT_NOTCH_INNER_GAP}px`);
+  root.style.setProperty(
+    "--compact-header-gap",
+    `${notch.hasNotch ? 0 : COMPACT_HEADER_GAP}px`,
+  );
   root.classList.toggle("has-notch", notch.hasNotch);
 }
 

@@ -17,7 +17,8 @@ export const COMPACT_SIDE_MIN = 56;
 export const COMPACT_OVERFLOW_SLOT = 28;
 export const COMPACT_OUTER_PADDING = 8;
 export const COMPACT_NOTCH_INNER_GAP = 6;
-export const COMPACT_HEADER_GAP = 8;
+/** Space between left sessions and right metrics on non-notched displays. */
+export const COMPACT_HEADER_GAP = 12;
 export const COMPACT_PENDING_BADGE_SLOT = 28;
 export const COMPACT_METRICS_GAP = 6;
 
@@ -36,6 +37,14 @@ export interface CompactHeaderLayout {
 export function iconRowWidth(count: number): number {
   if (count <= 0) return 0;
   return count * COMPACT_ICON_SLOT + (count - 1) * COMPACT_ICON_GAP;
+}
+
+/** Flex gap between right session icons and the token counter in header-metrics. */
+export function compactMetricsSessionTokenGap(
+  rightIconCount: number,
+  hasToken: boolean,
+): number {
+  return rightIconCount > 0 && hasToken ? COMPACT_METRICS_GAP : 0;
 }
 
 function notchPaneBudgets(notchMetrics: NotchMetrics) {
@@ -108,6 +117,7 @@ export function computeCompactHeaderLayout(
     ? COMPACT_NOTCH_INNER_GAP * 2
     : COMPACT_HEADER_GAP;
   const contentBudget = COMPACT_MAX_WINDOW_WIDTH - notchWidth - outerGaps;
+  const hasToken = tokenTotal > 0;
   const pendingExtra =
     pendingCount > 0 ? COMPACT_PENDING_BADGE_SLOT + COMPACT_METRICS_GAP : 0;
   const leftBase =
@@ -137,8 +147,13 @@ export function computeCompactHeaderLayout(
       (overflowOnLeft ? COMPACT_OVERFLOW_SLOT : 0);
     const rightIconsWidth =
       iconRowWidth(right) + (overflowOnRight ? COMPACT_OVERFLOW_SLOT : 0);
+    const sessionTokenGap = compactMetricsSessionTokenGap(right, hasToken);
     const tokenSpace =
-      contentBudget - leftWidth - rightIconsWidth - rightColumnBase;
+      contentBudget -
+      leftWidth -
+      rightIconsWidth -
+      sessionTokenGap -
+      rightColumnBase;
 
     if (tokenSpace < 20) continue;
 
@@ -149,8 +164,9 @@ export function computeCompactHeaderLayout(
       maxCompactIcons,
     );
     const tokenText = formatCompactTokenCount(tokenTotal, tokenLevel, tokenTotal);
-    const tokenWidth = estimateTokenDisplayWidth(tokenText);
-    const rightWidth = rightIconsWidth + tokenWidth + rightColumnBase;
+    const tokenWidth = hasToken ? estimateTokenDisplayWidth(tokenText) : 0;
+    const rightWidth =
+      rightIconsWidth + sessionTokenGap + tokenWidth + rightColumnBase;
 
     if (leftWidth + rightWidth > contentBudget + 0.5) continue;
 
@@ -262,15 +278,21 @@ export function computeCollapsedWindowWidth(
     iconRowWidth(layout.leftIconCount) +
     (overflowOnLeft ? COMPACT_OVERFLOW_SLOT : 0);
 
+  const hasToken = tokenTotal > 0;
   const tokenText = formatCompactTokenCount(
     tokenTotal,
     layout.tokenCompactLevel,
     tokenTotal,
   );
+  const sessionTokenGap = compactMetricsSessionTokenGap(
+    layout.rightIconCount,
+    hasToken,
+  );
   const rightWidth =
     iconRowWidth(layout.rightIconCount) +
     (overflowOnRight ? COMPACT_OVERFLOW_SLOT : 0) +
-    estimateTokenDisplayWidth(tokenText) +
+    sessionTokenGap +
+    (hasToken ? estimateTokenDisplayWidth(tokenText) : 0) +
     (pendingCount > 0 ? COMPACT_PENDING_BADGE_SLOT + COMPACT_METRICS_GAP : 0) +
     COMPACT_OUTER_PADDING;
 

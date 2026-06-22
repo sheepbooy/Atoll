@@ -858,6 +858,7 @@ kbd {
   grid-template-columns: auto auto;
   justify-content: space-between;
   align-items: center;
+  gap: var(--compact-header-gap, 12px);
   padding: 1px 8px 2px;
   height: var(--compact-height);
 }
@@ -868,7 +869,7 @@ kbd {
 }
 
 .compact-session-stack--right {
-  margin-right: 2px;
+  margin-right: 0;
 }
 
 .header-notch-spacer {
