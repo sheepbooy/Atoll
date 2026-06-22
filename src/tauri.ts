@@ -331,7 +331,7 @@ export async function deactivateAtoll() {
 }
 
 export async function setIslandPresentation(
-  mode: "compact" | "expanded" | "dormant",
+  mode: "micro" | "compact" | "expanded" | "dormant",
   compactWidth?: number,
   expandedIdle?: boolean,
   compactLeftWidth?: number,
@@ -350,6 +350,14 @@ export async function setIslandPresentation(
     animate,
     snap,
   });
+}
+
+export async function usesMicroIsland(): Promise<boolean> {
+  if (!isTauriRuntime) {
+    return false;
+  }
+
+  return invoke<boolean>("uses_micro_island");
 }
 
 /** Persist compact layout metrics without triggering a native window animation. */

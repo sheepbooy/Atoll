@@ -7,6 +7,7 @@ import {
   finishCollapse,
   finishExpand,
   IDLE_COLLAPSE_DELAY_MS,
+  MICRO_SHRINK_DELAY_MS,
 } from "./islandPresentation";
 
 describe("island presentation timing", () => {
@@ -17,11 +18,19 @@ describe("island presentation timing", () => {
   it("uses the expected idle collapse delay", () => {
     expect(IDLE_COLLAPSE_DELAY_MS).toBe(500);
   });
+
+  it("uses the expected micro shrink delay", () => {
+    expect(MICRO_SHRINK_DELAY_MS).toBe(500);
+  });
 });
 
 describe("beginExpand", () => {
   it("starts opening from compact", () => {
     expect(beginExpand("compact")).toBe("opening");
+  });
+
+  it("starts opening from micro", () => {
+    expect(beginExpand("micro")).toBe("opening");
   });
 
   it("does not restart while opening", () => {
@@ -50,6 +59,10 @@ describe("finishExpand", () => {
 describe("beginCollapse", () => {
   it("does not start closing from compact", () => {
     expect(beginCollapse("compact")).toBe("compact");
+  });
+
+  it("does not start closing from micro", () => {
+    expect(beginCollapse("micro")).toBe("micro");
   });
 
   it("reverses opening into closing", () => {

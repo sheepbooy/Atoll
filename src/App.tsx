@@ -46,6 +46,7 @@ import {
   finishCollapse,
   finishExpand,
   IDLE_COLLAPSE_DELAY_MS,
+  MICRO_SHRINK_DELAY_MS,
   PresentationPhase,
 } from "./islandPresentation";
 import { AgentMascot } from "./AgentMascot";
@@ -95,6 +96,7 @@ import {
   resolvePermissionRequest,
   setIslandPresentation,
   setCompactLayout,
+  usesMicroIsland,
   setSessionAutoApprove,
   getNotchMetrics,
   NotchMetrics,
@@ -418,6 +420,9 @@ function deriveSessionMood(
 
 // Keep in sync with COMPACT_WINDOW_HEIGHT in src-tauri/src/lib.rs.
 const COMPACT_WINDOW_HEIGHT = 36;
+// Keep in sync with MICRO_WINDOW_WIDTH / MICRO_WINDOW_HEIGHT in src-tauri/src/lib.rs.
+const MICRO_WINDOW_WIDTH = 72;
+const MICRO_WINDOW_HEIGHT = 26;
 // Keep in sync with NOTCH_COVER_PADDING in src-tauri/src/lib.rs.
 const NOTCH_COVER_PADDING = 16;
 
@@ -428,6 +433,7 @@ function applyWindowMetrics(notch: NotchMetrics) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
   root.style.setProperty("--compact-height", `${COMPACT_WINDOW_HEIGHT}px`);
+  root.style.setProperty("--micro-height", `${MICRO_WINDOW_HEIGHT}px`);
   root.style.setProperty(
     "--expanded-idle-height",
     `${EXPANDED_IDLE_WINDOW_HEIGHT}px`,
@@ -455,11 +461,28 @@ function applyWindowMetrics(notch: NotchMetrics) {
 }
 
 function compactPresentationKey(
-  mode: "compact" | "dormant",
+  mode: "micro" | "compact" | "dormant",
   width: number,
   leftWidth: number,
 ): string {
+  if (mode === "micro") return `micro:${width}`;
   return mode === "dormant" ? "dormant" : `compact:${width}:${leftWidth}`;
+}
+
+function shouldRestInMicro(usesMicro: boolean): boolean {
+  return usesMicro;
+}
+
+function resolveCollapsedMode(
+  usesMicro: boolean,
+  sessionCount: number,
+  pendingCount: number,
+  phase: PresentationPhase,
+): "micro" | "compact" | "dormant" {
+  if (phase === "micro") return "micro";
+  if (shouldRestInMicro(usesMicro)) return "compact";
+  if (sessionCount === 0 && pendingCount === 0) return "dormant";
+  return "compact";
 }
 
 function expandedPresentationKey(idle: boolean): string {
@@ -471,6 +494,7 @@ export function App() {
   const snapshotRef = useRef(initialSnapshot);
   const [phase, setPhase] = useState<PresentationPhase>("compact");
   const phaseRef = useRef<PresentationPhase>("compact");
+  const usesMicroIslandRef = useRef(false);
   const hoveringRef = useRef(false);
   const focusedRef = useRef(false);
   const suppressHoverExpandRef = useRef(false);
@@ -558,8 +582,12 @@ export function App() {
       snapshot.pendingCount,
     ],
   );
-  const collapsedMode: "compact" | "dormant" =
-    sessions.length === 0 && snapshot.pendingCount === 0 ? "dormant" : "compact";
+  const collapsedMode: "micro" | "compact" | "dormant" = resolveCollapsedMode(
+    usesMicroIslandRef.current,
+    sessions.length,
+    snapshot.pendingCount,
+    phase,
+  );
   const tabAgents = useMemo(() => {
     const seen = new Set<AgentKind>();
     sessions.forEach((session) => seen.add(session.agent));
@@ -623,7 +651,7 @@ export function App() {
     [compactHeaderLayout],
   );
 
-  const collapsedModeRef = useRef<"compact" | "dormant">("compact");
+  const collapsedModeRef = useRef<"micro" | "compact" | "dormant">("compact");
   collapsedModeRef.current = collapsedMode;
   const collapsedWindowWidthRef = useRef(collapsedWindowWidth);
   collapsedWindowWidthRef.current = collapsedWindowWidth;
@@ -679,6 +707,21 @@ export function App() {
 
     loadSnapshot();
     const retryTimer = window.setTimeout(refreshHookHealth, 750);
+    usesMicroIsland()
+      .then((enabled) => {
+        usesMicroIslandRef.current = enabled;
+        if (enabled && phaseRef.current === "compact") {
+          setPresentationPhase("micro");
+          setIslandPresentation(
+            "micro",
+            collapsedWindowWidthRef.current,
+            undefined,
+            undefined,
+            false,
+          ).catch(() => undefined);
+        }
+      })
+      .catch(() => undefined);
     getNotchMetrics()
       .then((notch) => {
         setNotchMetrics(notch);
@@ -695,14 +738,23 @@ export function App() {
     onIslandHoverChanged(({ hovering }) => {
       hoveringRef.current = hovering;
       if (hovering) {
-        if (!suppressHoverExpandRef.current) {
+        if (phaseRef.current === "micro") {
+          promoteToCompact();
+        } else if (!suppressHoverExpandRef.current) {
           expandIsland();
         }
       } else {
         if (phaseRef.current !== "closing") {
           suppressHoverExpandRef.current = false;
         }
-        scheduleIdleCollapse();
+        if (
+          phaseRef.current === "compact" &&
+          shouldRestInMicro(usesMicroIslandRef.current)
+        ) {
+          scheduleShrinkToMicro();
+        } else {
+          scheduleIdleCollapse();
+        }
       }
     }).then((cleanup) => {
       unsubscribeHover = cleanup;
@@ -1034,6 +1086,87 @@ export function App() {
     idleTimerRef.current = null;
   }
 
+  async function promoteToCompact(options?: { skipExpand?: boolean }) {
+    if (phaseRef.current !== "micro") return;
+    clearIdleTimer();
+
+    const idleCompact =
+      snapshotRef.current.sessions.length === 0 &&
+      snapshotRef.current.pendingCount === 0;
+    const compactWidth = collapsedWindowWidthRef.current;
+    const compactLeftWidth = idleCompact ? 0 : compactLeftPaneWidthRef.current;
+
+    setPresentationPhase("compact");
+    lastNativePresentationKeyRef.current = compactPresentationKey(
+      "compact",
+      compactWidth,
+      compactLeftWidth,
+    );
+
+    try {
+      await setIslandPresentation(
+        "compact",
+        compactWidth,
+        undefined,
+        compactLeftWidth,
+      );
+      if (
+        !options?.skipExpand &&
+        hoveringRef.current &&
+        !suppressHoverExpandRef.current
+      ) {
+        expandIsland();
+      }
+    } catch {
+      setPresentationPhase("micro");
+    }
+  }
+
+  async function shrinkToMicro() {
+    if (phaseRef.current !== "compact") return;
+    if (
+      !shouldRestInMicro(usesMicroIslandRef.current)
+    ) {
+      return;
+    }
+
+    clearIdleTimer();
+    setPresentationPhase("micro");
+    lastNativePresentationKeyRef.current = compactPresentationKey(
+      "micro",
+      collapsedWindowWidthRef.current,
+      0,
+    );
+    try {
+      await setIslandPresentation("micro", collapsedWindowWidthRef.current);
+    } catch {
+      setPresentationPhase("compact");
+    }
+  }
+
+  function scheduleShrinkToMicro() {
+    clearIdleTimer();
+    if (
+      hoveringRef.current ||
+      snapshotRef.current.pendingCount > 0 ||
+      isTextEntryActive()
+    ) {
+      return;
+    }
+
+    idleTimerRef.current = window.setTimeout(() => {
+      idleTimerRef.current = null;
+      if (
+        hoveringRef.current ||
+        phaseRef.current !== "compact" ||
+        !shouldRestInMicro(usesMicroIslandRef.current)
+      ) {
+        return;
+      }
+      shrinkToMicro().catch(() => undefined);
+    }, MICRO_SHRINK_DELAY_MS);
+  }
+
   async function expandIsland() {
     clearIdleTimer();
 
@@ -1062,9 +1195,27 @@ export function App() {
           setPresentationPhase(finishExpand("opening"));
         }
       } catch {
-        setPresentationPhase("compact");
+        setPresentationPhase(usesMicroIslandRef.current ? "micro" : "compact");
       }
     }, COLLAPSE_ANIMATION_MS);
+  }
+
+  function collapsePresentationMode(): "micro" | "compact" | "dormant" {
+    const sessionCount = snapshotRef.current.sessions.length;
+    const pendingCount = snapshotRef.current.pendingCount;
+    if (shouldRestInMicro(usesMicroIslandRef.current)) {
+      return "micro";
+    }
+    if (sessionCount === 0 && pendingCount === 0) return "dormant";
+    return "compact";
+  }
+
+  function collapsedRestPhase(): PresentationPhase {
+    return collapsePresentationMode() === "micro" ? "micro" : "compact";
+  }
+
+  function collapseCompactWidth(): number {
+    return collapsedWindowWidthRef.current;
   }
 
   function collapseIsland(releaseFocus = false) {
@@ -1093,23 +1244,27 @@ export function App() {
     setPresentationPhase(next);
     setPanelView({ kind: "home" });
 
+    const compactWidth = collapseCompactWidth();
+    const compactLeftWidth = compactLeftPaneWidthRef.current;
+    const collapseMode = collapsePresentationMode();
+
     lastNativePresentationKeyRef.current = compactPresentationKey(
-      collapsedModeRef.current,
-      collapsedWindowWidthRef.current,
-      compactLeftPaneWidthRef.current,
+      collapseMode,
+      compactWidth,
+      compactLeftWidth,
     );
 
-    const compactWidth = collapsedWindowWidthRef.current;
-    const compactLeftWidth = compactLeftPaneWidthRef.current;
     const nativeTransition =
-      collapsedModeRef.current === "dormant"
-        ? setIslandPresentation("dormant")
-        : setIslandPresentation(
-            "compact",
-            compactWidth,
-            undefined,
-            compactLeftWidth,
-          );
+      collapseMode === "micro"
+        ? setIslandPresentation("micro", compactWidth)
+        : collapseMode === "dormant"
+          ? setIslandPresentation("dormant")
+          : setIslandPresentation(
+              "compact",
+              compactWidth,
+              undefined,
+              compactLeftWidth,
+            );
     transitionTimerRef.current = window.setTimeout(async () => {
       transitionTimerRef.current = null;
       if (phaseRef.current !== "closing") return;
@@ -1117,7 +1272,16 @@ export function App() {
       try {
         await nativeTransition;
         if (phaseRef.current === "closing") {
-          if (collapsedModeRef.current === "dormant") {
+          if (collapseMode === "micro") {
+            await setIslandPresentation(
+              "micro",
+              compactWidth,
+              undefined,
+              undefined,
+              false,
+              true,
+            );
+          } else if (collapseMode === "dormant") {
             await setIslandPresentation(
               "dormant",
               undefined,
@@ -1129,19 +1293,19 @@ export function App() {
           } else {
             await setIslandPresentation(
               "compact",
-              collapsedWindowWidthRef.current,
+              compactWidth,
               undefined,
-              compactLeftPaneWidthRef.current,
+              compactLeftWidth,
               false,
               true,
             );
           }
           lastNativePresentationKeyRef.current = compactPresentationKey(
-            collapsedModeRef.current,
-            collapsedWindowWidthRef.current,
-            compactLeftPaneWidthRef.current,
+            collapseMode,
+            compactWidth,
+            compactLeftWidth,
           );
-          setPresentationPhase(finishCollapse("closing"));
+          setPresentationPhase(collapsedRestPhase());
         }
       } catch {
         setPresentationPhase("expanded");
@@ -1178,6 +1342,10 @@ export function App() {
 
   function handlePointerEnter() {
     hoveringRef.current = true;
+    if (phaseRef.current === "micro") {
+      promoteToCompact();
+      return;
+    }
     if (!suppressHoverExpandRef.current) {
       expandIsland();
     }
@@ -1488,9 +1656,17 @@ export function App() {
   const showAgentTabs = isExpandedChrome && tabAgents.length > 1;
   const showPanelAgentTabs =
     isExpandedChrome && panelView.kind === "home" && tabAgents.length > 1;
-  const isDormant = !isExpanded && collapsedMode === "dormant";
+  const isMicro = phase === "micro";
+  const isDormant =
+    !isExpanded &&
+    !isMicro &&
+    (collapsedMode === "dormant" ||
+      (usesMicroIslandRef.current &&
+        phase === "compact" &&
+        sessions.length === 0 &&
+        snapshot.pendingCount === 0));
   const showCompactHeaderMetrics =
-    !isDormant && !isExpanded && !isPresentationTransition;
+    !isMicro && !isDormant && !isExpanded && !isPresentationTransition;
   const showCompactTokenCounter = activeSessionTokenTotal > 0;
   const showExpandedTokenCounter = dailyTokenTotal > 0;
   const showCompactNotchSpacer =
@@ -1516,7 +1692,7 @@ export function App() {
     sessions.length === 0 &&
     snapshot.pendingCount === 0;
   const isSubview = isExpandedChrome && panelView.kind !== "home";
-  const menuBarLogoSize = isExpanded ? 36 : 34;
+  const menuBarLogoSize = isExpanded ? 36 : isMicro ? 24 : 34;
   const subviewSession =
     panelView.kind === "session"
       ? sessions.find((session) => session.sessionId === panelView.sessionId)
@@ -1533,7 +1709,7 @@ export function App() {
   }, [compactLeftPaneWidth]);
 
   useEffect(() => {
-    if (collapsedMode === "dormant") return;
+    if (collapsedMode === "dormant" || phase === "micro") return;
     setCompactLayout(collapsedWindowWidth, compactLeftPaneWidth).catch(
       () => undefined,
     );
@@ -1544,6 +1720,14 @@ export function App() {
   // the same native animation right after a user-driven transition finishes.
   useEffect(() => {
     if (phase === "opening" || phase === "closing") {
+      return;
+    }
+
+    if (phase === "micro") {
+      const key = compactPresentationKey("micro", collapsedWindowWidth, 0);
+      if (lastNativePresentationKeyRef.current === key) return;
+      lastNativePresentationKeyRef.current = key;
+      setIslandPresentation("micro", collapsedWindowWidth).catch(() => undefined);
       return;
     }
 
@@ -1582,6 +1766,7 @@ export function App() {
     compactLeftPaneWidth,
     collapsedMode,
     isIdleExpanded,
+    collapsedWindowWidth,
   ]);
 
   function renderPanel() {
@@ -1670,7 +1855,7 @@ export function App() {
   return (
     <main className="stage">
       <section
-        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" ? "is-session-subview" : ""}`}
+        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" ? "is-session-subview" : ""}`}
         aria-label="Atoll"
         tabIndex={0}
         onClick={handleIslandClick}
@@ -1725,7 +1910,7 @@ export function App() {
                 </span>
               </span>
             </span>
-            {collapsedMode !== "dormant" &&
+            {(!isDormant || isMicro) &&
             !isExpanded &&
             !isPresentationTransition ? (
               <>

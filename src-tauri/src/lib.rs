@@ -19,6 +19,9 @@ mod transcript;
 
 const COMPACT_WINDOW_WIDTH: f64 = 132.0;
 pub(crate) const COMPACT_WINDOW_HEIGHT: f64 = 36.0;
+/// Windows-only super-collapsed strip; macOS never selects this mode.
+pub(crate) const MICRO_WINDOW_WIDTH: f64 = 72.0;
+pub(crate) const MICRO_WINDOW_HEIGHT: f64 = 26.0;
 const EXPANDED_WINDOW_WIDTH: f64 = 560.0;
 pub(crate) const EXPANDED_WINDOW_HEIGHT: f64 = 320.0;
 const EXPANDED_IDLE_WINDOW_HEIGHT: f64 = 240.0;
@@ -133,6 +136,7 @@ enum Decision {
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum IslandWindowMode {
+    Micro,
     Dormant,
     Compact,
     Expanded,
@@ -451,6 +455,11 @@ fn resolve_permission_request(
 }
 
 #[tauri::command]
+fn uses_micro_island() -> bool {
+    cfg!(target_os = "windows")
+}
+
+#[tauri::command]
 async fn set_island_presentation(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -486,7 +495,11 @@ async fn set_island_presentation(
     }
 
     if animate == Some(false) {
-        if snap == Some(true) && matches!(mode, IslandWindowMode::Compact | IslandWindowMode::Dormant)
+        if snap == Some(true)
+            && matches!(
+                mode,
+                IslandWindowMode::Micro | IslandWindowMode::Compact | IslandWindowMode::Dormant
+            )
         {
             let compact_width = *state
                 .compact_width
@@ -1958,6 +1971,7 @@ pub fn run() {
             pin_session,
             set_island_presentation,
             get_notch_metrics,
+            uses_micro_island,
             get_claude_hook_status,
             install_claude_hooks,
             uninstall_claude_hooks,
@@ -2005,14 +2019,17 @@ pub fn run() {
                 // assigned and the NSPanel promotion takes effect.
                 platform::apply_island_window_style(&window);
                 eprintln!("[Atoll] step: island style applied, now applying mode...");
-                if let Ok(Some(home)) =
-                    apply_island_window_mode(
-                        &window,
-                        IslandWindowMode::Compact,
-                        COMPACT_WINDOW_WIDTH,
-                        0.0,
-                    )
-                {
+                let initial_mode = if cfg!(target_os = "windows") {
+                    IslandWindowMode::Micro
+                } else {
+                    IslandWindowMode::Compact
+                };
+                if let Ok(Some(home)) = apply_island_window_mode(
+                    &window,
+                    initial_mode,
+                    COMPACT_WINDOW_WIDTH,
+                    0.0,
+                ) {
                     eprintln!("[Atoll] step: island window mode applied");
                     let state = app.state::<AppState>();
                     if let Ok(mut home_bounds) = state.home_bounds.lock() {
@@ -2302,15 +2319,39 @@ pub(crate) fn show_main_window_for_approval(app: &AppHandle) {
 fn start_island_hover_monitor(app: AppHandle) {
     thread::spawn(move || {
         let mut last_hovering = false;
+        #[cfg(target_os = "windows")]
+        let mut compact_hover_since: Option<Instant> = None;
 
         loop {
+            #[cfg(target_os = "windows")]
+            thread::sleep(Duration::from_millis(16));
+            #[cfg(not(target_os = "windows"))]
             thread::sleep(Duration::from_millis(80));
 
             let Some(window) = app.get_webview_window("main") else {
                 continue;
             };
 
-            let hovering = is_cursor_over_window(&window).unwrap_or(false);
+            let cursor_over_window = is_cursor_over_window(&window).unwrap_or(false);
+            #[cfg(target_os = "windows")]
+            let hovering = if platform::is_island_expanded() {
+                cursor_over_window
+            } else if cursor_over_window {
+                let now = Instant::now();
+                if compact_hover_since.is_none() {
+                    compact_hover_since = Some(now);
+                }
+                compact_hover_since
+                    .is_some_and(|since| now.duration_since(since) >= platform::compact_hover_expand_dwell())
+            } else {
+                compact_hover_since = None;
+                false
+            };
+            #[cfg(not(target_os = "windows"))]
+            let hovering = cursor_over_window;
+
+            #[cfg(target_os = "windows")]
+            platform::sync_cursor_pass_through(&window, cursor_over_window);
             let client = if hovering {
                 cursor_client_point(&window)
             } else {
@@ -2419,10 +2460,7 @@ fn apply_island_window_mode(
         notch,
         false,
     ))?;
-    platform::set_island_cursor_events_ignored(window, matches!(
-        mode,
-        IslandWindowMode::Compact | IslandWindowMode::Dormant
-    ));
+    platform::set_island_cursor_events_ignored(window, is_collapsed_pass_through_mode(mode));
 
     let window_size = island_window_physical_size(mode, scale_factor, compact_width, notch, false);
     let logical_window_size = window_size.to_logical::<f64>(scale_factor);
@@ -2480,6 +2518,9 @@ fn animate_island_window_mode(
     let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
     if matches!(mode, IslandWindowMode::Expanded) {
         platform::set_island_cursor_events_ignored(window, false);
+    } else {
+        #[cfg(target_os = "windows")]
+        platform::set_island_cursor_events_ignored(window, true);
     }
 
     let scale_factor = home_bounds
@@ -2558,11 +2599,15 @@ fn animate_island_window_mode(
     });
     let _ = sync_rx.recv();
 
-    platform::set_island_cursor_events_ignored(window, matches!(
-        mode,
-        IslandWindowMode::Compact | IslandWindowMode::Dormant
-    ));
+    platform::set_island_cursor_events_ignored(window, is_collapsed_pass_through_mode(mode));
     Ok(())
+}
+
+fn is_collapsed_pass_through_mode(mode: IslandWindowMode) -> bool {
+    matches!(
+        mode,
+        IslandWindowMode::Micro | IslandWindowMode::Compact | IslandWindowMode::Dormant
+    )
 }
 
 fn ease_out_cubic(progress: f64) -> f64 {
@@ -2599,6 +2644,12 @@ fn island_window_logical_size(
     };
     let min_notch_width = if notch.has_notch { notch.width } else { 0.0 };
     match mode {
+        // Windows-only super-collapsed strip; keeps a minimal top-edge footprint
+        // so full-screen apps stay clickable underneath.
+        IslandWindowMode::Micro => {
+            let w = compact_width.max(MICRO_WINDOW_WIDTH);
+            LogicalSize::new(w, MICRO_WINDOW_HEIGHT)
+        }
         // Dormant sits within the menu-bar band. On notched displays the pill
         // spans the notch plus padding on each side; logo is left-aligned inside
         // the pill so it stays in the left wing, not under the camera housing.
@@ -3304,6 +3355,24 @@ mod core_tests {
         let dormant = island_window_logical_size(IslandWindowMode::Dormant, 132.0, no_notch, false);
         assert_eq!(dormant.width, FALLBACK_NOTCH_WIDTH + 2.0 * DORMANT_NOTCH_PADDING);
         assert_eq!(dormant.height, DORMANT_WINDOW_HEIGHT);
+    }
+
+    #[test]
+    fn micro_window_is_a_thin_top_strip() {
+        let micro =
+            island_window_logical_size(IslandWindowMode::Micro, 132.0, NotchMetrics::default(), false);
+        assert_eq!(micro.width, 132.0);
+        assert_eq!(micro.height, MICRO_WINDOW_HEIGHT);
+        let narrow =
+            island_window_logical_size(IslandWindowMode::Micro, 48.0, NotchMetrics::default(), false);
+        assert_eq!(narrow.width, MICRO_WINDOW_WIDTH);
+    }
+
+    #[test]
+    fn collapsed_pass_through_includes_micro() {
+        assert!(is_collapsed_pass_through_mode(IslandWindowMode::Micro));
+        assert!(is_collapsed_pass_through_mode(IslandWindowMode::Compact));
+        assert!(!is_collapsed_pass_through_mode(IslandWindowMode::Expanded));
     }
 
     #[test]

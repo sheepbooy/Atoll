@@ -96,10 +96,29 @@ pub fn set_island_cursor_events_ignored(window: &WebviewWindow, ignore: bool) {
     {
         macos::set_island_cursor_events_ignored(window, ignore);
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        windows::set_island_cursor_events_ignored(window, ignore);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = window.set_ignore_cursor_events(ignore);
     }
+}
+
+#[cfg(target_os = "windows")]
+pub fn sync_cursor_pass_through(window: &WebviewWindow, hovering: bool) {
+    windows::sync_cursor_pass_through(window, hovering);
+}
+
+#[cfg(target_os = "windows")]
+pub fn is_island_expanded() -> bool {
+    windows::is_island_expanded()
+}
+
+#[cfg(target_os = "windows")]
+pub fn compact_hover_expand_dwell() -> std::time::Duration {
+    std::time::Duration::from_millis(windows::COMPACT_HOVER_EXPAND_DWELL_MS)
 }
 
 pub fn set_island_window_frame_now(

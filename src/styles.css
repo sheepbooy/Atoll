@@ -82,6 +82,7 @@
   --font-mono: "SFMono-Regular", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
 
   /* Collapsed island capsule height — keep in sync with COMPACT_WINDOW_HEIGHT in lib.rs */
+  /* Micro pill height — keep in sync with MICRO_WINDOW_HEIGHT in lib.rs */
   --compact-height: 36px;
   --expanded-header-height: 36px;
   /* Expanded idle panel — keep in sync with EXPANDED_IDLE_WINDOW_HEIGHT in lib.rs */
@@ -527,6 +528,103 @@ kbd {
   gap: 8px;
   align-items: center;
   height: var(--compact-height);
+}
+
+/* ─── Windows micro pill (super-collapsed) ─────────────────────── */
+.island.is-micro {
+  width: min(560px, 100vw);
+  height: var(--micro-height, 26px);
+  border-radius: 0 0 12px 12px;
+  overflow: hidden;
+}
+
+.tauri-runtime .island.is-micro {
+  width: 100%;
+  height: 100%;
+}
+
+.is-micro .island-header {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 6px 1px;
+}
+
+.is-micro .header-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.is-micro .atoll-indicator-wrap,
+.is-micro .atoll-indicator {
+  flex: 0 0 auto;
+}
+
+.is-micro .atoll-indicator-inner {
+  width: 24px;
+  height: 24px;
+}
+
+.is-micro .atoll-indicator .atoll-logo,
+.is-micro .atoll-indicator .header-agent-logo {
+  transform: none;
+  transform-origin: center center;
+}
+
+.is-micro .listener-dot {
+  display: none;
+}
+
+.is-micro .compact-session-stack {
+  gap: 2px;
+}
+
+.is-micro .compact-session-dot {
+  width: 18px;
+  height: 16px;
+}
+
+.is-micro .compact-session-dot .clawd,
+.is-micro .compact-session-dot .codex {
+  transform: scale(0.72);
+  transform-origin: center center;
+}
+
+.is-micro .compact-session-overflow {
+  font-size: 9px;
+  min-width: 16px;
+  height: 16px;
+}
+
+.is-micro .header-metrics,
+.is-micro .header-actions,
+.is-micro .pending-badge-slot,
+.is-micro .header-notch-spacer {
+  display: none;
+}
+
+.is-micro::after {
+  opacity: 0;
+}
+
+.is-micro.has-pending::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 6px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-warning);
+  box-shadow: 0 0 6px rgba(248, 181, 0, 0.55);
+  pointer-events: none;
 }
 
 /* ─── Dormant pill (no active sessions) ────────────────────────── */

@@ -90,6 +90,7 @@ const bridge = vi.hoisted(() => ({
   resolvePermissionRequest: vi.fn(),
   setIslandPresentation: vi.fn(),
   setCompactLayout: vi.fn(),
+  usesMicroIsland: vi.fn(),
   getClaudeHookStatus: vi.fn(),
   installClaudeHooks: vi.fn(),
   uninstallClaudeHooks: vi.fn(),
@@ -152,6 +153,7 @@ describe("App", () => {
     bridge.onCaptureScreenshotRequested.mockResolvedValue(() => undefined);
     bridge.setIslandPresentation.mockResolvedValue(undefined);
     bridge.setCompactLayout.mockResolvedValue(undefined);
+    bridge.usesMicroIsland.mockResolvedValue(false);
     bridge.quitAtoll.mockResolvedValue(undefined);
     bridge.deactivateAtoll.mockResolvedValue(undefined);
     bridge.resolvePermissionRequest.mockResolvedValue({

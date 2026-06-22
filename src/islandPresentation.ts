@@ -1,4 +1,5 @@
 export type PresentationPhase =
+  | "micro"
   | "compact"
   | "opening"
   | "expanded"
@@ -6,9 +7,12 @@ export type PresentationPhase =
 
 export const COLLAPSE_ANIMATION_MS = 420;
 export const IDLE_COLLAPSE_DELAY_MS = 500;
+export const MICRO_SHRINK_DELAY_MS = 500;
 
 export function beginExpand(phase: PresentationPhase): PresentationPhase {
-  return phase === "compact" || phase === "closing" ? "opening" : phase;
+  return phase === "micro" || phase === "compact" || phase === "closing"
+    ? "opening"
+    : phase;
 }
 
 export function finishExpand(phase: PresentationPhase): PresentationPhase {
@@ -19,6 +23,10 @@ export function beginCollapse(phase: PresentationPhase): PresentationPhase {
   return phase === "opening" || phase === "expanded" ? "closing" : phase;
 }
 
-export function finishCollapse(phase: PresentationPhase): PresentationPhase {
-  return phase === "closing" ? "compact" : phase;
+export function finishCollapse(
+  phase: PresentationPhase,
+  toMicro = false,
+): PresentationPhase {
+  if (phase !== "closing") return phase;
+  return toMicro ? "micro" : "compact";
 }

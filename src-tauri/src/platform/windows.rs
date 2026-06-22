@@ -1,4 +1,5 @@
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use tauri::{AppHandle, LogicalPosition, Manager, Monitor, PhysicalSize, WebviewWindow};
@@ -18,6 +19,17 @@ unsafe impl Send for InstanceMutex {}
 unsafe impl Sync for InstanceMutex {}
 
 static SINGLE_INSTANCE_MUTEX: OnceLock<InstanceMutex> = OnceLock::new();
+
+/// When true, keep the island interactive even if the cursor is outside its bounds
+/// (e.g. approval focus while the pointer is still over another app).
+static FORCE_INTERACTIVE: AtomicBool = AtomicBool::new(false);
+static CURSOR_CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// Compact/dormant vs expanded — Windows only captures mouse input while expanded.
+static IS_EXPANDED: AtomicBool = AtomicBool::new(false);
+
+/// Dwell time before hover-to-expand on Windows compact/dormant. Keeps quick
+/// passes through the top edge from stealing clicks or popping the island open.
+pub const COMPACT_HOVER_EXPAND_DWELL_MS: u64 = 350;
 
 /// Returns false when another Atoll instance already holds the global mutex.
 pub fn ensure_single_instance() -> bool {
@@ -47,6 +59,54 @@ pub fn ensure_single_instance() -> bool {
 
 pub fn apply_island_window_style(window: &WebviewWindow) {
     let _ = window.set_always_on_top(true);
+    // Start pass-through by default; the hover monitor re-enables capture on demand.
+    let _ = window.set_ignore_cursor_events(true);
+    CURSOR_CAPTURE_ACTIVE.store(false, Ordering::Release);
+}
+
+/// Windows WebView2 does not pass clicks through transparent pixels the way macOS
+/// WebKit does. Compact/dormant islands always pass clicks through because Windows
+/// apps (browsers, etc.) extend under the top edge unlike the macOS menu bar.
+/// Only the expanded panel captures input, and only while the cursor is over it.
+pub fn set_island_cursor_events_ignored(window: &WebviewWindow, ignore: bool) {
+    IS_EXPANDED.store(!ignore, Ordering::Release);
+    if ignore {
+        FORCE_INTERACTIVE.store(false, Ordering::Release);
+        if CURSOR_CAPTURE_ACTIVE.swap(false, Ordering::AcqRel) {
+            let _ = window.set_ignore_cursor_events(true);
+        }
+    }
+}
+
+pub fn is_island_expanded() -> bool {
+    IS_EXPANDED.load(Ordering::Acquire)
+}
+
+pub fn sync_cursor_pass_through(window: &WebviewWindow, hovering: bool) {
+    if hovering {
+        FORCE_INTERACTIVE.store(false, Ordering::Release);
+    }
+
+    let should_capture = if IS_EXPANDED.load(Ordering::Acquire) {
+        hovering || FORCE_INTERACTIVE.load(Ordering::Acquire)
+    } else {
+        false
+    };
+
+    let was_capturing = CURSOR_CAPTURE_ACTIVE.load(Ordering::Acquire);
+    if was_capturing == should_capture {
+        return;
+    }
+    CURSOR_CAPTURE_ACTIVE.store(should_capture, Ordering::Release);
+    let _ = window.set_ignore_cursor_events(!should_capture);
+}
+
+fn set_force_interactive(window: &WebviewWindow, force: bool) {
+    FORCE_INTERACTIVE.store(force, Ordering::Release);
+    if force && !CURSOR_CAPTURE_ACTIVE.load(Ordering::Acquire) {
+        CURSOR_CAPTURE_ACTIVE.store(true, Ordering::Release);
+        let _ = window.set_ignore_cursor_events(false);
+    }
 }
 
 pub fn monitor_work_area_top(window: &WebviewWindow, monitor: &Monitor) -> f64 {
@@ -119,6 +179,7 @@ pub fn finish_show_for_approval(window: &WebviewWindow, app: &AppHandle, request
         let _ = window.set_always_on_top(true);
         if request_focus {
             remember_foreground_window(&app);
+            set_force_interactive(&window, true);
             let _ = window.set_focus();
         }
     });
