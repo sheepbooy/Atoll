@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
+import { resolveHookUrl } from "./atoll-hook-bridge.mjs";
+
 const defaultHookUrl = "http://127.0.0.1:47777/codex/hook";
-const hookUrl = process.env.ATOLL_HOOK_URL || defaultHookUrl;
+const hookUrl = resolveHookUrl("codexUrl", defaultHookUrl);
 
 try {
   const payload = await readStdin();

@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
+import { resolveHookUrl } from "./atoll-hook-bridge.mjs";
+
 const defaultHookUrl = "http://127.0.0.1:47777/claude/pre-tool-use";
-const hookUrl = process.env.ATOLL_HOOK_URL || defaultHookUrl;
+const hookUrl = resolveHookUrl("claudeUrl", defaultHookUrl);
 
 try {
   const payload = await readStdin();

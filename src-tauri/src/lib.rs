@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -184,6 +184,8 @@ pub(crate) struct AppState {
     last_listening_online: Mutex<Option<bool>>,
     /// Last emitted hook-health snapshot; used to detect external config drift.
     last_hook_health: Mutex<Option<HookHealthSnapshot>>,
+    /// Local hook bridge TCP port (0 until bound).
+    bridge_port: AtomicU16,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -245,7 +247,7 @@ pub(crate) fn compute_listening_online(app: &AppHandle) -> bool {
     let codex_ready = codex_hooks_readiness(app);
     let any_installed = claude_ready.0 || codex_ready.0;
     let any_script_found = claude_ready.1 || codex_ready.1;
-    any_installed && any_script_found && hook_bridge::is_bridge_reachable()
+    any_installed && any_script_found && hook_bridge::is_bridge_reachable(app)
 }
 
 pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapshot {
@@ -1371,6 +1373,10 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
     std::fs::write(&settings_path, formatted)
         .map_err(|e| format!("Cannot write settings: {e}"))?;
 
+    if let Err(error) = hook_bridge::refresh_bridge_config_file(&app) {
+        eprintln!("Atoll failed to refresh bridge.json after Claude hook install: {error}");
+    }
+
     let state = app.state::<AppState>();
     let snapshot = build_snapshot(&app, &state);
     if let Ok(mut last) = state.last_listening_online.lock() {
@@ -1568,6 +1574,10 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
             "Codex hooks were not saved correctly. Check permissions on ~/.codex/hooks.json."
                 .into(),
         );
+    }
+
+    if let Err(error) = hook_bridge::refresh_bridge_config_file(&app) {
+        eprintln!("Atoll failed to refresh bridge.json after Codex hook install: {error}");
     }
 
     let state = app.state::<AppState>();
@@ -1934,6 +1944,7 @@ pub fn run() {
             previous_app_pid: Mutex::new(None),
             last_listening_online: Mutex::new(None),
             last_hook_health: Mutex::new(None),
+            bridge_port: AtomicU16::new(0),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -1962,7 +1973,9 @@ pub fn run() {
             capture::capture_provide_screenshot
         ])
         .setup(|app| {
-            platform::setup_app(app);
+            if !platform::setup_app(app) {
+                std::process::exit(0);
+            }
 
             build_tray(app.handle())?;
             hook_bridge::start_server(app.handle().clone());

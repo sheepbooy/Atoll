@@ -1,13 +1,49 @@
 use std::process::Command;
+use std::sync::OnceLock;
 
 use tauri::{AppHandle, LogicalPosition, Manager, Monitor, PhysicalSize, WebviewWindow};
-use windows::Win32::Foundation::HWND;
+use windows::core::PCWSTR;
+use windows::Win32::Foundation::{GetLastError, HANDLE, ERROR_ALREADY_EXISTS};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
 };
+use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetForegroundWindow};
 
 use crate::{AppState, HomeWindowBounds};
+
+struct InstanceMutex(HANDLE);
+
+unsafe impl Send for InstanceMutex {}
+unsafe impl Sync for InstanceMutex {}
+
+static SINGLE_INSTANCE_MUTEX: OnceLock<InstanceMutex> = OnceLock::new();
+
+/// Returns false when another Atoll instance already holds the global mutex.
+pub fn ensure_single_instance() -> bool {
+    let name: Vec<u16> = "Global\\com.atoll.agentisland\0"
+        .encode_utf16()
+        .collect();
+
+    unsafe {
+        let handle = match CreateMutexW(None, true, PCWSTR(name.as_ptr())) {
+            Ok(handle) => handle,
+            Err(error) => {
+                eprintln!("Atoll single-instance mutex failed: {error}");
+                return true;
+            }
+        };
+
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            eprintln!("Atoll is already running.");
+            return false;
+        }
+
+        let _ = SINGLE_INSTANCE_MUTEX.set(InstanceMutex(handle));
+    }
+
+    true
+}
 
 pub fn apply_island_window_style(window: &WebviewWindow) {
     let _ = window.set_always_on_top(true);
@@ -66,7 +102,7 @@ pub fn restore_foreground_window(state: &AppState) {
         .and_then(|mut guard| guard.take());
 
     if let Some(raw) = previous {
-        let hwnd = HWND(raw as *mut _);
+        let hwnd = windows::Win32::Foundation::HWND(raw as *mut _);
         if !hwnd.0.is_null() {
             unsafe {
                 let _ = SetForegroundWindow(hwnd);
@@ -126,12 +162,14 @@ fn work_area_top_from_hwnd(window: &WebviewWindow) -> Option<f64> {
     }
 }
 
-fn window_hwnd(window: &WebviewWindow) -> Option<HWND> {
+fn window_hwnd(window: &WebviewWindow) -> Option<windows::Win32::Foundation::HWND> {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
     let handle = window.window_handle().ok()?;
     match handle.as_raw() {
-        RawWindowHandle::Win32(raw) => Some(HWND(raw.hwnd.get() as *mut _)),
+        RawWindowHandle::Win32(raw) => Some(windows::Win32::Foundation::HWND(
+            raw.hwnd.get() as *mut _,
+        )),
         _ => None,
     }
 }

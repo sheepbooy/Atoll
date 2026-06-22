@@ -91,7 +91,7 @@ irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 |
 指定版本：
 
 ```powershell
-$env:ATOLL_VERSION = "0.1.10"; irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex
+$env:ATOLL_VERSION = "0.1.11"; irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex
 ```
 
 **手动下载** — 从 [Releases](https://github.com/sheepbooy/Atoll/releases) 下载 `Atoll-x64.msi` 并安装。
@@ -118,7 +118,7 @@ Hook 注册 `PermissionRequest`、`PostToolUse`、`Stop` 等事件，写入 `~/.
 
 卸载：Settings → Agent hooks → Uninstall。
 
-> 自定义端口：设置环境变量 `ATOLL_HOOK_URL`。
+> 自定义端口：设置环境变量 `ATOLL_HOOK_URL`，或让 Atoll 写入 `%LOCALAPPDATA%/Atoll/bridge.json`（Hook 脚本会自动读取）。
 
 ### 快捷键
 
@@ -196,7 +196,7 @@ npm run export:brand     # Logo 状态 + Agent 形象
 发布新版本（Git Bash / WSL / macOS）：
 
 ```bash
-./scripts/release.sh 0.1.10
+./scripts/release.sh 0.1.11
 ```
 
 推送 `v*` tag 后会并行构建 macOS DMG 与 Windows MSI，并上传到 GitHub Releases。

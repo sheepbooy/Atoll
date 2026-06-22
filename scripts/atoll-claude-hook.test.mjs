@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import http from "node:http";
+import os from "node:os";
+import path from "node:path";
 import { spawn } from "node:child_process";
 
 const payload = {
@@ -63,6 +66,70 @@ try {
   assert.deepEqual(JSON.parse(stdout), expectedResponse);
 } finally {
   await new Promise((resolve) => server.close(resolve));
+}
+
+// Uses bridge.json when ATOLL_HOOK_URL is unset.
+{
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "atoll-claude-bridge-test-"));
+  const originalLocalAppData = process.env.LOCALAPPDATA;
+
+  const bridgeServer = http.createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      assert.equal(request.url, "/claude/pre-tool-use");
+      assert.deepEqual(JSON.parse(body), payload);
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(expectedResponse));
+    });
+  });
+
+  await new Promise((resolve) => bridgeServer.listen(0, "127.0.0.1", resolve));
+
+  try {
+    process.env.LOCALAPPDATA = tempRoot;
+    delete process.env.ATOLL_HOOK_URL;
+
+    const { port } = bridgeServer.address();
+    const configDir = path.join(tempRoot, "Atoll");
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(configDir, "bridge.json"),
+      JSON.stringify({
+        port,
+        claudeUrl: `http://127.0.0.1:${port}/claude/pre-tool-use`,
+        codexUrl: `http://127.0.0.1:${port}/codex/hook`,
+      }),
+    );
+
+    const child = spawn(process.execPath, ["scripts/atoll-claude-hook.mjs"], {
+      env: { ...process.env },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    child.stdin.end(JSON.stringify(payload));
+
+    const [stdout, stderr, exitCode] = await Promise.all([
+      readStream(child.stdout),
+      readStream(child.stderr),
+      new Promise((resolve) => child.on("close", resolve)),
+    ]);
+
+    assert.equal(stderr, "");
+    assert.equal(exitCode, 0);
+    assert.deepEqual(JSON.parse(stdout), expectedResponse);
+  } finally {
+    if (originalLocalAppData === undefined) {
+      delete process.env.LOCALAPPDATA;
+    } else {
+      process.env.LOCALAPPDATA = originalLocalAppData;
+    }
+    await new Promise((resolve) => bridgeServer.close(resolve));
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 }
 
 function readStream(stream) {

@@ -1,10 +1,12 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
+use socket2::{Domain, Socket, Type};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
@@ -14,26 +16,164 @@ use crate::{
     DecisionWithNote, PermissionRequest, PermissionStatus,
 };
 
-const HOOK_BIND_ADDR: &str = "127.0.0.1:47777";
+pub(crate) const DEFAULT_HOOK_PORT: u16 = 47_777;
+const HOOK_BIND_HOST: &str = "127.0.0.1";
+const HOOK_BIND_RETRY_COUNT: u32 = 5;
+const HOOK_BIND_RETRY_DELAY: Duration = Duration::from_millis(500);
+const HOOK_FALLBACK_PORT_START: u16 = 47_778;
+const HOOK_FALLBACK_PORT_END: u16 = 47_827;
 const HOOK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const BRIDGE_PROBE_TIMEOUT: Duration = Duration::from_millis(200);
 const HOOK_POLL_INTERVAL: Duration = Duration::from_millis(180);
 
+pub(crate) fn bridge_config_path() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        return dirs::data_dir().map(|dir| dir.join("Atoll").join("bridge.json"));
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        return dirs::data_local_dir().map(|dir| dir.join("Atoll").join("bridge.json"));
+    }
+}
+
+pub(crate) fn write_bridge_config(port: u16) -> std::io::Result<()> {
+    let path = bridge_config_path()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "bridge config path"))?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let config = json!({
+        "port": port,
+        "claudeUrl": format!("http://{HOOK_BIND_HOST}:{port}/claude/pre-tool-use"),
+        "codexUrl": format!("http://{HOOK_BIND_HOST}:{port}/codex/hook"),
+    });
+    std::fs::write(path, serde_json::to_string_pretty(&config)?)
+}
+
+pub(crate) fn refresh_bridge_config_file(app: &AppHandle) -> std::io::Result<()> {
+    let port = app
+        .state::<AppState>()
+        .bridge_port
+        .load(Ordering::SeqCst);
+    if port == 0 {
+        return Ok(());
+    }
+    write_bridge_config(port)
+}
+
+fn bind_listener_on_port(port: u16) -> std::io::Result<TcpListener> {
+    let addr: SocketAddr = format!("{HOOK_BIND_HOST}:{port}")
+        .parse()
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
+    let socket = Socket::new(Domain::IPV4, Type::STREAM, None)?;
+    socket.set_reuse_address(true)?;
+    socket.bind(&addr.into())?;
+    socket.listen(128)?;
+    Ok(socket.into())
+}
+
+fn bind_hook_listener() -> std::io::Result<(TcpListener, u16)> {
+    for attempt in 0..HOOK_BIND_RETRY_COUNT {
+        match bind_listener_on_port(DEFAULT_HOOK_PORT) {
+            Ok(listener) => return Ok((listener, DEFAULT_HOOK_PORT)),
+            Err(error) if attempt + 1 < HOOK_BIND_RETRY_COUNT => {
+                eprintln!(
+                    "Atoll hook bridge bind attempt {} on {DEFAULT_HOOK_PORT} failed: {error}",
+                    attempt + 1
+                );
+                thread::sleep(HOOK_BIND_RETRY_DELAY);
+            }
+            Err(error) => {
+                eprintln!(
+                    "Atoll hook bridge failed to bind {HOOK_BIND_HOST}:{DEFAULT_HOOK_PORT} after {HOOK_BIND_RETRY_COUNT} attempts: {error}"
+                );
+            }
+        }
+    }
+
+    for port in HOOK_FALLBACK_PORT_START..=HOOK_FALLBACK_PORT_END {
+        if let Ok(listener) = bind_listener_on_port(port) {
+            eprintln!(
+                "Atoll hook bridge using fallback port {port} ({DEFAULT_HOOK_PORT} unavailable)"
+            );
+            return Ok((listener, port));
+        }
+    }
+
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AddrInUse,
+        format!(
+            "no available hook bridge port in {DEFAULT_HOOK_PORT}..{HOOK_FALLBACK_PORT_END}"
+        ),
+    ))
+}
+
+fn bridge_socket_addr(port: u16) -> Option<SocketAddr> {
+    format!("{HOOK_BIND_HOST}:{port}").parse().ok()
+}
+
+fn bridge_port_from_config_file() -> Option<u16> {
+    let path = bridge_config_path()?;
+    let content = std::fs::read_to_string(path).ok()?;
+    let value: Value = serde_json::from_str(&content).ok()?;
+    value.get("port").and_then(Value::as_u64).and_then(|port| u16::try_from(port).ok())
+}
+
+fn refresh_listening_snapshot(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let snapshot = build_snapshot(app, &state);
+    if let Ok(mut last) = state.last_listening_online.lock() {
+        *last = Some(snapshot.online);
+    }
+    let _ = app.emit("snapshot-changed", &snapshot);
+}
+
 /// True when the local hook bridge accepts TCP connections on its bind address.
-pub(crate) fn is_bridge_reachable() -> bool {
-    HOOK_BIND_ADDR
-        .parse::<SocketAddr>()
-        .ok()
-        .and_then(|addr| TcpStream::connect_timeout(&addr, BRIDGE_PROBE_TIMEOUT).ok())
-        .is_some()
+pub(crate) fn is_bridge_reachable(app: &AppHandle) -> bool {
+    let stored_port = app
+        .state::<AppState>()
+        .bridge_port
+        .load(Ordering::SeqCst);
+    let mut ports = Vec::new();
+    if stored_port != 0 {
+        ports.push(stored_port);
+    }
+    if !ports.contains(&DEFAULT_HOOK_PORT) {
+        ports.push(DEFAULT_HOOK_PORT);
+    }
+    if let Some(config_port) = bridge_port_from_config_file() {
+        if !ports.contains(&config_port) {
+            ports.push(config_port);
+        }
+    }
+
+    ports.into_iter().any(|port| {
+        bridge_socket_addr(port)
+            .and_then(|addr| TcpStream::connect_timeout(&addr, BRIDGE_PROBE_TIMEOUT).ok())
+            .is_some()
+    })
 }
 
 pub(crate) fn start_server(app: AppHandle) {
     thread::spawn(move || {
-        let listener = match TcpListener::bind(HOOK_BIND_ADDR) {
-            Ok(listener) => listener,
+        let listener = match bind_hook_listener() {
+            Ok((listener, port)) => {
+                app.state::<AppState>()
+                    .bridge_port
+                    .store(port, Ordering::SeqCst);
+                if let Err(error) = write_bridge_config(port) {
+                    eprintln!("Atoll hook bridge failed to write bridge.json: {error}");
+                } else {
+                    eprintln!("Atoll hook bridge listening on {HOOK_BIND_HOST}:{port}");
+                }
+                refresh_listening_snapshot(&app);
+                listener
+            }
             Err(error) => {
-                eprintln!("Atoll hook bridge failed to bind {HOOK_BIND_ADDR}: {error}");
+                eprintln!("Atoll hook bridge failed to bind any port: {error}");
+                refresh_listening_snapshot(&app);
                 return;
             }
         };
@@ -856,4 +996,50 @@ fn detail_label(tool_name: &str, tool_input: &Value) -> String {
     }
 
     format!("{tool_name} is requesting approval.")
+}
+
+#[cfg(test)]
+mod bridge_bind_tests {
+    use super::*;
+
+    #[test]
+    fn fallback_port_range_starts_after_default() {
+        assert_eq!(HOOK_FALLBACK_PORT_START, DEFAULT_HOOK_PORT + 1);
+        assert!(HOOK_FALLBACK_PORT_END >= HOOK_FALLBACK_PORT_START);
+    }
+
+    #[test]
+    fn write_bridge_config_json_shape() {
+        let temp = std::env::temp_dir().join(format!(
+            "atoll-bridge-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&temp).expect("temp dir");
+        let config_path = temp.join("bridge.json");
+
+        let port = 47_778_u16;
+        let config = json!({
+            "port": port,
+            "claudeUrl": format!("http://{HOOK_BIND_HOST}:{port}/claude/pre-tool-use"),
+            "codexUrl": format!("http://{HOOK_BIND_HOST}:{port}/codex/hook"),
+        });
+        std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())
+            .expect("write config");
+
+        let parsed: Value =
+            serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        assert_eq!(parsed.get("port").and_then(Value::as_u64), Some(port as u64));
+        assert!(parsed
+            .get("claudeUrl")
+            .and_then(Value::as_str)
+            .unwrap()
+            .contains("/claude/pre-tool-use"));
+        assert!(parsed
+            .get("codexUrl")
+            .and_then(Value::as_str)
+            .unwrap()
+            .contains("/codex/hook"));
+
+        let _ = std::fs::remove_dir_all(temp);
+    }
 }

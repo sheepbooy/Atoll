@@ -16,15 +16,22 @@ pub struct ScreenGeometry {
     pub height: f64,
 }
 
-pub fn setup_app(app: &mut App) {
+pub fn setup_app(app: &mut App) -> bool {
     #[cfg(target_os = "macos")]
     {
         let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
     }
     #[cfg(target_os = "windows")]
     {
+        if !windows::ensure_single_instance() {
+            return false;
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
         let _ = app;
     }
+    true
 }
 
 pub fn apply_island_window_style(window: &WebviewWindow) {
