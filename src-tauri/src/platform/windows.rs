@@ -1,11 +1,11 @@
 use std::process::Command;
 
-use tauri::{AppHandle, LogicalPosition, Manager, Monitor, PhysicalSize, State, WebviewWindow};
+use tauri::{AppHandle, LogicalPosition, Manager, Monitor, PhysicalSize, WebviewWindow};
 use windows::Win32::Foundation::HWND;
-use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITORINFO, MONITORINFOEXW};
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, MonitorFromWindow, SetForegroundWindow, MONITOR_DEFAULTTONEAREST,
+use windows::Win32::Graphics::Gdi::{
+    GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
 };
+use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetForegroundWindow};
 
 use crate::{AppState, HomeWindowBounds};
 
@@ -78,7 +78,7 @@ pub fn restore_foreground_window(state: &AppState) {
 pub fn finish_show_for_approval(window: &WebviewWindow, app: &AppHandle, request_focus: bool) {
     let window = window.clone();
     let app = app.clone();
-    let _ = window.run_on_main_thread(move || {
+    let _ = window.clone().run_on_main_thread(move || {
         let _ = window.show();
         let _ = window.set_always_on_top(true);
         if request_focus {
