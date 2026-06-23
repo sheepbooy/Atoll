@@ -51,9 +51,22 @@ fi
 info "Syncing version files to ${VERSION}..."
 bash scripts/sync-version.sh "$VERSION"
 
-if ! git diff --quiet -- "${VERSION_FILES[@]}"; then
+RELEASE_NOTE_FILES=()
+
+if [[ -f CHANGELOG.md ]]; then
+  if ! python3 scripts/sync-release-notes.py; then
+    die "sync-release-notes.py failed; update CHANGELOG.md before releasing"
+  fi
+  notes_file="scripts/release-notes/${TAG}.md"
+  if [[ ! -f "$notes_file" ]]; then
+    die "missing release notes: ${notes_file} (add a ## [${VERSION}] section to CHANGELOG.md)"
+  fi
+  RELEASE_NOTE_FILES+=(CHANGELOG.md scripts/release-notes/"${TAG}.md")
+fi
+
+if ! git diff --quiet -- "${VERSION_FILES[@]}" "${RELEASE_NOTE_FILES[@]}"; then
   info "Committing version bump..."
-  git add "${VERSION_FILES[@]}"
+  git add "${VERSION_FILES[@]}" "${RELEASE_NOTE_FILES[@]}"
   git commit -m "chore: release ${TAG}"
 fi
 

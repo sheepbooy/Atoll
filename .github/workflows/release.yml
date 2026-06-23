@@ -203,6 +203,7 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
+          body_path: scripts/release-notes/${{ steps.version.outputs.tag }}.md
           files: |
             release/Atoll-aarch64.dmg
             release/Atoll-aarch64.dmg.sha256
