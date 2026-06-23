@@ -338,6 +338,18 @@ pub fn finish_show_for_approval(window: &WebviewWindow, app: &AppHandle, request
     }
 }
 
+pub fn tray_icon(app: &AppHandle) -> Option<tauri::image::Image<'static>> {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        windows::tray_icon()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        app.default_window_icon().cloned()
+    }
+}
+
 pub fn open_url(app: &AppHandle, url: &str) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
     app.opener()

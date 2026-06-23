@@ -2392,7 +2392,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, quit_id, quit_label, true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
 
-    TrayIconBuilder::new()
+    let mut builder = TrayIconBuilder::new()
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -2415,8 +2415,13 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 }
                 _ => {}
             }
-        })
-        .build(app)?;
+        });
+
+    if let Some(icon) = platform::tray_icon(app) {
+        builder = builder.icon(icon);
+    }
+
+    builder.build(app)?;
 
     Ok(())
 }
