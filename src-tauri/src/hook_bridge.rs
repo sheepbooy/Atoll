@@ -896,15 +896,17 @@ fn detect_host_for_claude_hook(
     }
 
     if let Some(path) = transcript_path.as_deref() {
-        if is_cli_transcript_path(path) {
-            eprintln!("[Atoll:host-detect] RESULT: ClaudeCli (transcript path matched CLI)");
-            return platform::SessionHost::ClaudeCli;
-        }
         if is_desktop_transcript_path(path) {
             eprintln!("[Atoll:host-detect] RESULT: ClaudeDesktop (transcript path matched Desktop)");
             return platform::SessionHost::ClaudeDesktop;
         }
-        eprintln!("[Atoll:host-detect] transcript path did NOT match any known pattern");
+        if is_cli_transcript_path(path) {
+            if !is_claude_desktop_app_running() {
+                eprintln!("[Atoll:host-detect] RESULT: ClaudeCli (CLI path + Desktop NOT running)");
+                return platform::SessionHost::ClaudeCli;
+            }
+            eprintln!("[Atoll:host-detect] CLI-style path but Desktop IS running, need further signals...");
+        }
     } else {
         eprintln!("[Atoll:host-detect] transcript_path is None");
     }
@@ -1007,15 +1009,17 @@ fn detect_host_for_non_permission_hook(cwd: &str, transcript_path: Option<&str>)
     eprintln!("[Atoll:host-detect] cwd={cwd:?}, transcript_path={transcript_path:?}");
 
     if let Some(path) = transcript_path {
-        if is_cli_transcript_path(path) {
-            eprintln!("[Atoll:host-detect] RESULT: ClaudeCli (transcript path matched CLI)");
-            return platform::SessionHost::ClaudeCli;
-        }
         if is_desktop_transcript_path(path) {
             eprintln!("[Atoll:host-detect] RESULT: ClaudeDesktop (transcript path matched Desktop)");
             return platform::SessionHost::ClaudeDesktop;
         }
-        eprintln!("[Atoll:host-detect] transcript path did NOT match any known pattern");
+        if is_cli_transcript_path(path) {
+            if !is_claude_desktop_app_running() {
+                eprintln!("[Atoll:host-detect] RESULT: ClaudeCli (CLI path + Desktop NOT running)");
+                return platform::SessionHost::ClaudeCli;
+            }
+            eprintln!("[Atoll:host-detect] CLI-style path but Desktop IS running, checking further...");
+        }
     }
 
     let desktop_running = is_claude_desktop_app_running();

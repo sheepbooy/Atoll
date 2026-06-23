@@ -1352,15 +1352,17 @@ fn session_host_for_summary(
             }
         }
     }
-    platform::detect_claude_session_host(cwd)
+    let detected = platform::detect_claude_session_host(cwd);
+    if detected != platform::SessionHost::Unknown {
+        return detected;
+    }
+    if platform::is_claude_desktop_app_running() && !platform::frontmost_is_terminal() {
+        return platform::SessionHost::ClaudeDesktop;
+    }
+    platform::SessionHost::Unknown
 }
 
 fn host_from_transcript_path(path: &str) -> Option<platform::SessionHost> {
-    if path.contains("/.claude/")
-        || (path.contains("/claude/projects/") && !path.contains("/Application Support/"))
-    {
-        return Some(platform::SessionHost::ClaudeCli);
-    }
     if path.contains("/Application Support/") && !path.contains("/.claude/") {
         return Some(platform::SessionHost::ClaudeDesktop);
     }
@@ -1370,6 +1372,18 @@ fn host_from_transcript_path(path: &str) -> Option<platform::SessionHost> {
         || path.contains("agent-sessions")
     {
         return Some(platform::SessionHost::ClaudeDesktop);
+    }
+    // /.claude/projects/ is used by BOTH Claude CLI and Claude Desktop (newer versions).
+    // Only treat it as CLI if Claude Desktop is definitely not running.
+    if path.contains("/.claude/")
+        || (path.contains("/claude/projects/") && !path.contains("/Application Support/"))
+    {
+        if !platform::is_claude_desktop_app_running() {
+            return Some(platform::SessionHost::ClaudeCli);
+        }
+        // Ambiguous: Desktop is running and path looks like CLI — return None
+        // so the caller uses other detection methods.
+        return None;
     }
     None
 }
