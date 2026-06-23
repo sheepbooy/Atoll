@@ -76,6 +76,32 @@ pub struct ParsedChatMessage {
     pub tool_name: Option<String>,
 }
 
+pub fn read_codex_cwd_from_transcript(path: &str) -> Option<String> {
+    use std::io::{BufRead, BufReader};
+
+    let file = std::fs::File::open(path).ok()?;
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+    reader.read_line(&mut line).ok()?;
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let entry: Value = serde_json::from_str(trimmed).ok()?;
+    if entry.get("type").and_then(Value::as_str) != Some("session_meta") {
+        return None;
+    }
+
+    entry
+        .get("payload")
+        .and_then(|payload| payload.get("cwd"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|cwd| !cwd.is_empty())
+        .map(str::to_string)
+}
+
 pub fn parse_codex_messages(lines: &[String]) -> Vec<ParsedChatMessage> {
     let mut messages: Vec<ParsedChatMessage> = Vec::new();
 
@@ -268,6 +294,26 @@ mod tests {
             detect_transcript_format_from_line(line),
             Some(TranscriptFormat::Codex)
         );
+    }
+
+    #[test]
+    fn reads_codex_cwd_from_session_meta() {
+        let dir = std::env::temp_dir().join(format!(
+            "atoll-codex-transcript-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("rollout-test.jsonl");
+        std::fs::write(
+            &path,
+            r#"{"type":"session_meta","payload":{"id":"abc","cwd":"C:/Users/test/project"}}"#,
+        )
+        .expect("write transcript");
+
+        let cwd = read_codex_cwd_from_transcript(&path.to_string_lossy()).expect("read cwd");
+        assert_eq!(cwd, "C:/Users/test/project");
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

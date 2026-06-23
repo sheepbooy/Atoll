@@ -1186,23 +1186,64 @@ fn set_session_retention(
 
 /// Codex background threads (memories, subagents, etc.) often omit `cwd` in hook payloads.
 /// Atoll defaults missing cwd to `"."`, which would show up as a stray "." session.
-/// Paths under `~/.codex/` are Codex app internals, not user workspace roots.
-pub(crate) fn is_codex_internal_session(agent: &AgentKind, cwd: &str) -> bool {
-    if !matches!(agent, AgentKind::Codex) {
-        return false;
+/// Resolve the real workspace from `transcript_path` when possible, and only ignore
+/// known Codex-internal directories under `~/.codex/`.
+const CODEX_INTERNAL_DIR_NAMES: &[&str] = &[
+    "memories",
+    "process_manager",
+    "computer-use",
+    "computer-use-turn-ended",
+];
+
+fn normalize_codex_cwd(cwd: &str) -> String {
+    cwd.replace('\\', "/")
+}
+
+pub(crate) fn resolve_codex_session_cwd(cwd: &str, transcript_path: Option<&str>) -> String {
+    let normalized = normalize_codex_cwd(cwd);
+    if !normalized.is_empty() && normalized != "." && normalized != "./" {
+        return normalized;
     }
-    let normalized = cwd.replace('\\', "/");
+
+    transcript_path
+        .and_then(transcript::read_codex_cwd_from_transcript)
+        .map(|resolved| normalize_codex_cwd(&resolved))
+        .filter(|resolved| !resolved.is_empty())
+        .unwrap_or(normalized)
+}
+
+fn is_codex_internal_cwd(cwd: &str) -> bool {
+    let normalized = normalize_codex_cwd(cwd);
     if normalized.is_empty() || normalized == "." || normalized == "./" {
         return true;
     }
-    if let Some(home) = dirs::home_dir() {
-        let codex_home = home.join(".codex");
-        let codex_home_str = codex_home.to_string_lossy().replace('\\', "/");
-        if normalized == codex_home_str || normalized.starts_with(&(codex_home_str.clone() + "/")) {
+
+    let Some(home) = dirs::home_dir() else {
+        return false;
+    };
+    let codex_home = normalize_codex_cwd(&home.join(".codex").to_string_lossy());
+
+    for dir_name in CODEX_INTERNAL_DIR_NAMES {
+        let internal = format!("{codex_home}/{dir_name}");
+        if normalized == internal || normalized.starts_with(&(internal.clone() + "/")) {
             return true;
         }
     }
+
     false
+}
+
+pub(crate) fn is_codex_internal_session(
+    agent: &AgentKind,
+    cwd: &str,
+    transcript_path: Option<&str>,
+) -> bool {
+    if !matches!(agent, AgentKind::Codex) {
+        return false;
+    }
+
+    let resolved = resolve_codex_session_cwd(cwd, transcript_path);
+    is_codex_internal_cwd(&resolved)
 }
 
 pub(crate) fn purge_tracked_session(state: &AppState, session_id: &str, transcript_path: Option<&str>) {
@@ -1229,7 +1270,13 @@ pub(crate) fn register_known_session(
     cwd: &str,
     transcript_path: Option<&str>,
 ) {
-    if is_codex_internal_session(&agent, cwd) {
+    let resolved_cwd = if matches!(agent, AgentKind::Codex) {
+        resolve_codex_session_cwd(cwd, transcript_path)
+    } else {
+        cwd.to_string()
+    };
+
+    if is_codex_internal_session(&agent, &resolved_cwd, None) {
         purge_tracked_session(state, session_id, transcript_path);
         return;
     }
@@ -1238,19 +1285,19 @@ pub(crate) fn register_known_session(
             .entry(session_id.to_string())
             .or_insert_with(|| KnownSession {
                 agent: agent.clone(),
-                cwd: cwd.to_string(),
+                cwd: resolved_cwd.clone(),
                 transcript_path: transcript_path.map(str::to_string),
                 last_activity: iso_timestamp_now(),
                 host: platform::SessionHost::Unknown,
             });
-        if !cwd.is_empty() && cwd != "." {
-            entry.cwd = cwd.to_string();
+        if !resolved_cwd.is_empty() && resolved_cwd != "." {
+            entry.cwd = resolved_cwd.clone();
         }
         if let Some(path) = transcript_path {
             entry.transcript_path = Some(path.to_string());
         }
         if matches!(agent, AgentKind::Claude) && entry.host == platform::SessionHost::Unknown {
-            let detected = platform::detect_claude_session_host(cwd);
+            let detected = platform::detect_claude_session_host(&resolved_cwd);
             if detected != platform::SessionHost::Unknown {
                 entry.host = detected;
             }
@@ -3235,7 +3282,11 @@ fn snapshot_from(
             if active_session_ids.contains(request.session.as_str()) {
                 continue;
             }
-            if is_codex_internal_session(&request.agent, &request.cwd) {
+            if is_codex_internal_session(
+                &request.agent,
+                &request.cwd,
+                request.transcript_path.as_deref(),
+            ) {
                 continue;
             }
             // Pinned sessions are always retained regardless of time.
@@ -3306,7 +3357,11 @@ fn snapshot_from(
             if existing_ids.contains(session_id.as_str()) {
                 continue;
             }
-            if is_codex_internal_session(&info.agent, &info.cwd) {
+            if is_codex_internal_session(
+                &info.agent,
+                &info.cwd,
+                info.transcript_path.as_deref(),
+            ) {
                 continue;
             }
             // Pinned sessions always included; non-pinned filtered by retention.
@@ -3380,7 +3435,11 @@ fn build_session_summaries(visible: &[&PermissionRequest]) -> Vec<SessionSummary
         HashMap::new();
 
     for request in visible {
-        if is_codex_internal_session(&request.agent, &request.cwd) {
+        if is_codex_internal_session(
+            &request.agent,
+            &request.cwd,
+            request.transcript_path.as_deref(),
+        ) {
             continue;
         }
         let entry = session_map.entry(&request.session).or_insert_with(|| {
@@ -3594,14 +3653,56 @@ mod core_tests {
 
         assert_eq!(snapshot.sessions.len(), 1);
         assert_eq!(snapshot.sessions[0].session_id, "real-session");
-        assert!(is_codex_internal_session(&AgentKind::Codex, &memories_cwd));
-        assert!(is_codex_internal_session(&AgentKind::Codex, "."));
-        assert!(is_codex_internal_session(&AgentKind::Codex, ""));
-        assert!(!is_codex_internal_session(&AgentKind::Codex, "/Users/test/project"));
+        assert!(is_codex_internal_session(
+            &AgentKind::Codex,
+            &memories_cwd,
+            None,
+        ));
+        assert!(is_codex_internal_session(&AgentKind::Codex, ".", None));
+        assert!(is_codex_internal_session(&AgentKind::Codex, "", None));
         assert!(!is_codex_internal_session(
             &AgentKind::Codex,
-            "/Users/test/code/Atoll/.codex"
+            "/Users/test/project",
+            None,
         ));
+        assert!(!is_codex_internal_session(
+            &AgentKind::Codex,
+            "/Users/test/code/Atoll/.codex",
+            None,
+        ));
+        assert!(!is_codex_internal_session(
+            &AgentKind::Codex,
+            "/Users/test/.codex/sessions/2026/06/23/rollout.jsonl",
+            None,
+        ));
+    }
+
+    #[test]
+    fn codex_missing_cwd_is_resolved_from_transcript() {
+        let dir = std::env::temp_dir().join(format!(
+            "atoll-codex-session-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let transcript_path = dir.join("rollout-test.jsonl");
+        std::fs::write(
+            &transcript_path,
+            r#"{"type":"session_meta","payload":{"id":"session-app","cwd":"C:/Users/test/project"}}"#,
+        )
+        .expect("write transcript");
+        let transcript = transcript_path.to_string_lossy().into_owned();
+
+        assert!(!is_codex_internal_session(
+            &AgentKind::Codex,
+            ".",
+            Some(&transcript),
+        ));
+        assert_eq!(
+            resolve_codex_session_cwd(".", Some(&transcript)),
+            "C:/Users/test/project"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

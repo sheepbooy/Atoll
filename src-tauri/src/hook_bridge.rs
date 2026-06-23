@@ -11,9 +11,9 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
     build_snapshot, iso_timestamp_now, is_codex_internal_session, platform, purge_tracked_session,
-    refresh_session_token_usage, register_known_session, roll_over_token_usage_if_needed,
-    show_main_window_for_approval, touch_session_activity, AgentKind, AppState, Decision,
-    DecisionWithNote, PermissionRequest, PermissionStatus,
+    refresh_session_token_usage, register_known_session, resolve_codex_session_cwd,
+    roll_over_token_usage_if_needed, show_main_window_for_approval, touch_session_activity,
+    AgentKind, AppState, Decision, DecisionWithNote, PermissionRequest, PermissionStatus,
 };
 
 pub(crate) const DEFAULT_HOOK_PORT: u16 = 47_777;
@@ -213,15 +213,21 @@ pub(crate) fn permission_request_from_codex_payload(
         return None;
     }
 
-    let cwd = payload
-        .get("cwd")
-        .and_then(Value::as_str)
-        .unwrap_or(".");
-    if is_codex_internal_session(&AgentKind::Codex, cwd) {
+    let transcript_path = payload_transcript_path(&payload);
+    let cwd = resolve_codex_session_cwd(
+        payload
+            .get("cwd")
+            .and_then(Value::as_str)
+            .unwrap_or("."),
+        transcript_path,
+    );
+    if is_codex_internal_session(&AgentKind::Codex, &cwd, None) {
         return None;
     }
 
-    permission_request_from_tool_payload(id, payload, requested_at, AgentKind::Codex, false)
+    let mut request = permission_request_from_tool_payload(id, payload, requested_at, AgentKind::Codex, false)?;
+    request.cwd = cwd;
+    Some(request)
 }
 
 fn permission_request_from_tool_payload(
@@ -653,12 +659,24 @@ fn sync_tool_completion(
     let completed_suffix = format!("Completed in {agent_label}.");
     let mut completed_session_id = payload_session_id(&payload).map(str::to_string);
     let mut completed_transcript_path = payload_transcript_path(&payload).map(str::to_string);
-    let cwd = payload
-        .get("cwd")
-        .and_then(Value::as_str)
-        .unwrap_or(".");
+    let transcript_path = payload_transcript_path(&payload).map(str::to_string);
+    let cwd = if matches!(agent, AgentKind::Codex) {
+        resolve_codex_session_cwd(
+            payload
+                .get("cwd")
+                .and_then(Value::as_str)
+                .unwrap_or("."),
+            transcript_path.as_deref(),
+        )
+    } else {
+        payload
+            .get("cwd")
+            .and_then(Value::as_str)
+            .unwrap_or(".")
+            .to_string()
+    };
     let codex_internal =
-        matches!(agent, AgentKind::Codex) && is_codex_internal_session(&agent, cwd);
+        matches!(agent, AgentKind::Codex) && is_codex_internal_session(&agent, &cwd, None);
 
     if let Some(session_id) = completed_session_id.as_deref() {
         if codex_internal {
@@ -672,7 +690,7 @@ fn sync_tool_completion(
                 &state,
                 session_id,
                 agent.clone(),
-                cwd,
+                &cwd,
                 completed_transcript_path.as_deref(),
             );
         }
@@ -748,13 +766,24 @@ fn sync_turn_completion(
     let completed_suffix = format!("Completed in {agent_label}.");
     let session_id = payload_session_id(&payload).map(str::to_string);
     let transcript_path = payload_transcript_path(&payload).map(str::to_string);
-    let cwd = payload
-        .get("cwd")
-        .and_then(Value::as_str)
-        .unwrap_or(".");
+    let cwd = if matches!(agent, AgentKind::Codex) {
+        resolve_codex_session_cwd(
+            payload
+                .get("cwd")
+                .and_then(Value::as_str)
+                .unwrap_or("."),
+            transcript_path.as_deref(),
+        )
+    } else {
+        payload
+            .get("cwd")
+            .and_then(Value::as_str)
+            .unwrap_or(".")
+            .to_string()
+    };
     let mut completed_request_id: Option<String> = None;
     let codex_internal =
-        matches!(agent, AgentKind::Codex) && is_codex_internal_session(&agent, cwd);
+        matches!(agent, AgentKind::Codex) && is_codex_internal_session(&agent, &cwd, None);
 
     if let Some(session_id) = session_id.as_deref() {
         {
@@ -781,7 +810,7 @@ fn sync_turn_completion(
                 &state,
                 session_id,
                 agent.clone(),
-                cwd,
+                &cwd,
                 transcript_path.as_deref(),
             );
             if let Err(error) = refresh_session_token_usage(
