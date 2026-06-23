@@ -282,18 +282,21 @@ pub fn open_agent_app(
         return match host {
             SessionHost::ClaudeDesktop => focus_claude_app(app),
             SessionHost::ClaudeCli => open_in_terminal(cwd),
-            SessionHost::Unknown => {
-                let detected = detect_claude_session_host(cwd);
-                match detected {
-                    SessionHost::ClaudeDesktop => focus_claude_app(app),
-                    SessionHost::ClaudeCli => open_in_terminal(cwd),
-                    SessionHost::Unknown => focus_claude_app(app),
-                }
-            }
+            SessionHost::Unknown => match claude_unknown_jump_host(detect_claude_session_host(cwd)) {
+                SessionHost::ClaudeDesktop => focus_claude_app(app),
+                SessionHost::ClaudeCli | SessionHost::Unknown => open_in_terminal(cwd),
+            },
         };
     }
 
     open_in_terminal(cwd)
+}
+
+fn claude_unknown_jump_host(detected: SessionHost) -> SessionHost {
+    match detected {
+        SessionHost::ClaudeDesktop => SessionHost::ClaudeDesktop,
+        SessionHost::ClaudeCli | SessionHost::Unknown => SessionHost::ClaudeCli,
+    }
 }
 
 pub fn focus_claude_app(app: &AppHandle) -> Result<(), String> {
@@ -412,5 +415,30 @@ pub fn open_in_terminal(cwd: &str) -> Result<(), String> {
     {
         let _ = cwd;
         Err("open_in_terminal is not supported on this platform".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn claude_unknown_jump_prefers_terminal_when_still_unknown() {
+        assert_eq!(
+            claude_unknown_jump_host(SessionHost::Unknown),
+            SessionHost::ClaudeCli
+        );
+    }
+
+    #[test]
+    fn claude_unknown_jump_opens_claude_only_when_detected() {
+        assert_eq!(
+            claude_unknown_jump_host(SessionHost::ClaudeDesktop),
+            SessionHost::ClaudeDesktop
+        );
+        assert_eq!(
+            claude_unknown_jump_host(SessionHost::ClaudeCli),
+            SessionHost::ClaudeCli
+        );
     }
 }

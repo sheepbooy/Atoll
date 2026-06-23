@@ -604,28 +604,33 @@ unsafe fn activate_app_by_pid(pid: i32) -> bool {
 }
 
 pub fn deactivate_atoll(state: &AppState) {
-    restore_previous_app_focus(state);
+    let _ = restore_previous_app_focus(state);
 }
 
-pub fn restore_previous_app_focus(state: &AppState) {
+pub fn try_restore_previous_app_focus(state: &AppState) -> bool {
     let previous = state
         .previous_app_pid
         .lock()
         .ok()
         .and_then(|mut guard| guard.take());
 
-    unsafe {
-        if let Some(pid) = previous {
-            if activate_app_by_pid(pid as i32) {
-                return;
-            }
-        }
-        let cls = objc2::runtime::AnyClass::get(c"NSApplication").expect("NSApplication class");
-        let ns_app: *mut objc2::runtime::AnyObject = objc2::msg_send![cls, sharedApplication];
-        if !ns_app.is_null() {
-            let _: () = objc2::msg_send![ns_app, deactivate];
-        }
+    let Some(pid) = previous else {
+        return false;
+    };
+
+    unsafe { activate_app_by_pid(pid as i32) }
+}
+
+pub fn restore_previous_app_focus(state: &AppState) -> bool {
+    if try_restore_previous_app_focus(state) {
+        return true;
     }
+    deactivate_own_application();
+    false
+}
+
+pub fn deactivate_atoll_app() {
+    deactivate_own_application();
 }
 
 pub fn activate_previous_app_if_terminal(state: &AppState) -> bool {
@@ -650,10 +655,18 @@ pub fn activate_previous_app_if_terminal(state: &AppState) -> bool {
     unsafe { activate_app_by_pid(pid as i32) }
 }
 
+pub fn activate_claude_app(app: &AppHandle) -> Result<(), String> {
+    focus_claude_app_impl(app, false)
+}
+
 pub fn focus_claude_app(app: &AppHandle) -> Result<(), String> {
+    focus_claude_app_impl(app, true)
+}
+
+fn focus_claude_app_impl(app: &AppHandle, launch_if_needed: bool) -> Result<(), String> {
     let app = app.clone();
     if is_main_thread() {
-        return focus_claude_app_on_main_thread(&app);
+        return focus_claude_app_on_main_thread(&app, launch_if_needed);
     }
 
     let window = app
@@ -662,19 +675,23 @@ pub fn focus_claude_app(app: &AppHandle) -> Result<(), String> {
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
     window
         .run_on_main_thread(move || {
-            let _ = tx.send(focus_claude_app_on_main_thread(&app));
+            let _ = tx.send(focus_claude_app_on_main_thread(&app, launch_if_needed));
         })
         .map_err(|error| format!("Failed to dispatch Claude focus: {error}"))?;
     rx.recv()
         .map_err(|_| "Claude focus dispatch channel closed".to_string())?
 }
 
-fn focus_claude_app_on_main_thread(_app: &AppHandle) -> Result<(), String> {
+fn focus_claude_app_on_main_thread(_app: &AppHandle, launch_if_needed: bool) -> Result<(), String> {
     deactivate_own_application();
 
-    let focused = run_open_claude()
-        || activate_claude_by_bundle_id()
-        || activate_claude_via_applescript();
+    let focused = if launch_if_needed {
+        run_open_claude()
+            || activate_claude_by_bundle_id()
+            || activate_claude_via_applescript()
+    } else {
+        activate_claude_by_bundle_id() || activate_claude_via_applescript()
+    };
     if !focused {
         return Err("Failed to focus Claude".to_string());
     }
@@ -812,6 +829,13 @@ pub fn detect_claude_session_host(cwd: &str) -> SessionHost {
 
     let pids = pids_with_cwd(cwd);
 
+    // Terminal-hosted Claude Code wins over Desktop-bundled node paths (Claude-3p/claude-code).
+    for pid in &pids {
+        if find_terminal_ancestor(*pid).is_some() {
+            return SessionHost::ClaudeCli;
+        }
+    }
+
     // Desktop hook/node children may not carry the app bundle id on the leaf PID.
     for pid in &pids {
         if is_in_claude_desktop_tree(*pid) {
@@ -825,12 +849,6 @@ pub fn detect_claude_session_host(cwd: &str) -> SessionHost {
 
     if frontmost_is_terminal() {
         return SessionHost::ClaudeCli;
-    }
-
-    for pid in &pids {
-        if find_terminal_ancestor(*pid).is_some() && !is_in_claude_desktop_tree(*pid) {
-            return SessionHost::ClaudeCli;
-        }
     }
 
     SessionHost::Unknown
@@ -953,6 +971,9 @@ fn process_executable(pid: u32) -> Option<String> {
 }
 
 fn is_claude_desktop_process(pid: u32) -> bool {
+    if find_terminal_ancestor(pid).is_some() {
+        return false;
+    }
     if is_claude_desktop_pid(pid) {
         return true;
     }

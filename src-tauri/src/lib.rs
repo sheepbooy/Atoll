@@ -297,7 +297,10 @@ fn persist_claude_session_hosts(state: &AppState, sessions: &[SessionSummary]) {
         if !matches!(session.agent, AgentKind::Claude) {
             continue;
         }
-        if session.session_host == platform::SessionHost::ClaudeDesktop {
+        if matches!(
+            session.session_host,
+            platform::SessionHost::ClaudeDesktop | platform::SessionHost::ClaudeCli
+        ) {
             store_claude_session_host(state, &session.session_id, session.session_host);
         }
     }
@@ -1305,20 +1308,34 @@ pub(crate) fn register_known_session(
     }
 }
 
+fn resolve_stored_claude_host(
+    stored: platform::SessionHost,
+    live: platform::SessionHost,
+) -> platform::SessionHost {
+    match stored {
+        platform::SessionHost::ClaudeDesktop => {
+            if live == platform::SessionHost::ClaudeCli {
+                platform::SessionHost::ClaudeCli
+            } else {
+                platform::SessionHost::ClaudeDesktop
+            }
+        }
+        platform::SessionHost::ClaudeCli => platform::SessionHost::ClaudeCli,
+        platform::SessionHost::Unknown => live,
+    }
+}
+
 pub(crate) fn claude_session_host(state: &AppState, session_id: &str, cwd: &str) -> platform::SessionHost {
     if let Ok(known) = state.known_sessions.lock() {
         if let Some(entry) = known.get(session_id) {
-            if entry.host == platform::SessionHost::ClaudeDesktop {
-                return platform::SessionHost::ClaudeDesktop;
-            }
-            if entry.host == platform::SessionHost::ClaudeCli {
-                let upgraded = platform::detect_claude_session_host(cwd);
-                if upgraded == platform::SessionHost::ClaudeDesktop {
+            if entry.host != platform::SessionHost::Unknown {
+                let live = platform::detect_claude_session_host(cwd);
+                let resolved = resolve_stored_claude_host(entry.host, live);
+                if resolved != entry.host {
                     drop(known);
-                    store_claude_session_host(state, session_id, upgraded);
-                    return upgraded;
+                    store_claude_session_host(state, session_id, resolved);
                 }
-                return platform::SessionHost::ClaudeCli;
+                return resolved;
             }
         }
     }
@@ -1348,15 +1365,9 @@ fn session_host_for_summary(
         return platform::SessionHost::Unknown;
     }
     if let Some(entry) = known_sessions.get(session_id) {
-        if entry.host == platform::SessionHost::ClaudeDesktop {
-            return platform::SessionHost::ClaudeDesktop;
-        }
-        if entry.host == platform::SessionHost::ClaudeCli {
+        if entry.host != platform::SessionHost::Unknown {
             let live = platform::detect_claude_session_host(cwd);
-            if live == platform::SessionHost::ClaudeDesktop {
-                return platform::SessionHost::ClaudeDesktop;
-            }
-            return platform::SessionHost::ClaudeCli;
+            return resolve_stored_claude_host(entry.host, live);
         }
     }
     platform::detect_claude_session_host(cwd)
@@ -3675,6 +3686,46 @@ mod core_tests {
             "/Users/test/.codex/sessions/2026/06/23/rollout.jsonl",
             None,
         ));
+    }
+
+    #[test]
+    fn stored_claude_desktop_downgrades_when_live_is_cli() {
+        assert_eq!(
+            resolve_stored_claude_host(
+                platform::SessionHost::ClaudeDesktop,
+                platform::SessionHost::ClaudeCli,
+            ),
+            platform::SessionHost::ClaudeCli,
+        );
+    }
+
+    #[test]
+    fn stored_claude_desktop_stays_when_live_is_not_cli() {
+        assert_eq!(
+            resolve_stored_claude_host(
+                platform::SessionHost::ClaudeDesktop,
+                platform::SessionHost::ClaudeDesktop,
+            ),
+            platform::SessionHost::ClaudeDesktop,
+        );
+        assert_eq!(
+            resolve_stored_claude_host(
+                platform::SessionHost::ClaudeDesktop,
+                platform::SessionHost::Unknown,
+            ),
+            platform::SessionHost::ClaudeDesktop,
+        );
+    }
+
+    #[test]
+    fn stored_claude_cli_is_not_upgraded_to_desktop() {
+        assert_eq!(
+            resolve_stored_claude_host(
+                platform::SessionHost::ClaudeCli,
+                platform::SessionHost::ClaudeDesktop,
+            ),
+            platform::SessionHost::ClaudeCli,
+        );
     }
 
     #[test]
