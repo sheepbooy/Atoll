@@ -328,18 +328,68 @@ pub fn finish_show_for_approval(window: &WebviewWindow, app: &AppHandle, request
     }
 }
 
+const TRAY_ICON_CANVAS: u32 = 64;
+const TRAY_ICON_FILL: f32 = 0.95;
+
 pub fn tray_icon(app: &AppHandle) -> Option<tauri::image::Image<'static>> {
-    #[cfg(target_os = "windows")]
-    {
-        let _ = app;
-        windows::tray_icon()
+    let _ = app;
+    enlarged_tray_icon_from_png(include_bytes!("../../icons/icon.png"))
+}
+
+/// Crop transparent padding and scale the logo to fill the menu-bar tray canvas.
+fn enlarged_tray_icon_from_png(bytes: &[u8]) -> Option<tauri::image::Image<'static>> {
+    use image::RgbaImage;
+    use image::imageops;
+
+    let img = image::load_from_memory(bytes).ok()?.to_rgba8();
+    let (width, height) = img.dimensions();
+    let mut min_x = width;
+    let mut min_y = height;
+    let mut max_x = 0u32;
+    let mut max_y = 0u32;
+
+    for y in 0..height {
+        for x in 0..width {
+            let pixel = img.get_pixel(x, y);
+            if pixel[0] > 16 || pixel[1] > 16 || pixel[2] > 16 {
+                min_x = min_x.min(x);
+                min_y = min_y.min(y);
+                max_x = max_x.max(x);
+                max_y = max_y.max(y);
+            }
+        }
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        app.default_window_icon().map(|icon| {
-            tauri::image::Image::new_owned(icon.rgba().to_vec(), icon.width(), icon.height())
-        })
+
+    if min_x >= width || min_y >= height || max_x < min_x || max_y < min_y {
+        return None;
     }
+
+    let cropped = imageops::crop_imm(
+        &img,
+        min_x,
+        min_y,
+        max_x - min_x + 1,
+        max_y - min_y + 1,
+    )
+    .to_image();
+    let (crop_w, crop_h) = cropped.dimensions();
+    let target = (TRAY_ICON_CANVAS as f32 * TRAY_ICON_FILL) as u32;
+    let scale = (target as f32 / crop_w as f32).min(target as f32 / crop_h as f32);
+    let scaled_w = (crop_w as f32 * scale).round().max(1.0) as u32;
+    let scaled_h = (crop_h as f32 * scale).round().max(1.0) as u32;
+    let scaled = imageops::resize(&cropped, scaled_w, scaled_h, imageops::FilterType::Lanczos3);
+
+    let mut canvas =
+        RgbaImage::from_pixel(TRAY_ICON_CANVAS, TRAY_ICON_CANVAS, image::Rgba([0, 0, 0, 0]));
+    let offset_x = (TRAY_ICON_CANVAS - scaled_w) / 2;
+    let offset_y = (TRAY_ICON_CANVAS - scaled_h) / 2;
+    imageops::overlay(&mut canvas, &scaled, i64::from(offset_x), i64::from(offset_y));
+
+    Some(tauri::image::Image::new_owned(
+        canvas.into_raw(),
+        TRAY_ICON_CANVAS,
+        TRAY_ICON_CANVAS,
+    ))
 }
 
 pub fn open_url(app: &AppHandle, url: &str) -> Result<(), String> {
