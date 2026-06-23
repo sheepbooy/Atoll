@@ -872,57 +872,92 @@ fn detect_host_for_claude_hook(
     cwd: &str,
     transcript_path: &Option<String>,
 ) -> platform::SessionHost {
+    eprintln!("[Atoll:host-detect] === Claude session host detection ===");
+    eprintln!("[Atoll:host-detect] cwd={cwd:?}");
+    eprintln!("[Atoll:host-detect] transcript_path={transcript_path:?}");
+
     let peer_host = hook_peer_session_host(stream);
+    eprintln!("[Atoll:host-detect] peer_process_tree → {peer_host:?}");
     if peer_host != platform::SessionHost::Unknown {
+        eprintln!("[Atoll:host-detect] RESULT: {peer_host:?} (from peer process tree)");
         return peer_host;
     }
 
     if let Some(path) = transcript_path.as_deref() {
         if is_cli_transcript_path(path) {
+            eprintln!("[Atoll:host-detect] RESULT: ClaudeCli (transcript path matched CLI)");
             return platform::SessionHost::ClaudeCli;
         }
         if is_desktop_transcript_path(path) {
+            eprintln!("[Atoll:host-detect] RESULT: ClaudeDesktop (transcript path matched Desktop)");
             return platform::SessionHost::ClaudeDesktop;
         }
+        eprintln!("[Atoll:host-detect] transcript path did NOT match any known pattern");
+    } else {
+        eprintln!("[Atoll:host-detect] transcript_path is None");
     }
 
-    if is_claude_desktop_app_running() {
+    let desktop_running = is_claude_desktop_app_running();
+    eprintln!("[Atoll:host-detect] claude_desktop_running={desktop_running}");
+    if desktop_running {
         let prev_pid = state.previous_app_pid.lock().ok().and_then(|g| *g);
+        eprintln!("[Atoll:host-detect] previous_app_pid={prev_pid:?}");
         let hint = prev_pid.map(|p| p as u32);
-        if hint.map_or(false, |pid| platform::detect_session_host_from_peer_pid(pid) == platform::SessionHost::ClaudeDesktop) {
-            return platform::SessionHost::ClaudeDesktop;
+        if let Some(pid) = hint {
+            let from_pid = platform::detect_session_host_from_peer_pid(pid);
+            eprintln!("[Atoll:host-detect] detect_from_previous_pid({pid}) → {from_pid:?}");
+            if from_pid == platform::SessionHost::ClaudeDesktop {
+                eprintln!("[Atoll:host-detect] RESULT: ClaudeDesktop (previous_app_pid in Desktop tree)");
+                return platform::SessionHost::ClaudeDesktop;
+            }
         }
-        if !is_any_terminal_frontmost() {
+        let terminal_front = is_any_terminal_frontmost();
+        eprintln!("[Atoll:host-detect] terminal_frontmost={terminal_front}");
+        if !terminal_front {
+            eprintln!("[Atoll:host-detect] RESULT: ClaudeDesktop (Desktop running + no terminal frontmost)");
             return platform::SessionHost::ClaudeDesktop;
         }
     }
 
     let prev_pid = state.previous_app_pid.lock().ok().and_then(|g| *g);
-    platform::detect_claude_session_host_at_hook(cwd, prev_pid)
+    let fallback = platform::detect_claude_session_host_at_hook(cwd, prev_pid);
+    eprintln!("[Atoll:host-detect] RESULT: {fallback:?} (final fallback, prev_pid={prev_pid:?})");
+    fallback
 }
 
 /// Identify the session host by tracing the hook HTTP peer's process tree.
 fn hook_peer_session_host(stream: &TcpStream) -> platform::SessionHost {
     let peer = match stream.peer_addr() {
         Ok(addr) => addr,
-        Err(_) => return platform::SessionHost::Unknown,
+        Err(e) => {
+            eprintln!("[Atoll:host-detect] peer_addr() failed: {e}");
+            return platform::SessionHost::Unknown;
+        }
     };
     let port = peer.port();
     let own_pid = std::process::id();
+    eprintln!("[Atoll:host-detect] peer port={port}, own_pid={own_pid}");
 
     let output = match std::process::Command::new("lsof")
         .args(["-i", &format!("TCP@127.0.0.1:{port}"), "-n", "-P", "-t"])
         .output()
     {
         Ok(o) => o,
-        Err(_) => return platform::SessionHost::Unknown,
+        Err(e) => {
+            eprintln!("[Atoll:host-detect] lsof exec failed: {e}");
+            return platform::SessionHost::Unknown;
+        }
     };
 
     let text = String::from_utf8_lossy(&output.stdout);
+    let stderr_text = String::from_utf8_lossy(&output.stderr);
+    eprintln!("[Atoll:host-detect] lsof stdout={text:?}, stderr={stderr_text:?}");
     for line in text.lines() {
         if let Ok(pid) = line.trim().parse::<u32>() {
             if pid != own_pid {
-                return platform::detect_session_host_from_peer_pid(pid);
+                let result = platform::detect_session_host_from_peer_pid(pid);
+                eprintln!("[Atoll:host-detect] peer_pid={pid} → {result:?}");
+                return result;
             }
         }
     }
