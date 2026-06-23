@@ -699,6 +699,12 @@ fn sync_tool_completion(
                 &cwd,
                 completed_transcript_path.as_deref(),
             );
+            if matches!(agent, AgentKind::Claude) {
+                let host = detect_host_for_non_permission_hook(&cwd, completed_transcript_path.as_deref());
+                if host != platform::SessionHost::Unknown {
+                    crate::store_claude_session_host(&state, session_id, host);
+                }
+            }
         }
     }
 
@@ -819,6 +825,12 @@ fn sync_turn_completion(
                 &cwd,
                 transcript_path.as_deref(),
             );
+            if matches!(agent, AgentKind::Claude) {
+                let host = detect_host_for_non_permission_hook(&cwd, transcript_path.as_deref());
+                if host != platform::SessionHost::Unknown {
+                    crate::store_claude_session_host(&state, session_id, host);
+                }
+            }
             if let Err(error) = refresh_session_token_usage(
                 &state,
                 session_id,
@@ -985,6 +997,37 @@ fn is_claude_desktop_app_running() -> bool {
 
 fn is_any_terminal_frontmost() -> bool {
     platform::frontmost_is_terminal()
+}
+
+/// Detect session host for non-permission hooks (Stop, PostToolUse, SubagentStop).
+/// These events don't block so we can't use the TCP peer, but we still have
+/// transcript path and Claude Desktop running-state as signals.
+fn detect_host_for_non_permission_hook(cwd: &str, transcript_path: Option<&str>) -> platform::SessionHost {
+    eprintln!("[Atoll:host-detect] === non-permission hook detection ===");
+    eprintln!("[Atoll:host-detect] cwd={cwd:?}, transcript_path={transcript_path:?}");
+
+    if let Some(path) = transcript_path {
+        if is_cli_transcript_path(path) {
+            eprintln!("[Atoll:host-detect] RESULT: ClaudeCli (transcript path matched CLI)");
+            return platform::SessionHost::ClaudeCli;
+        }
+        if is_desktop_transcript_path(path) {
+            eprintln!("[Atoll:host-detect] RESULT: ClaudeDesktop (transcript path matched Desktop)");
+            return platform::SessionHost::ClaudeDesktop;
+        }
+        eprintln!("[Atoll:host-detect] transcript path did NOT match any known pattern");
+    }
+
+    let desktop_running = is_claude_desktop_app_running();
+    eprintln!("[Atoll:host-detect] claude_desktop_running={desktop_running}");
+    if desktop_running && !is_any_terminal_frontmost() {
+        eprintln!("[Atoll:host-detect] RESULT: ClaudeDesktop (Desktop running + no terminal frontmost)");
+        return platform::SessionHost::ClaudeDesktop;
+    }
+
+    let fallback = platform::detect_claude_session_host(cwd);
+    eprintln!("[Atoll:host-detect] RESULT: {fallback:?} (CWD fallback)");
+    fallback
 }
 
 pub(crate) fn mark_matching_pending_request_complete(
