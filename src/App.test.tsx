@@ -626,6 +626,64 @@ describe("App", () => {
     });
   });
 
+  it("does not show dead atoll logo before hook health hydrates on startup", () => {
+    bridge.getSnapshot.mockImplementation(
+      () => new Promise(() => undefined),
+    );
+    const { container } = render(<App />);
+
+    expect(container.querySelector(".atoll-logo.is-dead")).toBeNull();
+  });
+
+  it("shows live atoll logo on startup when hooks are already connected", async () => {
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    const { container } = render(<App />);
+
+    expect(container.querySelector(".atoll-logo.is-dead")).toBeNull();
+    await waitFor(() => {
+      expect(container.querySelector(".atoll-logo.is-idle")).not.toBeNull();
+    });
+  });
+
+  it("starts in micro mode on Windows without presenting dormant first", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {},
+    });
+    const originalUserAgent = navigator.userAgent;
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    });
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    bridge.usesMicroIsland.mockResolvedValue(true);
+
+    const { container } = render(<App />);
+
+    expect(container.querySelector(".is-micro")).not.toBeNull();
+    expect(bridge.setIslandPresentation.mock.calls[0]?.[0]).not.toBe("dormant");
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: originalUserAgent,
+    });
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+  });
+
   it("shows agent tab labels on non-notched expanded header", async () => {
     const multiAgentSnapshot = {
       online: true,

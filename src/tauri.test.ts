@@ -107,4 +107,21 @@ describe("Tauri bridge", () => {
     expect(snapshot.hookHealth.claude.scriptFound).toBe(true);
     expect(snapshot.hookHealth.codex.scriptPath).toBe("/tmp/atoll-codex-hook.mjs");
   });
+
+  it("detects Windows micro island synchronously", async () => {
+    setTauriRuntime(true);
+    const originalUserAgent = navigator.userAgent;
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    });
+
+    const { usesMicroIslandSync } = await import("./tauri");
+    expect(usesMicroIslandSync()).toBe(true);
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: originalUserAgent,
+    });
+  });
 });

@@ -173,4 +173,16 @@ describe("hookHealth", () => {
       activity: "dead",
     });
   });
+
+  it("derives live atoll logo before hook health is known", () => {
+    const analysis = analyzeHookHealth(undefined as HookHealthSnapshot | undefined);
+    expect(deriveHeaderLogoDisplay(analysis, "idle", { hookHealthKnown: false })).toEqual({
+      kind: "atoll",
+      activity: "idle",
+    });
+    expect(deriveHeaderLogoDisplay(analysis, "coding", { hookHealthKnown: false })).toEqual({
+      kind: "atoll",
+      activity: "coding",
+    });
+  });
 });

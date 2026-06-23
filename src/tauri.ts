@@ -66,6 +66,18 @@ export interface IslandHoverChanged {
 
 const isTauriRuntime = "__TAURI_INTERNALS__" in window;
 
+/** Matches `uses_micro_island` in src-tauri (Windows-only micro island). */
+export function isWindowsTauriRuntime(): boolean {
+  if (!("__TAURI_INTERNALS__" in window)) {
+    return false;
+  }
+  return /Windows/i.test(navigator.userAgent);
+}
+
+export function usesMicroIslandSync(): boolean {
+  return isWindowsTauriRuntime();
+}
+
 let localRequests: PermissionRequest[] = [];
 
 export async function getSnapshot(): Promise<IslandSnapshot> {

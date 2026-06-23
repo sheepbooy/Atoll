@@ -116,7 +116,13 @@ export function analyzeHookHealth(
   };
 }
 
-export function hookAttentionTitle(analysis: HookHealthAnalysis): string {
+export function hookAttentionTitle(
+  analysis: HookHealthAnalysis,
+  hookHealthKnown = true,
+): string {
+  if (!hookHealthKnown) {
+    return "Checking agent hooks";
+  }
   if (analysis.needsFirstTimeSetup) {
     return "Agent hooks are not installed";
   }
@@ -137,7 +143,11 @@ export type HeaderLogoDisplay =
 export function deriveHeaderLogoDisplay(
   analysis: HookHealthAnalysis,
   activity: AtollActivity,
+  options?: { hookHealthKnown?: boolean },
 ): HeaderLogoDisplay {
+  if (options?.hookHealthKnown === false) {
+    return { kind: "atoll", activity };
+  }
   if (analysis.needsFirstTimeSetup) {
     return { kind: "atoll", activity: "dead" };
   }

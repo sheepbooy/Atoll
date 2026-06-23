@@ -99,6 +99,7 @@ import {
   setIslandPresentation,
   setCompactLayout,
   usesMicroIsland,
+  usesMicroIslandSync,
   setSessionAutoApprove,
   getNotchMetrics,
   NotchMetrics,
@@ -495,9 +496,14 @@ function expandedPresentationKey(idle: boolean): string {
 export function App() {
   const [snapshot, setSnapshot] = useState<IslandSnapshot>(initialSnapshot);
   const snapshotRef = useRef(initialSnapshot);
-  const [phase, setPhase] = useState<PresentationPhase>("compact");
-  const phaseRef = useRef<PresentationPhase>("compact");
-  const usesMicroIslandRef = useRef(false);
+  const initialUsesMicro = usesMicroIslandSync();
+  const [phase, setPhase] = useState<PresentationPhase>(
+    initialUsesMicro ? "micro" : "compact",
+  );
+  const phaseRef = useRef<PresentationPhase>(initialUsesMicro ? "micro" : "compact");
+  const usesMicroIslandRef = useRef(initialUsesMicro);
+  const [notchMetricsHydrated, setNotchMetricsHydrated] = useState(false);
+  const initialNativePresentationSyncedRef = useRef(false);
   const hoveringRef = useRef(false);
   const focusedRef = useRef(false);
   const suppressHoverExpandRef = useRef(false);
@@ -524,6 +530,7 @@ export function App() {
   const [idleIntervalSec, setIdleIntervalSec] = useState<number>(() => readIdleInterval());
   const [idleDurationSec, setIdleDurationSec] = useState<number>(() => readIdleDuration());
   const [justResolved, setJustResolved] = useState(false);
+  const [hookHealthHydrated, setHookHealthHydrated] = useState(false);
   const prevPendingRef = useRef(0);
   const selectedAgentRef = useRef<AgentKind | null>(null);
   selectedAgentRef.current = selectedAgent;
@@ -536,7 +543,10 @@ export function App() {
   );
   const claudeHookStatus = snapshot.hookHealth?.claude ?? null;
   const codexHookStatus = snapshot.hookHealth?.codex ?? null;
-  const hookAttention = hookAttentionTitle(hookHealthAnalysis);
+  const hookAttention = hookAttentionTitle(
+    hookHealthAnalysis,
+    hookHealthHydrated,
+  );
   const atollActivity = useMemo(
     () =>
       deriveAtollActivity({
@@ -556,8 +566,11 @@ export function App() {
     [snapshot.online, snapshot.pendingCount, sessions.length],
   );
   const headerLogo = useMemo(
-    () => deriveHeaderLogoDisplay(hookHealthAnalysis, atollActivity),
-    [hookHealthAnalysis, atollActivity],
+    () =>
+      deriveHeaderLogoDisplay(hookHealthAnalysis, atollActivity, {
+        hookHealthKnown: hookHealthHydrated,
+      }),
+    [hookHealthAnalysis, atollActivity, hookHealthHydrated],
   );
   const dailyTokens = snapshot.dailyTokens ?? ZERO_TOKEN_USAGE;
   const dailyTokenTotal = dailyTokens.inputTokens + dailyTokens.outputTokens;
@@ -674,14 +687,8 @@ export function App() {
       getSnapshot()
         .then((nextSnapshot) => {
           if (seq !== snapshotLoadSeqRef.current) return;
-          const normalized = normalizeSnapshot(nextSnapshot);
-          applySnapshot({
-            ...normalized,
-            hookHealth: mergeHookHealthPreferReady(
-              snapshotRef.current.hookHealth,
-              normalized.hookHealth,
-            ),
-          });
+          applySnapshot(nextSnapshot, { mergeHookHealth: true });
+          setHookHealthHydrated(true);
         })
         .catch(() => undefined);
     };
@@ -689,21 +696,8 @@ export function App() {
     const refreshHookHealth = () => {
       getSnapshot()
         .then((nextSnapshot) => {
-          const normalized = normalizeSnapshot(nextSnapshot);
-          const mergedHookHealth = mergeHookHealthPreferReady(
-            snapshotRef.current.hookHealth,
-            normalized.hookHealth,
-          );
-          snapshotRef.current = {
-            ...snapshotRef.current,
-            hookHealth: mergedHookHealth,
-            online: normalized.online,
-          };
-          setSnapshot((previous) => ({
-            ...previous,
-            hookHealth: mergedHookHealth,
-            online: normalized.online,
-          }));
+          applySnapshot(nextSnapshot, { mergeHookHealth: true });
+          setHookHealthHydrated(true);
         })
         .catch(() => undefined);
     };
@@ -713,16 +707,6 @@ export function App() {
     usesMicroIsland()
       .then((enabled) => {
         usesMicroIslandRef.current = enabled;
-        if (enabled && phaseRef.current === "compact") {
-          setPresentationPhase("micro");
-          setIslandPresentation(
-            "micro",
-            collapsedWindowWidthRef.current,
-            undefined,
-            undefined,
-            false,
-          ).catch(() => undefined);
-        }
       })
       .catch(() => undefined);
     getNotchMetrics()
@@ -733,9 +717,15 @@ export function App() {
       .catch(() => {
         setNotchMetrics(EMPTY_NOTCH_METRICS);
         applyWindowMetrics(EMPTY_NOTCH_METRICS);
+      })
+      .finally(() => {
+        setNotchMetricsHydrated(true);
       });
     setSessionRetention(readRetentionMinutes()).catch(() => undefined);
-    onSnapshotChanged(applySnapshot).then((cleanup) => {
+    onSnapshotChanged((nextSnapshot) => {
+      applySnapshot(nextSnapshot, { mergeHookHealth: true });
+      setHookHealthHydrated(true);
+    }).then((cleanup) => {
       unsubscribe = cleanup;
     });
     onIslandHoverChanged(({ hovering }) => {
@@ -1046,22 +1036,32 @@ export function App() {
     }
   }
 
-  function applySnapshot(nextSnapshot: IslandSnapshot) {
+  function applySnapshot(
+    nextSnapshot: IslandSnapshot,
+    options?: { mergeHookHealth?: boolean },
+  ) {
     const normalized = normalizeSnapshot(nextSnapshot);
-    snapshotRef.current = normalized;
+    const hookHealth = options?.mergeHookHealth
+      ? mergeHookHealthPreferReady(
+          snapshotRef.current.hookHealth,
+          normalized.hookHealth,
+        )
+      : normalized.hookHealth;
+    const merged = { ...normalized, hookHealth };
+    snapshotRef.current = merged;
     if (phaseRef.current === "opening" || phaseRef.current === "closing") {
       // Hook health must update immediately after install — waiting for the
       // presentation transition leaves the header logo stuck in the dead state.
       setSnapshot((previous) => ({
         ...previous,
-        hookHealth: normalized.hookHealth,
-        online: normalized.online,
+        hookHealth: merged.hookHealth,
+        online: merged.online,
       }));
       return;
     }
-    setSnapshot(normalized);
+    setSnapshot(merged);
 
-    if (nextSnapshot.pendingCount > 0) {
+    if (merged.pendingCount > 0) {
       expandIsland();
     } else {
       scheduleIdleCollapse();
@@ -1084,6 +1084,28 @@ export function App() {
     if (next === "expanded" || next === "compact") {
       setSnapshot(snapshotRef.current);
     }
+  }
+
+  function syncNativeIslandPresentation(
+    mode: "micro" | "compact" | "expanded" | "dormant",
+    compactWidth?: number,
+    expandedIdle?: boolean,
+    compactLeftWidth?: number,
+  ) {
+    const snap =
+      !notchMetricsHydrated || !initialNativePresentationSyncedRef.current;
+    return setIslandPresentation(
+      mode,
+      compactWidth,
+      expandedIdle,
+      compactLeftWidth,
+      !snap,
+      snap,
+    ).finally(() => {
+      if (notchMetricsHydrated) {
+        initialNativePresentationSyncedRef.current = true;
+      }
+    });
   }
 
   function clearTransitionWork() {
@@ -1431,6 +1453,7 @@ export function App() {
       hookHealth: optimisticHookHealth,
       online: true,
     });
+    setHookHealthHydrated(true);
     return getSnapshot()
       .catch(() => null)
       .then((nextSnapshot) => {
@@ -1595,9 +1618,11 @@ export function App() {
     },
   ];
 
-  const hooksNeedSetup = hookHealthAnalysis.needsFirstTimeSetup;
+  const hooksNeedSetup =
+    hookHealthHydrated && hookHealthAnalysis.needsFirstTimeSetup;
   const hooksNeedAttention =
-    hookHealthAnalysis.needsFirstTimeSetup || hookHealthAnalysis.needsReconnect;
+    hookHealthHydrated &&
+    (hookHealthAnalysis.needsFirstTimeSetup || hookHealthAnalysis.needsReconnect);
   const hooksSetupSummary = hookHealthAnalysis.summary;
 
   async function handleQuit() {
@@ -1742,7 +1767,9 @@ export function App() {
       const key = compactPresentationKey("micro", collapsedWindowWidth, 0);
       if (lastNativePresentationKeyRef.current === key) return;
       lastNativePresentationKeyRef.current = key;
-      setIslandPresentation("micro", collapsedWindowWidth).catch(() => undefined);
+      syncNativeIslandPresentation("micro", collapsedWindowWidth).catch(
+        () => undefined,
+      );
       return;
     }
 
@@ -1755,9 +1782,9 @@ export function App() {
       if (lastNativePresentationKeyRef.current === key) return;
       lastNativePresentationKeyRef.current = key;
       if (collapsedMode === "dormant") {
-        setIslandPresentation("dormant").catch(() => undefined);
+        syncNativeIslandPresentation("dormant").catch(() => undefined);
       } else {
-        setIslandPresentation(
+        syncNativeIslandPresentation(
           "compact",
           collapsedWindowWidth,
           undefined,
@@ -1771,7 +1798,7 @@ export function App() {
       const key = expandedPresentationKey(isIdleExpanded);
       if (lastNativePresentationKeyRef.current === key) return;
       lastNativePresentationKeyRef.current = key;
-      setIslandPresentation("expanded", undefined, isIdleExpanded).catch(
+      syncNativeIslandPresentation("expanded", undefined, isIdleExpanded).catch(
         () => undefined,
       );
     }
@@ -1781,7 +1808,7 @@ export function App() {
     compactLeftPaneWidth,
     collapsedMode,
     isIdleExpanded,
-    collapsedWindowWidth,
+    notchMetricsHydrated,
   ]);
 
   function renderPanel() {
