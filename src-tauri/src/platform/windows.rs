@@ -8,10 +8,10 @@ use windows::Win32::Foundation::{GetLastError, HANDLE, ERROR_ALREADY_EXISTS};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
 };
-use windows::Win32::System::Threading::{
-    CreateMutexW, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+use windows::Win32::System::Threading::CreateMutexW;
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetForegroundWindow};
 
 use crate::{AppState, HomeWindowBounds};
 use super::SessionHost;
@@ -247,9 +247,7 @@ fn is_terminal_process_name(name: &str) -> bool {
 
 fn process_name_for_hwnd(hwnd: windows::Win32::Foundation::HWND) -> Option<String> {
     use windows::Win32::System::ProcessStatus::K32GetProcessImageFileNameW;
-    use windows::Win32::System::Threading::{
-        GetWindowThreadProcessId, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-    };
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
     unsafe {
         let mut pid = 0u32;

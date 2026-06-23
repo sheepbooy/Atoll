@@ -4,6 +4,8 @@ dist-ssr
 target
 src-tauri/target
 src-tauri/gen
+src-tauri/icons/android/
+src-tauri/icons/ios/
 *.log
 .DS_Store
 .worktrees
