@@ -2,6 +2,19 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.16] - 2026-06-23
+
+### 新增
+- **Claude Desktop** 支持：自动识别 Desktop 与 CLI 会话来源，审批后跳回正确的应用窗口
+- 会话感知的焦点恢复（macOS / Windows）
+
+### 修复
+- **Windows**：修复 Windows API 导入错误导致 dev 构建失败
+- **Windows**：修复系统托盘无图标问题，并放大托盘 Logo 显示
+
+### 文档
+- 新增 CHANGELOG，Release 说明自动从 CHANGELOG 同步
+
 ## [0.1.15] - 2026-06-22
 
 ### 新增
@@ -135,6 +148,7 @@
 ### 变更
 - 仅保留 Apple Silicon 构建（移除 Intel Mac 产物）
 
+[0.1.16]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.16
 [0.1.15]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.15
 [0.1.14]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.14
 [0.1.13]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.13
