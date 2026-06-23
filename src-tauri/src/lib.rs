@@ -1299,35 +1299,6 @@ pub(crate) fn register_known_session(
         if let Some(path) = transcript_path {
             entry.transcript_path = Some(path.to_string());
         }
-        if matches!(agent, AgentKind::Claude) && entry.host == platform::SessionHost::Unknown {
-            let detected = platform::detect_claude_session_host(&resolved_cwd);
-            if detected != platform::SessionHost::Unknown {
-                entry.host = detected;
-            }
-        }
-    }
-}
-
-fn resolve_stored_claude_host(
-    stored: platform::SessionHost,
-    live: platform::SessionHost,
-) -> platform::SessionHost {
-    match stored {
-        platform::SessionHost::ClaudeDesktop => {
-            if live == platform::SessionHost::ClaudeCli {
-                platform::SessionHost::ClaudeCli
-            } else {
-                platform::SessionHost::ClaudeDesktop
-            }
-        }
-        platform::SessionHost::ClaudeCli => {
-            if live == platform::SessionHost::ClaudeDesktop {
-                platform::SessionHost::ClaudeDesktop
-            } else {
-                platform::SessionHost::ClaudeCli
-            }
-        }
-        platform::SessionHost::Unknown => live,
     }
 }
 
@@ -1335,13 +1306,7 @@ pub(crate) fn claude_session_host(state: &AppState, session_id: &str, cwd: &str)
     if let Ok(known) = state.known_sessions.lock() {
         if let Some(entry) = known.get(session_id) {
             if entry.host != platform::SessionHost::Unknown {
-                let live = platform::detect_claude_session_host(cwd);
-                let resolved = resolve_stored_claude_host(entry.host, live);
-                if resolved != entry.host {
-                    drop(known);
-                    store_claude_session_host(state, session_id, resolved);
-                }
-                return resolved;
+                return entry.host;
             }
         }
     }
@@ -1372,8 +1337,7 @@ fn session_host_for_summary(
     }
     if let Some(entry) = known_sessions.get(session_id) {
         if entry.host != platform::SessionHost::Unknown {
-            let live = platform::detect_claude_session_host(cwd);
-            return resolve_stored_claude_host(entry.host, live);
+            return entry.host;
         }
     }
     platform::detect_claude_session_host(cwd)
@@ -3695,40 +3659,45 @@ mod core_tests {
     }
 
     #[test]
-    fn stored_claude_desktop_downgrades_when_live_is_cli() {
+    fn session_host_for_summary_trusts_stored_host() {
+        let known_sessions = HashMap::from([
+            (
+                "cli-session".into(),
+                KnownSession {
+                    agent: AgentKind::Claude,
+                    cwd: "/tmp/project".into(),
+                    transcript_path: None,
+                    last_activity: iso_timestamp_now(),
+                    host: platform::SessionHost::ClaudeCli,
+                },
+            ),
+            (
+                "desktop-session".into(),
+                KnownSession {
+                    agent: AgentKind::Claude,
+                    cwd: "/tmp/desktop".into(),
+                    transcript_path: None,
+                    last_activity: iso_timestamp_now(),
+                    host: platform::SessionHost::ClaudeDesktop,
+                },
+            ),
+        ]);
+
         assert_eq!(
-            resolve_stored_claude_host(
-                platform::SessionHost::ClaudeDesktop,
-                platform::SessionHost::ClaudeCli,
+            session_host_for_summary(
+                &known_sessions,
+                "cli-session",
+                "/tmp/project",
+                &AgentKind::Claude,
             ),
             platform::SessionHost::ClaudeCli,
         );
-    }
-
-    #[test]
-    fn stored_claude_desktop_stays_when_live_is_not_cli() {
         assert_eq!(
-            resolve_stored_claude_host(
-                platform::SessionHost::ClaudeDesktop,
-                platform::SessionHost::ClaudeDesktop,
-            ),
-            platform::SessionHost::ClaudeDesktop,
-        );
-        assert_eq!(
-            resolve_stored_claude_host(
-                platform::SessionHost::ClaudeDesktop,
-                platform::SessionHost::Unknown,
-            ),
-            platform::SessionHost::ClaudeDesktop,
-        );
-    }
-
-    #[test]
-    fn stored_claude_cli_upgrades_when_live_is_desktop() {
-        assert_eq!(
-            resolve_stored_claude_host(
-                platform::SessionHost::ClaudeCli,
-                platform::SessionHost::ClaudeDesktop,
+            session_host_for_summary(
+                &known_sessions,
+                "desktop-session",
+                "/tmp/desktop",
+                &AgentKind::Claude,
             ),
             platform::SessionHost::ClaudeDesktop,
         );

@@ -788,25 +788,67 @@ const KNOWN_TERMINALS: &[(&str, &str)] = &[
 
 use super::SessionHost;
 
-pub fn detect_claude_session_host(cwd: &str) -> SessionHost {
+fn claude_cwd_signals(cwd: &str) -> (bool, bool) {
+    let mut has_terminal_claude = false;
+    let mut has_desktop_claude = false;
+    for pid in pids_with_cwd(cwd) {
+        if find_terminal_ancestor(pid).is_some() && is_claude_related_process(pid) {
+            has_terminal_claude = true;
+        } else if find_terminal_ancestor(pid).is_none() && is_in_claude_desktop_tree(pid) {
+            has_desktop_claude = true;
+        }
+    }
+    (has_terminal_claude, has_desktop_claude)
+}
+
+fn frontmost_app_pid() -> Option<u32> {
+    unsafe {
+        let ws_class = objc2::runtime::AnyClass::get(c"NSWorkspace")?;
+        let workspace: *mut objc2::runtime::AnyObject = objc2::msg_send![ws_class, sharedWorkspace];
+        if workspace.is_null() {
+            return None;
+        }
+        let front: *mut objc2::runtime::AnyObject =
+            objc2::msg_send![workspace, frontmostApplication];
+        if front.is_null() {
+            return None;
+        }
+        let pid: i32 = objc2::msg_send![front, processIdentifier];
+        if pid <= 0 {
+            None
+        } else {
+            Some(pid as u32)
+        }
+    }
+}
+
+fn is_claude_desktop_app_pid(pid: u32) -> bool {
+    if find_terminal_ancestor(pid).is_some() {
+        return false;
+    }
+    is_claude_desktop_pid(pid) || is_in_claude_desktop_tree(pid)
+}
+
+pub fn resolve_claude_session_host(cwd: &str, hint_pid: Option<u32>) -> SessionHost {
     if cwd.is_empty() || cwd == "." {
         return SessionHost::Unknown;
     }
 
-    let pids = pids_with_cwd(cwd);
-
-    // Desktop-hosted session processes (not running under a terminal).
-    for pid in &pids {
-        if find_terminal_ancestor(*pid).is_none() && is_in_claude_desktop_tree(*pid) {
+    if let Some(pid) = hint_pid {
+        if is_claude_desktop_app_pid(pid) {
             return SessionHost::ClaudeDesktop;
+        }
+        if is_terminal_pid(pid) {
+            return SessionHost::ClaudeCli;
         }
     }
 
-    // Terminal-hosted Claude Code (ignore unrelated shells in the same cwd).
-    for pid in &pids {
-        if find_terminal_ancestor(*pid).is_some() && is_claude_related_process(*pid) {
-            return SessionHost::ClaudeCli;
-        }
+    let (has_terminal_claude, has_desktop_claude) = claude_cwd_signals(cwd);
+    match (has_terminal_claude, has_desktop_claude) {
+        (true, false) => return SessionHost::ClaudeCli,
+        (false, true) => return SessionHost::ClaudeDesktop,
+        (true, true) => return SessionHost::Unknown,
+        (false, false) => {}
     }
 
     if frontmost_is_claude_desktop() {
@@ -820,55 +862,30 @@ pub fn detect_claude_session_host(cwd: &str) -> SessionHost {
     SessionHost::Unknown
 }
 
+pub fn detect_claude_session_host(cwd: &str) -> SessionHost {
+    resolve_claude_session_host(cwd, None)
+}
+
 /// Snapshot frontmost app at hook time, before Atoll steals focus.
-pub fn detect_claude_session_host_at_hook(cwd: &str) -> SessionHost {
-    if frontmost_is_claude_desktop() {
-        return SessionHost::ClaudeDesktop;
-    }
-    if frontmost_is_terminal() {
-        return SessionHost::ClaudeCli;
-    }
-    detect_claude_session_host(cwd)
+/// If Atoll is already frontmost (rapid-fire approvals), fall back to previous_app_pid.
+pub fn detect_claude_session_host_at_hook(cwd: &str, previous_app_pid: Option<i64>) -> SessionHost {
+    let own_pid = std::process::id();
+    let frontmost = frontmost_app_pid();
+
+    let hint = match frontmost {
+        Some(pid) if pid != own_pid => Some(pid),
+        _ => previous_app_pid.map(|p| p as u32),
+    };
+
+    resolve_claude_session_host(cwd, hint)
 }
 
 pub(crate) fn frontmost_is_claude_desktop() -> bool {
-    unsafe {
-        let Some(ws_class) = objc2::runtime::AnyClass::get(c"NSWorkspace") else {
-            return false;
-        };
-        let workspace: *mut objc2::runtime::AnyObject =
-            objc2::msg_send![ws_class, sharedWorkspace];
-        if workspace.is_null() {
-            return false;
-        }
-        let front: *mut objc2::runtime::AnyObject =
-            objc2::msg_send![workspace, frontmostApplication];
-        if front.is_null() {
-            return false;
-        }
-        let pid: i32 = objc2::msg_send![front, processIdentifier];
-        is_claude_desktop_pid(pid as u32)
-    }
+    frontmost_app_pid().is_some_and(is_claude_desktop_app_pid)
 }
 
 pub(crate) fn frontmost_is_terminal() -> bool {
-    unsafe {
-        let Some(ws_class) = objc2::runtime::AnyClass::get(c"NSWorkspace") else {
-            return false;
-        };
-        let workspace: *mut objc2::runtime::AnyObject =
-            objc2::msg_send![ws_class, sharedWorkspace];
-        if workspace.is_null() {
-            return false;
-        }
-        let front: *mut objc2::runtime::AnyObject =
-            objc2::msg_send![workspace, frontmostApplication];
-        if front.is_null() {
-            return false;
-        }
-        let pid: i32 = objc2::msg_send![front, processIdentifier];
-        is_terminal_pid(pid as u32)
-    }
+    frontmost_app_pid().is_some_and(is_terminal_pid)
 }
 
 fn is_in_claude_desktop_tree(mut pid: u32) -> bool {
@@ -936,17 +953,39 @@ fn process_executable(pid: u32) -> Option<String> {
     }
 }
 
+fn process_command_line(pid: u32) -> Option<String> {
+    let output = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "args="])
+        .output()
+        .ok()?;
+    let args = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if args.is_empty() {
+        None
+    } else {
+        Some(args)
+    }
+}
+
+fn command_line_matches_claude(command_line: &str) -> bool {
+    let trimmed = command_line.trim();
+    trimmed == "claude"
+        || trimmed.ends_with("/claude")
+        || trimmed.contains("/claude ")
+        || command_line.contains("Claude.app")
+        || command_line.contains("Claude Helper")
+        || command_line.contains("Claude-3p/claude-code")
+        || command_line.contains("claude-code")
+        || command_line.contains("@anthropic/claude")
+}
+
 fn is_claude_related_process(pid: u32) -> bool {
     if is_claude_desktop_pid(pid) {
         return true;
     }
-    process_executable(pid).is_some_and(|comm| {
-        comm.contains("Claude.app")
-            || comm.contains("Claude Helper")
-            || comm.contains("Claude-3p/claude-code")
-            || comm.contains("claude-code")
-            || comm.ends_with("/claude")
-    })
+    if process_executable(pid).is_some_and(|comm| command_line_matches_claude(&comm)) {
+        return true;
+    }
+    process_command_line(pid).is_some_and(|args| command_line_matches_claude(&args))
 }
 
 fn is_claude_desktop_process(pid: u32) -> bool {
@@ -956,11 +995,10 @@ fn is_claude_desktop_process(pid: u32) -> bool {
     if is_claude_desktop_pid(pid) {
         return true;
     }
-    process_executable(pid).is_some_and(|comm| {
-        comm.contains("Claude.app")
-            || comm.contains("Claude Helper")
-            || comm.contains("Claude-3p/claude-code")
-    })
+    if process_executable(pid).is_some_and(|comm| command_line_matches_claude(&comm)) {
+        return true;
+    }
+    process_command_line(pid).is_some_and(|args| command_line_matches_claude(&args))
 }
 
 fn is_claude_desktop_pid(pid: u32) -> bool {
@@ -1046,4 +1084,30 @@ fn find_terminal_ancestor(mut pid: u32) -> Option<String> {
         pid = ppid_str.parse::<u32>().ok()?;
     }
     None
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod live_probes {
+    use super::*;
+
+    #[test]
+    #[ignore = "manual macOS integration probe; run with: cargo test live_probe -- --ignored --nocapture"]
+    fn live_probe_session_host_detection() {
+        let cwd = std::env::var("ATOLL_PROBE_CWD")
+            .unwrap_or_else(|_| "/Users/yingguangshanshuo/code/Atoll".to_string());
+        eprintln!("cwd: {cwd}");
+        eprintln!(
+            "frontmost_is_claude_desktop: {}",
+            frontmost_is_claude_desktop()
+        );
+        eprintln!("frontmost_is_terminal: {}", frontmost_is_terminal());
+        eprintln!(
+            "detect_claude_session_host: {:?}",
+            detect_claude_session_host(&cwd)
+        );
+        eprintln!(
+            "detect_claude_session_host_at_hook: {:?}",
+            detect_claude_session_host_at_hook(&cwd, None)
+        );
+    }
 }

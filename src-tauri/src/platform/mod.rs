@@ -192,18 +192,20 @@ pub fn detect_claude_session_host(cwd: &str) -> SessionHost {
 }
 
 /// Prefer frontmost-app snapshot while the hook fires, before Atoll takes focus.
-pub fn detect_claude_session_host_at_hook(cwd: &str) -> SessionHost {
+/// Falls back to `previous_app_pid` when Atoll is already frontmost (rapid-fire approvals).
+pub fn detect_claude_session_host_at_hook(cwd: &str, previous_app_pid: Option<i64>) -> SessionHost {
     #[cfg(target_os = "macos")]
     {
-        return macos::detect_claude_session_host_at_hook(cwd);
+        return macos::detect_claude_session_host_at_hook(cwd, previous_app_pid);
     }
     #[cfg(target_os = "windows")]
     {
+        let _ = previous_app_pid;
         return windows::detect_claude_session_host(cwd);
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        let _ = cwd;
+        let _ = (cwd, previous_app_pid);
         SessionHost::Unknown
     }
 }
@@ -302,22 +304,13 @@ pub fn open_agent_app(
         return match host {
             SessionHost::ClaudeDesktop => focus_claude_app(app),
             SessionHost::ClaudeCli => open_in_terminal(cwd),
-            SessionHost::Unknown => match claude_unknown_jump_host(detect_claude_session_host(cwd)) {
-                SessionHost::ClaudeDesktop => focus_claude_app(app),
-                SessionHost::ClaudeCli | SessionHost::Unknown => open_in_terminal(cwd),
-            },
+            SessionHost::Unknown => focus_claude_app(app),
         };
     }
 
     open_in_terminal(cwd)
 }
 
-fn claude_unknown_jump_host(detected: SessionHost) -> SessionHost {
-    match detected {
-        SessionHost::ClaudeDesktop => SessionHost::ClaudeDesktop,
-        SessionHost::ClaudeCli | SessionHost::Unknown => SessionHost::ClaudeCli,
-    }
-}
 
 pub fn activate_claude_app(app: &AppHandle) -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -458,26 +451,6 @@ pub fn open_in_terminal(cwd: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn claude_unknown_jump_prefers_terminal_when_still_unknown() {
-        assert_eq!(
-            claude_unknown_jump_host(SessionHost::Unknown),
-            SessionHost::ClaudeCli
-        );
-    }
-
-    #[test]
-    fn claude_unknown_jump_opens_claude_only_when_detected() {
-        assert_eq!(
-            claude_unknown_jump_host(SessionHost::ClaudeDesktop),
-            SessionHost::ClaudeDesktop
-        );
-        assert_eq!(
-            claude_unknown_jump_host(SessionHost::ClaudeCli),
-            SessionHost::ClaudeCli
-        );
-    }
 
     #[test]
     fn claude_approval_fallback_prefers_terminal_for_cli_host() {

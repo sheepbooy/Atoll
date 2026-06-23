@@ -2692,8 +2692,7 @@ interface SessionSubviewNavProps {
 function sessionJumpLabel(agent?: AgentKind, sessionHost?: SessionHost): string {
   if (agent === "claude") {
     if (sessionHost === "claudeCli") return "Terminal";
-    if (sessionHost === "claudeDesktop") return "Open Claude";
-    return "Open session";
+    return "Open Claude";
   }
   return "Terminal";
 }

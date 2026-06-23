@@ -510,7 +510,15 @@ fn submit_blocking_permission_request(
         roll_over_token_usage_if_needed(&state);
     }
     if matches!(session_agent, AgentKind::Claude) {
-        let host = platform::detect_claude_session_host_at_hook(&session_cwd);
+        register_known_session(
+            &state,
+            &session_id,
+            session_agent.clone(),
+            &session_cwd,
+            None,
+        );
+        let prev_pid = state.previous_app_pid.lock().ok().and_then(|g| *g);
+        let host = platform::detect_claude_session_host_at_hook(&session_cwd, prev_pid);
         if host != platform::SessionHost::Unknown {
             crate::store_claude_session_host(&state, &session_id, host);
         } else {
