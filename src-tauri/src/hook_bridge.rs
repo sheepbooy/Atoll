@@ -401,15 +401,15 @@ fn route_claude_request(
         )
         .or_else(|error| Ok(hook_defer_response(&hook_event_name, &error))),
         "PostToolUse" | "PostToolUseFailure" => {
-            sync_tool_completion(app, payload, AgentKind::Claude)?;
+            sync_tool_completion(app, payload, AgentKind::Claude, Some(stream))?;
             Ok(json!({}))
         }
         "Stop" | "StopFailure" => {
-            sync_turn_completion(app, payload, AgentKind::Claude, true)?;
+            sync_turn_completion(app, payload, AgentKind::Claude, true, Some(stream))?;
             Ok(json!({}))
         }
         "SubagentStop" => {
-            sync_turn_completion(app, payload, AgentKind::Claude, false)?;
+            sync_turn_completion(app, payload, AgentKind::Claude, false, Some(stream))?;
             Ok(json!({}))
         }
         _ => Ok(json!({})),
@@ -440,15 +440,15 @@ fn route_codex_request(
         )
         .or_else(|error| Ok(hook_defer_response(&hook_event_name, &error))),
         "PostToolUse" => {
-            sync_tool_completion(app, payload, AgentKind::Codex)?;
+            sync_tool_completion(app, payload, AgentKind::Codex, None)?;
             Ok(json!({}))
         }
         "Stop" => {
-            sync_turn_completion(app, payload, AgentKind::Codex, true)?;
+            sync_turn_completion(app, payload, AgentKind::Codex, true, None)?;
             Ok(json!({}))
         }
         "SubagentStop" => {
-            sync_turn_completion(app, payload, AgentKind::Codex, false)?;
+            sync_turn_completion(app, payload, AgentKind::Codex, false, None)?;
             Ok(json!({}))
         }
         _ => Ok(json!({})),
@@ -659,6 +659,7 @@ fn sync_tool_completion(
     app: AppHandle,
     payload: Value,
     agent: AgentKind,
+    stream: Option<&TcpStream>,
 ) -> Result<(), String> {
     let state = app.state::<AppState>();
     let agent_label = agent_resolved_label(&agent);
@@ -700,7 +701,7 @@ fn sync_tool_completion(
                 completed_transcript_path.as_deref(),
             );
             if matches!(agent, AgentKind::Claude) {
-                let host = detect_host_for_non_permission_hook(&cwd, completed_transcript_path.as_deref());
+                let host = detect_host_for_non_permission_hook(stream, &cwd, completed_transcript_path.as_deref());
                 if host != platform::SessionHost::Unknown {
                     crate::store_claude_session_host(&state, session_id, host);
                 }
@@ -772,6 +773,7 @@ fn sync_turn_completion(
     payload: Value,
     agent: AgentKind,
     touch_activity: bool,
+    stream: Option<&TcpStream>,
 ) -> Result<(), String> {
     let state = app.state::<AppState>();
     let agent_label = agent_resolved_label(&agent);
@@ -826,7 +828,7 @@ fn sync_turn_completion(
                 transcript_path.as_deref(),
             );
             if matches!(agent, AgentKind::Claude) {
-                let host = detect_host_for_non_permission_hook(&cwd, transcript_path.as_deref());
+                let host = detect_host_for_non_permission_hook(stream, &cwd, transcript_path.as_deref());
                 if host != platform::SessionHost::Unknown {
                     crate::store_claude_session_host(&state, session_id, host);
                 }
@@ -1002,11 +1004,20 @@ fn is_any_terminal_frontmost() -> bool {
 }
 
 /// Detect session host for non-permission hooks (Stop, PostToolUse, SubagentStop).
-/// These events don't block so we can't use the TCP peer, but we still have
-/// transcript path and Claude Desktop running-state as signals.
-fn detect_host_for_non_permission_hook(cwd: &str, transcript_path: Option<&str>) -> platform::SessionHost {
+/// Uses peer process tree as primary signal (same as PreToolUse), with transcript
+/// path and Desktop running-state as fallbacks.
+fn detect_host_for_non_permission_hook(stream: Option<&TcpStream>, cwd: &str, transcript_path: Option<&str>) -> platform::SessionHost {
     eprintln!("[Atoll:host-detect] === non-permission hook detection ===");
     eprintln!("[Atoll:host-detect] cwd={cwd:?}, transcript_path={transcript_path:?}");
+
+    if let Some(stream) = stream {
+        let peer_host = hook_peer_session_host(stream);
+        eprintln!("[Atoll:host-detect] peer_process_tree → {peer_host:?}");
+        if peer_host != platform::SessionHost::Unknown {
+            eprintln!("[Atoll:host-detect] RESULT: {peer_host:?} (from peer process tree)");
+            return peer_host;
+        }
+    }
 
     if let Some(path) = transcript_path {
         if is_desktop_transcript_path(path) {
