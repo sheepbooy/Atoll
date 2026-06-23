@@ -866,6 +866,20 @@ pub fn detect_claude_session_host(cwd: &str) -> SessionHost {
     resolve_claude_session_host(cwd, None)
 }
 
+/// Walk the peer process's ancestry to determine if it originates from a
+/// terminal (CLI) or Claude Desktop.  This is the most reliable method when
+/// both Desktop and CLI share a working directory, because the frontmost app
+/// hint becomes ambiguous (e.g. when Cursor is in the foreground).
+pub fn detect_session_host_from_peer_pid(pid: u32) -> SessionHost {
+    if find_terminal_ancestor(pid).is_some() {
+        return SessionHost::ClaudeCli;
+    }
+    if is_in_claude_desktop_tree(pid) {
+        return SessionHost::ClaudeDesktop;
+    }
+    SessionHost::Unknown
+}
+
 /// Snapshot frontmost app at hook time, before Atoll steals focus.
 /// If Atoll is already frontmost (rapid-fire approvals), fall back to previous_app_pid.
 pub fn detect_claude_session_host_at_hook(cwd: &str, previous_app_pid: Option<i64>) -> SessionHost {
@@ -1108,6 +1122,26 @@ mod live_probes {
         eprintln!(
             "detect_claude_session_host_at_hook: {:?}",
             detect_claude_session_host_at_hook(&cwd, None)
+        );
+
+        let cli_pid: u32 = std::env::var("ATOLL_PROBE_CLI_PID")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3077);
+        let desktop_pid: u32 = std::env::var("ATOLL_PROBE_DESKTOP_PID")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(88646);
+
+        eprintln!(
+            "detect_session_host_from_peer_pid(CLI {}): {:?}",
+            cli_pid,
+            detect_session_host_from_peer_pid(cli_pid)
+        );
+        eprintln!(
+            "detect_session_host_from_peer_pid(Desktop {}): {:?}",
+            desktop_pid,
+            detect_session_host_from_peer_pid(desktop_pid)
         );
     }
 }

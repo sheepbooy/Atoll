@@ -1308,6 +1308,13 @@ pub(crate) fn claude_session_host(state: &AppState, session_id: &str, cwd: &str)
             if entry.host != platform::SessionHost::Unknown {
                 return entry.host;
             }
+            if let Some(path) = entry.transcript_path.as_deref() {
+                if let Some(host) = host_from_transcript_path(path) {
+                    drop(known);
+                    store_claude_session_host(state, session_id, host);
+                    return host;
+                }
+            }
         }
     }
 
@@ -1339,8 +1346,23 @@ fn session_host_for_summary(
         if entry.host != platform::SessionHost::Unknown {
             return entry.host;
         }
+        if let Some(path) = entry.transcript_path.as_deref() {
+            if let Some(host) = host_from_transcript_path(path) {
+                return host;
+            }
+        }
     }
     platform::detect_claude_session_host(cwd)
+}
+
+fn host_from_transcript_path(path: &str) -> Option<platform::SessionHost> {
+    if path.contains("/.claude/") || path.contains("/claude/projects/") {
+        return Some(platform::SessionHost::ClaudeCli);
+    }
+    if path.contains("Claude-3p") || path.contains("local-agent-mode-sessions") {
+        return Some(platform::SessionHost::ClaudeDesktop);
+    }
+    None
 }
 
 pub(crate) fn touch_session_last_seen(state: &AppState, session_id: &str) {
@@ -3700,6 +3722,67 @@ mod core_tests {
                 &AgentKind::Claude,
             ),
             platform::SessionHost::ClaudeDesktop,
+        );
+    }
+
+    #[test]
+    fn session_host_from_transcript_path_when_stored_unknown() {
+        let known_sessions = HashMap::from([
+            (
+                "cli-unknown".into(),
+                KnownSession {
+                    agent: AgentKind::Claude,
+                    cwd: "/tmp/project".into(),
+                    transcript_path: Some("/Users/test/.claude/projects/-tmp-project/abc.jsonl".into()),
+                    last_activity: iso_timestamp_now(),
+                    host: platform::SessionHost::Unknown,
+                },
+            ),
+            (
+                "desktop-unknown".into(),
+                KnownSession {
+                    agent: AgentKind::Claude,
+                    cwd: "/tmp/project".into(),
+                    transcript_path: Some("/Users/test/Library/Application Support/Claude-3p/local-agent-mode-sessions/xyz.jsonl".into()),
+                    last_activity: iso_timestamp_now(),
+                    host: platform::SessionHost::Unknown,
+                },
+            ),
+        ]);
+
+        assert_eq!(
+            session_host_for_summary(
+                &known_sessions,
+                "cli-unknown",
+                "/tmp/project",
+                &AgentKind::Claude,
+            ),
+            platform::SessionHost::ClaudeCli,
+        );
+        assert_eq!(
+            session_host_for_summary(
+                &known_sessions,
+                "desktop-unknown",
+                "/tmp/project",
+                &AgentKind::Claude,
+            ),
+            platform::SessionHost::ClaudeDesktop,
+        );
+    }
+
+    #[test]
+    fn host_from_transcript_path_patterns() {
+        assert_eq!(
+            host_from_transcript_path("/Users/me/.claude/projects/-tmp-project/abc.jsonl"),
+            Some(platform::SessionHost::ClaudeCli),
+        );
+        assert_eq!(
+            host_from_transcript_path("/Users/me/Library/Application Support/Claude-3p/local-agent-mode-sessions/xyz.jsonl"),
+            Some(platform::SessionHost::ClaudeDesktop),
+        );
+        assert_eq!(
+            host_from_transcript_path("/some/random/path/transcript.jsonl"),
+            None,
         );
     }
 

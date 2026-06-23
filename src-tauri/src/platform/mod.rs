@@ -210,6 +210,19 @@ pub fn detect_claude_session_host_at_hook(cwd: &str, previous_app_pid: Option<i6
     }
 }
 
+/// Determine session host by checking the hook peer process's ancestry.
+pub fn detect_session_host_from_peer_pid(pid: u32) -> SessionHost {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::detect_session_host_from_peer_pid(pid);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = pid;
+        SessionHost::Unknown
+    }
+}
+
 fn restore_remembered_app_focus(state: &AppState) -> bool {
     #[cfg(target_os = "macos")]
     {

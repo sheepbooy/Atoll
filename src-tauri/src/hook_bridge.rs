@@ -502,6 +502,7 @@ fn submit_blocking_permission_request(
     let session_id = request.session.clone();
     let session_cwd = request.cwd.clone();
     let session_agent = request.agent.clone();
+    let request_transcript_path = request.transcript_path.clone();
 
     {
         let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
@@ -517,12 +518,9 @@ fn submit_blocking_permission_request(
             &session_cwd,
             None,
         );
-        let prev_pid = state.previous_app_pid.lock().ok().and_then(|g| *g);
-        let host = platform::detect_claude_session_host_at_hook(&session_cwd, prev_pid);
+        let host = detect_host_for_claude_hook(&state, stream, &session_cwd, &request_transcript_path);
         if host != platform::SessionHost::Unknown {
             crate::store_claude_session_host(&state, &session_id, host);
-        } else {
-            let _ = crate::claude_session_host(&state, &session_id, &session_cwd);
         }
     }
     let snapshot = build_snapshot(&app, &state);
@@ -863,6 +861,69 @@ fn payload_transcript_path(payload: &Value) -> Option<&str> {
         .get("transcript_path")
         .and_then(Value::as_str)
         .or_else(|| payload.get("transcriptPath").and_then(Value::as_str))
+}
+
+/// Determine SessionHost for a Claude session.
+///
+/// Priority: peer process tree → transcript path → frontmost/cwd detection.
+fn detect_host_for_claude_hook(
+    state: &AppState,
+    stream: &TcpStream,
+    cwd: &str,
+    transcript_path: &Option<String>,
+) -> platform::SessionHost {
+    let peer_host = hook_peer_session_host(stream);
+    if peer_host != platform::SessionHost::Unknown {
+        return peer_host;
+    }
+
+    if let Some(path) = transcript_path.as_deref() {
+        if is_cli_transcript_path(path) {
+            return platform::SessionHost::ClaudeCli;
+        }
+        if is_desktop_transcript_path(path) {
+            return platform::SessionHost::ClaudeDesktop;
+        }
+    }
+
+    let prev_pid = state.previous_app_pid.lock().ok().and_then(|g| *g);
+    platform::detect_claude_session_host_at_hook(cwd, prev_pid)
+}
+
+/// Identify the session host by tracing the hook HTTP peer's process tree.
+fn hook_peer_session_host(stream: &TcpStream) -> platform::SessionHost {
+    let peer = match stream.peer_addr() {
+        Ok(addr) => addr,
+        Err(_) => return platform::SessionHost::Unknown,
+    };
+    let port = peer.port();
+    let own_pid = std::process::id();
+
+    let output = match std::process::Command::new("lsof")
+        .args(["-i", &format!("TCP@127.0.0.1:{port}"), "-n", "-P", "-t"])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return platform::SessionHost::Unknown,
+    };
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    for line in text.lines() {
+        if let Ok(pid) = line.trim().parse::<u32>() {
+            if pid != own_pid {
+                return platform::detect_session_host_from_peer_pid(pid);
+            }
+        }
+    }
+    platform::SessionHost::Unknown
+}
+
+fn is_cli_transcript_path(path: &str) -> bool {
+    path.contains("/.claude/") || path.contains("/claude/projects/")
+}
+
+fn is_desktop_transcript_path(path: &str) -> bool {
+    path.contains("Claude-3p") || path.contains("local-agent-mode-sessions")
 }
 
 pub(crate) fn mark_matching_pending_request_complete(
