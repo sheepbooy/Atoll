@@ -1420,7 +1420,11 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
         Value::Object(Default::default())
     };
 
-    let hook_command = format_hook_command(&node_path, &script_path);
+    let hook_command = format_hook_command(
+        hook_runner_for_command(&app).as_deref(),
+        &node_path,
+        &script_path,
+    );
     let atoll_hooks = serde_json::json!({
         "PermissionRequest": [
             {
@@ -1627,7 +1631,11 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
         Value::Object(Default::default())
     };
 
-    let hook_command = format_hook_command(&node_path, &script_path);
+    let hook_command = format_hook_command(
+        hook_runner_for_command(&app).as_deref(),
+        &node_path,
+        &script_path,
+    );
     let atoll_hooks = serde_json::json!({
         "PermissionRequest": [
             {
@@ -1776,21 +1784,26 @@ fn normalize_hook_script_path(path: &str) -> String {
         .into_owned()
 }
 
+#[cfg(windows)]
+fn resolve_node_executable_from_path() -> Option<String> {
+    if let Ok(path_var) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            let candidate = dir.join("node.exe");
+            if candidate.is_file() {
+                return Some(normalize_hook_script_path(
+                    &candidate.to_string_lossy(),
+                ));
+            }
+        }
+    }
+    None
+}
+
 fn resolve_node_executable() -> Result<String, String> {
     #[cfg(windows)]
     {
-        if let Ok(output) = std::process::Command::new("where.exe").arg("node").output() {
-            if output.status.success() {
-                if let Some(path) = String::from_utf8_lossy(&output.stdout)
-                    .lines()
-                    .map(str::trim)
-                    .find(|line| !line.is_empty())
-                {
-                    if std::path::Path::new(path).exists() {
-                        return Ok(normalize_hook_script_path(path));
-                    }
-                }
-            }
+        if let Some(path) = resolve_node_executable_from_path() {
+            return Ok(path);
         }
 
         for candidate in [
@@ -1828,7 +1841,11 @@ fn resolve_node_executable() -> Result<String, String> {
     }
 }
 
-fn format_hook_command(node_path: &str, script_path: &str) -> String {
+fn format_hook_command(
+    runner_path: Option<&str>,
+    node_path: &str,
+    script_path: &str,
+) -> String {
     let node_path = {
         let mut path = normalize_hook_script_path(node_path);
         #[cfg(windows)]
@@ -1845,6 +1862,18 @@ fn format_hook_command(node_path: &str, script_path: &str) -> String {
         }
         path
     };
+
+    #[cfg(windows)]
+    if let Some(runner_path) = runner_path {
+        let runner_path = normalize_hook_script_path(runner_path).replace('\\', "/");
+        return format!(
+            "\"{}\" \"{}\" \"{}\"",
+            runner_path.replace('"', "\\\""),
+            node_path.replace('"', "\\\""),
+            script_path.replace('"', "\\\"")
+        );
+    }
+
     format!(
         "\"{}\" \"{}\"",
         node_path.replace('"', "\\\""),
@@ -2032,12 +2061,29 @@ fn extract_hook_command_parts(command: &str) -> Option<(String, String)> {
         return Some(("node".to_string(), normalize_hook_script_path(&script)));
     }
 
-    let (node, rest) = extract_first_quoted_value(trimmed)?;
+    let (first, rest) = extract_first_quoted_value(trimmed)?;
+    if is_hook_runner_path(&first) {
+        let (node, script_rest) = extract_first_quoted_value(rest)?;
+        let (script, _) = extract_first_quoted_value(script_rest)?;
+        return Some((
+            normalize_hook_script_path(&node),
+            normalize_hook_script_path(&script),
+        ));
+    }
+
+    let (node, rest) = (first, rest);
     let (script, _) = extract_first_quoted_value(rest)?;
     Some((
         normalize_hook_script_path(&node),
         normalize_hook_script_path(&script),
     ))
+}
+
+fn is_hook_runner_path(path: &str) -> bool {
+    let normalized = path.replace('\\', "/").to_ascii_lowercase();
+    normalized.ends_with("/atoll-hook-runner.exe")
+        || normalized.ends_with("/atoll-hook-runner")
+        || normalized.contains("/atoll-hook-runner-")
 }
 
 fn extract_node_script_path(command: &str) -> Option<String> {
@@ -2152,6 +2198,68 @@ fn resolve_hook_script_path(app: &AppHandle, script_name: &str) -> Option<String
     }
 
     None
+}
+
+#[cfg(windows)]
+fn resolve_hook_runner_path(app: &AppHandle) -> Option<String> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        candidates.push(resource_dir.join("scripts").join("atoll-hook-runner.exe"));
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            candidates.push(
+                exe_dir
+                    .join("resources")
+                    .join("scripts")
+                    .join("atoll-hook-runner.exe"),
+            );
+            candidates.push(exe_dir.join("scripts").join("atoll-hook-runner.exe"));
+        }
+        for ancestor in exe.ancestors().skip(1) {
+            if ancestor.join("src-tauri").exists() {
+                candidates.push(
+                    ancestor
+                        .join("src-tauri")
+                        .join("generated")
+                        .join("atoll-hook-runner.exe"),
+                );
+                candidates.push(
+                    ancestor
+                        .join("target")
+                        .join("debug")
+                        .join("atoll-hook-runner.exe"),
+                );
+                candidates.push(
+                    ancestor
+                        .join("target")
+                        .join("release")
+                        .join("atoll-hook-runner.exe"),
+                );
+            }
+        }
+    }
+
+    for candidate in candidates {
+        if candidate.is_file() {
+            return Some(normalize_hook_script_path(
+                &candidate.to_string_lossy(),
+            ));
+        }
+    }
+
+    None
+}
+
+#[cfg(not(windows))]
+fn resolve_hook_runner_path(_app: &AppHandle) -> Option<String> {
+    None
+}
+
+fn hook_runner_for_command(app: &AppHandle) -> Option<String> {
+    resolve_hook_runner_path(app)
 }
 
 fn has_atoll_claude_hooks(settings: &Value) -> bool {
@@ -4287,6 +4395,7 @@ mod codex_hooks_tests {
     #[test]
     fn format_hook_command_quotes_paths_with_spaces() {
         let command = format_hook_command(
+            None,
             "/opt/homebrew/bin/node",
             "/Applications/Atoll.app/scripts/atoll-codex-hook.mjs",
         );
@@ -4296,6 +4405,7 @@ mod codex_hooks_tests {
         );
 
         let windows_command = format_hook_command(
+            None,
             r"C:\Program Files\nodejs\node.exe",
             r"C:\Program Files\Atoll\resources\scripts\atoll-claude-hook.mjs",
         );
@@ -4310,7 +4420,24 @@ mod codex_hooks_tests {
             "\"C:\\Program Files\\nodejs\\node.exe\" \"C:\\Program Files\\Atoll\\resources\\scripts\\atoll-claude-hook.mjs\""
         );
 
+        let runner_command = format_hook_command(
+            Some(r"C:\Program Files\Atoll\resources\scripts\atoll-hook-runner.exe"),
+            r"C:\Program Files\nodejs\node.exe",
+            r"C:\Program Files\Atoll\resources\scripts\atoll-claude-hook.mjs",
+        );
+        #[cfg(windows)]
+        assert_eq!(
+            runner_command,
+            "\"C:/Program Files/Atoll/resources/scripts/atoll-hook-runner.exe\" \"C:/Program Files/nodejs/node.exe\" \"C:/Program Files/Atoll/resources/scripts/atoll-claude-hook.mjs\""
+        );
+        #[cfg(not(windows))]
+        assert_eq!(
+            runner_command,
+            "\"C:\\Program Files\\nodejs\\node.exe\" \"C:\\Program Files\\Atoll\\resources\\scripts\\atoll-claude-hook.mjs\""
+        );
+
         let unc_command = format_hook_command(
+            None,
             r"C:\Program Files\nodejs\node.exe",
             r"\\?\C:\Program Files\Atoll\scripts\atoll-claude-hook.mjs",
         );
@@ -4346,6 +4473,12 @@ mod codex_hooks_tests {
             ),
             Some(r"C:/Program Files/Atoll/scripts/atoll-claude-hook.mjs".into())
         );
+        assert_eq!(
+            extract_node_script_path(
+                r#""C:/Program Files/Atoll/resources/scripts/atoll-hook-runner.exe" "C:/Program Files/nodejs/node.exe" "C:/Program Files/Atoll/scripts/atoll-claude-hook.mjs""#
+            ),
+            Some(r"C:/Program Files/Atoll/scripts/atoll-claude-hook.mjs".into())
+        );
     }
 }
 
@@ -4363,7 +4496,7 @@ mod claude_hooks_tests {
                 "matcher": "*",
                 "hooks": [{
                     "type": "command",
-                    "command": format_hook_command("/opt/homebrew/bin/node", "/tmp/atoll-claude-hook.mjs"),
+                    "command": format_hook_command(None, "/opt/homebrew/bin/node", "/tmp/atoll-claude-hook.mjs"),
                     "timeout": 1800
                 }]
             }],
@@ -4371,7 +4504,7 @@ mod claude_hooks_tests {
                 "matcher": "*",
                 "hooks": [{
                     "type": "command",
-                    "command": format_hook_command("/opt/homebrew/bin/node", "/tmp/atoll-claude-hook.mjs"),
+                    "command": format_hook_command(None, "/opt/homebrew/bin/node", "/tmp/atoll-claude-hook.mjs"),
                     "timeout": 30
                 }]
             }],
@@ -4379,7 +4512,7 @@ mod claude_hooks_tests {
                 "matcher": "*",
                 "hooks": [{
                     "type": "command",
-                    "command": format_hook_command("/opt/homebrew/bin/node", "/tmp/atoll-claude-hook.mjs"),
+                    "command": format_hook_command(None, "/opt/homebrew/bin/node", "/tmp/atoll-claude-hook.mjs"),
                     "timeout": 30
                 }]
             }]
@@ -4432,7 +4565,7 @@ mod claude_hooks_tests {
                 "matcher": "*",
                 "hooks": [{
                     "type": "command",
-                    "command": format_hook_command("/opt/homebrew/bin/node", "/tmp/atoll-claude-hook.mjs")
+                    "command": format_hook_command(None, "/opt/homebrew/bin/node", "/tmp/atoll-claude-hook.mjs")
                 }]
             }],
             "PostToolUse": [],

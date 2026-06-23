@@ -2,6 +2,19 @@ use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+#[cfg(windows)]
+fn hidden_command(program: &str) -> Command {
+    let mut command = Command::new(program);
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+}
+
 use tauri::{AppHandle, LogicalPosition, Manager, Monitor, PhysicalSize, WebviewWindow};
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{GetLastError, HANDLE, ERROR_ALREADY_EXISTS};
@@ -276,7 +289,7 @@ pub fn focus_claude_app() -> Result<(), String> {
         return Ok(());
     }
 
-    Command::new("cmd")
+    hidden_command("cmd")
         .args(["/C", "start", "", "Claude"])
         .spawn()
         .map_err(|error| format!("Failed to focus Claude: {error}"))?;
@@ -340,7 +353,7 @@ pub fn open_in_terminal(cwd: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    Command::new("cmd")
+    hidden_command("cmd")
         .args(["/C", "start", "", "cmd", "/k", &format!("cd /d \"{cwd}\"")])
         .spawn()
         .map_err(|error| format!("Failed to open terminal: {error}"))?;

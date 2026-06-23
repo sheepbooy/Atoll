@@ -14,16 +14,6 @@ pub enum SessionHost {
     ClaudeCli,
 }
 
-impl SessionHost {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            SessionHost::Unknown => "unknown",
-            SessionHost::ClaudeDesktop => "claudeDesktop",
-            SessionHost::ClaudeCli => "claudeCli",
-        }
-    }
-}
-
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "windows")]

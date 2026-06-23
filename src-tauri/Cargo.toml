@@ -4,6 +4,7 @@ version = "0.1.16"
 description = "A floating approval island for local coding agents."
 authors = ["Atoll"]
 edition = "2021"
+default-run = "atoll"
 
 [lib]
 name = "atoll_lib"
