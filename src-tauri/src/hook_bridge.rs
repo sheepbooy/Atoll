@@ -10,7 +10,7 @@ use socket2::{Domain, Socket, Type};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
-    build_snapshot, iso_timestamp_now, is_codex_internal_session, purge_tracked_session,
+    build_snapshot, iso_timestamp_now, is_codex_internal_session, platform, purge_tracked_session,
     refresh_session_token_usage, register_known_session, roll_over_token_usage_if_needed,
     show_main_window_for_approval, touch_session_activity, AgentKind, AppState, Decision,
     DecisionWithNote, PermissionRequest, PermissionStatus,
@@ -493,11 +493,23 @@ fn submit_blocking_permission_request(
         waiters.insert(request_id.clone(), sender);
     }
 
+    let session_id = request.session.clone();
+    let session_cwd = request.cwd.clone();
+    let session_agent = request.agent.clone();
+
     {
         let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
         touch_session_activity(&state, &request.session);
         requests.insert(0, request);
         roll_over_token_usage_if_needed(&state);
+    }
+    if matches!(session_agent, AgentKind::Claude) {
+        let host = platform::detect_claude_session_host_at_hook(&session_cwd);
+        if host != platform::SessionHost::Unknown {
+            crate::store_claude_session_host(&state, &session_id, host);
+        } else {
+            let _ = crate::claude_session_host(&state, &session_id, &session_cwd);
+        }
     }
     let snapshot = build_snapshot(&app, &state);
     app.emit("snapshot-changed", &snapshot)

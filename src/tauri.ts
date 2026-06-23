@@ -38,6 +38,8 @@ export interface IslandSnapshot {
   hookHealth: HookHealthSnapshot;
 }
 
+export type SessionHost = "unknown" | "claudeDesktop" | "claudeCli";
+
 export interface SessionSummary {
   sessionId: string;
   agent: AgentKind;
@@ -47,6 +49,7 @@ export interface SessionSummary {
   lastActivity: string;
   transcriptPath: string | null;
   pinned?: boolean;
+  sessionHost?: SessionHost;
 }
 
 export interface ChatMessage {
@@ -184,6 +187,8 @@ export interface HookStatus {
   scriptFound: boolean;
   settingsPath: string;
   scriptPath: string;
+  nodePath?: string;
+  nodeFound?: boolean;
 }
 
 export interface HookHealthSnapshot {
@@ -197,12 +202,16 @@ export const EMPTY_HOOK_HEALTH: HookHealthSnapshot = {
     scriptFound: false,
     settingsPath: "",
     scriptPath: "",
+    nodePath: "",
+    nodeFound: true,
   },
   codex: {
     installed: false,
     scriptFound: false,
     settingsPath: "",
     scriptPath: "",
+    nodePath: "",
+    nodeFound: true,
   },
 };
 
@@ -228,11 +237,14 @@ export function normalizeHookStatus(raw: unknown): HookStatus {
   if (!record) {
     return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
   }
+  const nodeFoundRaw = record.nodeFound ?? record.node_found;
   return {
     installed: readBool(record, "installed", "installed"),
     scriptFound: readBool(record, "scriptFound", "script_found"),
     settingsPath: readString(record, "settingsPath", "settings_path"),
     scriptPath: readString(record, "scriptPath", "script_path"),
+    nodePath: readString(record, "nodePath", "node_path"),
+    nodeFound: nodeFoundRaw === undefined ? true : Boolean(nodeFoundRaw),
   };
 }
 
@@ -322,12 +334,32 @@ export async function quitAtoll() {
   return invoke<void>("quit_atoll");
 }
 
-export async function deactivateAtoll() {
+export async function deactivateAtoll(
+  agent?: AgentKind,
+  session?: string,
+  cwd?: string,
+) {
   if (!isTauriRuntime) {
     return;
   }
 
-  return invoke<void>("deactivate_atoll");
+  return invoke<void>("deactivate_atoll", {
+    agent: agent ?? null,
+    session: session ?? null,
+    cwd: cwd ?? null,
+  });
+}
+
+export async function openAgentApp(
+  agent: AgentKind,
+  cwd: string,
+  session?: string,
+): Promise<void> {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  return invoke<void>("open_agent_app", { agent, cwd, session: session ?? null });
 }
 
 export async function setIslandPresentation(
@@ -417,6 +449,14 @@ export async function openInTerminal(cwd: string): Promise<void> {
   }
 
   return invoke<void>("open_in_terminal", { cwd });
+}
+
+export async function focusClaudeApp(): Promise<void> {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  return invoke<void>("focus_claude_app");
 }
 
 export async function openUrl(url: string): Promise<void> {

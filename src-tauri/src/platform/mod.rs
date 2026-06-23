@@ -4,6 +4,26 @@ use tauri::{App, AppHandle, LogicalPosition, Monitor, PhysicalSize, WebviewWindo
 
 use crate::{AppState, HomeWindowBounds, NotchMetrics};
 
+/// Where a Claude session is running — used to restore focus correctly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SessionHost {
+    #[default]
+    Unknown,
+    ClaudeDesktop,
+    ClaudeCli,
+}
+
+impl SessionHost {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SessionHost::Unknown => "unknown",
+            SessionHost::ClaudeDesktop => "claudeDesktop",
+            SessionHost::ClaudeCli => "claudeCli",
+        }
+    }
+}
+
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "windows")]
@@ -165,14 +185,141 @@ pub fn set_island_window_frame(
     }
 }
 
-pub fn restore_focus_after_approval(state: &AppState) {
+pub fn detect_claude_session_host(cwd: &str) -> SessionHost {
     #[cfg(target_os = "macos")]
-    macos::deactivate_atoll(state);
+    {
+        return macos::detect_claude_session_host(cwd);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return windows::detect_claude_session_host(cwd);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = cwd;
+        SessionHost::Unknown
+    }
+}
+
+/// Prefer frontmost-app snapshot while the hook fires, before Atoll takes focus.
+pub fn detect_claude_session_host_at_hook(cwd: &str) -> SessionHost {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::detect_claude_session_host_at_hook(cwd);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return windows::detect_claude_session_host(cwd);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = cwd;
+        SessionHost::Unknown
+    }
+}
+
+fn clear_previous_app_pid(state: &AppState) {
+    let _ = state
+        .previous_app_pid
+        .lock()
+        .ok()
+        .and_then(|mut guard| guard.take());
+}
+
+fn restore_terminal_focus(state: &AppState, cwd: &str) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        if macos::activate_previous_app_if_terminal(state) {
+            return true;
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if windows::activate_previous_app_if_terminal(state) {
+            return true;
+        }
+    }
+    open_in_terminal(cwd).is_ok()
+}
+
+pub fn restore_focus_after_approval(
+    app: &AppHandle,
+    state: &AppState,
+    agent: Option<&str>,
+    session_id: Option<&str>,
+    cwd: Option<&str>,
+) {
+    if agent == Some("claude") {
+        if let (Some(session_id), Some(cwd)) = (session_id, cwd) {
+            let host = crate::claude_session_host(state, session_id, cwd);
+            match host {
+                SessionHost::ClaudeDesktop => {
+                    let _ = focus_claude_app(app);
+                    clear_previous_app_pid(state);
+                    return;
+                }
+                SessionHost::ClaudeCli => {
+                    if restore_terminal_focus(state, cwd) {
+                        return;
+                    }
+                }
+                SessionHost::Unknown => {}
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    macos::restore_previous_app_focus(state);
     #[cfg(target_os = "windows")]
     windows::restore_foreground_window(state);
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = state;
+    }
+}
+
+pub fn open_agent_app(
+    app: &AppHandle,
+    state: &AppState,
+    agent: &str,
+    cwd: &str,
+    session_id: Option<&str>,
+) -> Result<(), String> {
+    if agent == "claude" {
+        let host = session_id
+            .map(|id| crate::claude_session_host(state, id, cwd))
+            .unwrap_or_else(|| detect_claude_session_host(cwd));
+        return match host {
+            SessionHost::ClaudeDesktop => focus_claude_app(app),
+            SessionHost::ClaudeCli => open_in_terminal(cwd),
+            SessionHost::Unknown => {
+                let detected = detect_claude_session_host(cwd);
+                match detected {
+                    SessionHost::ClaudeDesktop => focus_claude_app(app),
+                    SessionHost::ClaudeCli => open_in_terminal(cwd),
+                    SessionHost::Unknown => focus_claude_app(app),
+                }
+            }
+        };
+    }
+
+    open_in_terminal(cwd)
+}
+
+pub fn focus_claude_app(app: &AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::focus_claude_app(app);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        return windows::focus_claude_app();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = app;
+        Err("focus_claude_app is not supported on this platform".to_string())
     }
 }
 

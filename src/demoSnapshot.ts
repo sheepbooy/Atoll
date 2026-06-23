@@ -66,6 +66,8 @@ const demoHookInstalled: HookStatus = {
   scriptFound: true,
   settingsPath: "~/.claude/settings.json",
   scriptPath: "/Applications/Atoll.app/.../atoll-claude-hook.mjs",
+  nodePath: "/opt/homebrew/bin/node",
+  nodeFound: true,
 };
 
 const demoHookMissing: HookStatus = {
@@ -73,6 +75,8 @@ const demoHookMissing: HookStatus = {
   scriptFound: true,
   settingsPath: "~/.claude/settings.json",
   scriptPath: "/Applications/Atoll.app/.../atoll-claude-hook.mjs",
+  nodePath: "/opt/homebrew/bin/node",
+  nodeFound: true,
 };
 
 const demoCodexHookInstalled: HookStatus = {
@@ -80,6 +84,8 @@ const demoCodexHookInstalled: HookStatus = {
   scriptFound: true,
   settingsPath: "~/.codex/hooks.json",
   scriptPath: "/Applications/Atoll.app/.../atoll-codex-hook.mjs",
+  nodePath: "/opt/homebrew/bin/node",
+  nodeFound: true,
 };
 
 const demoCodexHookMissing: HookStatus = {
@@ -87,6 +93,8 @@ const demoCodexHookMissing: HookStatus = {
   scriptFound: true,
   settingsPath: "~/.codex/hooks.json",
   scriptPath: "/Applications/Atoll.app/.../atoll-codex-hook.mjs",
+  nodePath: "/opt/homebrew/bin/node",
+  nodeFound: true,
 };
 
 export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {

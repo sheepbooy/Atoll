@@ -88,6 +88,8 @@ struct SessionSummary {
     transcript_path: Option<String>,
     #[serde(default)]
     pinned: bool,
+    #[serde(default)]
+    session_host: platform::SessionHost,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -165,6 +167,8 @@ struct KnownSession {
     cwd: String,
     transcript_path: Option<String>,
     last_activity: String,
+    #[serde(default)]
+    host: platform::SessionHost,
 }
 
 pub(crate) struct AppState {
@@ -250,10 +254,10 @@ pub(crate) fn compute_listening_online(app: &AppHandle) -> bool {
     if capture::listening_online() {
         return true;
     }
-    let claude_ready = claude_hooks_readiness(app);
-    let codex_ready = codex_hooks_readiness(app);
-    let any_installed = claude_ready.0 || codex_ready.0;
-    let any_script_found = claude_ready.1 || codex_ready.1;
+    let claude_ready = claude_hook_status(app);
+    let codex_ready = codex_hook_status(app);
+    let any_installed = claude_ready.installed || codex_ready.installed;
+    let any_script_found = claude_ready.script_found || codex_ready.script_found;
     any_installed && any_script_found && hook_bridge::is_bridge_reachable(app)
 }
 
@@ -282,8 +286,21 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
         &pinned,
         online,
     );
+    drop(known_sessions);
+    persist_claude_session_hosts(state, &snapshot.sessions);
     snapshot.hook_health = hook_health;
     snapshot
+}
+
+fn persist_claude_session_hosts(state: &AppState, sessions: &[SessionSummary]) {
+    for session in sessions {
+        if !matches!(session.agent, AgentKind::Claude) {
+            continue;
+        }
+        if session.session_host == platform::SessionHost::ClaudeDesktop {
+            store_claude_session_host(state, &session.session_id, session.session_host);
+        }
+    }
 }
 
 fn sync_listening_online_snapshot(app: &AppHandle, state: &AppState) {
@@ -349,6 +366,8 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
                     .map(|path| path.to_string_lossy().into_owned())
                     .unwrap_or_default(),
                 script_path: claude_script_path,
+                node_path: String::new(),
+                node_found: resolve_node_executable().is_ok(),
             },
             codex: HookStatus {
                 installed: false,
@@ -358,32 +377,22 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
                     .map(|path| path.to_string_lossy().into_owned())
                     .unwrap_or_default(),
                 script_path: codex_script_path,
+                node_path: String::new(),
+                node_found: resolve_node_executable().is_ok(),
             },
         };
     }
 
-    let (claude_installed, claude_script_found, claude_settings_path, claude_script_path) =
-        claude_hooks_readiness(app);
-    let (codex_installed, codex_script_found, codex_settings_path, codex_script_path) =
-        codex_hooks_readiness(app);
+    let claude_status = claude_hook_status(app);
+    let codex_status = codex_hook_status(app);
 
     HookHealthSnapshot {
-        claude: HookStatus {
-            installed: claude_installed,
-            script_found: claude_script_found,
-            settings_path: claude_settings_path,
-            script_path: claude_script_path,
-        },
-        codex: HookStatus {
-            installed: codex_installed,
-            script_found: codex_script_found,
-            settings_path: codex_settings_path,
-            script_path: codex_script_path,
-        },
+        claude: claude_status,
+        codex: codex_status,
     }
 }
 
-fn claude_hooks_readiness(app: &AppHandle) -> (bool, bool, String, String) {
+fn claude_hook_status(app: &AppHandle) -> HookStatus {
     let settings_path = claude_settings_path()
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default();
@@ -394,10 +403,17 @@ fn claude_hooks_readiness(app: &AppHandle) -> (bool, bool, String, String) {
         .unwrap_or(false);
     let (script_path, script_found) =
         resolve_hook_script_readiness(app, "atoll-claude-hook.mjs", settings.as_ref());
-    (installed, script_found, settings_path, script_path)
+    build_hook_status(
+        installed,
+        script_found,
+        settings_path,
+        script_path,
+        settings.as_ref(),
+        "atoll-claude-hook",
+    )
 }
 
-fn codex_hooks_readiness(app: &AppHandle) -> (bool, bool, String, String) {
+fn codex_hook_status(app: &AppHandle) -> HookStatus {
     let hooks_path = codex_hooks_path()
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default();
@@ -408,7 +424,36 @@ fn codex_hooks_readiness(app: &AppHandle) -> (bool, bool, String, String) {
         .unwrap_or(false);
     let (script_path, script_found) =
         resolve_hook_script_readiness(app, "atoll-codex-hook.mjs", config.as_ref());
-    (installed, script_found, hooks_path, script_path)
+    build_hook_status(
+        installed,
+        script_found,
+        hooks_path,
+        script_path,
+        config.as_ref(),
+        "atoll-codex-hook",
+    )
+}
+
+fn build_hook_status(
+    installed: bool,
+    script_found: bool,
+    settings_path: String,
+    script_path: String,
+    config: Option<&Value>,
+    marker: &str,
+) -> HookStatus {
+    let node_path = config
+        .and_then(|cfg| configured_atoll_hook_node_path(cfg, marker))
+        .unwrap_or_default();
+    let node_found = node_executable_ready(&node_path);
+    HookStatus {
+        installed,
+        script_found,
+        settings_path,
+        script_path,
+        node_path,
+        node_found,
+    }
 }
 
 #[tauri::command]
@@ -1196,6 +1241,7 @@ pub(crate) fn register_known_session(
                 cwd: cwd.to_string(),
                 transcript_path: transcript_path.map(str::to_string),
                 last_activity: iso_timestamp_now(),
+                host: platform::SessionHost::Unknown,
             });
         if !cwd.is_empty() && cwd != "." {
             entry.cwd = cwd.to_string();
@@ -1203,7 +1249,70 @@ pub(crate) fn register_known_session(
         if let Some(path) = transcript_path {
             entry.transcript_path = Some(path.to_string());
         }
+        if matches!(agent, AgentKind::Claude) && entry.host == platform::SessionHost::Unknown {
+            let detected = platform::detect_claude_session_host(cwd);
+            if detected != platform::SessionHost::Unknown {
+                entry.host = detected;
+            }
+        }
     }
+}
+
+pub(crate) fn claude_session_host(state: &AppState, session_id: &str, cwd: &str) -> platform::SessionHost {
+    if let Ok(known) = state.known_sessions.lock() {
+        if let Some(entry) = known.get(session_id) {
+            if entry.host == platform::SessionHost::ClaudeDesktop {
+                return platform::SessionHost::ClaudeDesktop;
+            }
+            if entry.host == platform::SessionHost::ClaudeCli {
+                let upgraded = platform::detect_claude_session_host(cwd);
+                if upgraded == platform::SessionHost::ClaudeDesktop {
+                    drop(known);
+                    store_claude_session_host(state, session_id, upgraded);
+                    return upgraded;
+                }
+                return platform::SessionHost::ClaudeCli;
+            }
+        }
+    }
+
+    let detected = platform::detect_claude_session_host(cwd);
+    if detected != platform::SessionHost::Unknown {
+        store_claude_session_host(state, session_id, detected);
+    }
+    detected
+}
+
+pub(crate) fn store_claude_session_host(state: &AppState, session_id: &str, host: platform::SessionHost) {
+    if let Ok(mut known) = state.known_sessions.lock() {
+        if let Some(entry) = known.get_mut(session_id) {
+            entry.host = host;
+        }
+    }
+}
+
+fn session_host_for_summary(
+    known_sessions: &HashMap<String, KnownSession>,
+    session_id: &str,
+    cwd: &str,
+    agent: &AgentKind,
+) -> platform::SessionHost {
+    if !matches!(agent, AgentKind::Claude) {
+        return platform::SessionHost::Unknown;
+    }
+    if let Some(entry) = known_sessions.get(session_id) {
+        if entry.host == platform::SessionHost::ClaudeDesktop {
+            return platform::SessionHost::ClaudeDesktop;
+        }
+        if entry.host == platform::SessionHost::ClaudeCli {
+            let live = platform::detect_claude_session_host(cwd);
+            if live == platform::SessionHost::ClaudeDesktop {
+                return platform::SessionHost::ClaudeDesktop;
+            }
+            return platform::SessionHost::ClaudeCli;
+        }
+    }
+    platform::detect_claude_session_host(cwd)
 }
 
 pub(crate) fn touch_session_last_seen(state: &AppState, session_id: &str) {
@@ -1234,6 +1343,14 @@ struct HookStatus {
     script_found: bool,
     settings_path: String,
     script_path: String,
+    #[serde(default)]
+    node_path: String,
+    #[serde(default = "default_node_found")]
+    node_found: bool,
+}
+
+fn default_node_found() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -1250,6 +1367,8 @@ impl Default for HookStatus {
             script_found: false,
             settings_path: String::new(),
             script_path: String::new(),
+            node_path: String::new(),
+            node_found: true,
         }
     }
 }
@@ -1267,15 +1386,11 @@ fn get_claude_hook_status(app: AppHandle) -> Result<HookStatus, String> {
                 .map(|path| path.to_string_lossy().into_owned())
                 .unwrap_or_default(),
             script_path,
+            node_path: String::new(),
+            node_found: resolve_node_executable().is_ok(),
         });
     }
-    let (installed, script_found, settings_path, script_path) = claude_hooks_readiness(&app);
-    Ok(HookStatus {
-        installed,
-        script_found,
-        settings_path,
-        script_path,
-    })
+    Ok(claude_hook_status(&app))
 }
 
 #[tauri::command]
@@ -1286,6 +1401,8 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
     if !std::path::Path::new(&script_path).exists() {
         return Err(format!("Hook script not found at: {script_path}"));
     }
+
+    let node_path = resolve_node_executable()?;
 
     let settings_path = claude_settings_path()
         .ok_or_else(|| "Cannot determine home directory".to_string())?;
@@ -1303,8 +1420,8 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
         Value::Object(Default::default())
     };
 
-    let hook_command = format_hook_command(&script_path);
-    let hooks = serde_json::json!({
+    let hook_command = format_hook_command(&node_path, &script_path);
+    let atoll_hooks = serde_json::json!({
         "PermissionRequest": [
             {
                 "matcher": "*",
@@ -1379,10 +1496,13 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
         ]
     });
 
-    settings
+    let settings_obj = settings
         .as_object_mut()
-        .ok_or_else(|| "Settings file is not a JSON object".to_string())?
-        .insert("hooks".into(), hooks);
+        .ok_or_else(|| "Settings file is not a JSON object".to_string())?;
+    let hooks_entry = settings_obj
+        .entry("hooks")
+        .or_insert_with(|| Value::Object(Default::default()));
+    upsert_claude_hook_events(hooks_entry, &atoll_hooks);
 
     let formatted = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("Cannot serialize settings: {e}"))?;
@@ -1402,12 +1522,7 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
 
-    Ok(HookStatus {
-        installed: true,
-        script_found: true,
-        settings_path: settings_path.to_string_lossy().into(),
-        script_path,
-    })
+    Ok(claude_hook_status(&app))
 }
 
 #[tauri::command]
@@ -1421,6 +1536,8 @@ fn uninstall_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
             script_found: false,
             settings_path: settings_path.to_string_lossy().into(),
             script_path: String::new(),
+            node_path: String::new(),
+            node_found: resolve_node_executable().is_ok(),
         });
     }
 
@@ -1430,7 +1547,12 @@ fn uninstall_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
         serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()));
 
     if let Some(obj) = settings.as_object_mut() {
-        obj.remove("hooks");
+        if let Some(hooks) = obj.get_mut("hooks") {
+            remove_atoll_claude_hooks(hooks);
+            if hooks.as_object().map(|map| map.is_empty()).unwrap_or(false) {
+                obj.remove("hooks");
+            }
+        }
     }
 
     let formatted = serde_json::to_string_pretty(&settings)
@@ -1447,12 +1569,7 @@ fn uninstall_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
 
-    Ok(HookStatus {
-        installed: false,
-        script_found: false,
-        settings_path: settings_path.to_string_lossy().into(),
-        script_path: String::new(),
-    })
+    Ok(claude_hook_status(&app))
 }
 
 fn claude_settings_path() -> Option<std::path::PathBuf> {
@@ -1476,15 +1593,11 @@ fn get_codex_hook_status(app: AppHandle) -> Result<HookStatus, String> {
                 .map(|path| path.to_string_lossy().into_owned())
                 .unwrap_or_default(),
             script_path,
+            node_path: String::new(),
+            node_found: resolve_node_executable().is_ok(),
         });
     }
-    let (installed, script_found, settings_path, script_path) = codex_hooks_readiness(&app);
-    Ok(HookStatus {
-        installed,
-        script_found,
-        settings_path,
-        script_path,
-    })
+    Ok(codex_hook_status(&app))
 }
 
 #[tauri::command]
@@ -1495,6 +1608,8 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
     if !std::path::Path::new(&script_path).exists() {
         return Err(format!("Hook script not found at: {script_path}"));
     }
+
+    let node_path = resolve_node_executable()?;
 
     let hooks_path = codex_hooks_path()
         .ok_or_else(|| "Cannot determine home directory".to_string())?;
@@ -1512,7 +1627,7 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
         Value::Object(Default::default())
     };
 
-    let hook_command = format_hook_command(&script_path);
+    let hook_command = format_hook_command(&node_path, &script_path);
     let atoll_hooks = serde_json::json!({
         "PermissionRequest": [
             {
@@ -1605,12 +1720,7 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
 
-    Ok(HookStatus {
-        installed: true,
-        script_found: true,
-        settings_path: hooks_path.to_string_lossy().into(),
-        script_path,
-    })
+    Ok(codex_hook_status(&app))
 }
 
 #[tauri::command]
@@ -1624,6 +1734,8 @@ fn uninstall_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
             script_found: false,
             settings_path: hooks_path.to_string_lossy().into(),
             script_path: String::new(),
+            node_path: String::new(),
+            node_found: resolve_node_executable().is_ok(),
         });
     }
 
@@ -1650,12 +1762,7 @@ fn uninstall_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
 
-    Ok(HookStatus {
-        installed: false,
-        script_found: false,
-        settings_path: hooks_path.to_string_lossy().into(),
-        script_path: String::new(),
-    })
+    Ok(codex_hook_status(&app))
 }
 
 fn normalize_hook_script_path(path: &str) -> String {
@@ -1663,20 +1770,169 @@ fn normalize_hook_script_path(path: &str) -> String {
     if path.is_empty() {
         return String::new();
     }
+    let path = path.strip_prefix(r"\\?\").unwrap_or(path);
     dunce::simplified(std::path::Path::new(path))
         .to_string_lossy()
         .into_owned()
 }
 
-fn format_hook_command(script_path: &str) -> String {
-    let mut script_path = normalize_hook_script_path(script_path);
-    // Claude Code runs hooks through bash on Windows; backslashes and UNC prefixes
-    // are mangled before Node sees them. Forward slashes survive and work with Node.
+fn resolve_node_executable() -> Result<String, String> {
     #[cfg(windows)]
     {
-        script_path = script_path.replace('\\', "/");
+        if let Ok(output) = std::process::Command::new("where.exe").arg("node").output() {
+            if output.status.success() {
+                if let Some(path) = String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .map(str::trim)
+                    .find(|line| !line.is_empty())
+                {
+                    if std::path::Path::new(path).exists() {
+                        return Ok(normalize_hook_script_path(path));
+                    }
+                }
+            }
+        }
+
+        for candidate in [
+            r"C:\Program Files\nodejs\node.exe",
+            r"C:\Program Files (x86)\nodejs\node.exe",
+        ] {
+            if std::path::Path::new(candidate).exists() {
+                return Ok(normalize_hook_script_path(candidate));
+            }
+        }
+
+        return Err(
+            "Node.js not found. Install Node.js and ensure it is on PATH, then retry.".into(),
+        );
     }
-    format!("node \"{}\"", script_path.replace('"', "\\\""))
+
+    #[cfg(not(windows))]
+    {
+        let output = std::process::Command::new("sh")
+            .args(["-lc", "command -v node"])
+            .output()
+            .map_err(|error| format!("Cannot locate node: {error}"))?;
+        if !output.status.success() {
+            return Err(
+                "Node.js not found. Install Node.js and ensure it is on PATH, then retry.".into(),
+            );
+        }
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() || !std::path::Path::new(&path).exists() {
+            return Err(
+                "Node.js not found. Install Node.js and ensure it is on PATH, then retry.".into(),
+            );
+        }
+        Ok(normalize_hook_script_path(&path))
+    }
+}
+
+fn format_hook_command(node_path: &str, script_path: &str) -> String {
+    let node_path = {
+        let mut path = normalize_hook_script_path(node_path);
+        #[cfg(windows)]
+        {
+            path = path.replace('\\', "/");
+        }
+        path
+    };
+    let script_path = {
+        let mut path = normalize_hook_script_path(script_path);
+        #[cfg(windows)]
+        {
+            path = path.replace('\\', "/");
+        }
+        path
+    };
+    format!(
+        "\"{}\" \"{}\"",
+        node_path.replace('"', "\\\""),
+        script_path.replace('"', "\\\"")
+    )
+}
+
+fn upsert_claude_hook_events(existing_hooks: &mut Value, atoll_hooks: &Value) {
+    let Some(atoll_map) = atoll_hooks.as_object() else {
+        return;
+    };
+    let hooks_obj = existing_hooks
+        .as_object_mut()
+        .expect("hooks value should be object");
+
+    for (event, atoll_matchers) in atoll_map {
+        let Some(atoll_array) = atoll_matchers.as_array() else {
+            continue;
+        };
+
+        let mut merged: Vec<Value> = hooks_obj
+            .get(event)
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter(|matcher| !matcher_group_has_atoll_claude(matcher))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        for matcher in atoll_array {
+            merged.push(matcher.clone());
+        }
+
+        hooks_obj.insert(event.clone(), Value::Array(merged));
+    }
+}
+
+fn remove_atoll_claude_hooks(hooks: &mut Value) {
+    let Some(hooks_obj) = hooks.as_object_mut() else {
+        return;
+    };
+
+    for matchers in hooks_obj.values_mut() {
+        if let Some(arr) = matchers.as_array_mut() {
+            for matcher in arr.iter_mut() {
+                if let Some(hook_arr) = matcher.get_mut("hooks").and_then(Value::as_array_mut) {
+                    hook_arr.retain(|hook| {
+                        !hook
+                            .get("command")
+                            .and_then(Value::as_str)
+                            .map(|cmd| cmd.contains("atoll-claude-hook"))
+                            .unwrap_or(false)
+                    });
+                }
+            }
+            arr.retain(|matcher| {
+                matcher
+                    .get("hooks")
+                    .and_then(Value::as_array)
+                    .map(|hooks| !hooks.is_empty())
+                    .unwrap_or(false)
+            });
+        }
+    }
+
+    hooks_obj.retain(|_, matchers| {
+        matchers
+            .as_array()
+            .map(|arr| !arr.is_empty())
+            .unwrap_or(false)
+    });
+}
+
+fn matcher_group_has_atoll_claude(matcher: &Value) -> bool {
+    matcher
+        .get("hooks")
+        .and_then(Value::as_array)
+        .map(|hook_arr| {
+            hook_arr.iter().any(|hook| {
+                hook.get("command")
+                    .and_then(Value::as_str)
+                    .map(|cmd| cmd.contains("atoll-claude-hook"))
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
 }
 
 fn upsert_codex_hook_events(existing_hooks: &mut Value, atoll_hooks: &Value) {
@@ -1756,16 +2012,65 @@ fn read_json_file(path: &str) -> Option<Value> {
         .and_then(|content| serde_json::from_str(&content).ok())
 }
 
+fn extract_first_quoted_value(input: &str) -> Option<(String, &str)> {
+    let input = input.trim();
+    let inner = input.strip_prefix('"')?;
+    let end = inner.find('"')?;
+    let value = inner[..end].replace("\\\"", "\"");
+    let rest = inner[end + 1..].trim_start();
+    Some((value, rest))
+}
+
+fn extract_hook_command_parts(command: &str) -> Option<(String, String)> {
+    let trimmed = command.trim();
+    if let Some(rest) = trimmed.strip_prefix("node ") {
+        let script = if rest.starts_with('"') {
+            extract_first_quoted_value(rest)?.0
+        } else {
+            rest.split_whitespace().next()?.to_string()
+        };
+        return Some(("node".to_string(), normalize_hook_script_path(&script)));
+    }
+
+    let (node, rest) = extract_first_quoted_value(trimmed)?;
+    let (script, _) = extract_first_quoted_value(rest)?;
+    Some((
+        normalize_hook_script_path(&node),
+        normalize_hook_script_path(&script),
+    ))
+}
+
 fn extract_node_script_path(command: &str) -> Option<String> {
-    let rest = command.trim().strip_prefix("node ")?.trim();
-    let raw = if rest.starts_with('"') {
-        let inner = &rest[1..];
-        let end = inner.find('"')?;
-        inner[..end].replace("\\\"", "\"")
-    } else {
-        rest.to_string()
-    };
-    Some(normalize_hook_script_path(&raw))
+    extract_hook_command_parts(command).map(|(_, script)| script)
+}
+
+fn configured_atoll_hook_node_path(config: &Value, marker: &str) -> Option<String> {
+    let hooks = config.get("hooks")?.as_object()?;
+    for matchers in hooks.values() {
+        let arr = matchers.as_array()?;
+        for matcher in arr {
+            let hook_arr = matcher.get("hooks")?.as_array()?;
+            for hook in hook_arr {
+                let cmd = hook.get("command")?.as_str()?;
+                if cmd.contains(marker) {
+                    if let Some((node, _)) = extract_hook_command_parts(cmd) {
+                        return Some(node);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn node_executable_ready(node_path: &str) -> bool {
+    if node_path.is_empty() {
+        return resolve_node_executable().is_ok();
+    }
+    if node_path == "node" {
+        return resolve_node_executable().is_ok();
+    }
+    std::path::Path::new(node_path).exists()
 }
 
 fn configured_atoll_hook_script_path(config: &Value, marker: &str) -> Option<String> {
@@ -1923,6 +2228,11 @@ fn open_in_terminal(cwd: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn focus_claude_app(app: AppHandle) -> Result<(), String> {
+    platform::focus_claude_app(&app)
+}
+
+#[tauri::command]
 fn open_url(app: AppHandle, url: String) -> Result<(), String> {
     platform::open_url(&app, &url)
 }
@@ -1934,8 +2244,31 @@ fn quit_atoll(app: AppHandle) {
 
 
 #[tauri::command]
-fn deactivate_atoll(state: State<'_, AppState>) {
-    platform::restore_focus_after_approval(&state);
+fn deactivate_atoll(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    agent: Option<String>,
+    session: Option<String>,
+    cwd: Option<String>,
+) {
+    platform::restore_focus_after_approval(
+        &app,
+        &state,
+        agent.as_deref(),
+        session.as_deref(),
+        cwd.as_deref(),
+    );
+}
+
+#[tauri::command]
+fn open_agent_app(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    agent: String,
+    cwd: String,
+    session: Option<String>,
+) -> Result<(), String> {
+    platform::open_agent_app(&app, &state, &agent, &cwd, session.as_deref())
 }
 
 pub fn run() {
@@ -1984,6 +2317,8 @@ pub fn run() {
             get_session_retention,
             set_session_retention,
             open_in_terminal,
+            open_agent_app,
+            focus_claude_app,
             open_url,
             quit_atoll,
             deactivate_atoll,
@@ -2758,6 +3093,15 @@ fn snapshot_from(
     let archived_count = requests.iter().filter(|r| r.archived).count();
     let mut sessions = build_session_summaries(&visible);
 
+    for session in sessions.iter_mut() {
+        session.session_host = session_host_for_summary(
+            known_sessions,
+            &session.session_id,
+            &session.cwd,
+            &session.agent,
+        );
+    }
+
     // Mark active sessions as pinned.
     for session in sessions.iter_mut() {
         session.pinned = pinned_sessions.contains(&session.session_id);
@@ -2813,6 +3157,8 @@ fn snapshot_from(
         }
 
         for (session_id, (cwd, last_activity, transcript_path, agent)) in retained_map {
+            let session_host =
+                session_host_for_summary(known_sessions, session_id, &cwd, &agent);
             sessions.push(SessionSummary {
                 session_id: session_id.to_string(),
                 agent,
@@ -2822,6 +3168,7 @@ fn snapshot_from(
                 last_activity,
                 transcript_path,
                 pinned: pinned_sessions.contains(session_id),
+                session_host,
             });
         }
 
@@ -2869,6 +3216,16 @@ fn snapshot_from(
                 last_activity: info.last_activity.clone(),
                 transcript_path: info.transcript_path.clone(),
                 pinned: is_pinned,
+                session_host: if info.host != platform::SessionHost::Unknown {
+                    info.host
+                } else {
+                    session_host_for_summary(
+                        known_sessions,
+                        session_id,
+                        &info.cwd,
+                        &info.agent,
+                    )
+                },
             });
         }
 
@@ -2952,6 +3309,7 @@ fn build_session_summaries(visible: &[&PermissionRequest]) -> Vec<SessionSummary
                 last_activity,
                 transcript_path,
                 pinned: false,
+                session_host: platform::SessionHost::Unknown,
             },
         )
         .collect();
@@ -3096,6 +3454,7 @@ mod core_tests {
                     cwd: memories_cwd.clone(),
                     transcript_path: None,
                     last_activity: iso_timestamp_now(),
+                    host: platform::SessionHost::Unknown,
                 },
             ),
             (
@@ -3105,6 +3464,7 @@ mod core_tests {
                     cwd: "/Users/test/project".into(),
                     transcript_path: None,
                     last_activity: iso_timestamp_now(),
+                    host: platform::SessionHost::Unknown,
                 },
             ),
         ]);
@@ -3821,6 +4181,12 @@ mod hook_script_path_tests {
             ),
             Some("/Applications/Atoll.app/Contents/Resources/scripts/atoll-claude-hook.mjs".into())
         );
+        assert_eq!(
+            extract_node_script_path(
+                "\"/opt/homebrew/bin/node\" \"/Applications/Atoll.app/Contents/Resources/scripts/atoll-claude-hook.mjs\""
+            ),
+            Some("/Applications/Atoll.app/Contents/Resources/scripts/atoll-claude-hook.mjs".into())
+        );
     }
 
     #[test]
@@ -3915,31 +4281,54 @@ mod codex_hooks_tests {
 
     #[test]
     fn format_hook_command_quotes_paths_with_spaces() {
-        let command = format_hook_command("/Applications/Atoll.app/scripts/atoll-codex-hook.mjs");
+        let command = format_hook_command(
+            "/opt/homebrew/bin/node",
+            "/Applications/Atoll.app/scripts/atoll-codex-hook.mjs",
+        );
         assert_eq!(
             command,
-            "node \"/Applications/Atoll.app/scripts/atoll-codex-hook.mjs\""
+            "\"/opt/homebrew/bin/node\" \"/Applications/Atoll.app/scripts/atoll-codex-hook.mjs\""
         );
 
         let windows_command = format_hook_command(
-            "C:\\Program Files\\Atoll\\resources\\scripts\\atoll-claude-hook.mjs",
+            r"C:\Program Files\nodejs\node.exe",
+            r"C:\Program Files\Atoll\resources\scripts\atoll-claude-hook.mjs",
         );
+        #[cfg(windows)]
         assert_eq!(
             windows_command,
-            "node \"C:/Program Files/Atoll/resources/scripts/atoll-claude-hook.mjs\""
+            "\"C:/Program Files/nodejs/node.exe\" \"C:/Program Files/Atoll/resources/scripts/atoll-claude-hook.mjs\""
+        );
+        #[cfg(not(windows))]
+        assert_eq!(
+            windows_command,
+            "\"C:\\Program Files\\nodejs\\node.exe\" \"C:\\Program Files\\Atoll\\resources\\scripts\\atoll-claude-hook.mjs\""
         );
 
         let unc_command = format_hook_command(
+            r"C:\Program Files\nodejs\node.exe",
             r"\\?\C:\Program Files\Atoll\scripts\atoll-claude-hook.mjs",
         );
+        #[cfg(windows)]
         assert_eq!(
             unc_command,
-            "node \"C:/Program Files/Atoll/scripts/atoll-claude-hook.mjs\""
+            "\"C:/Program Files/nodejs/node.exe\" \"C:/Program Files/Atoll/scripts/atoll-claude-hook.mjs\""
+        );
+        #[cfg(not(windows))]
+        assert_eq!(
+            unc_command,
+            "\"C:\\Program Files\\nodejs\\node.exe\" \"C:\\Program Files\\Atoll\\scripts\\atoll-claude-hook.mjs\""
         );
     }
 
     #[test]
     fn extract_node_script_path_strips_windows_unc_prefix() {
+        assert_eq!(
+            extract_node_script_path(
+                r#""C:\Program Files\nodejs\node.exe" "\\?\C:\Program Files\Atoll\scripts\atoll-claude-hook.mjs""#
+            ),
+            Some(r"C:\Program Files\Atoll\scripts\atoll-claude-hook.mjs".into())
+        );
         assert_eq!(
             extract_node_script_path(
                 r#"node "\\?\C:\Program Files\Atoll\scripts\atoll-claude-hook.mjs""#
@@ -3948,9 +4337,107 @@ mod codex_hooks_tests {
         );
         assert_eq!(
             extract_node_script_path(
-                r#"node "C:/Program Files/Atoll/scripts/atoll-claude-hook.mjs""#
+                r#""C:/Program Files/nodejs/node.exe" "C:/Program Files/Atoll/scripts/atoll-claude-hook.mjs""#
             ),
             Some(r"C:/Program Files/Atoll/scripts/atoll-claude-hook.mjs".into())
         );
+    }
+}
+
+#[cfg(test)]
+mod claude_hooks_tests {
+    use super::{
+        format_hook_command, has_atoll_claude_hooks, remove_atoll_claude_hooks,
+        upsert_claude_hook_events,
+    };
+    use serde_json::json;
+
+    fn sample_atoll_claude_hooks() -> serde_json::Value {
+        json!({
+            "PermissionRequest": [{
+                "matcher": "*",
+                "hooks": [{
+                    "type": "command",
+                    "command": format_hook_command("/opt/homebrew/bin/node", "/tmp/atoll-claude-hook.mjs"),
+                    "timeout": 1800
+                }]
+            }],
+            "PostToolUse": [{
+                "matcher": "*",
+                "hooks": [{
+                    "type": "command",
+                    "command": format_hook_command("/opt/homebrew/bin/node", "/tmp/atoll-claude-hook.mjs"),
+                    "timeout": 30
+                }]
+            }],
+            "Stop": [{
+                "matcher": "*",
+                "hooks": [{
+                    "type": "command",
+                    "command": format_hook_command("/opt/homebrew/bin/node", "/tmp/atoll-claude-hook.mjs"),
+                    "timeout": 30
+                }]
+            }]
+        })
+    }
+
+    #[test]
+    fn upsert_preserves_user_notification_hooks() {
+        let mut hooks = json!({
+            "Notification": [{
+                "matcher": "",
+                "hooks": [{
+                    "type": "command",
+                    "command": "osascript -e 'display notification \"hi\"'"
+                }]
+            }],
+            "PermissionRequest": [],
+            "PostToolUse": [],
+            "Stop": []
+        });
+        let atoll = sample_atoll_claude_hooks();
+
+        upsert_claude_hook_events(&mut hooks, &atoll);
+
+        let config = json!({ "hooks": hooks });
+        assert!(has_atoll_claude_hooks(&config));
+        let notification = hooks
+            .get("Notification")
+            .and_then(|value| value.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|matcher| matcher.get("hooks"))
+            .and_then(|value| value.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|hook| hook.get("command"))
+            .and_then(|value| value.as_str());
+        assert!(notification.unwrap_or("").contains("display notification"));
+    }
+
+    #[test]
+    fn uninstall_removes_only_atoll_claude_hooks() {
+        let mut hooks = json!({
+            "Notification": [{
+                "matcher": "",
+                "hooks": [{
+                    "type": "command",
+                    "command": "osascript -e 'display notification \"hi\"'"
+                }]
+            }],
+            "PermissionRequest": [{
+                "matcher": "*",
+                "hooks": [{
+                    "type": "command",
+                    "command": format_hook_command("/opt/homebrew/bin/node", "/tmp/atoll-claude-hook.mjs")
+                }]
+            }],
+            "PostToolUse": [],
+            "Stop": []
+        });
+
+        remove_atoll_claude_hooks(&mut hooks);
+
+        assert!(hooks.get("Notification").is_some());
+        let permission = hooks.get("PermissionRequest").and_then(|value| value.as_array());
+        assert!(permission.map(|arr| arr.is_empty()).unwrap_or(true));
     }
 }

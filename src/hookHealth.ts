@@ -21,7 +21,16 @@ export interface HookHealthAnalysis {
 
 export function isHookReady(status: HookStatus | null | undefined): boolean {
   if (!status?.installed) return false;
+  if (status.nodeFound === false) return false;
   return Boolean(status.scriptFound || status.scriptPath);
+}
+
+export function hookStatusIssue(status: HookStatus | null | undefined): string | null {
+  if (!status?.installed) return null;
+  if (status.nodeFound === false) {
+    return "Node.js not found at the configured hook path. Install Node.js, then reinstall hooks.";
+  }
+  return null;
 }
 
 /** Keep the most connected hook status when overlapping snapshot loads race. */
@@ -33,6 +42,8 @@ export function preferHookStatus(a: HookStatus, b: HookStatus): HookStatus {
     scriptFound: a.scriptFound || b.scriptFound,
     settingsPath: b.settingsPath || a.settingsPath,
     scriptPath: b.scriptPath || a.scriptPath,
+    nodePath: b.nodePath || a.nodePath,
+    nodeFound: a.nodeFound !== false && b.nodeFound !== false,
   };
 }
 
@@ -115,6 +126,9 @@ export function hookAttentionTitle(analysis: HookHealthAnalysis): string {
   }
   return "All agent hooks connected";
 }
+
+export const CLAUDE_DESKTOP_HOOK_NOTE =
+  "Works with Claude Code CLI and Desktop. After install: use Ask permissions in Claude Desktop, restart Claude, then trigger a Bash permission once.";
 
 export type HeaderLogoDisplay =
   | { kind: "atoll"; activity: AtollActivity }

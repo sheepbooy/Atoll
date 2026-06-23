@@ -8,10 +8,13 @@ use windows::Win32::Foundation::{GetLastError, HANDLE, ERROR_ALREADY_EXISTS};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
 };
-use windows::Win32::System::Threading::CreateMutexW;
+use windows::Win32::System::Threading::{
+    CreateMutexW, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+};
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetForegroundWindow};
 
 use crate::{AppState, HomeWindowBounds};
+use super::SessionHost;
 
 struct InstanceMutex(#[allow(dead_code)] HANDLE);
 
@@ -165,10 +168,159 @@ pub fn restore_foreground_window(state: &AppState) {
         let hwnd = windows::Win32::Foundation::HWND(raw as *mut _);
         if !hwnd.0.is_null() {
             unsafe {
-                let _ = SetForegroundWindow(hwnd);
+                if SetForegroundWindow(hwnd).as_bool() {
+                    return;
+                }
             }
         }
     }
+}
+
+pub fn activate_previous_app_if_terminal(state: &AppState) -> bool {
+    let previous = state
+        .previous_app_pid
+        .lock()
+        .ok()
+        .and_then(|mut guard| guard.take());
+
+    let Some(raw) = previous else {
+        return false;
+    };
+
+    if !is_terminal_hwnd(windows::Win32::Foundation::HWND(raw as *mut _)) {
+        if let Ok(mut guard) = state.previous_app_pid.lock() {
+            *guard = Some(raw);
+        }
+        return false;
+    }
+
+    unsafe {
+        SetForegroundWindow(windows::Win32::Foundation::HWND(raw as *mut _)).as_bool()
+    }
+}
+
+pub fn detect_claude_session_host(cwd: &str) -> SessionHost {
+    let _ = cwd;
+    if foreground_process_name()
+        .map(|name| name.eq_ignore_ascii_case("Claude.exe"))
+        .unwrap_or(false)
+    {
+        return SessionHost::ClaudeDesktop;
+    }
+    if foreground_is_terminal_process() {
+        return SessionHost::ClaudeCli;
+    }
+    if try_focus_claude_process() {
+        return SessionHost::ClaudeDesktop;
+    }
+    SessionHost::Unknown
+}
+
+fn foreground_process_name() -> Option<String> {
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.0.is_null() {
+            return None;
+        }
+        process_name_for_hwnd(hwnd)
+    }
+}
+
+fn foreground_is_terminal_process() -> bool {
+    foreground_process_name()
+        .map(|name| is_terminal_process_name(&name))
+        .unwrap_or(false)
+}
+
+fn is_terminal_hwnd(hwnd: windows::Win32::Foundation::HWND) -> bool {
+    process_name_for_hwnd(hwnd)
+        .map(|name| is_terminal_process_name(&name))
+        .unwrap_or(false)
+}
+
+fn is_terminal_process_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "windowsterminal.exe" | "wt.exe" | "cmd.exe" | "powershell.exe" | "pwsh.exe"
+    )
+}
+
+fn process_name_for_hwnd(hwnd: windows::Win32::Foundation::HWND) -> Option<String> {
+    use windows::Win32::System::ProcessStatus::K32GetProcessImageFileNameW;
+    use windows::Win32::System::Threading::{
+        GetWindowThreadProcessId, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    unsafe {
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid == 0 {
+            return None;
+        }
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buffer = [0u16; 260];
+        let len = K32GetProcessImageFileNameW(process, &mut buffer);
+        if len == 0 {
+            return None;
+        }
+        let path = String::from_utf16_lossy(&buffer[..len as usize]);
+        Some(
+            path.rsplit(['\\', '/'])
+                .next()
+                .unwrap_or(&path)
+                .to_string(),
+        )
+    }
+}
+
+pub fn focus_claude_app() -> Result<(), String> {
+    if try_focus_claude_process() {
+        return Ok(());
+    }
+
+    Command::new("cmd")
+        .args(["/C", "start", "", "Claude"])
+        .spawn()
+        .map_err(|error| format!("Failed to focus Claude: {error}"))?;
+    Ok(())
+}
+
+fn try_focus_claude_process() -> bool {
+    use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowTextW, IsWindowVisible, SetForegroundWindow, ShowWindow, SW_RESTORE,
+    };
+
+    struct Search {
+        found: Option<HWND>,
+    }
+
+    unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let search = &mut *(lparam.0 as *mut Search);
+        if !IsWindowVisible(hwnd).as_bool() {
+            return BOOL(1);
+        }
+        let mut buffer = [0u16; 256];
+        let length = GetWindowTextW(hwnd, &mut buffer);
+        if length > 0 {
+            let title = String::from_utf16_lossy(&buffer[..length as usize]);
+            if title.contains("Claude") {
+                search.found = Some(hwnd);
+                return BOOL(0);
+            }
+        }
+        BOOL(1)
+    }
+
+    let mut search = Search { found: None };
+    unsafe {
+        let _ = EnumWindows(Some(enum_proc), LPARAM(&mut search as *mut _ as isize));
+        if let Some(hwnd) = search.found {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+            return SetForegroundWindow(hwnd).as_bool();
+        }
+    }
+    false
 }
 
 pub fn finish_show_for_approval(window: &WebviewWindow, app: &AppHandle, request_focus: bool) {

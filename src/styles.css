@@ -4218,8 +4218,35 @@ kbd {
 }
 
 .session-detail-nav .open-terminal-button {
+  flex-shrink: 0;
+}
+
+.session-detail-nav-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
   flex-shrink: 0;
+}
+
+.settings-hook-desktop-note {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.settings-hook-desktop-note summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.settings-hook-desktop-note ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.settings-hook-desktop-note li + li {
+  margin-top: 4px;
 }
 
 .back-button {

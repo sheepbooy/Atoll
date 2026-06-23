@@ -3,6 +3,7 @@ import {
   analyzeHookHealth,
   deriveHeaderLogoDisplay,
   hookAttentionTitle,
+  hookStatusIssue,
   isHookDisconnected,
   isHookDrifted,
   isHookReady,
@@ -70,6 +71,16 @@ describe("hookHealth", () => {
     expect(analysis.connectedCount).toBe(1);
     expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["claude"]);
     expect(hookAttentionTitle(analysis)).toContain("Claude Code");
+  });
+
+  it("treats missing node executable as not ready", () => {
+    const nodeMissing = {
+      ...ready,
+      nodeFound: false,
+      nodePath: "/missing/node",
+    };
+    expect(isHookReady(nodeMissing)).toBe(false);
+    expect(hookStatusIssue(nodeMissing)).toContain("Node.js not found");
   });
 
   it("treats missing scripts as drift only when hooks were installed", () => {

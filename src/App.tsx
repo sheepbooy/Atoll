@@ -33,8 +33,10 @@ import {
 } from "lucide-react";
 import {
   analyzeHookHealth,
+  CLAUDE_DESKTOP_HOOK_NOTE,
   deriveHeaderLogoDisplay,
   hookAttentionTitle,
+  hookStatusIssue,
   isHookReady,
   mergeHookHealthPreferReady,
   type HeaderLogoDisplay,
@@ -106,7 +108,8 @@ import {
   uninstallCodexHooks,
   getSessionRetention,
   setSessionRetention,
-  openInTerminal,
+  openAgentApp,
+  type SessionHost,
   openUrl,
 } from "./tauri";
 
@@ -1008,7 +1011,9 @@ export function App() {
       applySnapshot(nextSnapshot);
       if (nextSnapshot.pendingCount === 0) {
         collapseIsland(true);
-        deactivateAtoll().catch(() => undefined);
+        deactivateAtoll(request.agent, request.session, request.cwd).catch(
+          () => undefined,
+        );
       }
     } finally {
       setBusyDecision(null);
@@ -1016,6 +1021,10 @@ export function App() {
   }
 
   async function resolveRequest(id: string, decision: Decision, note = "") {
+    const resolvedRequest =
+      snapshotRef.current.activeRequest?.id === id
+        ? snapshotRef.current.activeRequest
+        : snapshotRef.current.recent.find((item) => item.id === id);
     setBusyDecision(decision);
     try {
       const nextSnapshot = await resolvePermissionRequest(id, decision, note);
@@ -1026,7 +1035,11 @@ export function App() {
       }
       if (nextSnapshot.pendingCount === 0) {
         scheduleIdleCollapse();
-        deactivateAtoll().catch(() => undefined);
+        deactivateAtoll(
+          resolvedRequest?.agent,
+          resolvedRequest?.session,
+          resolvedRequest?.cwd,
+        ).catch(() => undefined);
       }
     } finally {
       setBusyDecision(null);
@@ -1565,8 +1578,8 @@ export function App() {
       label: "Claude Code",
       status: claudeHookStatus,
       note: claudeHookStatus.settingsPath
-        ? `Registers hooks in ${claudeHookStatus.settingsPath}.`
-        : "Registers Claude Code hooks for permission approval.",
+        ? `Registers hooks in ${claudeHookStatus.settingsPath}. ${CLAUDE_DESKTOP_HOOK_NOTE}`
+        : `Registers Claude Code hooks for permission approval. ${CLAUDE_DESKTOP_HOOK_NOTE}`,
       onInstall: handleInstallClaudeHooks,
       onUninstall: handleUninstallClaudeHooks,
     },
@@ -1930,7 +1943,18 @@ export function App() {
             ) : panelView.kind === "session" ? (
               <SessionSubviewNav
                 cwd={subviewSession?.cwd ?? ""}
+                agent={subviewSession?.agent}
+                sessionId={subviewSession?.sessionId}
+                sessionHost={subviewSession?.sessionHost}
                 onBack={navigateBack}
+                onOpenExternal={() => {
+                  collapseIsland(true);
+                  void openAgentApp(
+                    subviewSession?.agent ?? "other",
+                    subviewSession?.cwd ?? "",
+                    subviewSession?.sessionId,
+                  );
+                }}
               />
             ) : panelView.kind === "settings" && panelView.page === "hooks" ? (
               <HooksSubviewNav
@@ -2631,10 +2655,30 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
 
 interface SessionSubviewNavProps {
   cwd: string;
+  agent?: AgentKind;
+  sessionId?: string;
+  sessionHost?: SessionHost;
   onBack: () => void;
+  onOpenExternal: () => void;
 }
 
-function SessionSubviewNav({ cwd, onBack }: SessionSubviewNavProps) {
+function sessionJumpLabel(agent?: AgentKind, sessionHost?: SessionHost): string {
+  if (agent === "claude") {
+    if (sessionHost === "claudeCli") return "Terminal";
+    if (sessionHost === "claudeDesktop") return "Open Claude";
+    return "Open session";
+  }
+  return "Terminal";
+}
+
+function SessionSubviewNav({
+  cwd,
+  agent,
+  sessionId,
+  sessionHost,
+  onBack,
+  onOpenExternal,
+}: SessionSubviewNavProps) {
   return (
     <div className="session-detail-nav" data-no-drag>
       <button type="button" className="back-button" onClick={onBack}>
@@ -2644,10 +2688,10 @@ function SessionSubviewNav({ cwd, onBack }: SessionSubviewNavProps) {
       <button
         type="button"
         className="open-terminal-button"
-        onClick={() => openInTerminal(cwd)}
+        onClick={onOpenExternal}
       >
         <ExternalLink size={13} />
-        <span>Terminal</span>
+        <span>{sessionJumpLabel(agent, sessionHost)}</span>
       </button>
     </div>
   );
@@ -2798,6 +2842,7 @@ function HooksView({
             const installed = Boolean(agent.status?.installed);
             const scriptMissing = agent.status && !agent.status.scriptFound;
             const ready = isHookReady(agent.status);
+            const statusIssue = hookStatusIssue(agent.status);
             return (
               <div key={agent.key} className="settings-card settings-hook-card">
                 <div className="settings-card-head">
@@ -2815,8 +2860,24 @@ function HooksView({
                     {agent.status.settingsPath}
                   </span>
                 ) : null}
-                {agent.note && (!installed || agent.key === "codex") ? (
+                {agent.note && (!installed || agent.key === "codex" || agent.key === "claude") ? (
                   <span className="settings-card-desc">{agent.note}</span>
+                ) : null}
+                {agent.key === "claude" ? (
+                  <details className="settings-hook-desktop-note">
+                    <summary>Claude Desktop checklist</summary>
+                    <ul>
+                      <li>Install Node.js on this machine before installing hooks.</li>
+                      <li>In Claude Desktop, set permissions to Ask permissions.</li>
+                      <li>Quit and reopen Claude Desktop after installing hooks.</li>
+                      <li>Trigger one Bash permission in a local Code session to verify.</li>
+                    </ul>
+                  </details>
+                ) : null}
+                {statusIssue ? (
+                  <span className="settings-card-desc settings-hook-warning">
+                    {statusIssue}
+                  </span>
                 ) : null}
                 {scriptMissing ? (
                   <span className="settings-card-desc settings-hook-warning">

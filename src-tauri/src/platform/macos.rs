@@ -22,6 +22,30 @@ mod panel_store {
     }
 }
 
+fn ensure_island_panel_visible() {
+    unsafe {
+        let panel_ptr = panel_store::get_raw();
+        if panel_ptr.is_null() {
+            return;
+        }
+        let panel = panel_ptr as *mut objc2::runtime::AnyObject;
+        use objc2_app_kit::NSMainMenuWindowLevel;
+        let level = NSMainMenuWindowLevel + 3;
+        let _: () = objc2::msg_send![panel, setLevel: level];
+        let _: () = objc2::msg_send![panel, orderFrontRegardless];
+    }
+}
+
+fn is_main_thread() -> bool {
+    unsafe {
+        let Some(thread_class) = objc2::runtime::AnyClass::get(c"NSThread") else {
+            return false;
+        };
+        let is_main: objc2::runtime::Bool = objc2::msg_send![thread_class, isMainThread];
+        is_main.as_bool()
+    }
+}
+
 fn has_camera_housing(frame_width: f64, aux_left_width: f64, aux_right_width: f64) -> bool {
     aux_left_width > 0.0
         && aux_right_width > 0.0
@@ -580,6 +604,10 @@ unsafe fn activate_app_by_pid(pid: i32) -> bool {
 }
 
 pub fn deactivate_atoll(state: &AppState) {
+    restore_previous_app_focus(state);
+}
+
+pub fn restore_previous_app_focus(state: &AppState) {
     let previous = state
         .previous_app_pid
         .lock()
@@ -597,6 +625,130 @@ pub fn deactivate_atoll(state: &AppState) {
         if !ns_app.is_null() {
             let _: () = objc2::msg_send![ns_app, deactivate];
         }
+    }
+}
+
+pub fn activate_previous_app_if_terminal(state: &AppState) -> bool {
+    let previous = state
+        .previous_app_pid
+        .lock()
+        .ok()
+        .and_then(|mut guard| guard.take());
+
+    let Some(pid) = previous else {
+        return false;
+    };
+
+    if !is_terminal_pid(pid as u32) {
+        // Put it back so generic restore can still use it.
+        if let Ok(mut guard) = state.previous_app_pid.lock() {
+            *guard = Some(pid);
+        }
+        return false;
+    }
+
+    unsafe { activate_app_by_pid(pid as i32) }
+}
+
+pub fn focus_claude_app(app: &AppHandle) -> Result<(), String> {
+    let app = app.clone();
+    if is_main_thread() {
+        return focus_claude_app_on_main_thread(&app);
+    }
+
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    window
+        .run_on_main_thread(move || {
+            let _ = tx.send(focus_claude_app_on_main_thread(&app));
+        })
+        .map_err(|error| format!("Failed to dispatch Claude focus: {error}"))?;
+    rx.recv()
+        .map_err(|_| "Claude focus dispatch channel closed".to_string())?
+}
+
+fn focus_claude_app_on_main_thread(_app: &AppHandle) -> Result<(), String> {
+    deactivate_own_application();
+
+    let focused = run_open_claude()
+        || activate_claude_by_bundle_id()
+        || activate_claude_via_applescript();
+    if !focused {
+        return Err("Failed to focus Claude".to_string());
+    }
+
+    // Keep the compact island visible in the menu bar after handing off focus.
+    ensure_island_panel_visible();
+    Ok(())
+}
+
+fn run_open_claude() -> bool {
+    Command::new("/usr/bin/open")
+        .args(["-a", "Claude"])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn deactivate_own_application() {
+    unsafe {
+        let Some(ns_app_class) = objc2::runtime::AnyClass::get(c"NSApplication") else {
+            return;
+        };
+        let ns_app: *mut objc2::runtime::AnyObject =
+            objc2::msg_send![ns_app_class, sharedApplication];
+        if !ns_app.is_null() {
+            let _: () = objc2::msg_send![ns_app, deactivate];
+        }
+    }
+}
+
+fn activate_claude_via_applescript() -> bool {
+    Command::new("/usr/bin/osascript")
+        .args(["-e", r#"tell application "Claude" to activate"#])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn activate_claude_by_bundle_id() -> bool {
+    const ACTIVATE_ALL_WINDOWS: usize = 1;
+    const ACTIVATE_IGNORING_OTHER_APPS: usize = 1 << 1;
+    let options = ACTIVATE_ALL_WINDOWS | ACTIVATE_IGNORING_OTHER_APPS;
+
+    unsafe {
+        let Some(running_app_class) = objc2::runtime::AnyClass::get(c"NSRunningApplication") else {
+            return false;
+        };
+
+        for bundle_id in CLAUDE_DESKTOP_BUNDLE_IDS {
+            let bundle = objc2_foundation::NSString::from_str(bundle_id);
+            let apps: *mut objc2::runtime::AnyObject = objc2::msg_send![
+                running_app_class,
+                runningApplicationsWithBundleIdentifier: &*bundle
+            ];
+            if apps.is_null() {
+                continue;
+            }
+
+            let count: usize = objc2::msg_send![apps, count];
+            for index in 0..count {
+                let app: *mut objc2::runtime::AnyObject =
+                    objc2::msg_send![apps, objectAtIndex: index];
+                if app.is_null() {
+                    continue;
+                }
+
+                let ok: objc2::runtime::Bool =
+                    objc2::msg_send![app, activateWithOptions: options];
+                if ok.as_bool() {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 
@@ -651,6 +803,193 @@ const KNOWN_TERMINALS: &[(&str, &str)] = &[
     ("rio", "Rio"),
 ];
 
+use super::SessionHost;
+
+pub fn detect_claude_session_host(cwd: &str) -> SessionHost {
+    if cwd.is_empty() || cwd == "." {
+        return SessionHost::Unknown;
+    }
+
+    let pids = pids_with_cwd(cwd);
+
+    // Desktop hook/node children may not carry the app bundle id on the leaf PID.
+    for pid in &pids {
+        if is_in_claude_desktop_tree(*pid) {
+            return SessionHost::ClaudeDesktop;
+        }
+    }
+
+    if frontmost_is_claude_desktop() {
+        return SessionHost::ClaudeDesktop;
+    }
+
+    if frontmost_is_terminal() {
+        return SessionHost::ClaudeCli;
+    }
+
+    for pid in &pids {
+        if find_terminal_ancestor(*pid).is_some() && !is_in_claude_desktop_tree(*pid) {
+            return SessionHost::ClaudeCli;
+        }
+    }
+
+    SessionHost::Unknown
+}
+
+/// Snapshot frontmost app at hook time, before Atoll steals focus.
+pub fn detect_claude_session_host_at_hook(cwd: &str) -> SessionHost {
+    if frontmost_is_claude_desktop() {
+        return SessionHost::ClaudeDesktop;
+    }
+    if frontmost_is_terminal() {
+        return SessionHost::ClaudeCli;
+    }
+    detect_claude_session_host(cwd)
+}
+
+pub(crate) fn frontmost_is_claude_desktop() -> bool {
+    unsafe {
+        let Some(ws_class) = objc2::runtime::AnyClass::get(c"NSWorkspace") else {
+            return false;
+        };
+        let workspace: *mut objc2::runtime::AnyObject =
+            objc2::msg_send![ws_class, sharedWorkspace];
+        if workspace.is_null() {
+            return false;
+        }
+        let front: *mut objc2::runtime::AnyObject =
+            objc2::msg_send![workspace, frontmostApplication];
+        if front.is_null() {
+            return false;
+        }
+        let pid: i32 = objc2::msg_send![front, processIdentifier];
+        is_claude_desktop_pid(pid as u32)
+    }
+}
+
+pub(crate) fn frontmost_is_terminal() -> bool {
+    unsafe {
+        let Some(ws_class) = objc2::runtime::AnyClass::get(c"NSWorkspace") else {
+            return false;
+        };
+        let workspace: *mut objc2::runtime::AnyObject =
+            objc2::msg_send![ws_class, sharedWorkspace];
+        if workspace.is_null() {
+            return false;
+        }
+        let front: *mut objc2::runtime::AnyObject =
+            objc2::msg_send![workspace, frontmostApplication];
+        if front.is_null() {
+            return false;
+        }
+        let pid: i32 = objc2::msg_send![front, processIdentifier];
+        is_terminal_pid(pid as u32)
+    }
+}
+
+fn is_in_claude_desktop_tree(mut pid: u32) -> bool {
+    for _ in 0..32 {
+        if pid <= 1 {
+            return false;
+        }
+        if is_claude_desktop_process(pid) {
+            return true;
+        }
+        let output = match Command::new("ps")
+            .args(["-p", &pid.to_string(), "-o", "ppid="])
+            .output()
+        {
+            Ok(output) => output,
+            Err(_) => return false,
+        };
+        let ppid_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        pid = match ppid_str.parse::<u32>() {
+            Ok(ppid) => ppid,
+            Err(_) => return false,
+        };
+    }
+    false
+}
+
+fn pids_with_cwd(cwd: &str) -> Vec<u32> {
+    let output = match Command::new("lsof").args(["-d", "cwd", "+c", "0"]).output() {
+        Ok(output) => output,
+        Err(_) => return Vec::new(),
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut pids = Vec::new();
+    for line in text.lines().skip(1) {
+        if line.contains(cwd) {
+            if let Some(pid_str) = line.split_whitespace().nth(1) {
+                if let Ok(pid) = pid_str.parse::<u32>() {
+                    pids.push(pid);
+                }
+            }
+        }
+    }
+    pids
+}
+
+const CLAUDE_DESKTOP_BUNDLE_IDS: &[&str] = &[
+    "com.anthropic.claudefordesktop",
+    "com.anthropic.claude",
+];
+
+fn is_claude_desktop_bundle(bundle: &str) -> bool {
+    CLAUDE_DESKTOP_BUNDLE_IDS.contains(&bundle)
+}
+
+fn process_executable(pid: u32) -> Option<String> {
+    let output = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .ok()?;
+    let comm = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if comm.is_empty() {
+        None
+    } else {
+        Some(comm)
+    }
+}
+
+fn is_claude_desktop_process(pid: u32) -> bool {
+    if is_claude_desktop_pid(pid) {
+        return true;
+    }
+    process_executable(pid).is_some_and(|comm| {
+        comm.contains("Claude.app")
+            || comm.contains("Claude Helper")
+            || comm.contains("Claude-3p/claude-code")
+    })
+}
+
+fn is_claude_desktop_pid(pid: u32) -> bool {
+    bundle_id_for_pid(pid as i32)
+        .as_deref()
+        .is_some_and(is_claude_desktop_bundle)
+}
+
+fn is_terminal_pid(pid: u32) -> bool {
+    find_terminal_ancestor(pid).is_some()
+}
+
+fn bundle_id_for_pid(pid: i32) -> Option<String> {
+    unsafe {
+        let cls = objc2::runtime::AnyClass::get(c"NSRunningApplication")?;
+        let running: *mut objc2::runtime::AnyObject =
+            objc2::msg_send![cls, runningApplicationWithProcessIdentifier: pid];
+        if running.is_null() {
+            return None;
+        }
+        let bundle: *mut objc2_foundation::NSString =
+            objc2::msg_send![running, bundleIdentifier];
+        if bundle.is_null() {
+            return None;
+        }
+        Some((*bundle).to_string())
+    }
+}
+
 pub fn open_in_terminal(cwd: &str) -> Result<(), String> {
     if let Some(app) = detect_terminal_app_for_cwd(cwd) {
         Command::new("open")
@@ -670,23 +1009,7 @@ pub fn open_in_terminal(cwd: &str) -> Result<(), String> {
 }
 
 fn detect_terminal_app_for_cwd(cwd: &str) -> Option<String> {
-    let output = Command::new("lsof")
-        .args(["-d", "cwd", "+c", "0"])
-        .output()
-        .ok()?;
-    let text = String::from_utf8_lossy(&output.stdout);
-
-    let mut pids: Vec<u32> = Vec::new();
-    for line in text.lines().skip(1) {
-        if line.contains(cwd) {
-            let pid_str = line.split_whitespace().nth(1)?;
-            if let Ok(pid) = pid_str.parse::<u32>() {
-                pids.push(pid);
-            }
-        }
-    }
-
-    for pid in pids {
+    for pid in pids_with_cwd(cwd) {
         if let Some(app) = find_terminal_ancestor(pid) {
             return Some(app);
         }
