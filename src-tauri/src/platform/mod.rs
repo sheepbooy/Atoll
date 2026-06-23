@@ -223,6 +223,30 @@ pub fn detect_session_host_from_peer_pid(pid: u32) -> SessionHost {
     }
 }
 
+/// Check if Claude Desktop app is currently running on the system.
+pub fn is_claude_desktop_app_running() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::is_claude_desktop_app_running();
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+/// Check if the current frontmost app is a terminal.
+pub fn frontmost_is_terminal() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::frontmost_is_terminal();
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
 fn restore_remembered_app_focus(state: &AppState) -> bool {
     #[cfg(target_os = "macos")]
     {

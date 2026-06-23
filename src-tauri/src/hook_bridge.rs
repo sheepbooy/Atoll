@@ -865,7 +865,7 @@ fn payload_transcript_path(payload: &Value) -> Option<&str> {
 
 /// Determine SessionHost for a Claude session.
 ///
-/// Priority: peer process tree → transcript path → frontmost/cwd detection.
+/// Priority: peer process tree → transcript path → Claude Desktop running check → frontmost/cwd detection.
 fn detect_host_for_claude_hook(
     state: &AppState,
     stream: &TcpStream,
@@ -882,6 +882,17 @@ fn detect_host_for_claude_hook(
             return platform::SessionHost::ClaudeCli;
         }
         if is_desktop_transcript_path(path) {
+            return platform::SessionHost::ClaudeDesktop;
+        }
+    }
+
+    if is_claude_desktop_app_running() {
+        let prev_pid = state.previous_app_pid.lock().ok().and_then(|g| *g);
+        let hint = prev_pid.map(|p| p as u32);
+        if hint.map_or(false, |pid| platform::detect_session_host_from_peer_pid(pid) == platform::SessionHost::ClaudeDesktop) {
+            return platform::SessionHost::ClaudeDesktop;
+        }
+        if !is_any_terminal_frontmost() {
             return platform::SessionHost::ClaudeDesktop;
         }
     }
@@ -919,11 +930,26 @@ fn hook_peer_session_host(stream: &TcpStream) -> platform::SessionHost {
 }
 
 fn is_cli_transcript_path(path: &str) -> bool {
-    path.contains("/.claude/") || path.contains("/claude/projects/")
+    path.contains("/.claude/")
+        || (path.contains("/claude/projects/") && !path.contains("/Application Support/"))
 }
 
 fn is_desktop_transcript_path(path: &str) -> bool {
-    path.contains("Claude-3p") || path.contains("local-agent-mode-sessions")
+    if path.contains("/Application Support/") && !path.contains("/.claude/") {
+        return true;
+    }
+    path.contains("Claude-3p")
+        || path.contains("local-agent-mode-sessions")
+        || path.contains("com.anthropic.claude")
+        || path.contains("agent-sessions")
+}
+
+fn is_claude_desktop_app_running() -> bool {
+    platform::is_claude_desktop_app_running()
+}
+
+fn is_any_terminal_frontmost() -> bool {
+    platform::frontmost_is_terminal()
 }
 
 pub(crate) fn mark_matching_pending_request_complete(

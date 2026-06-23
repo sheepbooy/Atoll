@@ -902,6 +902,29 @@ pub(crate) fn frontmost_is_terminal() -> bool {
     frontmost_app_pid().is_some_and(is_terminal_pid)
 }
 
+pub(crate) fn is_claude_desktop_app_running() -> bool {
+    unsafe {
+        let Some(cls) = objc2::runtime::AnyClass::get(c"NSRunningApplication") else {
+            return false;
+        };
+        for bundle_id in CLAUDE_DESKTOP_BUNDLE_IDS {
+            let bundle = objc2_foundation::NSString::from_str(bundle_id);
+            let apps: *mut objc2::runtime::AnyObject = objc2::msg_send![
+                cls,
+                runningApplicationsWithBundleIdentifier: &*bundle
+            ];
+            if apps.is_null() {
+                continue;
+            }
+            let count: usize = objc2::msg_send![apps, count];
+            if count > 0 {
+                return true;
+            }
+        }
+        false
+    }
+}
+
 fn is_in_claude_desktop_tree(mut pid: u32) -> bool {
     for _ in 0..32 {
         if pid <= 1 {

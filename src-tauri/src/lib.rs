@@ -1356,10 +1356,19 @@ fn session_host_for_summary(
 }
 
 fn host_from_transcript_path(path: &str) -> Option<platform::SessionHost> {
-    if path.contains("/.claude/") || path.contains("/claude/projects/") {
+    if path.contains("/.claude/")
+        || (path.contains("/claude/projects/") && !path.contains("/Application Support/"))
+    {
         return Some(platform::SessionHost::ClaudeCli);
     }
-    if path.contains("Claude-3p") || path.contains("local-agent-mode-sessions") {
+    if path.contains("/Application Support/") && !path.contains("/.claude/") {
+        return Some(platform::SessionHost::ClaudeDesktop);
+    }
+    if path.contains("Claude-3p")
+        || path.contains("local-agent-mode-sessions")
+        || path.contains("com.anthropic.claude")
+        || path.contains("agent-sessions")
+    {
         return Some(platform::SessionHost::ClaudeDesktop);
     }
     None
@@ -3778,6 +3787,14 @@ mod core_tests {
         );
         assert_eq!(
             host_from_transcript_path("/Users/me/Library/Application Support/Claude-3p/local-agent-mode-sessions/xyz.jsonl"),
+            Some(platform::SessionHost::ClaudeDesktop),
+        );
+        assert_eq!(
+            host_from_transcript_path("/Users/me/Library/Application Support/com.anthropic.claudefordesktop/agent-sessions/xyz.jsonl"),
+            Some(platform::SessionHost::ClaudeDesktop),
+        );
+        assert_eq!(
+            host_from_transcript_path("/Users/me/Library/Application Support/Claude/projects/xyz.jsonl"),
             Some(platform::SessionHost::ClaudeDesktop),
         );
         assert_eq!(
