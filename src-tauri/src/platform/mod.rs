@@ -346,7 +346,9 @@ pub fn tray_icon(app: &AppHandle) -> Option<tauri::image::Image<'static>> {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        app.default_window_icon().cloned()
+        app.default_window_icon().map(|icon| {
+            tauri::image::Image::new_owned(icon.rgba().to_vec(), icon.width(), icon.height())
+        })
     }
 }
 
