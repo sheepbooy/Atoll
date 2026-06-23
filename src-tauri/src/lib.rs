@@ -1320,7 +1320,13 @@ fn resolve_stored_claude_host(
                 platform::SessionHost::ClaudeDesktop
             }
         }
-        platform::SessionHost::ClaudeCli => platform::SessionHost::ClaudeCli,
+        platform::SessionHost::ClaudeCli => {
+            if live == platform::SessionHost::ClaudeDesktop {
+                platform::SessionHost::ClaudeDesktop
+            } else {
+                platform::SessionHost::ClaudeCli
+            }
+        }
         platform::SessionHost::Unknown => live,
     }
 }
@@ -3718,13 +3724,13 @@ mod core_tests {
     }
 
     #[test]
-    fn stored_claude_cli_is_not_upgraded_to_desktop() {
+    fn stored_claude_cli_upgrades_when_live_is_desktop() {
         assert_eq!(
             resolve_stored_claude_host(
                 platform::SessionHost::ClaudeCli,
                 platform::SessionHost::ClaudeDesktop,
             ),
-            platform::SessionHost::ClaudeCli,
+            platform::SessionHost::ClaudeDesktop,
         );
     }
 

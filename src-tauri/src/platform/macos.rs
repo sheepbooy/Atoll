@@ -603,10 +603,6 @@ unsafe fn activate_app_by_pid(pid: i32) -> bool {
     ok.as_bool()
 }
 
-pub fn deactivate_atoll(state: &AppState) {
-    let _ = restore_previous_app_focus(state);
-}
-
 pub fn try_restore_previous_app_focus(state: &AppState) -> bool {
     let previous = state
         .previous_app_pid
@@ -621,38 +617,8 @@ pub fn try_restore_previous_app_focus(state: &AppState) -> bool {
     unsafe { activate_app_by_pid(pid as i32) }
 }
 
-pub fn restore_previous_app_focus(state: &AppState) -> bool {
-    if try_restore_previous_app_focus(state) {
-        return true;
-    }
-    deactivate_own_application();
-    false
-}
-
 pub fn deactivate_atoll_app() {
     deactivate_own_application();
-}
-
-pub fn activate_previous_app_if_terminal(state: &AppState) -> bool {
-    let previous = state
-        .previous_app_pid
-        .lock()
-        .ok()
-        .and_then(|mut guard| guard.take());
-
-    let Some(pid) = previous else {
-        return false;
-    };
-
-    if !is_terminal_pid(pid as u32) {
-        // Put it back so generic restore can still use it.
-        if let Ok(mut guard) = state.previous_app_pid.lock() {
-            *guard = Some(pid);
-        }
-        return false;
-    }
-
-    unsafe { activate_app_by_pid(pid as i32) }
 }
 
 pub fn activate_claude_app(app: &AppHandle) -> Result<(), String> {
@@ -829,17 +795,17 @@ pub fn detect_claude_session_host(cwd: &str) -> SessionHost {
 
     let pids = pids_with_cwd(cwd);
 
-    // Terminal-hosted Claude Code wins over Desktop-bundled node paths (Claude-3p/claude-code).
+    // Desktop-hosted session processes (not running under a terminal).
     for pid in &pids {
-        if find_terminal_ancestor(*pid).is_some() {
-            return SessionHost::ClaudeCli;
+        if find_terminal_ancestor(*pid).is_none() && is_in_claude_desktop_tree(*pid) {
+            return SessionHost::ClaudeDesktop;
         }
     }
 
-    // Desktop hook/node children may not carry the app bundle id on the leaf PID.
+    // Terminal-hosted Claude Code (ignore unrelated shells in the same cwd).
     for pid in &pids {
-        if is_in_claude_desktop_tree(*pid) {
-            return SessionHost::ClaudeDesktop;
+        if find_terminal_ancestor(*pid).is_some() && is_claude_related_process(*pid) {
+            return SessionHost::ClaudeCli;
         }
     }
 
@@ -968,6 +934,19 @@ fn process_executable(pid: u32) -> Option<String> {
     } else {
         Some(comm)
     }
+}
+
+fn is_claude_related_process(pid: u32) -> bool {
+    if is_claude_desktop_pid(pid) {
+        return true;
+    }
+    process_executable(pid).is_some_and(|comm| {
+        comm.contains("Claude.app")
+            || comm.contains("Claude Helper")
+            || comm.contains("Claude-3p/claude-code")
+            || comm.contains("claude-code")
+            || comm.ends_with("/claude")
+    })
 }
 
 fn is_claude_desktop_process(pid: u32) -> bool {

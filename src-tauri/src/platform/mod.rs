@@ -208,28 +208,51 @@ pub fn detect_claude_session_host_at_hook(cwd: &str) -> SessionHost {
     }
 }
 
-fn clear_previous_app_pid(state: &AppState) {
-    let _ = state
-        .previous_app_pid
-        .lock()
-        .ok()
-        .and_then(|mut guard| guard.take());
-}
-
-fn restore_terminal_focus(state: &AppState, cwd: &str) -> bool {
+fn restore_remembered_app_focus(state: &AppState) -> bool {
     #[cfg(target_os = "macos")]
     {
-        if macos::activate_previous_app_if_terminal(state) {
-            return true;
-        }
+        return macos::try_restore_previous_app_focus(state);
     }
     #[cfg(target_os = "windows")]
     {
-        if windows::activate_previous_app_if_terminal(state) {
-            return true;
-        }
+        return windows::try_restore_foreground_window(state);
     }
-    open_in_terminal(cwd).is_ok()
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = state;
+        false
+    }
+}
+
+fn deactivate_atoll_app(state: &AppState) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = state;
+        macos::deactivate_atoll_app();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = state;
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = state;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClaudeApprovalFocusFallback {
+    OpenTerminal,
+    ActivateClaude,
+    DeactivateOnly,
+}
+
+fn claude_approval_focus_fallback(host: SessionHost) -> ClaudeApprovalFocusFallback {
+    match host {
+        SessionHost::ClaudeCli => ClaudeApprovalFocusFallback::OpenTerminal,
+        SessionHost::ClaudeDesktop => ClaudeApprovalFocusFallback::ActivateClaude,
+        SessionHost::Unknown => ClaudeApprovalFocusFallback::DeactivateOnly,
+    }
 }
 
 pub fn restore_focus_after_approval(
@@ -239,33 +262,30 @@ pub fn restore_focus_after_approval(
     session_id: Option<&str>,
     cwd: Option<&str>,
 ) {
+    if restore_remembered_app_focus(state) {
+        return;
+    }
+
     if agent == Some("claude") {
         if let (Some(session_id), Some(cwd)) = (session_id, cwd) {
             let host = crate::claude_session_host(state, session_id, cwd);
-            match host {
-                SessionHost::ClaudeDesktop => {
-                    let _ = focus_claude_app(app);
-                    clear_previous_app_pid(state);
-                    return;
-                }
-                SessionHost::ClaudeCli => {
-                    if restore_terminal_focus(state, cwd) {
+            match claude_approval_focus_fallback(host) {
+                ClaudeApprovalFocusFallback::OpenTerminal => {
+                    if open_in_terminal(cwd).is_ok() {
                         return;
                     }
                 }
-                SessionHost::Unknown => {}
+                ClaudeApprovalFocusFallback::ActivateClaude => {
+                    if activate_claude_app(app).is_ok() {
+                        return;
+                    }
+                }
+                ClaudeApprovalFocusFallback::DeactivateOnly => {}
             }
         }
     }
 
-    #[cfg(target_os = "macos")]
-    macos::restore_previous_app_focus(state);
-    #[cfg(target_os = "windows")]
-    windows::restore_foreground_window(state);
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        let _ = state;
-    }
+    deactivate_atoll_app(state);
 }
 
 pub fn open_agent_app(
@@ -296,6 +316,23 @@ fn claude_unknown_jump_host(detected: SessionHost) -> SessionHost {
     match detected {
         SessionHost::ClaudeDesktop => SessionHost::ClaudeDesktop,
         SessionHost::ClaudeCli | SessionHost::Unknown => SessionHost::ClaudeCli,
+    }
+}
+
+pub fn activate_claude_app(app: &AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::activate_claude_app(app);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        return windows::focus_claude_app();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = app;
+        Err("activate_claude_app is not supported on this platform".to_string())
     }
 }
 
@@ -439,6 +476,30 @@ mod tests {
         assert_eq!(
             claude_unknown_jump_host(SessionHost::ClaudeCli),
             SessionHost::ClaudeCli
+        );
+    }
+
+    #[test]
+    fn claude_approval_fallback_prefers_terminal_for_cli_host() {
+        assert_eq!(
+            claude_approval_focus_fallback(SessionHost::ClaudeCli),
+            ClaudeApprovalFocusFallback::OpenTerminal
+        );
+    }
+
+    #[test]
+    fn claude_approval_fallback_activates_existing_desktop_without_launch() {
+        assert_eq!(
+            claude_approval_focus_fallback(SessionHost::ClaudeDesktop),
+            ClaudeApprovalFocusFallback::ActivateClaude
+        );
+    }
+
+    #[test]
+    fn claude_approval_fallback_deactivates_when_host_unknown() {
+        assert_eq!(
+            claude_approval_focus_fallback(SessionHost::Unknown),
+            ClaudeApprovalFocusFallback::DeactivateOnly
         );
     }
 }

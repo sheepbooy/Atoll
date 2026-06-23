@@ -170,26 +170,7 @@ pub fn remember_foreground_window(app: &AppHandle) {
     }
 }
 
-pub fn restore_foreground_window(state: &AppState) {
-    let previous = state
-        .previous_app_pid
-        .lock()
-        .ok()
-        .and_then(|mut guard| guard.take());
-
-    if let Some(raw) = previous {
-        let hwnd = windows::Win32::Foundation::HWND(raw as *mut _);
-        if !hwnd.0.is_null() {
-            unsafe {
-                if SetForegroundWindow(hwnd).as_bool() {
-                    return;
-                }
-            }
-        }
-    }
-}
-
-pub fn activate_previous_app_if_terminal(state: &AppState) -> bool {
+pub fn try_restore_foreground_window(state: &AppState) -> bool {
     let previous = state
         .previous_app_pid
         .lock()
@@ -200,16 +181,12 @@ pub fn activate_previous_app_if_terminal(state: &AppState) -> bool {
         return false;
     };
 
-    if !is_terminal_hwnd(windows::Win32::Foundation::HWND(raw as *mut _)) {
-        if let Ok(mut guard) = state.previous_app_pid.lock() {
-            *guard = Some(raw);
-        }
+    let hwnd = windows::Win32::Foundation::HWND(raw as *mut _);
+    if hwnd.0.is_null() {
         return false;
     }
 
-    unsafe {
-        SetForegroundWindow(windows::Win32::Foundation::HWND(raw as *mut _)).as_bool()
-    }
+    unsafe { SetForegroundWindow(hwnd).as_bool() }
 }
 
 pub fn detect_claude_session_host(cwd: &str) -> SessionHost {
