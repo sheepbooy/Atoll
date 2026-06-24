@@ -2,6 +2,20 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.26] - 2026-06-24
+
+### 新增
+- **Plan 模式**：支持 plan 审批流程、子 agent 生命周期与紧凑布局稳定性
+- **Build 审批卡片**：展示 plan Markdown 预览
+
+### 改进
+- 优化 subagent UI 导航与身份样式
+
+### 修复
+- 修复从 session 子视图折叠（如点击 Open Claude、跳转浏览器）后折叠态宽度异常变窄
+- 修复 plan 中 Reply freely 输入框点击后无法输入
+- 修复折叠完成后 session 图标与 token 计数器被错误隐藏的问题
+
 ## [0.1.25] - 2026-06-24
 
 ### 新增
