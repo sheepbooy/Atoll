@@ -625,12 +625,16 @@ export function App() {
     }
     return stableWidthRef.current;
   }, [computedCollapsedWidth, hasActiveSessions]);
-  const collapsedMode: "micro" | "compact" | "dormant" = resolveCollapsedMode(
+  const rawCollapsedMode = resolveCollapsedMode(
     usesMicroIslandRef.current,
     sessions.length,
     snapshot.pendingCount,
     phase,
   );
+  const collapsedMode: "micro" | "compact" | "dormant" =
+    suppressPostCollapseSyncRef.current && rawCollapsedMode === "dormant"
+      ? "compact"
+      : rawCollapsedMode;
   const tabAgents = useMemo(() => {
     const seen = new Set<AgentKind>();
     sessions.forEach((session) => seen.add(session.agent));
