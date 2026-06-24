@@ -11,12 +11,14 @@
 
 <p align="center">
   <a href="https://github.com/sheepbooy/Atoll/releases"><img src="https://img.shields.io/github/v/release/sheepbooy/Atoll?style=flat-square&color=38BDD8&label=release" alt="Release" /></a>
+  <a href="https://sheepbooy.github.io/Atoll/"><img src="https://img.shields.io/badge/官网-sheepbooy.github.io%2FAtoll-38BDD8?style=flat-square" alt="官网" /></a>
   <img src="https://img.shields.io/badge/license-MIT-9ee9b8?style=flat-square" alt="MIT" />
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-111317?style=flat-square" alt="macOS | Windows" />
   <img src="https://img.shields.io/badge/privacy-100%25%20local-b2ea7e?style=flat-square" alt="100% local" />
 </p>
 
 <p align="center">
+  <a href="https://sheepbooy.github.io/Atoll/">官网</a> ·
   <a href="#安装">安装</a> ·
   <a href="#接入-agent">接入 Agent</a> ·
   <a href="#视觉">视觉</a> ·
@@ -38,7 +40,7 @@
 
 ## 是什么
 
-**Atoll** 是一个轻量桌面应用，住在屏幕顶栏（macOS 菜单栏 / Windows 工作区顶部）：
+**Atoll** 是一个轻量桌面应用，住在屏幕顶栏（macOS 菜单栏 / Windows 工作区顶部）。完整介绍、动效演示与安装说明见 **[官网](https://sheepbooy.github.io/Atoll/)**。
 
 - **平时** — 紧凑胶囊，显示在线状态、活跃会话、待审批数量
 - **有请求时** — 自动展开，展示命令详情，一键 **Approve / Deny / Always**
