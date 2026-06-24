@@ -14,7 +14,9 @@ use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalS
 
 mod capture;
 mod hook_bridge;
+mod local_time;
 mod platform;
+mod token_history;
 mod transcript;
 
 const COMPACT_WINDOW_WIDTH: f64 = 132.0;
@@ -94,7 +96,7 @@ struct SessionSummary {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-struct TokenUsage {
+pub(crate) struct TokenUsage {
     input_tokens: u64,
     output_tokens: u64,
     cache_read_tokens: u64,
@@ -114,7 +116,7 @@ impl TokenUsage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-enum AgentKind {
+pub(crate) enum AgentKind {
     Claude,
     Codex,
     Gemini,
@@ -183,6 +185,8 @@ pub(crate) struct AppState {
     session_last_seen: Mutex<HashMap<String, u64>>,
     session_retention_secs: Mutex<u64>,
     session_token_usage: Mutex<HashMap<String, TokenUsage>>,
+    /// Sticky session → agent mapping that survives session purges within a day.
+    session_agent_map: Mutex<HashMap<String, String>>,
     token_usage_file_offsets: Mutex<HashMap<String, u64>>,
     token_usage_day: Mutex<String>,
     known_sessions: Mutex<HashMap<String, KnownSession>>,
@@ -286,9 +290,14 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
         &pinned,
         online,
     );
+    drop(pinned);
     drop(known_sessions);
+    drop(token_usage);
+    drop(last_seen);
+    drop(requests);
     persist_session_hosts(state, &snapshot.sessions);
     snapshot.hook_health = hook_health;
+    let _ = token_history::sync_today_to_history(state);
     snapshot
 }
 
@@ -847,22 +856,23 @@ fn collect_session_transcript_paths(
         .collect()
 }
 
-fn current_utc_day_key() -> String {
-    iso_timestamp_now().chars().take(10).collect()
+fn current_local_day_key() -> String {
+    local_time::current_local_day_key()
 }
 
 fn roll_over_token_usage_if_needed(state: &AppState) {
-    let today = current_utc_day_key();
-    let needs_rollover = {
+    let today = current_local_day_key();
+    let (needs_rollover, previous_day) = {
         let mut usage_day = state
             .token_usage_day
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if *usage_day == today {
-            false
+            (false, String::new())
         } else {
+            let previous = usage_day.clone();
             *usage_day = today;
-            true
+            (true, previous)
         }
     };
 
@@ -870,15 +880,20 @@ fn roll_over_token_usage_if_needed(state: &AppState) {
         return;
     }
 
+    let _ = token_history::flush_day_to_history(state, &previous_day);
+
     if let Ok(mut usage_by_session) = state.session_token_usage.lock() {
         usage_by_session.clear();
+    }
+    if let Ok(mut sticky) = state.session_agent_map.lock() {
+        sticky.clear();
     }
     if let Ok(mut offsets) = state.token_usage_file_offsets.lock() {
         offsets.clear();
     }
 }
 
-fn token_usage_from_transcript_entry(entry: &Value, today_key: &str) -> TokenUsage {
+fn token_usage_from_transcript_entry(entry: &Value, local_today_key: &str) -> TokenUsage {
     if entry.get("type").and_then(Value::as_str) != Some("assistant") {
         return TokenUsage::default();
     }
@@ -886,7 +901,7 @@ fn token_usage_from_transcript_entry(entry: &Value, today_key: &str) -> TokenUsa
     let Some(timestamp) = entry.get("timestamp").and_then(Value::as_str) else {
         return TokenUsage::default();
     };
-    if !timestamp.starts_with(today_key) {
+    if !local_time::is_local_today(timestamp, local_today_key) {
         return TokenUsage::default();
     }
 
@@ -1008,7 +1023,7 @@ pub(crate) fn refresh_session_token_usage(
     };
 
     roll_over_token_usage_if_needed(state);
-    let today_key = current_utc_day_key();
+    let today_key = current_local_day_key();
     let last_offset = state
         .token_usage_file_offsets
         .lock()
@@ -1050,8 +1065,24 @@ pub(crate) fn refresh_session_token_usage(
     } else {
         usage_entry.add_assign(parsed_usage);
     }
+    drop(usage_by_session);
+
+    if let Some(agent) = agent {
+        if let Ok(mut sticky) = state.session_agent_map.lock() {
+            sticky
+                .entry(session_id.to_string())
+                .or_insert_with(|| token_history::agent_kind_key(agent));
+        }
+    }
+
+    token_history::sync_today_to_history(state)?;
 
     Ok(())
+}
+
+#[tauri::command]
+fn get_token_history(days: u32) -> Result<token_history::TokenHistoryResponse, String> {
+    token_history::get_token_history(days)
 }
 
 #[tauri::command]
@@ -1277,9 +1308,8 @@ pub(crate) fn purge_tracked_session(state: &AppState, session_id: &str, transcri
     if let Ok(mut last_seen) = state.session_last_seen.lock() {
         last_seen.remove(session_id);
     }
-    if let Ok(mut usage) = state.session_token_usage.lock() {
-        usage.remove(session_id);
-    }
+    // Keep session_token_usage so auto-archived / retention-purged sessions still
+    // count toward daily totals until UTC day rollover.
     if let Some(path) = transcript_path {
         if let Ok(mut offsets) = state.token_usage_file_offsets.lock() {
             offsets.remove(path);
@@ -1320,6 +1350,11 @@ pub(crate) fn register_known_session(
         if let Some(path) = transcript_path {
             entry.transcript_path = Some(path.to_string());
         }
+    }
+    if let Ok(mut sticky) = state.session_agent_map.lock() {
+        sticky
+            .entry(session_id.to_string())
+            .or_insert_with(|| token_history::agent_kind_key(&agent));
     }
 }
 
@@ -2612,8 +2647,9 @@ pub fn run() {
             session_last_seen: Mutex::new(HashMap::new()),
             session_retention_secs: Mutex::new(DEFAULT_SESSION_RETENTION_SECS),
             session_token_usage: Mutex::new(HashMap::new()),
+            session_agent_map: Mutex::new(HashMap::new()),
             token_usage_file_offsets: Mutex::new(HashMap::new()),
-            token_usage_day: Mutex::new(current_utc_day_key()),
+            token_usage_day: Mutex::new(current_local_day_key()),
             known_sessions: Mutex::new(HashMap::new()),
             pinned_sessions: Mutex::new(HashSet::new()),
             previous_app_pid: Mutex::new(None),
@@ -2642,6 +2678,7 @@ pub fn run() {
             uninstall_codex_hooks,
             get_session_retention,
             set_session_retention,
+            get_token_history,
             open_in_terminal,
             open_agent_app,
             focus_claude_app,
@@ -4140,6 +4177,154 @@ mod core_tests {
         assert_eq!(snapshot.daily_tokens.output_tokens, 100);
         assert_eq!(snapshot.active_session_tokens.input_tokens, 0);
         assert_eq!(snapshot.active_session_tokens.output_tokens, 0);
+    }
+
+    fn test_app_state() -> AppState {
+        AppState {
+            requests: Mutex::new(Vec::new()),
+            hook_waiters: Mutex::new(HashMap::new()),
+            auto_approve_sessions: Mutex::new(HashSet::new()),
+            compact_width: Mutex::new(COMPACT_WINDOW_WIDTH),
+            compact_left_width: Mutex::new(0.0),
+            presentation_generation: Arc::new(AtomicU64::new(0)),
+            home_bounds: Mutex::new(None),
+            notch_metrics: Mutex::new(NotchMetrics::default()),
+            session_last_seen: Mutex::new(HashMap::new()),
+            session_retention_secs: Mutex::new(DEFAULT_SESSION_RETENTION_SECS),
+            session_token_usage: Mutex::new(HashMap::new()),
+            session_agent_map: Mutex::new(HashMap::new()),
+            token_usage_file_offsets: Mutex::new(HashMap::new()),
+            token_usage_day: Mutex::new(current_local_day_key()),
+            known_sessions: Mutex::new(HashMap::new()),
+            pinned_sessions: Mutex::new(HashSet::new()),
+            previous_app_pid: Mutex::new(None),
+            last_listening_online: Mutex::new(None),
+            last_hook_health: Mutex::new(None),
+            bridge_port: AtomicU16::new(0),
+        }
+    }
+
+    #[test]
+    fn rollover_flushes_previous_local_day_before_clearing_usage() {
+        use chrono::{Duration, Local};
+
+        let history_path = std::env::temp_dir().join(format!(
+            "atoll-token-history-{}-{}.json",
+            std::process::id(),
+            "rollover-test"
+        ));
+        let _ = std::fs::remove_file(&history_path);
+        std::env::set_var(
+            "ATOLL_TOKEN_HISTORY_PATH",
+            history_path.to_string_lossy().as_ref(),
+        );
+
+        let state = test_app_state();
+        let flushed_day = (Local::now().date_naive() - Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string();
+        {
+            let mut usage_day = state.token_usage_day.lock().expect("lock");
+            *usage_day = flushed_day.clone();
+        }
+
+        {
+            let mut usage = state.session_token_usage.lock().expect("lock");
+            usage.insert(
+                "session-rollover".into(),
+                TokenUsage {
+                    input_tokens: 250,
+                    output_tokens: 75,
+                    cache_read_tokens: 0,
+                    cache_creation_tokens: 0,
+                },
+            );
+        }
+
+        roll_over_token_usage_if_needed(&state);
+
+        let usage_after = state.session_token_usage.lock().expect("lock");
+        assert!(usage_after.is_empty());
+
+        let history = token_history::get_token_history(365).expect("history");
+        let flushed = history
+            .days
+            .iter()
+            .find(|day| day.date == flushed_day)
+            .expect("previous day should be persisted");
+        assert_eq!(flushed.usage.input_tokens, 250);
+        assert_eq!(flushed.usage.output_tokens, 75);
+
+        let _ = std::fs::remove_file(&history_path);
+        std::env::remove_var("ATOLL_TOKEN_HISTORY_PATH");
+    }
+
+    #[test]
+    fn auto_archive_retention_purge_preserves_session_token_usage() {
+        let state = test_app_state();
+        let session_id = "session-auto-archived".to_string();
+        let token_usage = TokenUsage {
+            input_tokens: 500,
+            output_tokens: 120,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+        };
+
+        {
+            let mut usage = state.session_token_usage.lock().expect("lock");
+            usage.insert(session_id.clone(), token_usage);
+        }
+        {
+            let mut known = state.known_sessions.lock().expect("lock");
+            known.insert(
+                session_id.clone(),
+                KnownSession {
+                    agent: AgentKind::Claude,
+                    cwd: "/tmp/project".into(),
+                    transcript_path: Some("/tmp/project/transcript.jsonl".into()),
+                    last_activity: iso_timestamp_now(),
+                    host: platform::SessionHost::Unknown,
+                },
+            );
+        }
+        {
+            let mut sticky = state.session_agent_map.lock().expect("lock");
+            sticky.insert(session_id.clone(), "claude".to_string());
+        }
+
+        // Simulate auto-archive timer purging a retention-expired known session.
+        purge_tracked_session(
+            &state,
+            &session_id,
+            Some("/tmp/project/transcript.jsonl"),
+        );
+
+        let usage_after = state
+            .session_token_usage
+            .lock()
+            .expect("lock")
+            .get(&session_id)
+            .copied()
+            .expect("token usage should survive retention purge");
+        assert_eq!(usage_after.input_tokens, 500);
+        assert_eq!(usage_after.output_tokens, 120);
+
+        let known_after = state.known_sessions.lock().expect("lock");
+        assert!(!known_after.contains_key(&session_id));
+
+        let token_usage_map = state.session_token_usage.lock().expect("lock");
+        let snapshot = snapshot_from(
+            &[],
+            &HashMap::new(),
+            900,
+            &token_usage_map,
+            &HashMap::new(),
+            &HashSet::new(),
+            true,
+        );
+        assert_eq!(snapshot.daily_tokens.input_tokens, 500);
+        assert_eq!(snapshot.daily_tokens.output_tokens, 120);
+        assert_eq!(snapshot.active_session_tokens.input_tokens, 0);
     }
 
     #[test]

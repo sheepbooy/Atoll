@@ -240,7 +240,7 @@ pub fn parse_codex_tokens_from_reader<R: std::io::BufRead + std::io::Seek>(
         }
 
         let timestamp = entry.get("timestamp").and_then(Value::as_str).unwrap_or("");
-        if timestamp.starts_with(today_key) {
+        if crate::local_time::is_local_today(timestamp, today_key) {
             if let Some(last) =
                 token_usage_from_codex_usage(info.and_then(|v| v.get("last_token_usage")))
             {
@@ -339,7 +339,13 @@ mod tests {
         let jsonl = r#"{"type":"event_msg","timestamp":"2026-06-19T10:00:00.000Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":50,"output_tokens":20,"reasoning_output_tokens":5},"last_token_usage":{"input_tokens":10,"cached_input_tokens":5,"output_tokens":2,"reasoning_output_tokens":1}}}}
 "#;
         let mut reader = std::io::BufReader::new(std::io::Cursor::new(jsonl.as_bytes()));
-        let result = parse_codex_tokens_from_reader(&mut reader, 0, "2026-06-19").expect("parse");
+        let result = parse_codex_tokens_from_reader(
+            &mut reader,
+            0,
+            &crate::local_time::local_day_key_from_iso("2026-06-19T10:00:00.000Z")
+                .expect("local day key"),
+        )
+        .expect("parse");
         assert_eq!(result.session_total.input_tokens, 100);
         assert_eq!(result.session_total.output_tokens, 25);
         assert_eq!(result.session_total.cache_read_tokens, 50);

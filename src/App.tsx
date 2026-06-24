@@ -15,6 +15,7 @@ import {
   Archive,
   ArrowLeft,
   ArrowUpCircle,
+  Activity,
   Check,
   CheckCheck,
   ChevronRight,
@@ -79,6 +80,8 @@ import {
   MIN_MAX_COMPACT_ICONS,
 } from "./compactLayout";
 import { TokenCounter } from "./TokenCounter";
+import { TokenHeatmapView } from "./TokenHeatmapView";
+import { formatCompactTokenCount } from "./tokenCounterFormat";
 import { getDemoMode, isGifCaptureMode, shouldAutoExpandDemo } from "./demoSnapshot";
 import { toPng } from "html-to-image";
 
@@ -131,7 +134,7 @@ type AgentKind = PermissionRequest["agent"];
 type PanelView =
   | { kind: "home" }
   | { kind: "session"; sessionId: string }
-  | { kind: "settings"; page: "main" | "hooks" };
+  | { kind: "settings"; page: "main" | "hooks" | "tokens" };
 
 const COMPACT_ICON_SETTING_KEY = "atoll.maxCompactIcons";
 const RETENTION_SETTING_KEY = "atoll.sessionRetentionMinutes";
@@ -539,6 +542,7 @@ export function App() {
   const [sessionRequests, setSessionRequests] = useState<PermissionRequest[]>([]);
   const [hookBusy, setHookBusy] = useState(false);
   const [hooksBackTarget, setHooksBackTarget] = useState<"home" | "settings-main">("home");
+  const [tokensBackTarget, setTokensBackTarget] = useState<"home" | "settings-main">("home");
   const [selectedAgent, setSelectedAgent] = useState<AgentKind | null>(null);
   const [notchMetrics, setNotchMetrics] = useState<NotchMetrics>(EMPTY_NOTCH_METRICS);
   const [maxCompactIcons, setMaxCompactIcons] = useState<number>(() => readCompactIconLimit());
@@ -1811,6 +1815,35 @@ export function App() {
     }
   }
 
+  function openTokensPage(backTarget: "home" | "settings-main") {
+    setMenuOpen(false);
+    setTokensBackTarget(backTarget);
+    setPanelView({ kind: "settings", page: "tokens" });
+  }
+
+  function handleOpenTokensFromCounter() {
+    if (panelView.kind === "settings" && panelView.page === "tokens") return;
+    if (isIdleExpanded) {
+      lastNativePresentationKeyRef.current = expandedPresentationKey(false);
+      syncNativeIslandPresentation("expanded", undefined, false).catch(
+        () => undefined,
+      );
+    }
+    openTokensPage(panelView.kind === "settings" ? "settings-main" : "home");
+  }
+
+  function handleOpenTokensFromSettings() {
+    openTokensPage("settings-main");
+  }
+
+  function navigateBackFromTokens() {
+    if (tokensBackTarget === "settings-main") {
+      setPanelView({ kind: "settings", page: "main" });
+    } else {
+      navigateBack();
+    }
+  }
+
   function handleOpenSettings() {
     setMenuOpen(false);
     setPanelView({ kind: "settings", page: "main" });
@@ -1860,7 +1893,7 @@ export function App() {
   const showMicroTokenCounter =
     isMicro && !isPresentationTransition && activeSessionTokenTotal > 0;
   const showCompactTokenCounter = activeSessionTokenTotal > 0;
-  const showExpandedTokenCounter = dailyTokenTotal > 0;
+  const showExpandedTokenCounter = true;
   const showCompactNotchSpacer =
     collapsedMode === "compact" && !isExpanded && notchMetrics.hasNotch;
   const compactLeftSessions = sessions.slice(0, compactHeaderLayout.leftIconCount);
@@ -1986,6 +2019,10 @@ export function App() {
         );
       }
 
+      if (panelView.page === "tokens") {
+        return <TokenHeatmapView todayTokens={dailyTokens} />;
+      }
+
       return (
         <SettingsView
           maxCompactIcons={maxCompactIcons}
@@ -2002,6 +2039,8 @@ export function App() {
           idleDurationSec={idleDurationSec}
           onChangeIdleDuration={(v) => setIdleDurationSec(clampIdleDuration(v))}
           onOpenHooks={handleOpenHooksFromSettings}
+          onOpenTokens={handleOpenTokensFromSettings}
+          todayTokenTotal={dailyTokenTotal}
           hooksSummary={hooksSetupSummary}
           hooksNeedAttention={hooksNeedAttention}
         />
@@ -2144,6 +2183,11 @@ export function App() {
                 onBack={navigateBackFromHooks}
                 backLabel={hooksBackTarget === "settings-main" ? "Settings" : "Back"}
               />
+            ) : panelView.kind === "settings" && panelView.page === "tokens" ? (
+              <TokensSubviewNav
+                onBack={navigateBackFromTokens}
+                backLabel={tokensBackTarget === "settings-main" ? "Settings" : "Back"}
+              />
             ) : panelView.kind === "settings" ? (
               <SettingsSubviewNav onBack={navigateBack} />
             ) : showPanelAgentTabs ? (
@@ -2219,6 +2263,7 @@ export function App() {
                 value={dailyTokenTotal}
                 usage={dailyTokens}
                 variant="expanded"
+                onClick={handleOpenTokensFromCounter}
               />
             ) : null}
             <button
@@ -2650,6 +2695,8 @@ interface SettingsViewProps {
   idleDurationSec: number;
   onChangeIdleDuration: (value: number) => void;
   onOpenHooks: () => void;
+  onOpenTokens: () => void;
+  todayTokenTotal: number;
   hooksSummary: string;
   hooksNeedAttention: boolean;
 }
@@ -2715,12 +2762,42 @@ function SettingsView({
   idleDurationSec,
   onChangeIdleDuration,
   onOpenHooks,
+  onOpenTokens,
+  todayTokenTotal,
   hooksSummary,
   hooksNeedAttention,
 }: SettingsViewProps) {
+  const todayLabel =
+    todayTokenTotal > 0
+      ? `${formatCompactTokenCount(todayTokenTotal, todayTokenTotal >= 1_000 ? 1 : 0, todayTokenTotal)} today`
+      : "No usage yet";
+
   return (
     <div className="settings-view" data-no-drag>
       <div className="settings-body">
+        <div className="settings-section">
+          <span className="settings-section-label">Usage</span>
+          <button
+            type="button"
+            className="settings-nav-card"
+            onClick={onOpenTokens}
+            data-no-drag
+          >
+            <div className="settings-nav-card-copy">
+              <span className="settings-card-title">Token activity</span>
+              <span className="settings-card-desc">
+                Daily token heatmap and usage history.
+              </span>
+            </div>
+            <div className="settings-nav-card-meta">
+              <span className="settings-hook-badge is-summary is-installed">
+                {todayLabel}
+              </span>
+              <ChevronRight size={14} className="settings-nav-chevron" />
+            </div>
+          </button>
+        </div>
+
         <div className="settings-section">
           <span className="settings-section-label">Integrations</span>
           <button
@@ -3024,6 +3101,27 @@ interface HooksViewProps {
   hookBusy: boolean;
   onInstallAll: () => void;
   onUninstallAll: () => void;
+}
+
+function TokensSubviewNav({
+  onBack,
+  backLabel,
+}: {
+  onBack: () => void;
+  backLabel: string;
+}) {
+  return (
+    <div className="settings-subview-nav" data-no-drag>
+      <button type="button" className="back-button" onClick={onBack}>
+        <ArrowLeft size={13} />
+        <span>{backLabel}</span>
+      </button>
+      <span className="settings-header-title">
+        <Activity size={14} />
+        <span>Token activity</span>
+      </span>
+    </div>
+  );
 }
 
 function HooksSubviewNav({

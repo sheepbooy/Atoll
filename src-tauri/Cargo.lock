@@ -212,11 +212,13 @@ dependencies = [
 
 [[package]]
 name = "atoll"
-version = "0.1.23"
+version = "0.1.24"
 dependencies = [
  "base64 0.22.1",
+ "chrono",
  "dirs",
  "dunce",
+ "iana-time-zone",
  "image",
  "objc2",
  "objc2-app-kit",

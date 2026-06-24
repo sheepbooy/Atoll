@@ -219,6 +219,7 @@ export interface TokenCounterProps {
   compactTokenLevel?: number;
   /** Hold digits static during island open/close animations. */
   suppressAnimations?: boolean;
+  onClick?: () => void;
 }
 
 const DEFAULT_ICON_LIMIT = 3;
@@ -231,6 +232,7 @@ export function TokenCounter({
   maxCompactIcons = DEFAULT_ICON_LIMIT,
   compactTokenLevel,
   suppressAnimations = false,
+  onClick,
 }: TokenCounterProps) {
   const isCollapsedVariant = variant === "compact" || variant === "micro";
   const compactLevel =
@@ -399,13 +401,33 @@ export function TokenCounter({
     event.stopPropagation();
   }
 
+  function handleClick(event: React.MouseEvent<HTMLSpanElement>) {
+    if (!onClick) return;
+    event.stopPropagation();
+    onClick();
+  }
+
   return (
     <span
       ref={wrapRef}
       className={`token-counter-wrap token-counter-wrap--${variant} token-counter-wrap--${energy}${
         suppressAnimations ? " is-present-transition" : ""
-      }`}
+      }${onClick ? " is-clickable" : ""}`}
       data-no-drag
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={handleClick}
+      onKeyDown={
+        onClick
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                event.stopPropagation();
+                onClick();
+              }
+            }
+          : undefined
+      }
       onMouseDown={handleMouseDown}
       onPointerDown={handlePointerDown}
       onPointerEnter={handlePointerEnter}
