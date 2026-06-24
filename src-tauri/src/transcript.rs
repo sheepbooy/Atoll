@@ -156,6 +156,94 @@ pub fn parse_codex_messages(lines: &[String]) -> Vec<ParsedChatMessage> {
     messages
 }
 
+const SUBAGENT_TERMINAL_SUBSTRINGS: &[&str] = &[
+    "request interrupted by user for tool use",
+    "request interrupted by user",
+];
+
+pub fn is_subagent_terminal_text(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    SUBAGENT_TERMINAL_SUBSTRINGS
+        .iter()
+        .any(|pattern| lower.contains(pattern))
+}
+
+fn extract_claude_transcript_text(entry: &Value) -> String {
+    if let Some(message) = entry.get("message") {
+        if let Some(content) = message.get("content") {
+            if let Some(text) = content.as_str() {
+                return text.to_string();
+            }
+            if let Some(arr) = content.as_array() {
+                let parts: Vec<String> = arr
+                    .iter()
+                    .filter_map(|block| {
+                        if block.get("type")?.as_str()? == "text" {
+                            block.get("text").and_then(Value::as_str).map(str::to_string)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                return parts.join("\n");
+            }
+        }
+    }
+    String::new()
+}
+
+fn terminal_text_from_transcript_entry(entry: &Value) -> Option<String> {
+    match entry.get("type").and_then(Value::as_str)? {
+        "human" | "user" | "assistant" => {
+            let text = extract_claude_transcript_text(entry);
+            if text.is_empty() {
+                None
+            } else {
+                Some(text)
+            }
+        }
+        "response_item" => {
+            let payload = entry.get("payload").unwrap_or(&Value::Null);
+            let content = extract_codex_message_content(payload);
+            if content.is_empty() {
+                None
+            } else {
+                Some(content)
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Detect subagent termination signals written to transcript when SubagentStop
+/// hooks are missed (e.g. user interrupt during tool use).
+pub fn extract_subagent_terminal_message(path: &str) -> Option<String> {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+
+    let file = File::open(path).ok()?;
+    let reader = BufReader::new(file);
+    let mut last_terminal: Option<String> = None;
+
+    for line in reader.lines().flatten() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let entry: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if let Some(text) = terminal_text_from_transcript_entry(&entry) {
+            if is_subagent_terminal_text(&text) {
+                last_terminal = Some(text.chars().take(200).collect());
+            }
+        }
+    }
+
+    last_terminal
+}
+
 fn extract_codex_message_content(payload: &Value) -> String {
     let content = payload.get("content");
     if let Some(text) = content.and_then(Value::as_str) {
@@ -332,6 +420,32 @@ mod tests {
         assert_eq!(messages[0].content, "Hello");
         assert_eq!(messages[1].content, "Hi there");
         assert_eq!(messages[2].tool_name.as_deref(), Some("exec_command"));
+    }
+
+    #[test]
+    fn detects_subagent_interruption_in_claude_transcript() {
+        let dir = std::env::temp_dir().join(format!(
+            "atoll-subagent-terminal-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("agent-test.jsonl");
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Working..."}]}}"#,
+                "\n",
+                r#"{"type":"user","message":{"role":"user","content":"Request interrupted by user for tool use"}}"#,
+                "\n",
+            ),
+        )
+        .expect("write transcript");
+
+        let message =
+            extract_subagent_terminal_message(&path.to_string_lossy()).expect("terminal message");
+        assert!(message.contains("interrupted by user"));
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

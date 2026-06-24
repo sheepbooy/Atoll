@@ -24,6 +24,7 @@ export interface PermissionRequest {
   status: PermissionStatus;
   archived?: boolean;
   supportsAlways?: boolean;
+  toolInput?: unknown;
 }
 
 export interface IslandSnapshot {
@@ -45,6 +46,16 @@ export type SessionHost =
   | "codexDesktop"
   | "codexCli";
 
+export interface SubagentSummary {
+  agentId: string;
+  agentType: string;
+  startedAt: string;
+  agentTranscriptPath?: string | null;
+  completedAt?: string | null;
+  archived?: boolean;
+  lastMessage?: string | null;
+}
+
 export interface SessionSummary {
   sessionId: string;
   agent: AgentKind;
@@ -55,12 +66,14 @@ export interface SessionSummary {
   transcriptPath: string | null;
   pinned?: boolean;
   sessionHost?: SessionHost;
+  activeSubagents?: SubagentSummary[];
 }
 
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
   toolName?: string | null;
+  toolInput?: unknown;
 }
 
 export interface IslandHoverChanged {
@@ -152,6 +165,30 @@ export async function resolvePermissionRequest(
   return getSnapshot();
 }
 
+export async function resolvePermissionWithInput(
+  id: string,
+  decision: "approved" | "denied",
+  note: string,
+  updatedInput?: unknown,
+): Promise<IslandSnapshot> {
+  if (isTauriRuntime) {
+    return normalizeSnapshot(
+      await invoke<IslandSnapshot>("resolve_permission_with_input", {
+        id,
+        decision,
+        note,
+        updatedInput: updatedInput ?? null,
+      }),
+    );
+  }
+
+  localRequests = localRequests.map((request) =>
+    request.id === id ? { ...request, status: decision } : request,
+  );
+
+  return getSnapshot();
+}
+
 export async function setSessionAutoApprove(session: string, enabled: boolean) {
   if (!isTauriRuntime) {
     return;
@@ -189,6 +226,27 @@ export async function archiveSession(sessionId: string): Promise<IslandSnapshot>
 
   localRequests = localRequests.filter((request) => request.session !== sessionId);
   return getSnapshot();
+}
+
+export async function archiveSubagent(agentId: string): Promise<IslandSnapshot> {
+  if (isTauriRuntime) {
+    return normalizeSnapshot(await invoke<IslandSnapshot>("archive_subagent", { agentId }));
+  }
+  return getSnapshot();
+}
+
+export async function getSubagentRetention(): Promise<number> {
+  if (isTauriRuntime) {
+    return invoke<number>("get_subagent_retention");
+  }
+  return 600;
+}
+
+export async function setSubagentRetention(minutes: number): Promise<number> {
+  if (isTauriRuntime) {
+    return invoke<number>("set_subagent_retention", { minutes });
+  }
+  return minutes * 60;
 }
 
 export async function pinSession(sessionId: string, pinned: boolean): Promise<IslandSnapshot> {

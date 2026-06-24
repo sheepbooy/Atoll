@@ -62,6 +62,8 @@ struct PermissionRequest {
     supports_always: bool,
     #[serde(default)]
     transcript_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tool_input: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,6 +80,34 @@ struct IslandSnapshot {
     hook_health: HookHealthSnapshot,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ActiveSubagent {
+    agent_id: String,
+    session_id: String,
+    agent_kind: AgentKind,
+    agent_type: String,
+    started_at: String,
+    agent_transcript_path: Option<String>,
+    completed_at: Option<String>,
+    #[serde(default)]
+    archived: bool,
+    last_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SubagentSummary {
+    agent_id: String,
+    agent_type: String,
+    started_at: String,
+    agent_transcript_path: Option<String>,
+    completed_at: Option<String>,
+    #[serde(default)]
+    archived: bool,
+    last_message: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SessionSummary {
@@ -92,6 +122,8 @@ struct SessionSummary {
     pinned: bool,
     #[serde(default)]
     session_host: platform::SessionHost,
+    #[serde(default)]
+    active_subagents: Vec<SubagentSummary>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -160,6 +192,7 @@ struct IslandHoverChanged {
 struct DecisionWithNote {
     decision: Decision,
     note: String,
+    updated_input: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -184,6 +217,7 @@ pub(crate) struct AppState {
     notch_metrics: Mutex<NotchMetrics>,
     session_last_seen: Mutex<HashMap<String, u64>>,
     session_retention_secs: Mutex<u64>,
+    subagent_retention_secs: Mutex<u64>,
     session_token_usage: Mutex<HashMap<String, TokenUsage>>,
     /// Sticky session → agent mapping that survives session purges within a day.
     session_agent_map: Mutex<HashMap<String, String>>,
@@ -199,6 +233,7 @@ pub(crate) struct AppState {
     last_hook_health: Mutex<Option<HookHealthSnapshot>>,
     /// Local hook bridge TCP port (0 until bound).
     bridge_port: AtomicU16,
+    active_subagents: Mutex<Vec<ActiveSubagent>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -267,6 +302,7 @@ pub(crate) fn compute_listening_online(app: &AppHandle) -> bool {
 
 pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapshot {
     roll_over_token_usage_if_needed(state);
+    reconcile_incomplete_subagents(state);
     let requests = state.requests.lock().expect("state mutex poisoned");
     let last_seen = state.session_last_seen.lock().expect("state mutex poisoned");
     let retention = *state.session_retention_secs.lock().expect("state mutex poisoned");
@@ -295,6 +331,50 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
     drop(token_usage);
     drop(last_seen);
     drop(requests);
+    let subagent_retention = *state
+        .subagent_retention_secs
+        .lock()
+        .expect("state mutex poisoned");
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let active_subagents = state
+        .active_subagents
+        .lock()
+        .expect("state mutex poisoned");
+    for session in snapshot.sessions.iter_mut() {
+        session.active_subagents = active_subagents
+            .iter()
+            .filter(|subagent| {
+                if subagent.session_id != session.session_id {
+                    return false;
+                }
+                if subagent.archived {
+                    return false;
+                }
+                if subagent_retention > 0 {
+                    if let Some(ref completed) = subagent.completed_at {
+                        let completed_ts = parse_iso_timestamp_secs(completed);
+                        if now_secs.saturating_sub(completed_ts) >= subagent_retention {
+                            return false;
+                        }
+                    }
+                }
+                true
+            })
+            .map(|subagent| SubagentSummary {
+                agent_id: subagent.agent_id.clone(),
+                agent_type: subagent.agent_type.clone(),
+                started_at: subagent.started_at.clone(),
+                agent_transcript_path: subagent.agent_transcript_path.clone(),
+                completed_at: subagent.completed_at.clone(),
+                archived: subagent.archived,
+                last_message: subagent.last_message.clone(),
+            })
+            .collect();
+    }
+    drop(active_subagents);
     persist_session_hosts(state, &snapshot.sessions);
     snapshot.hook_health = hook_health;
     let _ = token_history::sync_today_to_history(state);
@@ -523,6 +603,55 @@ fn resolve_permission_request(
         let _ = waiter.send(DecisionWithNote {
             decision,
             note: note.clone(),
+            updated_input: None,
+        });
+    }
+
+    touch_session_activity(&state, &session_id);
+    roll_over_token_usage_if_needed(&state);
+    drop(requests);
+    let snapshot = build_snapshot(&app, &state);
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+    Ok(snapshot)
+}
+
+#[tauri::command]
+fn resolve_permission_with_input(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    decision: Decision,
+    note: String,
+    updated_input: Option<Value>,
+) -> Result<IslandSnapshot, String> {
+    let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
+    let status = match decision {
+        Decision::Approved => PermissionStatus::Approved,
+        Decision::Denied => PermissionStatus::Denied,
+    };
+
+    let Some(request) = requests.iter_mut().find(|request| request.id == id) else {
+        return Err(format!("Permission request not found: {id}"));
+    };
+
+    request.status = status;
+    if !note.trim().is_empty() {
+        request.detail = format!("{} Note: {}", request.detail, note.trim());
+    }
+
+    let session_id = request.session.clone();
+
+    let waiter = state
+        .hook_waiters
+        .lock()
+        .map_err(|error| error.to_string())?
+        .remove(&id);
+    if let Some(waiter) = waiter {
+        let _ = waiter.send(DecisionWithNote {
+            decision,
+            note: note.clone(),
+            updated_input,
         });
     }
 
@@ -711,6 +840,8 @@ struct ChatMessage {
     content: String,
     #[serde(default)]
     tool_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tool_input: Option<Value>,
 }
 
 const TRANSCRIPT_MAX_MESSAGES: usize = 50;
@@ -740,6 +871,7 @@ fn get_session_transcript(transcript_path: String) -> Result<Vec<ChatMessage>, S
                 role: parsed.role,
                 content: parsed.content,
                 tool_name: parsed.tool_name,
+                tool_input: None,
             });
         }
     } else {
@@ -767,29 +899,35 @@ fn get_session_transcript(transcript_path: String) -> Result<Vec<ChatMessage>, S
                             role: "user".into(),
                             content,
                             tool_name: None,
+                            tool_input: None,
                         });
                     }
                 }
                 "assistant" => {
                     let content = extract_transcript_text(&entry);
-                    let tool_name = entry
+                    let (tool_name, tool_input) = entry
                         .get("message")
                         .and_then(|m| m.get("content"))
                         .and_then(Value::as_array)
                         .and_then(|arr| {
                             arr.iter().find_map(|block| {
                                 if block.get("type")?.as_str()? == "tool_use" {
-                                    block.get("name").and_then(Value::as_str).map(String::from)
+                                    let name = block.get("name").and_then(Value::as_str).map(String::from)?;
+                                    let input = block.get("input").cloned();
+                                    Some((name, input))
                                 } else {
                                     None
                                 }
                             })
-                        });
+                        })
+                        .map(|(name, input)| (Some(name), input))
+                        .unwrap_or((None, None));
                     if !content.is_empty() || tool_name.is_some() {
                         messages.push(ChatMessage {
                             role: "assistant".into(),
                             content,
                             tool_name,
+                            tool_input,
                         });
                     }
                 }
@@ -1133,6 +1271,7 @@ fn archive_session(
                 let _ = waiter.send(DecisionWithNote {
                     decision: Decision::Denied,
                     note: "Session archived in Atoll.".into(),
+                    updated_input: None,
                 });
             }
         }
@@ -1184,6 +1323,7 @@ fn pin_session(
 }
 
 const DEFAULT_SESSION_RETENTION_SECS: u64 = 900;
+const DEFAULT_SUBAGENT_RETENTION_SECS: u64 = 600;
 
 fn atoll_settings_path() -> Option<std::path::PathBuf> {
     dirs::home_dir().map(|home| home.join(".atoll").join("settings.json"))
@@ -1206,19 +1346,50 @@ fn load_persisted_retention_secs() -> u64 {
     minutes.clamp(1, 60) * 60
 }
 
-fn persist_retention_minutes(minutes: u64) {
+fn load_persisted_subagent_retention_secs() -> u64 {
+    let Some(path) = atoll_settings_path() else {
+        return DEFAULT_SUBAGENT_RETENTION_SECS;
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return DEFAULT_SUBAGENT_RETENTION_SECS;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+        return DEFAULT_SUBAGENT_RETENTION_SECS;
+    };
+    let minutes = value
+        .get("subagentRetentionMinutes")
+        .and_then(Value::as_u64)
+        .unwrap_or(DEFAULT_SUBAGENT_RETENTION_SECS / 60);
+    minutes.clamp(1, 60) * 60
+}
+
+fn persist_settings(session_minutes: Option<u64>, subagent_minutes: Option<u64>) {
     let Some(path) = atoll_settings_path() else {
         return;
     };
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let config = serde_json::json!({
-        "sessionRetentionMinutes": minutes.clamp(1, 60)
-    });
+    let mut config: Value = path
+        .exists()
+        .then(|| std::fs::read_to_string(&path).ok())
+        .flatten()
+        .and_then(|c| serde_json::from_str(&c).ok())
+        .unwrap_or_else(|| Value::Object(Default::default()));
+    let obj = config.as_object_mut().unwrap();
+    if let Some(m) = session_minutes {
+        obj.insert("sessionRetentionMinutes".into(), Value::from(m));
+    }
+    if let Some(m) = subagent_minutes {
+        obj.insert("subagentRetentionMinutes".into(), Value::from(m));
+    }
     if let Ok(formatted) = serde_json::to_string_pretty(&config) {
         let _ = std::fs::write(path, formatted);
     }
+}
+
+fn persist_retention_minutes(minutes: u64) {
+    persist_settings(Some(minutes.clamp(1, 60)), None);
 }
 
 #[tauri::command]
@@ -1237,6 +1408,41 @@ fn set_session_retention(
     *retention = secs;
     persist_retention_minutes(clamped_minutes);
     secs
+}
+
+#[tauri::command]
+fn get_subagent_retention(state: State<'_, AppState>) -> u64 {
+    *state.subagent_retention_secs.lock().expect("state mutex poisoned")
+}
+
+#[tauri::command]
+fn set_subagent_retention(
+    state: State<'_, AppState>,
+    minutes: u64,
+) -> u64 {
+    let clamped_minutes = minutes.clamp(1, 60);
+    let secs = clamped_minutes * 60;
+    let mut retention = state.subagent_retention_secs.lock().expect("state mutex poisoned");
+    *retention = secs;
+    persist_settings(None, Some(clamped_minutes));
+    secs
+}
+
+#[tauri::command]
+fn archive_subagent(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    agent_id: String,
+) -> Result<IslandSnapshot, String> {
+    if let Ok(mut subagents) = state.active_subagents.lock() {
+        if let Some(sub) = subagents.iter_mut().find(|s| s.agent_id == agent_id) {
+            sub.archived = true;
+        }
+    }
+    let snapshot = build_snapshot(&app, &state);
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+    Ok(snapshot)
 }
 
 /// Codex background threads (memories, subagents, etc.) often omit `cwd` in hook payloads.
@@ -1525,6 +1731,133 @@ pub(crate) fn touch_session_activity(state: &AppState, session_id: &str) {
     }
 }
 
+fn derive_subagent_transcript_path(main_transcript: Option<&str>, agent_id: &str) -> Option<String> {
+    let main = main_transcript?;
+    let stem = main.strip_suffix(".jsonl").unwrap_or(main);
+    let filename = if agent_id.starts_with("agent-") {
+        format!("{agent_id}.jsonl")
+    } else {
+        format!("agent-{agent_id}.jsonl")
+    };
+    let path = format!("{stem}/subagents/{filename}");
+    if std::path::Path::new(&path).exists() {
+        return Some(path);
+    }
+    let alt = format!("{stem}/subagents/{agent_id}.jsonl");
+    if std::path::Path::new(&alt).exists() {
+        return Some(alt);
+    }
+    Some(path)
+}
+
+pub(crate) fn register_subagent_start(state: &AppState, payload: &serde_json::Value, agent_kind: AgentKind) {
+    let agent_id = payload
+        .get("agent_id")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let session_id = payload
+        .get("session_id")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| payload.get("sessionId").and_then(serde_json::Value::as_str))
+        .unwrap_or("")
+        .to_string();
+    let agent_type = payload
+        .get("agent_type")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("unknown")
+        .to_string();
+    let agent_transcript_path = payload
+        .get("agent_transcript_path")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+        .or_else(|| {
+            let main_path = payload.get("transcript_path").and_then(serde_json::Value::as_str);
+            derive_subagent_transcript_path(main_path, &agent_id)
+        });
+
+    if agent_id.is_empty() || session_id.is_empty() {
+        return;
+    }
+
+    let subagent = ActiveSubagent {
+        agent_id,
+        session_id,
+        agent_kind,
+        agent_type,
+        started_at: iso_timestamp_now(),
+        agent_transcript_path,
+        completed_at: None,
+        archived: false,
+        last_message: None,
+    };
+
+    if let Ok(mut subagents) = state.active_subagents.lock() {
+        if !subagents.iter().any(|s| s.agent_id == subagent.agent_id) {
+            subagents.push(subagent);
+        }
+    }
+}
+
+pub(crate) fn complete_subagent(state: &AppState, payload: &serde_json::Value) {
+    let agent_id = payload
+        .get("agent_id")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    if agent_id.is_empty() {
+        return;
+    }
+    let transcript_path = payload
+        .get("agent_transcript_path")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let last_message = payload
+        .get("last_assistant_message")
+        .and_then(serde_json::Value::as_str)
+        .map(|s| s.chars().take(200).collect::<String>());
+    if let Ok(mut subagents) = state.active_subagents.lock() {
+        if let Some(sub) = subagents.iter_mut().find(|s| s.agent_id == agent_id) {
+            mark_subagent_complete(sub, transcript_path, last_message);
+        }
+    }
+}
+
+fn mark_subagent_complete(
+    sub: &mut ActiveSubagent,
+    transcript_path: Option<String>,
+    last_message: Option<String>,
+) {
+    if sub.completed_at.is_some() {
+        return;
+    }
+    sub.completed_at = Some(iso_timestamp_now());
+    if let Some(path) = transcript_path {
+        sub.agent_transcript_path = Some(path);
+    }
+    if let Some(message) = last_message {
+        sub.last_message = Some(message);
+    }
+}
+
+pub(crate) fn reconcile_incomplete_subagents(state: &AppState) {
+    let mut subagents = match state.active_subagents.lock() {
+        Ok(guard) => guard,
+        Err(_) => return,
+    };
+    for sub in subagents.iter_mut() {
+        if sub.completed_at.is_some() || sub.archived {
+            continue;
+        }
+        let Some(path) = sub.agent_transcript_path.as_deref() else {
+            continue;
+        };
+        let Some(message) = transcript::extract_subagent_terminal_message(path) else {
+            continue;
+        };
+        mark_subagent_complete(sub, None, Some(message));
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct HookStatus {
@@ -1676,6 +2009,18 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
             }
         ],
         "SubagentStop": [
+            {
+                "matcher": "*",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": hook_command,
+                        "timeout": 30
+                    }
+                ]
+            }
+        ],
+        "SubagentStart": [
             {
                 "matcher": "*",
                 "hooks": [
@@ -1865,6 +2210,19 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
             }
         ],
         "SubagentStop": [
+            {
+                "matcher": "*",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": hook_command,
+                        "timeout": 30,
+                        "statusMessage": "Atoll session sync"
+                    }
+                ]
+            }
+        ],
+        "SubagentStart": [
             {
                 "matcher": "*",
                 "hooks": [
@@ -2646,6 +3004,7 @@ pub fn run() {
             notch_metrics: Mutex::new(NotchMetrics::default()),
             session_last_seen: Mutex::new(HashMap::new()),
             session_retention_secs: Mutex::new(DEFAULT_SESSION_RETENTION_SECS),
+            subagent_retention_secs: Mutex::new(DEFAULT_SUBAGENT_RETENTION_SECS),
             session_token_usage: Mutex::new(HashMap::new()),
             session_agent_map: Mutex::new(HashMap::new()),
             token_usage_file_offsets: Mutex::new(HashMap::new()),
@@ -2656,12 +3015,14 @@ pub fn run() {
             last_listening_online: Mutex::new(None),
             last_hook_health: Mutex::new(None),
             bridge_port: AtomicU16::new(0),
+            active_subagents: Mutex::new(Vec::new()),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
             get_session_requests,
             get_session_transcript,
             resolve_permission_request,
+            resolve_permission_with_input,
             set_session_auto_approve,
             archive_request,
             archive_all_resolved,
@@ -2678,6 +3039,9 @@ pub fn run() {
             uninstall_codex_hooks,
             get_session_retention,
             set_session_retention,
+            get_subagent_retention,
+            set_subagent_retention,
+            archive_subagent,
             get_token_history,
             open_in_terminal,
             open_agent_app,
@@ -2709,6 +3073,11 @@ pub fn run() {
                     .session_retention_secs
                     .lock()
                     .expect("state mutex poisoned") = retention;
+                let sub_retention = load_persisted_subagent_retention_secs();
+                *state
+                    .subagent_retention_secs
+                    .lock()
+                    .expect("state mutex poisoned") = sub_retention;
             }
             start_auto_archive_timer(app.handle().clone());
             start_token_refresh_timer(app.handle().clone());
@@ -2896,6 +3265,7 @@ fn start_auto_archive_timer(app: AppHandle) {
                         let _ = waiter.send(DecisionWithNote {
                             decision: Decision::Denied,
                             note: "Auto-archived after idle timeout.".into(),
+                            updated_input: None,
                         });
                     }
                 }
@@ -3548,6 +3918,7 @@ fn snapshot_from(
                 transcript_path,
                 pinned: pinned_sessions.contains(session_id),
                 session_host,
+                active_subagents: Vec::new(),
             });
         }
 
@@ -3609,6 +3980,7 @@ fn snapshot_from(
                         &info.agent,
                     )
                 },
+                active_subagents: Vec::new(),
             });
         }
 
@@ -3637,7 +4009,17 @@ fn snapshot_from(
         pending_count,
         archived_count,
         active_request,
-        recent: visible.into_iter().take(12).cloned().collect(),
+        recent: visible
+            .into_iter()
+            .take(12)
+            .map(|r| {
+                let mut stripped = (*r).clone();
+                if stripped.status != PermissionStatus::Pending {
+                    stripped.tool_input = None;
+                }
+                stripped
+            })
+            .collect(),
         sessions,
         daily_tokens,
         active_session_tokens,
@@ -3697,6 +4079,7 @@ fn build_session_summaries(visible: &[&PermissionRequest]) -> Vec<SessionSummary
                 transcript_path,
                 pinned: false,
                 session_host: platform::SessionHost::Unknown,
+                active_subagents: Vec::new(),
             },
         )
         .collect();
@@ -3794,8 +4177,9 @@ mod core_tests {
             status: PermissionStatus::Approved,
             archived: true,
             supports_always: false,
-            transcript_path: None,
-        }];
+        transcript_path: None,
+        tool_input: None,
+    }];
 
         let snapshot = snapshot_from(
             &requests,
@@ -4109,8 +4493,9 @@ mod core_tests {
             status: PermissionStatus::Approved,
             archived: false,
             supports_always: false,
-            transcript_path: None,
-        }];
+        transcript_path: None,
+        tool_input: None,
+    }];
         let token_usage = HashMap::from([
             (
                 "session-active".into(),
@@ -4191,6 +4576,7 @@ mod core_tests {
             notch_metrics: Mutex::new(NotchMetrics::default()),
             session_last_seen: Mutex::new(HashMap::new()),
             session_retention_secs: Mutex::new(DEFAULT_SESSION_RETENTION_SECS),
+            subagent_retention_secs: Mutex::new(DEFAULT_SUBAGENT_RETENTION_SECS),
             session_token_usage: Mutex::new(HashMap::new()),
             session_agent_map: Mutex::new(HashMap::new()),
             token_usage_file_offsets: Mutex::new(HashMap::new()),
@@ -4201,6 +4587,7 @@ mod core_tests {
             last_listening_online: Mutex::new(None),
             last_hook_health: Mutex::new(None),
             bridge_port: AtomicU16::new(0),
+            active_subagents: Mutex::new(Vec::new()),
         }
     }
 
@@ -4616,8 +5003,9 @@ mod hook_bridge_tests {
             status: crate::PermissionStatus::Pending,
             archived: false,
             supports_always: false,
-            transcript_path: None,
-        }];
+        transcript_path: None,
+        tool_input: None,
+    }];
 
         let payload = json!({
             "session_id": "session-123",
@@ -4655,8 +5043,9 @@ mod hook_bridge_tests {
             status: crate::PermissionStatus::Pending,
             archived: false,
             supports_always: false,
-            transcript_path: None,
-        }];
+        transcript_path: None,
+        tool_input: None,
+    }];
 
         let payload = json!({
             "session_id": "session-123",
@@ -4693,6 +5082,7 @@ mod hook_bridge_tests {
                 archived: false,
                 supports_always: false,
                 transcript_path: None,
+                tool_input: None,
             },
             crate::PermissionRequest {
                 id: "request-older".into(),
@@ -4707,6 +5097,7 @@ mod hook_bridge_tests {
                 archived: false,
                 supports_always: false,
                 transcript_path: None,
+                tool_input: None,
             },
         ];
 
@@ -4733,6 +5124,7 @@ mod hook_bridge_tests {
             "PermissionRequest",
             crate::Decision::Approved,
             "",
+            None,
         );
         assert_eq!(
             approved,
@@ -4747,7 +5139,7 @@ mod hook_bridge_tests {
         );
 
         let denied =
-            crate::hook_bridge::permission_hook_response("PermissionRequest", crate::Decision::Denied, "");
+            crate::hook_bridge::permission_hook_response("PermissionRequest", crate::Decision::Denied, "", None);
         assert_eq!(
             denied,
             json!({
@@ -4768,6 +5160,7 @@ mod hook_bridge_tests {
             "PermissionRequest",
             crate::Decision::Denied,
             "Please use a safer command",
+            None,
         );
         assert_eq!(
             denied,
@@ -4786,7 +5179,7 @@ mod hook_bridge_tests {
     #[test]
     fn encodes_hook_decision_for_claude_pre_tool_use() {
         let approved =
-            crate::hook_bridge::permission_hook_response("PreToolUse", crate::Decision::Approved, "");
+            crate::hook_bridge::permission_hook_response("PreToolUse", crate::Decision::Approved, "", None);
         assert_eq!(
             approved,
             json!({
@@ -4836,6 +5229,7 @@ mod hook_bridge_tests {
             "PermissionRequest",
             crate::Decision::Approved,
             "",
+            None,
         );
         assert_eq!(
             approved,
@@ -4853,6 +5247,7 @@ mod hook_bridge_tests {
             "PermissionRequest",
             crate::Decision::Denied,
             "too risky",
+            None,
         );
         assert_eq!(
             denied,

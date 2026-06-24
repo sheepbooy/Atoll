@@ -11,7 +11,8 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
     build_snapshot, iso_timestamp_now, is_codex_internal_session, platform, purge_tracked_session,
-    refresh_session_token_usage, register_known_session, resolve_codex_session_cwd,
+    complete_subagent, refresh_session_token_usage, register_known_session,
+    register_subagent_start, resolve_codex_session_cwd,
     roll_over_token_usage_if_needed, show_main_window_for_approval, touch_session_activity,
     AgentKind, AppState, Decision, DecisionWithNote, PermissionRequest, PermissionStatus,
 };
@@ -283,13 +284,27 @@ fn permission_request_from_tool_payload(
             .get("transcript_path")
             .and_then(Value::as_str)
             .map(str::to_string),
+        tool_input: payload
+            .get("tool_input")
+            .and_then(|value| if value.is_null() { None } else { Some(value.clone()) }),
     })
 }
 
-pub(crate) fn permission_hook_response(hook_event_name: &str, decision: Decision, note: &str) -> Value {
+pub(crate) fn permission_hook_response(
+    hook_event_name: &str,
+    decision: Decision,
+    note: &str,
+    updated_input: Option<Value>,
+) -> Value {
     if hook_event_name == "PermissionRequest" {
         let decision = match decision {
-            Decision::Approved => json!({ "behavior": "allow" }),
+            Decision::Approved => {
+                if let Some(input) = updated_input {
+                    json!({ "behavior": "allow", "updatedInput": input })
+                } else {
+                    json!({ "behavior": "allow" })
+                }
+            }
             Decision::Denied => {
                 let message = if note.is_empty() {
                     "Denied from Atoll".to_string()
@@ -322,13 +337,17 @@ pub(crate) fn permission_hook_response(hook_event_name: &str, decision: Decision
             ("deny", reason)
         }
     };
-    json!({
-        "hookSpecificOutput": {
-            "hookEventName": hook_event_name,
-            "permissionDecision": permission_decision,
-            "permissionDecisionReason": reason
+    let mut output = json!({
+        "hookEventName": hook_event_name,
+        "permissionDecision": permission_decision,
+        "permissionDecisionReason": reason
+    });
+    if matches!(decision, Decision::Approved) {
+        if let Some(input) = updated_input {
+            output.as_object_mut().unwrap().insert("updatedInput".to_string(), input);
         }
-    })
+    }
+    json!({ "hookSpecificOutput": output })
 }
 
 pub(crate) fn hook_defer_response(hook_event_name: &str, reason: &str) -> Value {
@@ -339,6 +358,7 @@ pub(crate) fn hook_defer_response(hook_event_name: &str, reason: &str) -> Value 
             | "PostToolUseFailure"
             | "Stop"
             | "StopFailure"
+            | "SubagentStart"
             | "SubagentStop"
     ) {
         return json!({});
@@ -405,10 +425,34 @@ fn route_claude_request(
             Ok(json!({}))
         }
         "Stop" | "StopFailure" => {
+            if payload
+                .get("agent_id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| !id.is_empty())
+            {
+                let state = app.state::<AppState>();
+                complete_subagent(&state, &payload);
+            }
             sync_turn_completion(app, payload, AgentKind::Claude, true, Some(stream))?;
             Ok(json!({}))
         }
+        "SubagentStart" => {
+            let state = app.state::<AppState>();
+            register_subagent_start(&state, &payload, AgentKind::Claude);
+            let session_id = payload
+                .get("session_id")
+                .and_then(Value::as_str)
+                .unwrap_or("claude-code");
+            let cwd = payload.get("cwd").and_then(Value::as_str).unwrap_or(".");
+            register_known_session(&state, session_id, AgentKind::Claude, cwd, None);
+            touch_session_activity(&state, session_id);
+            let snapshot = build_snapshot(&app, &state);
+            let _ = app.emit("snapshot-changed", &snapshot);
+            Ok(json!({}))
+        }
         "SubagentStop" => {
+            let state = app.state::<AppState>();
+            complete_subagent(&state, &payload);
             sync_turn_completion(app, payload, AgentKind::Claude, false, Some(stream))?;
             Ok(json!({}))
         }
@@ -444,10 +488,34 @@ fn route_codex_request(
             Ok(json!({}))
         }
         "Stop" => {
+            if payload
+                .get("agent_id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| !id.is_empty())
+            {
+                let state = app.state::<AppState>();
+                complete_subagent(&state, &payload);
+            }
             sync_turn_completion(app, payload, AgentKind::Codex, true, Some(stream))?;
             Ok(json!({}))
         }
+        "SubagentStart" => {
+            let state = app.state::<AppState>();
+            register_subagent_start(&state, &payload, AgentKind::Codex);
+            let session_id = payload
+                .get("session_id")
+                .and_then(Value::as_str)
+                .unwrap_or("codex");
+            let cwd = payload.get("cwd").and_then(Value::as_str).unwrap_or(".");
+            register_known_session(&state, session_id, AgentKind::Codex, cwd, None);
+            touch_session_activity(&state, session_id);
+            let snapshot = build_snapshot(&app, &state);
+            let _ = app.emit("snapshot-changed", &snapshot);
+            Ok(json!({}))
+        }
         "SubagentStop" => {
+            let state = app.state::<AppState>();
+            complete_subagent(&state, &payload);
             sync_turn_completion(app, payload, AgentKind::Codex, false, Some(stream))?;
             Ok(json!({}))
         }
@@ -486,7 +554,7 @@ fn submit_blocking_permission_request(
         }
         let snapshot = build_snapshot(&app, &state);
         let _ = app.emit("snapshot-changed", &snapshot);
-        return Ok(permission_hook_response(hook_event_name, Decision::Approved, ""));
+        return Ok(permission_hook_response(hook_event_name, Decision::Approved, "", None));
     }
 
     let (sender, receiver) = mpsc::sync_channel(1);
@@ -545,9 +613,16 @@ fn submit_blocking_permission_request(
     let deadline = Instant::now() + HOOK_RESPONSE_TIMEOUT;
     loop {
         match receiver.recv_timeout(HOOK_POLL_INTERVAL) {
-            Ok(DecisionWithNote { decision, note }) => {
-                return Ok(permission_hook_response(hook_event_name, decision, &note))
-            }
+            Ok(DecisionWithNote {
+                decision,
+                note,
+                updated_input,
+            }) => return Ok(permission_hook_response(
+                hook_event_name,
+                decision,
+                &note,
+                updated_input,
+            )),
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 remove_pending_waiter(&state, &request_id);
                 return Ok(hook_defer_response(hook_event_name, "Atoll internal error"));
@@ -774,6 +849,7 @@ fn sync_tool_completion(
                 let _ = waiter.send(DecisionWithNote {
                     decision: Decision::Approved,
                     note: String::new(),
+                    updated_input: None,
                 });
             }
         }
@@ -875,6 +951,7 @@ fn sync_turn_completion(
                 let _ = waiter.send(DecisionWithNote {
                     decision: Decision::Approved,
                     note: String::new(),
+                    updated_input: None,
                 });
             }
         }

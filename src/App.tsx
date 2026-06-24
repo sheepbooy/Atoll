@@ -25,6 +25,8 @@ import {
   Ellipsis,
   ExternalLink,
   FolderClosed,
+  Hammer,
+  HelpCircle,
   Layers,
   Pin,
   PinOff,
@@ -107,10 +109,12 @@ import {
   EMPTY_HOOK_HEALTH,
   archiveAllResolved,
   archiveSession,
+  archiveSubagent,
   pinSession,
   deactivateAtoll,
   quitAtoll,
   resolvePermissionRequest,
+  resolvePermissionWithInput,
   setIslandPresentation,
   setCompactLayout,
   usesMicroIsland,
@@ -124,6 +128,7 @@ import {
   uninstallCodexHooks,
   getSessionRetention,
   setSessionRetention,
+  setSubagentRetention,
   openAgentApp,
   type SessionHost,
   openUrl,
@@ -134,12 +139,15 @@ type AgentKind = PermissionRequest["agent"];
 type PanelView =
   | { kind: "home" }
   | { kind: "session"; sessionId: string }
+  | { kind: "subagent"; sessionId: string; agentId: string }
   | { kind: "settings"; page: "main" | "hooks" | "tokens" };
 
 const COMPACT_ICON_SETTING_KEY = "atoll.maxCompactIcons";
 const RETENTION_SETTING_KEY = "atoll.sessionRetentionMinutes";
+const SUBAGENT_RETENTION_SETTING_KEY = "atoll.subagentRetentionMinutes";
 const DEFAULT_MAX_COMPACT_ICONS = 3;
 const DEFAULT_RETENTION_MINUTES = 15;
+const DEFAULT_SUBAGENT_RETENTION_MINUTES = 10;
 const MIN_RETENTION_MINUTES = 1;
 const MAX_RETENTION_MINUTES = 60;
 const IDLE_INTERVAL_SETTING_KEY = "atoll.idleIntervalMin";
@@ -268,6 +276,14 @@ function readRetentionMinutes() {
   return readStoredSetting(
     RETENTION_SETTING_KEY,
     DEFAULT_RETENTION_MINUTES,
+    clampRetentionMinutes,
+  );
+}
+
+function readSubagentRetentionMinutes() {
+  return readStoredSetting(
+    SUBAGENT_RETENTION_SETTING_KEY,
+    DEFAULT_SUBAGENT_RETENTION_MINUTES,
     clampRetentionMinutes,
   );
 }
@@ -547,6 +563,7 @@ export function App() {
   const [notchMetrics, setNotchMetrics] = useState<NotchMetrics>(EMPTY_NOTCH_METRICS);
   const [maxCompactIcons, setMaxCompactIcons] = useState<number>(() => readCompactIconLimit());
   const [retentionMinutes, setRetentionMinutes] = useState<number>(() => readRetentionMinutes());
+  const [subagentRetentionMinutes, setSubagentRetentionMinutes] = useState<number>(() => readSubagentRetentionMinutes());
   const [idleIntervalSec, setIdleIntervalSec] = useState<number>(() => readIdleInterval());
   const [idleDurationSec, setIdleDurationSec] = useState<number>(() => readIdleDuration());
   const [justResolved, setJustResolved] = useState(false);
@@ -601,7 +618,7 @@ export function App() {
     () => computeMaxCompactIconLimit(notchMetrics),
     [notchMetrics],
   );
-  const collapsedWindowWidth = useMemo(
+  const computedCollapsedWidth = useMemo(
     () =>
       computeCollapsedWindowWidth(
         notchMetrics,
@@ -618,6 +635,18 @@ export function App() {
       snapshot.pendingCount,
     ],
   );
+  const stableWidthRef = useRef(computedCollapsedWidth);
+  const hasActiveSessions = sessions.length > 0;
+  const collapsedWindowWidth = useMemo(() => {
+    if (!hasActiveSessions) {
+      stableWidthRef.current = computedCollapsedWidth;
+      return computedCollapsedWidth;
+    }
+    if (computedCollapsedWidth > stableWidthRef.current) {
+      stableWidthRef.current = computedCollapsedWidth;
+    }
+    return stableWidthRef.current;
+  }, [computedCollapsedWidth, hasActiveSessions]);
   const collapsedMode: "micro" | "compact" | "dormant" = resolveCollapsedMode(
     usesMicroIslandRef.current,
     sessions.length,
@@ -682,10 +711,21 @@ export function App() {
     ],
   );
 
-  const compactLeftPaneWidth = useMemo(
+  const computedLeftPaneWidth = useMemo(
     () => computeCompactLeftPaneWidth(compactHeaderLayout),
     [compactHeaderLayout],
   );
+  const stableLeftWidthRef = useRef(computedLeftPaneWidth);
+  const compactLeftPaneWidth = useMemo(() => {
+    if (!hasActiveSessions) {
+      stableLeftWidthRef.current = computedLeftPaneWidth;
+      return computedLeftPaneWidth;
+    }
+    if (computedLeftPaneWidth > stableLeftWidthRef.current) {
+      stableLeftWidthRef.current = computedLeftPaneWidth;
+    }
+    return stableLeftWidthRef.current;
+  }, [computedLeftPaneWidth, hasActiveSessions]);
 
   const collapsedModeRef = useRef<"micro" | "compact" | "dormant">("compact");
   collapsedModeRef.current = collapsedMode;
@@ -1046,6 +1086,13 @@ export function App() {
   }, [retentionMinutes]);
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(SUBAGENT_RETENTION_SETTING_KEY, String(subagentRetentionMinutes));
+    } catch {}
+    setSubagentRetention(subagentRetentionMinutes).catch(() => undefined);
+  }, [subagentRetentionMinutes]);
+
+  useEffect(() => {
     try { window.localStorage.setItem(IDLE_INTERVAL_SETTING_KEY, String(idleIntervalSec)); } catch {}
   }, [idleIntervalSec]);
 
@@ -1058,11 +1105,49 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (panelView.kind !== "session") return;
-    if (sessions.some((session) => session.sessionId === panelView.sessionId)) return;
-    setPanelView({ kind: "home" });
-    setSessionRequests([]);
+    if (panelView.kind === "session") {
+      if (!sessions.some((session) => session.sessionId === panelView.sessionId)) {
+        setPanelView({ kind: "home" });
+        setSessionRequests([]);
+      }
+      return;
+    }
+    if (panelView.kind === "subagent") {
+      const session = sessions.find((s) => s.sessionId === panelView.sessionId);
+      const subagent = session?.activeSubagents?.find(
+        (sub) => sub.agentId === panelView.agentId,
+      );
+      if (!subagent) {
+        if (session) {
+          setPanelView({ kind: "session", sessionId: panelView.sessionId });
+        } else {
+          setPanelView({ kind: "home" });
+        }
+      }
+    }
   }, [panelView, sessions]);
+
+  const hasIncompleteSubagents = useMemo(
+    () =>
+      sessions.some((session) =>
+        session.activeSubagents?.some((sub) => !sub.completedAt),
+      ),
+    [sessions],
+  );
+
+  useEffect(() => {
+    if (phase !== "expanded" || !hasIncompleteSubagents) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      getSnapshot()
+        .then((nextSnapshot) => {
+          applySnapshot(nextSnapshot, { mergeHookHealth: true });
+        })
+        .catch(() => undefined);
+    }, 2000);
+    return () => window.clearInterval(interval);
+  }, [phase, hasIncompleteSubagents]);
 
   async function resolveActive(
     request: PermissionRequest | null,
@@ -1152,6 +1237,10 @@ export function App() {
     setPanelView({ kind: "session", sessionId });
     const requests = await getSessionRequests(sessionId);
     setSessionRequests(requests);
+  }
+
+  function navigateToSubagent(sessionId: string, agentId: string) {
+    setPanelView({ kind: "subagent", sessionId, agentId });
   }
 
   function navigateBack() {
@@ -1919,8 +2008,12 @@ export function App() {
   const isSubview = isExpandedChrome && panelView.kind !== "home";
   const menuBarLogoSize = isExpanded ? 36 : isMicro ? 30 : 34;
   const subviewSession =
-    panelView.kind === "session"
+    panelView.kind === "session" || panelView.kind === "subagent"
       ? sessions.find((session) => session.sessionId === panelView.sessionId)
+      : undefined;
+  const subviewSubagent =
+    panelView.kind === "subagent"
+      ? subviewSession?.activeSubagents?.find((sub) => sub.agentId === panelView.agentId)
       : undefined;
 
   // Keep Rust-side compact metrics current while expanded so collapse targets
@@ -1997,6 +2090,28 @@ export function App() {
   ]);
 
   function renderPanel() {
+    if (panelView.kind === "subagent") {
+      if (!subviewSubagent) {
+        return null;
+      }
+      return (
+        <SubagentDetailView
+          agentType={subviewSubagent.agentType}
+          startedAt={subviewSubagent.startedAt}
+          completedAt={subviewSubagent.completedAt ?? null}
+          lastMessage={subviewSubagent.lastMessage ?? null}
+          transcriptPath={subviewSubagent.agentTranscriptPath ?? null}
+          onArchive={async () => {
+            const next = await archiveSubagent(subviewSubagent.agentId).catch(() => null);
+            if (next) {
+              applySnapshot(next);
+              setPanelView({ kind: "home" });
+            }
+          }}
+        />
+      );
+    }
+
     if (panelView.kind === "session") {
       const session = sessions.find((s) => s.sessionId === panelView.sessionId);
       return (
@@ -2034,6 +2149,10 @@ export function App() {
           onChangeRetentionMinutes={(nextValue) =>
             setRetentionMinutes(clampRetentionMinutes(nextValue))
           }
+          subagentRetentionMinutes={subagentRetentionMinutes}
+          onChangeSubagentRetentionMinutes={(nextValue) =>
+            setSubagentRetentionMinutes(clampRetentionMinutes(nextValue))
+          }
           idleIntervalSec={idleIntervalSec}
           onChangeIdleInterval={(v) => setIdleIntervalSec(clampIdleInterval(v))}
           idleDurationSec={idleDurationSec}
@@ -2048,6 +2167,37 @@ export function App() {
     }
 
     if (selectedAgentRequest) {
+      const planModeType = getPlanModeType(selectedAgentRequest);
+      const handlePlanResolve = (nextSnapshot: IslandSnapshot) => {
+        applySnapshot(nextSnapshot);
+        if (nextSnapshot.pendingCount === 0) {
+          collapseIsland(true);
+          deactivateAtoll(
+            selectedAgentRequest.agent,
+            selectedAgentRequest.session,
+            selectedAgentRequest.cwd,
+          ).catch(() => undefined);
+        }
+      };
+
+      if (planModeType === "question") {
+        return (
+          <PlanQuestionCard
+            request={selectedAgentRequest}
+            onResolve={handlePlanResolve}
+          />
+        );
+      }
+
+      if (planModeType === "exitPlan") {
+        return (
+          <PlanApprovalCard
+            request={selectedAgentRequest}
+            onResolve={handlePlanResolve}
+          />
+        );
+      }
+
       return (
         <ApprovalCard
           request={selectedAgentRequest}
@@ -2069,6 +2219,7 @@ export function App() {
           justResolved={justResolved}
           isExpanded={isExpandedChrome}
           onSelectSession={navigateToSession}
+          onSelectSubagent={navigateToSubagent}
           onArchiveSession={handleArchiveSession}
           onPinSession={handlePinSession}
         />
@@ -2088,7 +2239,7 @@ export function App() {
   return (
     <main className="stage">
       <section
-        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" ? "is-session-subview" : ""}`}
+        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" ? "is-session-subview" : ""}`}
         aria-label="Atoll"
         tabIndex={0}
         onClick={handleIslandClick}
@@ -2162,6 +2313,22 @@ export function App() {
                   justResolved={justResolved}
                 />
               </>
+            ) : panelView.kind === "subagent" ? (
+              <SessionSubviewNav
+                cwd={subviewSubagent?.agentType ?? ""}
+                agent={subviewSession?.agent}
+                sessionId={subviewSession?.sessionId}
+                sessionHost={subviewSession?.sessionHost}
+                onBack={() => navigateToSession(panelView.sessionId)}
+                onOpenExternal={() => {
+                  collapseIsland(true);
+                  void openAgentApp(
+                    subviewSession?.agent ?? "other",
+                    subviewSession?.cwd ?? "",
+                    subviewSession?.sessionId,
+                  );
+                }}
+              />
             ) : panelView.kind === "session" ? (
               <SessionSubviewNav
                 cwd={subviewSession?.cwd ?? ""}
@@ -2251,7 +2418,9 @@ export function App() {
             </div>
           ) : null}
 
-          {isExpandedChrome && panelView.kind !== "session" ? (
+          {isExpandedChrome &&
+          panelView.kind !== "session" &&
+          panelView.kind !== "subagent" ? (
           <div
             className="header-actions"
             data-no-drag
@@ -2560,11 +2729,21 @@ interface SessionListViewProps {
   justResolved: boolean;
   isExpanded: boolean;
   onSelectSession: (sessionId: string) => void;
+  onSelectSubagent: (sessionId: string, agentId: string) => void;
   onArchiveSession: (sessionId: string) => void;
   onPinSession: (sessionId: string, pinned: boolean) => void;
 }
 
-function SessionListView({ sessions, activeRequest, justResolved, isExpanded, onSelectSession, onArchiveSession, onPinSession }: SessionListViewProps) {
+function SessionListView({
+  sessions,
+  activeRequest,
+  justResolved,
+  isExpanded,
+  onSelectSession,
+  onSelectSubagent,
+  onArchiveSession,
+  onPinSession,
+}: SessionListViewProps) {
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -2647,6 +2826,26 @@ function SessionListView({ sessions, activeRequest, justResolved, isExpanded, on
                       <span className="meta-divider">·</span>
                       {timeAgo(session.lastActivity)}
                     </span>
+                    {session.activeSubagents && session.activeSubagents.length > 0 ? (
+                      <div className="session-subagents">
+                        {session.activeSubagents.map((sub) => (
+                          <button
+                            key={sub.agentId}
+                            className={`subagent-chip ${sub.completedAt ? "is-completed" : ""}`}
+                            type="button"
+                            title={sub.completedAt ? `${sub.agentType} (done)` : sub.agentType}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectSubagent(session.sessionId, sub.agentId);
+                            }}
+                          >
+                            <AgentMascot agent={session.agent} size={14} mood={sub.completedAt ? "calm" : "alert"} />
+                            <span className="subagent-chip-label">{sub.agentType}</span>
+                            {sub.completedAt ? <Check size={10} /> : null}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
                 <div className="session-item-trail">
@@ -2690,6 +2889,8 @@ interface SettingsViewProps {
   onChangeMaxCompactIcons: (value: number) => void;
   retentionMinutes: number;
   onChangeRetentionMinutes: (value: number) => void;
+  subagentRetentionMinutes: number;
+  onChangeSubagentRetentionMinutes: (value: number) => void;
   idleIntervalSec: number;
   onChangeIdleInterval: (value: number) => void;
   idleDurationSec: number;
@@ -2757,6 +2958,8 @@ function SettingsView({
   onChangeMaxCompactIcons,
   retentionMinutes,
   onChangeRetentionMinutes,
+  subagentRetentionMinutes,
+  onChangeSubagentRetentionMinutes,
   idleIntervalSec,
   onChangeIdleInterval,
   idleDurationSec,
@@ -2840,13 +3043,22 @@ function SettingsView({
             onChange={onChangeMaxCompactIcons}
           />
           <SettingsSlider
-            label="Auto-archive timeout"
+            label="Session auto-archive"
             value={retentionMinutes}
             min={MIN_RETENTION_MINUTES}
             max={MAX_RETENTION_MINUTES}
             unit=" min"
             desc="Minutes before idle sessions are auto-archived. Pinned sessions are exempt."
             onChange={onChangeRetentionMinutes}
+          />
+          <SettingsSlider
+            label="Subagent auto-archive"
+            value={subagentRetentionMinutes}
+            min={MIN_RETENTION_MINUTES}
+            max={MAX_RETENTION_MINUTES}
+            unit=" min"
+            desc="Minutes after completion before subagents are auto-archived."
+            onChange={onChangeSubagentRetentionMinutes}
           />
         </div>
 
@@ -2877,6 +3089,377 @@ function SettingsView({
 }
 
 /* ─── Approval Card ───────────────────────────────────────────── */
+
+function getPlanModeType(request: PermissionRequest): "question" | "exitPlan" | null {
+  if (request.command.startsWith("AskUserQuestion:") || request.command === "AskUserQuestion") {
+    return "question";
+  }
+  if (request.command.startsWith("ExitPlanMode:") || request.command === "ExitPlanMode") {
+    return "exitPlan";
+  }
+  return null;
+}
+
+interface PlanQuestionOption {
+  label: string;
+  description: string;
+}
+
+interface PlanQuestion {
+  question: string;
+  header: string;
+  options: PlanQuestionOption[];
+  multiSelect: boolean;
+}
+
+interface PlanQuestionCardProps {
+  request: PermissionRequest;
+  onResolve: (snapshot: IslandSnapshot) => void;
+}
+
+function parsePlanQuestions(toolInput: unknown): PlanQuestion[] {
+  if (!toolInput || typeof toolInput !== "object") {
+    return [];
+  }
+  const questions = (toolInput as { questions?: unknown }).questions;
+  if (!Array.isArray(questions)) {
+    return [];
+  }
+  return questions.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return [];
+    }
+    const record = entry as Record<string, unknown>;
+    const question = typeof record.question === "string" ? record.question : "";
+    const header = typeof record.header === "string" ? record.header : "";
+    const multiSelect = Boolean(record.multiSelect);
+    const options = Array.isArray(record.options)
+      ? record.options.flatMap((option) => {
+          if (!option || typeof option !== "object") {
+            return [];
+          }
+          const optionRecord = option as Record<string, unknown>;
+          const label = typeof optionRecord.label === "string" ? optionRecord.label : "";
+          const description =
+            typeof optionRecord.description === "string" ? optionRecord.description : "";
+          if (!label) {
+            return [];
+          }
+          return [{ label, description }];
+        })
+      : [];
+    if (!question || options.length === 0) {
+      return [];
+    }
+    return [{ question, header, options, multiSelect }];
+  });
+}
+
+function getOriginalQuestions(toolInput: unknown): unknown[] {
+  if (!toolInput || typeof toolInput !== "object") return [];
+  const questions = (toolInput as { questions?: unknown }).questions;
+  return Array.isArray(questions) ? questions : [];
+}
+
+const OTHER_SENTINEL = "__atoll_other__";
+
+function PlanQuestionCard({ request, onResolve }: PlanQuestionCardProps) {
+  const questions = useMemo(() => parsePlanQuestions(request.toolInput), [request.toolInput]);
+  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
+  const [otherActive, setOtherActive] = useState<Record<string, boolean>>({});
+  const [otherText, setOtherText] = useState<Record<string, string>>({});
+  const [freeResponse, setFreeResponse] = useState("");
+  const [useFreeResponse, setUseFreeResponse] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  function toggleOption(question: PlanQuestion, label: string) {
+    const key = question.question;
+    if (label === OTHER_SENTINEL) {
+      setOtherActive((c) => ({ ...c, [key]: !c[key] }));
+      if (otherActive[key]) {
+        setOtherText((c) => ({ ...c, [key]: "" }));
+        setAnswers((current) => {
+          if (question.multiSelect) {
+            const existing = current[key];
+            const selected = Array.isArray(existing) ? existing : existing ? [existing] : [];
+            return { ...current, [key]: selected.filter((item) => item !== OTHER_SENTINEL) };
+          }
+          const { [key]: _, ...rest } = current;
+          return rest;
+        });
+      }
+      return;
+    }
+    setAnswers((current) => {
+      if (question.multiSelect) {
+        const existing = current[key];
+        const selected = Array.isArray(existing) ? existing : existing ? [existing] : [];
+        const next = selected.includes(label)
+          ? selected.filter((item) => item !== label)
+          : [...selected, label];
+        return { ...current, [key]: next };
+      }
+      setOtherActive((c) => ({ ...c, [key]: false }));
+      setOtherText((c) => ({ ...c, [key]: "" }));
+      return { ...current, [key]: label };
+    });
+  }
+
+  function isOptionSelected(question: PlanQuestion, label: string) {
+    if (label === OTHER_SENTINEL) return !!otherActive[question.question];
+    const key = question.question;
+    const value = answers[key];
+    if (Array.isArray(value)) return value.includes(label);
+    return value === label;
+  }
+
+  function buildUpdatedInput(): Record<string, unknown> {
+    if (useFreeResponse && freeResponse.trim()) {
+      return {
+        questions: getOriginalQuestions(request.toolInput),
+        response: freeResponse.trim(),
+      };
+    }
+    const finalAnswers: Record<string, string | string[]> = {};
+    for (const q of questions) {
+      const key = q.question;
+      if (otherActive[key] && otherText[key]?.trim()) {
+        if (q.multiSelect) {
+          const existing = answers[key];
+          const selected = Array.isArray(existing) ? existing : existing ? [existing] : [];
+          const filtered = selected.filter((s) => s !== OTHER_SENTINEL);
+          finalAnswers[key] = [...filtered, otherText[key].trim()];
+        } else {
+          finalAnswers[key] = otherText[key].trim();
+        }
+      } else {
+        const val = answers[key];
+        if (val !== undefined) {
+          finalAnswers[key] = val;
+        }
+      }
+    }
+    return {
+      questions: getOriginalQuestions(request.toolInput),
+      answers: finalAnswers,
+    };
+  }
+
+  async function handleSubmit() {
+    setBusy(true);
+    try {
+      const snapshot = await resolvePermissionWithInput(
+        request.id,
+        "approved",
+        "",
+        buildUpdatedInput(),
+      );
+      onResolve(snapshot);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeny() {
+    setBusy(true);
+    try {
+      const snapshot = await resolvePermissionRequest(request.id, "denied");
+      onResolve(snapshot);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="approval-view plan-question-view">
+      <div className="request-main">
+        <div className="request-kicker">
+          <span className="kicker-label">
+            <HelpCircle size={14} />
+            Plan questions
+          </span>
+          <span className={`agent-label ${getSessionColor(request.session).tone}`}>
+            {agentLabels[request.agent]}
+          </span>
+        </div>
+        {useFreeResponse ? (
+          <div className="plan-questions">
+            <div className="plan-question-block">
+              <p className="plan-question-text">Type your response:</p>
+              <textarea
+                className="plan-other-input plan-free-response"
+                value={freeResponse}
+                onChange={(e) => setFreeResponse((e.target as HTMLTextAreaElement).value)}
+                placeholder="Type a freeform reply..."
+                rows={3}
+                disabled={busy}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="plan-questions">
+            {questions.map((question) => (
+              <div className="plan-question-block" key={question.question}>
+                {question.header ? <p className="plan-question-header">{question.header}</p> : null}
+                <p className="plan-question-text">{question.question}</p>
+                <div className="plan-options">
+                  {question.options.map((option) => {
+                    const selected = isOptionSelected(question, option.label);
+                    return (
+                      <button
+                        key={option.label}
+                        type="button"
+                        className={`plan-option ${selected ? "selected" : ""}`}
+                        onClick={() => toggleOption(question, option.label)}
+                        disabled={busy}
+                      >
+                        <span className="plan-option-label">{option.label}</span>
+                        {option.description ? (
+                          <span className="plan-option-description">{option.description}</span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    className={`plan-option plan-option-other ${isOptionSelected(question, OTHER_SENTINEL) ? "selected" : ""}`}
+                    onClick={() => toggleOption(question, OTHER_SENTINEL)}
+                    disabled={busy}
+                  >
+                    <span className="plan-option-label">Other...</span>
+                  </button>
+                </div>
+                {otherActive[question.question] && (
+                  <input
+                    type="text"
+                    className="plan-other-input"
+                    placeholder="Type your answer..."
+                    value={otherText[question.question] || ""}
+                    onChange={(e) =>
+                      setOtherText((c) => ({
+                        ...c,
+                        [question.question]: (e.target as HTMLInputElement).value,
+                      }))
+                    }
+                    disabled={busy}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="approval-footer">
+        <button
+          type="button"
+          className="plan-toggle-free"
+          onClick={() => setUseFreeResponse((v) => !v)}
+          disabled={busy}
+        >
+          {useFreeResponse ? "Back to options" : "Reply freely instead"}
+        </button>
+        <div className="decision-row">
+          <button
+            className="decision-button deny"
+            type="button"
+            onClick={handleDeny}
+            disabled={busy}
+          >
+            <X size={16} />
+            <span>{busy ? "Denying..." : "Deny"}</span>
+          </button>
+          <button
+            className="decision-button approve"
+            type="button"
+            onClick={handleSubmit}
+            disabled={busy}
+          >
+            <Check size={16} />
+            <span>{busy ? "Submitting..." : "Submit"}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface PlanApprovalCardProps {
+  request: PermissionRequest;
+  onResolve: (snapshot: IslandSnapshot) => void;
+}
+
+function PlanApprovalCard({ request, onResolve }: PlanApprovalCardProps) {
+  const sessionColor = getSessionColor(request.session);
+  const [busy, setBusy] = useState(false);
+
+  async function handleApprove() {
+    setBusy(true);
+    try {
+      const snapshot = await resolvePermissionRequest(request.id, "approved");
+      onResolve(snapshot);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleContinuePlanning() {
+    setBusy(true);
+    try {
+      const snapshot = await resolvePermissionRequest(
+        request.id,
+        "denied",
+        "Continue planning",
+      );
+      onResolve(snapshot);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="approval-view plan-approval-view">
+      <div className="request-main">
+        <div className="request-kicker">
+          <span className="kicker-label">
+            <AgentMascot
+              agent={request.agent}
+              mood="alert"
+              accent={sessionColor.accent}
+              accentDark={sessionColor.accentDark}
+              size={18}
+            />
+            Ready to build
+          </span>
+          <span className={`agent-label ${sessionColor.tone}`}>{agentLabels[request.agent]}</span>
+        </div>
+        <p className="plan-approval-message">Agent is ready to start building</p>
+        {request.detail ? <p className="request-detail">{request.detail}</p> : null}
+      </div>
+      <div className="approval-footer">
+        <div className="decision-row">
+          <button
+            className="decision-button deny"
+            type="button"
+            onClick={handleContinuePlanning}
+            disabled={busy}
+          >
+            <HelpCircle size={16} />
+            <span>{busy ? "Sending..." : "Continue Planning"}</span>
+          </button>
+          <button
+            className="decision-button approve"
+            type="button"
+            onClick={handleApprove}
+            disabled={busy}
+          >
+            <Hammer size={16} />
+            <span>{busy ? "Approving..." : "Agree to Build"}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface ApprovalCardProps {
   request: PermissionRequest;
@@ -3062,6 +3645,8 @@ function SessionChatView({ transcriptPath, requests }: SessionChatViewProps) {
       getSessionTranscript(transcriptPath)
         .then(setMessages)
         .catch(() => setMessages([]));
+    } else {
+      setMessages([]);
     }
   }, [transcriptPath]);
 
@@ -3081,6 +3666,101 @@ function SessionChatView({ transcriptPath, requests }: SessionChatViewProps) {
           <ChatBubble key={i} message={msg} />
         ))}
       </div>
+    </div>
+  );
+}
+
+interface SubagentDetailViewProps {
+  agentType: string;
+  startedAt: string;
+  completedAt: string | null;
+  lastMessage: string | null;
+  transcriptPath: string | null;
+  onArchive: () => void;
+}
+
+function SubagentDetailView({
+  agentType,
+  startedAt,
+  completedAt,
+  lastMessage,
+  transcriptPath,
+  onArchive,
+}: SubagentDetailViewProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const prevCountRef = useRef(0);
+
+  useEffect(() => {
+    if (!transcriptPath) return;
+    let active = true;
+    function load() {
+      getSessionTranscript(transcriptPath!)
+        .then((msgs) => {
+          if (!active) return;
+          if (msgs.length !== prevCountRef.current) {
+            prevCountRef.current = msgs.length;
+            setMessages(msgs);
+          }
+        })
+        .catch(() => undefined);
+    }
+    load();
+    const pollMs = completedAt ? 0 : 2000;
+    const interval = pollMs > 0 ? setInterval(load, pollMs) : undefined;
+    return () => {
+      active = false;
+      if (interval) clearInterval(interval);
+    };
+  }, [transcriptPath, completedAt]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  return (
+    <div className="subagent-detail-view">
+      <div className="subagent-detail-header">
+        <div className="subagent-detail-title-row">
+          <h2 className="subagent-detail-title">{agentType}</h2>
+          {completedAt ? (
+            <span className="subagent-status-badge done">
+              <Check size={10} /> Done
+            </span>
+          ) : (
+            <span className="subagent-status-badge running">Running</span>
+          )}
+        </div>
+        <p className="subagent-detail-subtitle">
+          Started {timeAgo(startedAt)}
+          {completedAt ? ` · Finished ${timeAgo(completedAt)}` : ""}
+        </p>
+        {lastMessage && messages.length === 0 ? (
+          <p className="subagent-last-message">{lastMessage}</p>
+        ) : null}
+      </div>
+      <div className="session-chat">
+        <div className="chat-messages" ref={scrollRef}>
+          {messages.length === 0 && !lastMessage ? (
+            <div className="chat-empty">
+              {transcriptPath ? "Loading..." : "No transcript path available."}
+            </div>
+          ) : null}
+          {messages.map((msg, i) => (
+            <ChatBubble key={i} message={msg} />
+          ))}
+        </div>
+      </div>
+      {completedAt ? (
+        <div className="subagent-detail-footer">
+          <button type="button" className="subagent-archive-btn" onClick={onArchive}>
+            <Archive size={14} />
+            <span>Archive</span>
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -3413,9 +4093,34 @@ function sessionDisplayName(cwd: string) {
   return parts[parts.length - 1] || cwd;
 }
 
+function ChatBubbleQuestionReadonly({ toolInput }: { toolInput: unknown }) {
+  const input = toolInput as { questions?: Array<{ question: string; header?: string; options?: Array<{ label: string; description?: string }>; multiSelect?: boolean }> } | null;
+  const questions = input?.questions;
+  if (!questions?.length) return null;
+
+  return (
+    <div className="chat-question-readonly">
+      {questions.map((q, qi) => (
+        <div key={qi} className="chat-question-item">
+          {q.header && <span className="chat-question-header">{q.header}</span>}
+          <span className="chat-question-text">{q.question}</span>
+          {q.options && (
+            <div className="chat-question-options">
+              {q.options.map((opt, oi) => (
+                <span key={oi} className="chat-question-option">{opt.label}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ChatBubble({ message }: { message: ChatMessage }) {
   const text = message.content || (message.toolName ? `Using ${message.toolName}...` : "");
   const hasMarkdown = useMemo(() => /[*_`#\[\]!\n>|]/.test(text), [text]);
+  const isQuestion = message.toolName === "AskUserQuestion" && message.toolInput;
 
   function handleClick(event: MouseEvent<HTMLDivElement>) {
     const anchor = (event.target as HTMLElement).closest("a");
@@ -3430,7 +4135,9 @@ function ChatBubble({ message }: { message: ChatMessage }) {
       {message.toolName ? (
         <span className="chat-tool-badge">{message.toolName}</span>
       ) : null}
-      {hasMarkdown ? (
+      {isQuestion ? (
+        <ChatBubbleQuestionReadonly toolInput={message.toolInput} />
+      ) : hasMarkdown ? (
         <div className="chat-bubble-md">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
         </div>

@@ -41,6 +41,7 @@ pub fn seed_approval_demo(app: &AppHandle, state: &AppState) {
         archived: false,
         supports_always: true,
         transcript_path: None,
+        tool_input: None,
     };
 
     let history = [
@@ -78,6 +79,7 @@ pub fn seed_approval_demo(app: &AppHandle, state: &AppState) {
                 archived: false,
                 supports_always: false,
                 transcript_path: None,
+                tool_input: None,
             });
         }
     }
