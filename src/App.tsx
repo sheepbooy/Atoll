@@ -3182,6 +3182,18 @@ interface PlanQuestionCardProps {
   onResolve: (snapshot: IslandSnapshot) => void;
 }
 
+function parsePlanContent(toolInput: unknown): string | null {
+  if (!toolInput || typeof toolInput !== "object") {
+    return null;
+  }
+  const plan = (toolInput as { plan?: unknown }).plan;
+  if (typeof plan !== "string") {
+    return null;
+  }
+  const trimmed = plan.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function parsePlanQuestions(toolInput: unknown): PlanQuestion[] {
   if (!toolInput || typeof toolInput !== "object") {
     return [];
@@ -3456,6 +3468,15 @@ interface PlanApprovalCardProps {
 function PlanApprovalCard({ request, onResolve }: PlanApprovalCardProps) {
   const sessionColor = getSessionColor(request.session);
   const [busy, setBusy] = useState(false);
+  const planContent = useMemo(() => parsePlanContent(request.toolInput), [request.toolInput]);
+
+  function handlePlanPreviewClick(event: MouseEvent<HTMLDivElement>) {
+    const anchor = (event.target as HTMLElement).closest("a");
+    if (anchor?.href) {
+      event.preventDefault();
+      openUrl(anchor.href);
+    }
+  }
 
   async function handleApprove() {
     setBusy(true);
@@ -3498,7 +3519,13 @@ function PlanApprovalCard({ request, onResolve }: PlanApprovalCardProps) {
           <span className={`agent-label ${sessionColor.tone}`}>{agentLabels[request.agent]}</span>
         </div>
         <p className="plan-approval-message">Agent is ready to start building</p>
-        {request.detail ? <p className="request-detail">{request.detail}</p> : null}
+        {planContent ? (
+          <div className="plan-preview" onClick={handlePlanPreviewClick}>
+            <div className="plan-preview-md">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{planContent}</ReactMarkdown>
+            </div>
+          </div>
+        ) : null}
       </div>
       <div className="approval-footer">
         <div className="decision-row">
