@@ -2067,14 +2067,8 @@ export function App() {
             className={`header-main ${showPanelAgentTabs ? "has-agent-tabs" : ""}${isSubview ? " has-subview-nav" : ""}`}
           >
             <span className="atoll-indicator-wrap">
-              {updateAvailable ? (
-                <span
-                  className="atoll-update-badge"
-                  aria-label={`Update ${updateVersion} available`}
-                />
-              ) : null}
               <span
-                className={`atoll-indicator is-app-${appLogoState} ${snapshot.online ? "is-online" : "is-offline"}${hooksNeedAttention ? " is-hook-attention" : ""}${updateAvailable ? " is-update-available" : ""}`}
+                className={`atoll-indicator is-app-${appLogoState} ${snapshot.online ? "is-online" : "is-offline"}${hooksNeedAttention ? " is-hook-attention" : ""}`}
                 title={
                   updateAvailable
                     ? `Update available: v${updateVersion}`

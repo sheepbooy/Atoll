@@ -714,32 +714,6 @@ kbd {
   align-items: center;
 }
 
-.atoll-update-badge {
-  position: absolute;
-  z-index: 2;
-  top: -1px;
-  right: -2px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--color-amber, #f0c060);
-  box-shadow: 0 0 8px rgba(240, 192, 96, 0.55);
-  pointer-events: none;
-}
-
-.atoll-update-badge::after {
-  content: "";
-  position: absolute;
-  inset: -2px;
-  border-radius: 50%;
-  border: 1px solid rgba(240, 192, 96, 0.85);
-  animation: pulse-ring 3s ease-out infinite;
-}
-
-.atoll-indicator.is-update-available {
-  cursor: default;
-}
-
 .icon-button.has-update {
   position: relative;
 }

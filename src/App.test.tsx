@@ -859,7 +859,7 @@ describe("App", () => {
     Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   });
 
-  it("shows update badge and menu action when an update is available", async () => {
+  it("shows menu action when an update is available", async () => {
     appUpdateBridge.checkAppUpdate.mockResolvedValue({
       status: "available",
       version: "0.2.0",
@@ -881,10 +881,6 @@ describe("App", () => {
     vi.useRealTimers();
 
     await waitForExpandedPanel(container);
-    await waitFor(() =>
-      expect(container.querySelector(".atoll-update-badge")).not.toBeNull(),
-    );
-
     fireEvent.click(screen.getByRole("button", { name: /More options/i }));
     expect(
       screen.getByRole("menuitem", { name: /Update to v0.2.0/i }),
