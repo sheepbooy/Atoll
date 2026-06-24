@@ -501,6 +501,13 @@ export function App() {
   const suppressHoverExpandRef = useRef(false);
   const transitionTimerRef = useRef<number | null>(null);
   const idleTimerRef = useRef<number | null>(null);
+  const frozenCollapseWidthRef = useRef<number | null>(null);
+  const frozenCollapseLeftWidthRef = useRef<number | null>(null);
+  const suppressPostCollapseSyncRef = useRef(false);
+  const expandCollapseAnchorRef = useRef<{
+    width: number;
+    leftWidth: number;
+  } | null>(null);
   const snapshotLoadSeqRef = useRef(0);
   const lastNativePresentationKeyRef = useRef<string | null>(null);
   const [busyDecision, setBusyDecision] = useState<Decision | null>(null);
@@ -516,6 +523,8 @@ export function App() {
   menuOpenRef.current = menuOpen;
 
   const [panelView, setPanelView] = useState<PanelView>({ kind: "home" });
+  const panelViewRef = useRef<PanelView>({ kind: "home" });
+  panelViewRef.current = panelView;
   const [sessionRequests, setSessionRequests] = useState<PermissionRequest[]>([]);
   const [hookBusy, setHookBusy] = useState(false);
   const [hooksBackTarget, setHooksBackTarget] = useState<"home" | "settings-main">("home");
@@ -600,6 +609,14 @@ export function App() {
   const hasActiveSessions = sessions.length > 0;
   const collapsedWindowWidth = useMemo(() => {
     if (!hasActiveSessions) {
+      if (
+        phaseRef.current === "expanded" ||
+        phaseRef.current === "opening" ||
+        phaseRef.current === "closing" ||
+        suppressPostCollapseSyncRef.current
+      ) {
+        return stableWidthRef.current;
+      }
       stableWidthRef.current = computedCollapsedWidth;
       return computedCollapsedWidth;
     }
@@ -679,6 +696,14 @@ export function App() {
   const stableLeftWidthRef = useRef(computedLeftPaneWidth);
   const compactLeftPaneWidth = useMemo(() => {
     if (!hasActiveSessions) {
+      if (
+        phaseRef.current === "expanded" ||
+        phaseRef.current === "opening" ||
+        phaseRef.current === "closing" ||
+        suppressPostCollapseSyncRef.current
+      ) {
+        return stableLeftWidthRef.current;
+      }
       stableLeftWidthRef.current = computedLeftPaneWidth;
       return computedLeftPaneWidth;
     }
@@ -1190,7 +1215,14 @@ export function App() {
     if (merged.pendingCount > 0) {
       expandIsland();
     } else {
-      scheduleIdleCollapse();
+      const panel = panelViewRef.current;
+      const inExpandedSessionSubview =
+        phaseRef.current === "expanded" &&
+        (panel.kind === "session" || panel.kind === "subagent");
+      const collapseInFlight = frozenCollapseWidthRef.current !== null;
+      if (!inExpandedSessionSubview && !collapseInFlight) {
+        scheduleIdleCollapse();
+      }
     }
   }
 
@@ -1338,6 +1370,10 @@ export function App() {
     const next = beginExpand(phaseRef.current);
     if (next === phaseRef.current) return;
     clearTransitionWork();
+    expandCollapseAnchorRef.current = {
+      width: collapsedWindowWidthRef.current,
+      leftWidth: compactLeftPaneWidthRef.current,
+    };
 
     const idleExpanded =
       snapshotRef.current.pendingCount === 0 &&
@@ -1379,8 +1415,31 @@ export function App() {
     return collapsePresentationMode() === "micro" ? "micro" : "compact";
   }
 
+  function resolveCollapseMetrics(): { width: number; leftWidth: number } {
+    const anchor = expandCollapseAnchorRef.current;
+    return {
+      width: Math.max(
+        collapsedWindowWidthRef.current,
+        anchor?.width ?? 0,
+      ),
+      leftWidth: Math.max(
+        compactLeftPaneWidthRef.current,
+        anchor?.leftWidth ?? 0,
+      ),
+    };
+  }
+
   function collapseCompactWidth(): number {
-    return collapsedWindowWidthRef.current;
+    return frozenCollapseWidthRef.current ?? collapsedWindowWidthRef.current;
+  }
+
+  function collapseCompactLeftWidth(): number {
+    return frozenCollapseLeftWidthRef.current ?? compactLeftPaneWidthRef.current;
+  }
+
+  function releaseFrozenCollapseMetrics() {
+    frozenCollapseWidthRef.current = null;
+    frozenCollapseLeftWidthRef.current = null;
   }
 
   function collapseIsland(releaseFocus = false) {
@@ -1405,13 +1464,23 @@ export function App() {
         document.activeElement.blur();
       }
     }
+    const leavingPanel = panelViewRef.current.kind;
     clearTransitionWork();
+    const collapseMetrics = resolveCollapseMetrics();
+    frozenCollapseWidthRef.current = collapseMetrics.width;
+    frozenCollapseLeftWidthRef.current = collapseMetrics.leftWidth;
     setPresentationPhase(next);
     setPanelView({ kind: "home" });
 
     const compactWidth = collapseCompactWidth();
-    const compactLeftWidth = compactLeftPaneWidthRef.current;
-    const collapseMode = collapsePresentationMode();
+    const compactLeftWidth = collapseCompactLeftWidth();
+    const naturalCollapseMode = collapsePresentationMode();
+    const wasSessionSubview =
+      leavingPanel === "session" || leavingPanel === "subagent";
+    const collapseMode =
+      wasSessionSubview && naturalCollapseMode === "dormant"
+        ? "compact"
+        : naturalCollapseMode;
 
     lastNativePresentationKeyRef.current = compactPresentationKey(
       collapseMode,
@@ -1470,11 +1539,20 @@ export function App() {
             compactWidth,
             compactLeftWidth,
           );
+          expandCollapseAnchorRef.current = {
+            width: compactWidth,
+            leftWidth: compactLeftWidth,
+          };
+          if (wasSessionSubview) {
+            suppressPostCollapseSyncRef.current = true;
+          }
           setPresentationPhase(collapsedRestPhase());
         }
       } catch {
+        releaseFrozenCollapseMetrics();
         setPresentationPhase("expanded");
       } finally {
+        releaseFrozenCollapseMetrics();
         suppressHoverExpandRef.current = false;
       }
     }, COLLAPSE_ANIMATION_MS);
@@ -1526,7 +1604,13 @@ export function App() {
 
   function handleIslandClick(event: MouseEvent<HTMLElement>) {
     if ((event.target as HTMLElement).closest("button")) return;
-    if ((event.target as HTMLElement).closest("input")) return;
+    if (
+      (event.target as HTMLElement).closest(
+        "input, textarea, [contenteditable='true']",
+      )
+    ) {
+      return;
+    }
     suppressHoverExpandRef.current = false;
     focusedRef.current = true;
     event.currentTarget.focus({ preventScroll: true });
@@ -1989,16 +2073,24 @@ export function App() {
 
   useEffect(() => {
     if (collapsedMode === "dormant" || phase === "micro") return;
+    if (phase === "expanded" || phase === "opening" || phase === "closing") {
+      return;
+    }
     setCompactLayout(collapsedWindowWidth, compactLeftPaneWidth).catch(
       () => undefined,
     );
-  }, [collapsedMode, collapsedWindowWidth, compactLeftPaneWidth]);
+  }, [collapsedMode, collapsedWindowWidth, compactLeftPaneWidth, phase]);
 
   // Keep the native window in sync when compact/expanded layout inputs change.
   // collapseIsland / expandIsland pre-mark the matching key so we do not replay
   // the same native animation right after a user-driven transition finishes.
   useEffect(() => {
     if (phase === "opening" || phase === "closing") {
+      return;
+    }
+
+    if (suppressPostCollapseSyncRef.current) {
+      suppressPostCollapseSyncRef.current = false;
       return;
     }
 
@@ -4112,6 +4204,7 @@ function ChatBubble({ message }: { message: ChatMessage }) {
     const anchor = (event.target as HTMLElement).closest("a");
     if (anchor?.href) {
       event.preventDefault();
+      event.stopPropagation();
       openUrl(anchor.href);
     }
   }

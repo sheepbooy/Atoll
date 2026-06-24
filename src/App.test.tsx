@@ -105,6 +105,7 @@ const bridge = vi.hoisted(() => ({
   getNotchMetrics: vi.fn(),
   getSessionRetention: vi.fn(),
   setSessionRetention: vi.fn(),
+  openAgentApp: vi.fn(),
 }));
 
 const windowBridge = vi.hoisted(() => ({
@@ -192,6 +193,7 @@ describe("App", () => {
       scriptPath: "",
     });
     bridge.getSessionRetention.mockResolvedValue(300);
+    bridge.openAgentApp.mockResolvedValue(undefined);
     bridge.getNotchMetrics.mockResolvedValue({
       hasNotch: false,
       width: 0,
@@ -438,7 +440,99 @@ describe("App", () => {
       });
     });
 
-    await vi.advanceTimersByTimeAsync(420);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(420);
+    });
+
+    const compactAnimatedCalls = bridge.setIslandPresentation.mock.calls.filter(
+      (call) => call[0] === "compact" && call[4] !== false,
+    );
+    expect(compactAnimatedCalls).toHaveLength(1);
+    expect(compactAnimatedCalls[0]?.[1]).toBe(expectedCompactWidth);
+    expect(container.querySelector(".is-compact")).not.toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("keeps compact width when opening Claude from a session subview", async () => {
+    const session = {
+      sessionId: "session-1",
+      agent: "claude" as const,
+      cwd: "/tmp/project",
+      pendingCount: 0,
+      totalCount: 2,
+      lastActivity: "2026-06-10T08:00:00Z",
+      transcriptPath: null,
+    };
+    const wideTokens = {
+      inputTokens: 50_000_000,
+      outputTokens: 50_000_000,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    };
+    const noTokens = {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    };
+    const noNotch = { hasNotch: false, width: 0, height: 0 };
+    const expectedCompactWidth = computeCollapsedWindowWidth(
+      noNotch,
+      1,
+      3,
+      wideTokens.inputTokens + wideTokens.outputTokens,
+      0,
+    );
+
+    const baseSnapshot = {
+      online: true,
+      pendingCount: 0,
+      archivedCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [session],
+      dailyTokens: wideTokens,
+      activeSessionTokens: wideTokens,
+      hookHealth: connectedHookHealth,
+    };
+    bridge.getSnapshot.mockResolvedValue(baseSnapshot);
+    bridge.getSessionRequests.mockResolvedValue([]);
+    bridge.getSessionTranscript.mockResolvedValue([]);
+
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+    const island = screen.getByLabelText("Atoll");
+
+    fireEvent.pointerEnter(island);
+    await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+
+    await user.click(await screen.findByRole("button", { name: /project/i }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Open Claude" })).toBeInTheDocument(),
+    );
+
+    await act(async () => {
+      emitSnapshot?.({
+        ...baseSnapshot,
+        activeSessionTokens: noTokens,
+      });
+    });
+
+    bridge.setIslandPresentation.mockClear();
+    bridge.setCompactLayout.mockClear();
+
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Open Claude" }));
+    expect(container.querySelector(".is-closing")).not.toBeNull();
+    expect(bridge.openAgentApp).toHaveBeenCalledWith(
+      "claude",
+      "/tmp/project",
+      "session-1",
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(420);
+    });
 
     const compactAnimatedCalls = bridge.setIslandPresentation.mock.calls.filter(
       (call) => call[0] === "compact" && call[4] !== false,
