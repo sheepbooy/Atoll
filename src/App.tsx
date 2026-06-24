@@ -19,6 +19,7 @@ import {
   CheckCheck,
   ChevronRight,
   ChevronUp,
+  CircleCheck,
   Download,
   Ellipsis,
   ExternalLink,
@@ -35,6 +36,7 @@ import {
 } from "lucide-react";
 import {
   checkAppUpdate,
+  getAppVersion,
   installAppUpdate,
   UPDATE_INITIAL_DELAY_MS,
   UPDATE_RECHECK_MS,
@@ -523,7 +525,9 @@ export function App() {
   const [busyDecision, setBusyDecision] = useState<Decision | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [updateState, setUpdateState] = useState<AppUpdateState>({ status: "idle" });
+  const [updateNotice, setUpdateNotice] = useState<string | null>(null);
   const updateCheckInFlightRef = useRef(false);
+  const updateNoticeTimerRef = useRef<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef<Decision | null>(null);
   busyRef.current = busyDecision;
@@ -894,6 +898,31 @@ export function App() {
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (!updateNotice) {
+      return;
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        dismissUpdateNotice();
+      }
+    }
+
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [updateNotice]);
+
+  useEffect(() => {
+    return () => {
+      if (updateNoticeTimerRef.current !== null) {
+        window.clearTimeout(updateNoticeTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1681,6 +1710,22 @@ export function App() {
     updateState.status === "downloading" ? updateState.progress : 0;
   const updateChecking = updateState.status === "checking";
 
+  function dismissUpdateNotice() {
+    setUpdateNotice(null);
+    if (updateNoticeTimerRef.current !== null) {
+      window.clearTimeout(updateNoticeTimerRef.current);
+      updateNoticeTimerRef.current = null;
+    }
+  }
+
+  function showUpdateNotice(version: string) {
+    dismissUpdateNotice();
+    setUpdateNotice(version);
+    updateNoticeTimerRef.current = window.setTimeout(() => {
+      dismissUpdateNotice();
+    }, 5000);
+  }
+
   async function runUpdateCheck() {
     if (updateCheckInFlightRef.current || updateDownloading) {
       return;
@@ -1697,7 +1742,23 @@ export function App() {
   }
 
   async function handleCheckForUpdates() {
-    await runUpdateCheck();
+    setMenuOpen(false);
+    if (updateCheckInFlightRef.current || updateDownloading) {
+      return;
+    }
+    updateCheckInFlightRef.current = true;
+    setUpdateState({ status: "checking" });
+    const result = await checkAppUpdate();
+    updateCheckInFlightRef.current = false;
+    if (result.status === "error") {
+      setUpdateState({ status: "idle" });
+      return;
+    }
+    setUpdateState(result);
+    if (result.status === "idle") {
+      const version = (await getAppVersion()) ?? "0.0.0";
+      showUpdateNotice(version);
+    }
   }
 
   async function handleInstallUpdate() {
@@ -2256,8 +2317,49 @@ export function App() {
         {!isPresentationTransition ? (
           <div className="island-panel">{renderPanel()}</div>
         ) : null}
+        {updateNotice ? (
+          <UpdateNotice version={updateNotice} onDismiss={dismissUpdateNotice} />
+        ) : null}
       </section>
     </main>
+  );
+}
+
+function UpdateNotice({
+  version,
+  onDismiss,
+}: {
+  version: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      className="update-notice-layer"
+      data-no-drag
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={onDismiss}
+    >
+      <div
+        className="update-notice-card"
+        role="alertdialog"
+        aria-labelledby="update-notice-title"
+        aria-describedby="update-notice-desc"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="update-notice-icon-wrap" aria-hidden="true">
+          <CircleCheck size={28} strokeWidth={1.75} />
+        </div>
+        <p id="update-notice-title" className="update-notice-title">
+          You're up to date
+        </p>
+        <p id="update-notice-desc" className="update-notice-desc">
+          Atoll <span className="update-notice-version">v{version}</span> is the latest version.
+        </p>
+        <button type="button" className="update-notice-button" onClick={onDismiss}>
+          OK
+        </button>
+      </div>
+    </div>
   );
 }
 

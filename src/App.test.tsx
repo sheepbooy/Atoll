@@ -114,11 +114,13 @@ const windowBridge = vi.hoisted(() => ({
 const appUpdateBridge = vi.hoisted(() => ({
   checkAppUpdate: vi.fn(),
   installAppUpdate: vi.fn(),
+  getAppVersion: vi.fn(),
 }));
 
 vi.mock("./appUpdate", () => ({
   checkAppUpdate: (...args: unknown[]) => appUpdateBridge.checkAppUpdate(...args),
   installAppUpdate: (...args: unknown[]) => appUpdateBridge.installAppUpdate(...args),
+  getAppVersion: (...args: unknown[]) => appUpdateBridge.getAppVersion(...args),
   UPDATE_INITIAL_DELAY_MS: 3_000,
   UPDATE_RECHECK_MS: 6 * 60 * 60 * 1000,
   isTauriUpdateRuntime: () => true,
@@ -232,6 +234,7 @@ describe("App", () => {
     windowBridge.startDragging.mockResolvedValue(undefined);
     appUpdateBridge.checkAppUpdate.mockResolvedValue({ status: "idle" });
     appUpdateBridge.installAppUpdate.mockResolvedValue(undefined);
+    appUpdateBridge.getAppVersion.mockResolvedValue("0.1.21");
   });
 
   it("renders the command as compact code and contains no demo control", async () => {
@@ -889,5 +892,29 @@ describe("App", () => {
     expect(
       screen.getByRole("button", { name: /More options/i }).classList.contains("has-update"),
     ).toBe(true);
+  });
+
+  it("shows an up-to-date notice after manual update check", async () => {
+    appUpdateBridge.checkAppUpdate.mockResolvedValue({ status: "idle" });
+    appUpdateBridge.getAppVersion.mockResolvedValue("0.1.21");
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    const { container } = render(<App />);
+
+    await waitForExpandedPanel(container);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Check for updates/i }));
+
+    await waitFor(() =>
+      expect(container.querySelector(".update-notice-card")).not.toBeNull(),
+    );
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("You're up to date");
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("v0.1.21");
   });
 });

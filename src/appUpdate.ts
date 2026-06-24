@@ -87,3 +87,12 @@ export async function installAppUpdate(
 export function clearPendingUpdate(): void {
   pendingUpdate = null;
 }
+
+export async function getAppVersion(): Promise<string | null> {
+  if (!isTauriRuntime) {
+    return null;
+  }
+
+  const { getVersion } = await import("@tauri-apps/api/app");
+  return getVersion();
+}

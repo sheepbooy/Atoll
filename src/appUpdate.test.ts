@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const checkMock = vi.fn();
 const relaunchMock = vi.fn();
+const getVersionMock = vi.fn();
 
 vi.mock("@tauri-apps/plugin-updater", () => ({
   check: (...args: unknown[]) => checkMock(...args),
@@ -11,10 +12,16 @@ vi.mock("@tauri-apps/plugin-process", () => ({
   relaunch: (...args: unknown[]) => relaunchMock(...args),
 }));
 
+vi.mock("@tauri-apps/api/app", () => ({
+  getVersion: (...args: unknown[]) => getVersionMock(...args),
+}));
+
 describe("appUpdate", () => {
   beforeEach(() => {
     checkMock.mockReset();
     relaunchMock.mockReset();
+    getVersionMock.mockReset();
+    getVersionMock.mockResolvedValue("0.1.21");
     vi.stubGlobal("__TAURI_INTERNALS__", {});
   });
 
@@ -80,5 +87,11 @@ describe("appUpdate", () => {
     const { checkAppUpdate } = await import("./appUpdate");
     await expect(checkAppUpdate()).resolves.toEqual({ status: "idle" });
     expect(checkMock).not.toHaveBeenCalled();
+  });
+
+  it("returns the current app version in Tauri runtime", async () => {
+    const { getAppVersion } = await import("./appUpdate");
+    await expect(getAppVersion()).resolves.toBe("0.1.21");
+    expect(getVersionMock).toHaveBeenCalledOnce();
   });
 });

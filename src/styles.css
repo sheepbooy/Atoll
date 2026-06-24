@@ -3139,6 +3139,112 @@ kbd {
   background: var(--border-subtle);
 }
 
+/* ─── Update Notice ───────────────────────────────────────────── */
+
+.update-notice-layer {
+  position: absolute;
+  z-index: 30;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  border-radius: inherit;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(111, 220, 255, 0.08), transparent 55%),
+    rgba(8, 9, 11, 0.52);
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  animation: update-notice-layer-in 220ms var(--ease-out) both;
+}
+
+.update-notice-card {
+  display: flex;
+  width: min(100%, 228px);
+  flex-direction: column;
+  align-items: center;
+  padding: 18px 16px 14px;
+  border: 1px solid rgba(111, 220, 255, 0.18);
+  border-radius: 18px;
+  background:
+    radial-gradient(120% 90% at 50% -20%, rgba(111, 220, 255, 0.12), transparent 58%),
+    linear-gradient(180deg, rgba(28, 31, 38, 0.96), rgba(16, 18, 22, 0.94));
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  text-align: center;
+  animation: fade-in-up 260ms var(--ease-out) both;
+}
+
+.update-notice-icon-wrap {
+  display: inline-flex;
+  width: 52px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+  border-radius: 999px;
+  color: var(--accent-cyan);
+  background: rgba(111, 220, 255, 0.1);
+  box-shadow:
+    0 0 0 1px rgba(111, 220, 255, 0.16),
+    0 0 24px rgba(111, 220, 255, 0.14);
+}
+
+.update-notice-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.update-notice-desc {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.update-notice-version {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.update-notice-button {
+  min-width: 88px;
+  height: 32px;
+  margin-top: 16px;
+  border: 1px solid rgba(111, 220, 255, 0.22);
+  border-radius: 999px;
+  padding: 0 18px;
+  color: var(--text-primary);
+  background: rgba(111, 220, 255, 0.12);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    transform var(--duration-fast) ease;
+}
+
+.update-notice-button:hover {
+  border-color: rgba(111, 220, 255, 0.34);
+  background: rgba(111, 220, 255, 0.18);
+  transform: translateY(-1px);
+}
+
+.update-notice-button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+@keyframes update-notice-layer-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /* ─── Island Panel ────────────────────────────────────────────── */
 
 .island-panel {
