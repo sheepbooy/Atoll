@@ -3583,7 +3583,8 @@ kbd {
   background: rgba(255, 255, 255, 0.05);
 }
 
-.plan-option.selected {
+.plan-option.selected,
+.plan-option.selected:hover:not(:disabled) {
   border-color: rgba(168, 230, 120, 0.45);
   background: rgba(168, 230, 120, 0.08);
 }
@@ -4036,6 +4037,94 @@ kbd {
   border-style: dashed;
 }
 
+.subagent-chip.coral {
+  color: var(--accent-coral);
+  background: rgba(255, 129, 117, 0.12);
+  border-color: rgba(255, 129, 117, 0.22);
+}
+
+.subagent-chip.cyan {
+  color: var(--accent-cyan);
+  background: rgba(111, 220, 255, 0.12);
+  border-color: rgba(111, 220, 255, 0.22);
+}
+
+.subagent-chip.lime {
+  color: var(--accent-lime);
+  background: rgba(178, 234, 126, 0.12);
+  border-color: rgba(178, 234, 126, 0.22);
+}
+
+.subagent-chip.neutral {
+  color: var(--accent-violet);
+  background: rgba(205, 193, 255, 0.12);
+  border-color: rgba(205, 193, 255, 0.22);
+}
+
+.subagent-chip.amber {
+  color: #f0c060;
+  background: rgba(240, 192, 96, 0.12);
+  border-color: rgba(240, 192, 96, 0.22);
+}
+
+.subagent-chip.pink {
+  color: #f7a0c8;
+  background: rgba(247, 160, 200, 0.12);
+  border-color: rgba(247, 160, 200, 0.22);
+}
+
+.subagent-chip.teal {
+  color: #70d8c8;
+  background: rgba(112, 216, 200, 0.12);
+  border-color: rgba(112, 216, 200, 0.22);
+}
+
+.subagent-chip.blue {
+  color: #80b0f8;
+  background: rgba(128, 176, 248, 0.12);
+  border-color: rgba(128, 176, 248, 0.22);
+}
+
+.subagent-chip.coral:hover {
+  background: rgba(255, 129, 117, 0.18);
+  border-color: rgba(255, 129, 117, 0.32);
+}
+
+.subagent-chip.cyan:hover {
+  background: rgba(111, 220, 255, 0.18);
+  border-color: rgba(111, 220, 255, 0.32);
+}
+
+.subagent-chip.lime:hover {
+  background: rgba(178, 234, 126, 0.18);
+  border-color: rgba(178, 234, 126, 0.32);
+}
+
+.subagent-chip.neutral:hover {
+  background: rgba(205, 193, 255, 0.18);
+  border-color: rgba(205, 193, 255, 0.32);
+}
+
+.subagent-chip.amber:hover {
+  background: rgba(240, 192, 96, 0.18);
+  border-color: rgba(240, 192, 96, 0.32);
+}
+
+.subagent-chip.pink:hover {
+  background: rgba(247, 160, 200, 0.18);
+  border-color: rgba(247, 160, 200, 0.32);
+}
+
+.subagent-chip.teal:hover {
+  background: rgba(112, 216, 200, 0.18);
+  border-color: rgba(112, 216, 200, 0.32);
+}
+
+.subagent-chip.blue:hover {
+  background: rgba(128, 176, 248, 0.18);
+  border-color: rgba(128, 176, 248, 0.32);
+}
+
 .subagent-detail-view {
   display: flex;
   flex-direction: column;
@@ -4069,6 +4158,15 @@ kbd {
   font-weight: 700;
   color: var(--text-primary);
 }
+
+.subagent-detail-title.coral { color: var(--accent-coral); }
+.subagent-detail-title.cyan { color: var(--accent-cyan); }
+.subagent-detail-title.lime { color: var(--accent-lime); }
+.subagent-detail-title.neutral { color: var(--accent-violet); }
+.subagent-detail-title.amber { color: #f0c060; }
+.subagent-detail-title.pink { color: #f7a0c8; }
+.subagent-detail-title.teal { color: #70d8c8; }
+.subagent-detail-title.blue { color: #80b0f8; }
 
 .subagent-detail-subtitle {
   margin: 3px 0 0;

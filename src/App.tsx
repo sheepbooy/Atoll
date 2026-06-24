@@ -68,6 +68,7 @@ import {
 } from "./islandPresentation";
 import { AgentMascot } from "./AgentMascot";
 import type { ClawdMood } from "./ClawdMascot";
+import { getSessionColor, getSubagentColor, getSubagentMood } from "./subagentIdentity";
 import { AtollLogo, type AtollActivity } from "./AtollLogo";
 import { deriveAppLogoState, deriveAtollActivity } from "./logoStates";
 import {
@@ -354,46 +355,6 @@ const agentMascotDark: Record<AgentKind, string | undefined> = {
   gemini: "#7aa44d",
   other: "#9182d1",
 };
-
-type SessionTone =
-  | "coral"
-  | "cyan"
-  | "lime"
-  | "neutral"
-  | "amber"
-  | "pink"
-  | "teal"
-  | "blue";
-
-interface SessionColor {
-  tone: SessionTone;
-  accent: string;
-  accentDark: string;
-}
-
-const SESSION_PALETTE: SessionColor[] = [
-  { tone: "coral", accent: "#e8765a", accentDark: "#b85a42" },
-  { tone: "cyan", accent: "#61d8f7", accentDark: "#3d9fb8" },
-  { tone: "lime", accent: "#b2e578", accentDark: "#7aa44d" },
-  { tone: "neutral", accent: "#c9bcff", accentDark: "#9182d1" },
-  { tone: "amber", accent: "#f0c060", accentDark: "#b89040" },
-  { tone: "pink", accent: "#f7a0c8", accentDark: "#c07098" },
-  { tone: "teal", accent: "#70d8c8", accentDark: "#48a898" },
-  { tone: "blue", accent: "#80b0f8", accentDark: "#5888d0" },
-];
-
-function sessionColorIndex(sessionId: string): number {
-  if (!sessionId) return 0;
-  let hash = 0;
-  for (let i = 0; i < sessionId.length; i += 1) {
-    hash = ((hash << 5) - hash + sessionId.charCodeAt(i)) | 0;
-  }
-  return ((hash % SESSION_PALETTE.length) + SESSION_PALETTE.length) % SESSION_PALETTE.length;
-}
-
-function getSessionColor(sessionId: string): SessionColor {
-  return SESSION_PALETTE[sessionColorIndex(sessionId)];
-}
 
 type RiskLevel = "danger" | "caution";
 
@@ -2096,6 +2057,8 @@ export function App() {
       }
       return (
         <SubagentDetailView
+          agentId={subviewSubagent.agentId}
+          agent={subviewSession?.agent ?? "other"}
           agentType={subviewSubagent.agentType}
           startedAt={subviewSubagent.startedAt}
           completedAt={subviewSubagent.completedAt ?? null}
@@ -2319,7 +2282,7 @@ export function App() {
                 agent={subviewSession?.agent}
                 sessionId={subviewSession?.sessionId}
                 sessionHost={subviewSession?.sessionHost}
-                onBack={() => navigateToSession(panelView.sessionId)}
+                onBack={navigateBack}
                 onOpenExternal={() => {
                   collapseIsland(true);
                   void openAgentApp(
@@ -2828,10 +2791,13 @@ function SessionListView({
                     </span>
                     {session.activeSubagents && session.activeSubagents.length > 0 ? (
                       <div className="session-subagents">
-                        {session.activeSubagents.map((sub) => (
+                        {session.activeSubagents.map((sub) => {
+                          const subagentColor = getSubagentColor(sub.agentId);
+                          const subagentMood = getSubagentMood(sub.agentId, Boolean(sub.completedAt));
+                          return (
                           <button
                             key={sub.agentId}
-                            className={`subagent-chip ${sub.completedAt ? "is-completed" : ""}`}
+                            className={`subagent-chip ${subagentColor.tone} ${sub.completedAt ? "is-completed" : ""}`}
                             type="button"
                             title={sub.completedAt ? `${sub.agentType} (done)` : sub.agentType}
                             onClick={(e) => {
@@ -2839,11 +2805,18 @@ function SessionListView({
                               onSelectSubagent(session.sessionId, sub.agentId);
                             }}
                           >
-                            <AgentMascot agent={session.agent} size={14} mood={sub.completedAt ? "calm" : "alert"} />
+                            <AgentMascot
+                              agent={session.agent}
+                              size={14}
+                              mood={subagentMood}
+                              accent={subagentColor.accent}
+                              accentDark={subagentColor.accentDark}
+                            />
                             <span className="subagent-chip-label">{sub.agentType}</span>
                             {sub.completedAt ? <Check size={10} /> : null}
                           </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : null}
                   </div>
@@ -3671,6 +3644,8 @@ function SessionChatView({ transcriptPath, requests }: SessionChatViewProps) {
 }
 
 interface SubagentDetailViewProps {
+  agentId: string;
+  agent: AgentKind;
   agentType: string;
   startedAt: string;
   completedAt: string | null;
@@ -3680,6 +3655,8 @@ interface SubagentDetailViewProps {
 }
 
 function SubagentDetailView({
+  agentId,
+  agent,
   agentType,
   startedAt,
   completedAt,
@@ -3687,6 +3664,8 @@ function SubagentDetailView({
   transcriptPath,
   onArchive,
 }: SubagentDetailViewProps) {
+  const subagentColor = getSubagentColor(agentId);
+  const subagentMood = getSubagentMood(agentId, Boolean(completedAt));
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(0);
@@ -3724,7 +3703,14 @@ function SubagentDetailView({
     <div className="subagent-detail-view">
       <div className="subagent-detail-header">
         <div className="subagent-detail-title-row">
-          <h2 className="subagent-detail-title">{agentType}</h2>
+          <AgentMascot
+            agent={agent}
+            size={20}
+            mood={subagentMood}
+            accent={subagentColor.accent}
+            accentDark={subagentColor.accentDark}
+          />
+          <h2 className={`subagent-detail-title ${subagentColor.tone}`}>{agentType}</h2>
           {completedAt ? (
             <span className="subagent-status-badge done">
               <Check size={10} /> Done
