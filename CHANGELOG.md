@@ -2,6 +2,16 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.23] - 2026-06-24
+
+### 新增
+- **Codex Desktop** 支持：会话来源识别（Desktop / CLI）、审批后焦点恢复、岛中「Open Codex / Terminal」跳转
+- Desktop 工具名 `exec_command` 在审批卡片中显示为可读 Bash 命令
+
+### 改进
+- Codex hook 安装优先使用 Codex.app 自带 Node 与 Atoll.app 内置脚本路径，避免 dev 构建路径在 Desktop 中失效
+- Settings 检测 hook 指向 dev 构建路径并提示重新安装
+
 ## [0.1.22] - 2026-06-24
 
 ### 改进

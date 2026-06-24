@@ -44,7 +44,7 @@
 - **有请求时** — 自动展开，展示命令详情，一键 **Approve / Deny / Always**
 - **全程本地** — Hook 桥接 `127.0.0.1:47777`，数据不出本机
 
-目前支持 **Claude Code**（CLI 与 Desktop）和 **Codex CLI**（macOS Apple Silicon 与 Windows x64）。
+目前支持 **Claude Code**（CLI 与 Desktop）和 **Codex CLI 与 Desktop**（macOS Apple Silicon 与 Windows x64）。
 
 ---
 
@@ -124,7 +124,7 @@ Atoll 通过应用内 **一键安装 Hook**，无需手动编辑配置文件。
 | Agent | 安装路径 | 额外步骤 |
 | --- | --- | --- |
 | **Claude Code**（CLI + Desktop） | 菜单 → Settings → Agent hooks → Install | Desktop：权限选 **Ask permissions**，安装后完全退出并重启 Claude Desktop，再在 Code 标签触发一次 Bash 权限验证 |
-| **Codex** | 同上 → Install Codex | 安装后在 Codex 运行 `/hooks` 并信任 Atoll hook |
+| **Codex**（CLI + Desktop） | 同上 → Install Codex | Desktop/CLI：安装后在 Codex 中打开 `/hooks` 并信任 Atoll hook，完全退出并重启 Codex Desktop，再触发一次 shell 权限验证 |
 
 Hook 注册 `PermissionRequest`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）或 `~/.codex/hooks.json`。安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`。
 

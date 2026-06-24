@@ -45,6 +45,7 @@ import {
 import {
   analyzeHookHealth,
   CLAUDE_DESKTOP_HOOK_NOTE,
+  CODEX_DESKTOP_HOOK_NOTE,
   deriveHeaderLogoDisplay,
   hookAttentionTitle,
   hookStatusIssue,
@@ -1686,8 +1687,8 @@ export function App() {
       label: "Codex",
       status: codexHookStatus,
       note: codexHookStatus.settingsPath
-        ? `Registers hooks in ${codexHookStatus.settingsPath}. After install, run /hooks in Codex and trust the Atoll hook.`
-        : "After install, run /hooks in Codex and trust the Atoll hook.",
+        ? `Registers hooks in ${codexHookStatus.settingsPath}. ${CODEX_DESKTOP_HOOK_NOTE}`
+        : `Registers Codex hooks for permission approval. ${CODEX_DESKTOP_HOOK_NOTE}`,
       onInstall: handleInstallCodexHooks,
       onUninstall: handleUninstallCodexHooks,
     },
@@ -2922,6 +2923,10 @@ function sessionJumpLabel(agent?: AgentKind, sessionHost?: SessionHost): string 
     if (sessionHost === "claudeCli") return "Terminal";
     return "Open Claude";
   }
+  if (agent === "codex") {
+    if (sessionHost === "codexCli") return "Terminal";
+    return "Open Codex";
+  }
   return "Terminal";
 }
 
@@ -3125,6 +3130,17 @@ function HooksView({
                       <li>In Claude Desktop, set permissions to Ask permissions.</li>
                       <li>Quit and reopen Claude Desktop after installing hooks.</li>
                       <li>Trigger one Bash permission in a local Code session to verify.</li>
+                    </ul>
+                  </details>
+                ) : null}
+                {agent.key === "codex" ? (
+                  <details className="settings-hook-desktop-note">
+                    <summary>Codex Desktop checklist</summary>
+                    <ul>
+                      <li>Install Node.js on this machine before installing hooks.</li>
+                      <li>In Codex Desktop or CLI, open /hooks and trust the Atoll hook.</li>
+                      <li>Quit and reopen Codex Desktop after installing hooks.</li>
+                      <li>Trigger one shell permission in a local session to verify.</li>
                     </ul>
                   </details>
                 ) : null}

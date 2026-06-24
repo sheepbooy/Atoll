@@ -206,6 +206,49 @@ pub fn detect_claude_session_host(cwd: &str) -> SessionHost {
     SessionHost::Unknown
 }
 
+pub fn detect_codex_session_host(cwd: &str) -> SessionHost {
+    let _ = cwd;
+    if foreground_process_name()
+        .map(|name| name.eq_ignore_ascii_case("Codex.exe"))
+        .unwrap_or(false)
+    {
+        return SessionHost::CodexDesktop;
+    }
+    if foreground_is_terminal_process() {
+        return SessionHost::CodexCli;
+    }
+    if try_focus_codex_process() {
+        return SessionHost::CodexDesktop;
+    }
+    SessionHost::Unknown
+}
+
+pub fn detect_claude_session_host_from_peer_pid(pid: u32) -> SessionHost {
+    let _ = pid;
+    if foreground_is_terminal_process() {
+        return SessionHost::ClaudeCli;
+    }
+    if try_focus_claude_process() {
+        return SessionHost::ClaudeDesktop;
+    }
+    SessionHost::Unknown
+}
+
+pub fn detect_codex_session_host_from_peer_pid(pid: u32) -> SessionHost {
+    let _ = pid;
+    if foreground_is_terminal_process() {
+        return SessionHost::CodexCli;
+    }
+    if try_focus_codex_process() {
+        return SessionHost::CodexDesktop;
+    }
+    SessionHost::Unknown
+}
+
+pub fn is_codex_desktop_app_running() -> bool {
+    try_focus_codex_process()
+}
+
 fn foreground_process_name() -> Option<String> {
     unsafe {
         let hwnd = GetForegroundWindow();
@@ -273,13 +316,34 @@ pub fn focus_claude_app() -> Result<(), String> {
     Ok(())
 }
 
+pub fn focus_codex_app() -> Result<(), String> {
+    if try_focus_codex_process() {
+        return Ok(());
+    }
+
+    hidden_command("cmd")
+        .args(["/C", "start", "", "Codex"])
+        .spawn()
+        .map_err(|error| format!("Failed to focus Codex: {error}"))?;
+    Ok(())
+}
+
 fn try_focus_claude_process() -> bool {
+    try_focus_process_by_title("Claude")
+}
+
+fn try_focus_codex_process() -> bool {
+    try_focus_process_by_title("Codex")
+}
+
+fn try_focus_process_by_title(app_name: &'static str) -> bool {
     use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
     use windows::Win32::UI::WindowsAndMessaging::{
         EnumWindows, GetWindowTextW, IsWindowVisible, SetForegroundWindow, ShowWindow, SW_RESTORE,
     };
 
     struct Search {
+        app_name: &'static str,
         found: Option<HWND>,
     }
 
@@ -292,7 +356,7 @@ fn try_focus_claude_process() -> bool {
         let length = GetWindowTextW(hwnd, &mut buffer);
         if length > 0 {
             let title = String::from_utf16_lossy(&buffer[..length as usize]);
-            if title.contains("Claude") {
+            if title.contains(search.app_name) {
                 search.found = Some(hwnd);
                 return BOOL(0);
             }
@@ -300,7 +364,10 @@ fn try_focus_claude_process() -> bool {
         BOOL(1)
     }
 
-    let mut search = Search { found: None };
+    let mut search = Search {
+        app_name,
+        found: None,
+    };
     unsafe {
         let _ = EnumWindows(Some(enum_proc), LPARAM(&mut search as *mut _ as isize));
         if let Some(hwnd) = search.found {

@@ -621,6 +621,106 @@ pub fn deactivate_atoll_app() {
     deactivate_own_application();
 }
 
+pub fn activate_codex_app(app: &AppHandle) -> Result<(), String> {
+    focus_codex_app_impl(app, false)
+}
+
+pub fn focus_codex_app(app: &AppHandle) -> Result<(), String> {
+    focus_codex_app_impl(app, true)
+}
+
+fn focus_codex_app_impl(app: &AppHandle, launch_if_needed: bool) -> Result<(), String> {
+    let app = app.clone();
+    if is_main_thread() {
+        return focus_codex_app_on_main_thread(&app, launch_if_needed);
+    }
+
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    window
+        .run_on_main_thread(move || {
+            let _ = tx.send(focus_codex_app_on_main_thread(&app, launch_if_needed));
+        })
+        .map_err(|error| format!("Failed to dispatch Codex focus: {error}"))?;
+    rx.recv()
+        .map_err(|_| "Codex focus dispatch channel closed".to_string())?
+}
+
+fn focus_codex_app_on_main_thread(_app: &AppHandle, launch_if_needed: bool) -> Result<(), String> {
+    deactivate_own_application();
+
+    let focused = if launch_if_needed {
+        run_open_codex()
+            || activate_codex_by_bundle_id()
+            || activate_codex_via_applescript()
+    } else {
+        activate_codex_by_bundle_id() || activate_codex_via_applescript()
+    };
+    if !focused {
+        return Err("Failed to focus Codex".to_string());
+    }
+
+    ensure_island_panel_visible();
+    Ok(())
+}
+
+fn run_open_codex() -> bool {
+    Command::new("/usr/bin/open")
+        .args(["-a", "Codex"])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn activate_codex_via_applescript() -> bool {
+    Command::new("/usr/bin/osascript")
+        .args(["-e", r#"tell application "Codex" to activate"#])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn activate_codex_by_bundle_id() -> bool {
+    const ACTIVATE_ALL_WINDOWS: usize = 1;
+    const ACTIVATE_IGNORING_OTHER_APPS: usize = 1 << 1;
+    let options = ACTIVATE_ALL_WINDOWS | ACTIVATE_IGNORING_OTHER_APPS;
+
+    unsafe {
+        let Some(running_app_class) = objc2::runtime::AnyClass::get(c"NSRunningApplication") else {
+            return false;
+        };
+
+        for bundle_id in CODEX_DESKTOP_BUNDLE_IDS {
+            let bundle = objc2_foundation::NSString::from_str(bundle_id);
+            let apps: *mut objc2::runtime::AnyObject = objc2::msg_send![
+                running_app_class,
+                runningApplicationsWithBundleIdentifier: &*bundle
+            ];
+            if apps.is_null() {
+                continue;
+            }
+
+            let count: usize = objc2::msg_send![apps, count];
+            for index in 0..count {
+                let app: *mut objc2::runtime::AnyObject =
+                    objc2::msg_send![apps, objectAtIndex: index];
+                if app.is_null() {
+                    continue;
+                }
+
+                let ok: objc2::runtime::Bool =
+                    objc2::msg_send![app, activateWithOptions: options];
+                if ok.as_bool() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
 pub fn activate_claude_app(app: &AppHandle) -> Result<(), String> {
     focus_claude_app_impl(app, false)
 }
@@ -866,6 +966,16 @@ pub fn detect_claude_session_host(cwd: &str) -> SessionHost {
     resolve_claude_session_host(cwd, None)
 }
 
+pub fn detect_codex_session_host_from_peer_pid(pid: u32) -> SessionHost {
+    if find_terminal_ancestor(pid).is_some() {
+        return SessionHost::CodexCli;
+    }
+    if is_in_codex_desktop_tree(pid) {
+        return SessionHost::CodexDesktop;
+    }
+    SessionHost::Unknown
+}
+
 /// Walk the peer process's ancestry to determine if it originates from a
 /// terminal (CLI) or Claude Desktop.  This is the most reliable method when
 /// both Desktop and CLI share a working directory, because the frontmost app
@@ -892,6 +1002,172 @@ pub fn detect_claude_session_host_at_hook(cwd: &str, previous_app_pid: Option<i6
     };
 
     resolve_claude_session_host(cwd, hint)
+}
+
+fn codex_cwd_signals(cwd: &str) -> (bool, bool) {
+    let mut has_terminal_codex = false;
+    let mut has_desktop_codex = false;
+    for pid in pids_with_cwd(cwd) {
+        if find_terminal_ancestor(pid).is_some() && is_codex_related_process(pid) {
+            has_terminal_codex = true;
+        } else if find_terminal_ancestor(pid).is_none() && is_in_codex_desktop_tree(pid) {
+            has_desktop_codex = true;
+        }
+    }
+    (has_terminal_codex, has_desktop_codex)
+}
+
+pub fn resolve_codex_session_host(cwd: &str, hint_pid: Option<u32>) -> SessionHost {
+    if cwd.is_empty() || cwd == "." {
+        return SessionHost::Unknown;
+    }
+
+    if let Some(pid) = hint_pid {
+        if is_codex_desktop_app_pid(pid) {
+            return SessionHost::CodexDesktop;
+        }
+        if is_terminal_pid(pid) {
+            return SessionHost::CodexCli;
+        }
+    }
+
+    let (has_terminal_codex, has_desktop_codex) = codex_cwd_signals(cwd);
+    match (has_terminal_codex, has_desktop_codex) {
+        (true, false) => return SessionHost::CodexCli,
+        (false, true) => return SessionHost::CodexDesktop,
+        (true, true) => return SessionHost::Unknown,
+        (false, false) => {}
+    }
+
+    if frontmost_is_codex_desktop() {
+        return SessionHost::CodexDesktop;
+    }
+
+    if frontmost_is_terminal() {
+        return SessionHost::CodexCli;
+    }
+
+    SessionHost::Unknown
+}
+
+pub fn detect_codex_session_host(cwd: &str) -> SessionHost {
+    resolve_codex_session_host(cwd, None)
+}
+
+pub fn detect_codex_session_host_at_hook(cwd: &str, previous_app_pid: Option<i64>) -> SessionHost {
+    let own_pid = std::process::id();
+    let frontmost = frontmost_app_pid();
+
+    let hint = match frontmost {
+        Some(pid) if pid != own_pid => Some(pid),
+        _ => previous_app_pid.map(|p| p as u32),
+    };
+
+    resolve_codex_session_host(cwd, hint)
+}
+
+pub(crate) fn frontmost_is_codex_desktop() -> bool {
+    frontmost_app_pid().is_some_and(is_codex_desktop_app_pid)
+}
+
+pub(crate) fn is_codex_desktop_app_running() -> bool {
+    unsafe {
+        let Some(cls) = objc2::runtime::AnyClass::get(c"NSRunningApplication") else {
+            return false;
+        };
+        for bundle_id in CODEX_DESKTOP_BUNDLE_IDS {
+            let bundle = objc2_foundation::NSString::from_str(bundle_id);
+            let apps: *mut objc2::runtime::AnyObject = objc2::msg_send![
+                cls,
+                runningApplicationsWithBundleIdentifier: &*bundle
+            ];
+            if apps.is_null() {
+                continue;
+            }
+            let count: usize = objc2::msg_send![apps, count];
+            if count > 0 {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+fn is_in_codex_desktop_tree(mut pid: u32) -> bool {
+    for _ in 0..32 {
+        if pid <= 1 {
+            return false;
+        }
+        if is_codex_desktop_process(pid) {
+            return true;
+        }
+        let output = match Command::new("ps")
+            .args(["-p", &pid.to_string(), "-o", "ppid="])
+            .output()
+        {
+            Ok(output) => output,
+            Err(_) => return false,
+        };
+        let ppid_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        pid = match ppid_str.parse::<u32>() {
+            Ok(ppid) => ppid,
+            Err(_) => return false,
+        };
+    }
+    false
+}
+
+const CODEX_DESKTOP_BUNDLE_IDS: &[&str] = &["com.openai.codex"];
+
+fn is_codex_desktop_bundle(bundle: &str) -> bool {
+    CODEX_DESKTOP_BUNDLE_IDS.contains(&bundle)
+}
+
+fn command_line_matches_codex(command_line: &str) -> bool {
+    let trimmed = command_line.trim();
+    trimmed == "codex"
+        || trimmed.ends_with("/codex")
+        || trimmed.contains("/codex ")
+        || trimmed.ends_with("/codex-cli")
+        || command_line.contains("Codex.app")
+        || command_line.contains("Codex Helper")
+        || command_line.contains("com.openai.codex")
+}
+
+fn is_codex_related_process(pid: u32) -> bool {
+    if is_codex_desktop_pid(pid) {
+        return true;
+    }
+    if process_executable(pid).is_some_and(|comm| command_line_matches_codex(&comm)) {
+        return true;
+    }
+    process_command_line(pid).is_some_and(|args| command_line_matches_codex(&args))
+}
+
+fn is_codex_desktop_process(pid: u32) -> bool {
+    if find_terminal_ancestor(pid).is_some() {
+        return false;
+    }
+    if is_codex_desktop_pid(pid) {
+        return true;
+    }
+    if process_executable(pid).is_some_and(|comm| command_line_matches_codex(&comm)) {
+        return true;
+    }
+    process_command_line(pid).is_some_and(|args| command_line_matches_codex(&args))
+}
+
+fn is_codex_desktop_app_pid(pid: u32) -> bool {
+    if find_terminal_ancestor(pid).is_some() {
+        return false;
+    }
+    is_codex_desktop_pid(pid) || is_in_codex_desktop_tree(pid)
+}
+
+fn is_codex_desktop_pid(pid: u32) -> bool {
+    bundle_id_for_pid(pid as i32)
+        .as_deref()
+        .is_some_and(is_codex_desktop_bundle)
 }
 
 pub(crate) fn frontmost_is_claude_desktop() -> bool {
@@ -1165,6 +1441,26 @@ mod live_probes {
             "detect_session_host_from_peer_pid(Desktop {}): {:?}",
             desktop_pid,
             detect_session_host_from_peer_pid(desktop_pid)
+        );
+
+        let codex_desktop_pid: u32 = std::env::var("ATOLL_PROBE_CODEX_DESKTOP_PID")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        if codex_desktop_pid > 0 {
+            eprintln!(
+                "detect_codex_session_host_from_peer_pid(Desktop {}): {:?}",
+                codex_desktop_pid,
+                detect_codex_session_host_from_peer_pid(codex_desktop_pid)
+            );
+        }
+        eprintln!(
+            "detect_codex_session_host: {:?}",
+            detect_codex_session_host(&cwd)
+        );
+        eprintln!(
+            "detect_codex_session_host_at_hook: {:?}",
+            detect_codex_session_host_at_hook(&cwd, None)
         );
     }
 }

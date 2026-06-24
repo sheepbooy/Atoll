@@ -38,7 +38,12 @@ export interface IslandSnapshot {
   hookHealth: HookHealthSnapshot;
 }
 
-export type SessionHost = "unknown" | "claudeDesktop" | "claudeCli";
+export type SessionHost =
+  | "unknown"
+  | "claudeDesktop"
+  | "claudeCli"
+  | "codexDesktop"
+  | "codexCli";
 
 export interface SessionSummary {
   sessionId: string;

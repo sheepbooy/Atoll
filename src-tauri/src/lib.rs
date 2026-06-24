@@ -287,21 +287,21 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
         online,
     );
     drop(known_sessions);
-    persist_claude_session_hosts(state, &snapshot.sessions);
+    persist_session_hosts(state, &snapshot.sessions);
     snapshot.hook_health = hook_health;
     snapshot
 }
 
-fn persist_claude_session_hosts(state: &AppState, sessions: &[SessionSummary]) {
+fn persist_session_hosts(state: &AppState, sessions: &[SessionSummary]) {
     for session in sessions {
-        if !matches!(session.agent, AgentKind::Claude) {
-            continue;
-        }
         if matches!(
             session.session_host,
-            platform::SessionHost::ClaudeDesktop | platform::SessionHost::ClaudeCli
+            platform::SessionHost::ClaudeDesktop
+                | platform::SessionHost::ClaudeCli
+                | platform::SessionHost::CodexDesktop
+                | platform::SessionHost::CodexCli
         ) {
-            store_claude_session_host(state, &session.session_id, session.session_host);
+            store_session_host(state, &session.session_id, session.session_host);
         }
     }
 }
@@ -425,8 +425,23 @@ fn codex_hook_status(app: &AppHandle) -> HookStatus {
         .as_ref()
         .map(|hooks| has_atoll_codex_hooks(hooks))
         .unwrap_or(false);
-    let (script_path, script_found) =
+    let (script_path, mut script_found) =
         resolve_hook_script_readiness(app, "atoll-codex-hook.mjs", config.as_ref());
+    if installed {
+        if let (Some(cfg), Ok(preferred)) = (
+            config.as_ref(),
+            resolve_install_hook_script_path(app, "atoll-codex-hook.mjs"),
+        ) {
+            if let Some(configured) = configured_atoll_hook_script_path(cfg, "atoll-codex-hook") {
+                if is_dev_hook_script_path(&configured)
+                    && configured != preferred
+                    && std::path::Path::new(&preferred).is_file()
+                {
+                    script_found = false;
+                }
+            }
+        }
+    }
     build_hook_status(
         installed,
         script_found,
@@ -435,6 +450,12 @@ fn codex_hook_status(app: &AppHandle) -> HookStatus {
         config.as_ref(),
         "atoll-codex-hook",
     )
+}
+
+fn is_dev_hook_script_path(path: &str) -> bool {
+    path.contains("/target/debug/")
+        || path.contains("/target/release/")
+        || path.contains("/src-tauri/target/")
 }
 
 fn build_hook_status(
@@ -1309,9 +1330,9 @@ pub(crate) fn claude_session_host(state: &AppState, session_id: &str, cwd: &str)
                 return entry.host;
             }
             if let Some(path) = entry.transcript_path.as_deref() {
-                if let Some(host) = host_from_transcript_path(path) {
+                if let Some(host) = host_from_claude_transcript_path(path) {
                     drop(known);
-                    store_claude_session_host(state, session_id, host);
+                    store_session_host(state, session_id, host);
                     return host;
                 }
             }
@@ -1320,12 +1341,35 @@ pub(crate) fn claude_session_host(state: &AppState, session_id: &str, cwd: &str)
 
     let detected = platform::detect_claude_session_host(cwd);
     if detected != platform::SessionHost::Unknown {
-        store_claude_session_host(state, session_id, detected);
+        store_session_host(state, session_id, detected);
     }
     detected
 }
 
-pub(crate) fn store_claude_session_host(state: &AppState, session_id: &str, host: platform::SessionHost) {
+pub(crate) fn codex_session_host(state: &AppState, session_id: &str, cwd: &str) -> platform::SessionHost {
+    if let Ok(known) = state.known_sessions.lock() {
+        if let Some(entry) = known.get(session_id) {
+            if entry.host != platform::SessionHost::Unknown {
+                return entry.host;
+            }
+            if let Some(path) = entry.transcript_path.as_deref() {
+                if let Some(host) = host_from_codex_transcript_path(path) {
+                    drop(known);
+                    store_session_host(state, session_id, host);
+                    return host;
+                }
+            }
+        }
+    }
+
+    let detected = platform::detect_codex_session_host(cwd);
+    if detected != platform::SessionHost::Unknown {
+        store_session_host(state, session_id, detected);
+    }
+    detected
+}
+
+pub(crate) fn store_session_host(state: &AppState, session_id: &str, host: platform::SessionHost) {
     if let Ok(mut known) = state.known_sessions.lock() {
         if let Some(entry) = known.get_mut(session_id) {
             entry.host = host;
@@ -1339,30 +1383,52 @@ fn session_host_for_summary(
     cwd: &str,
     agent: &AgentKind,
 ) -> platform::SessionHost {
-    if !matches!(agent, AgentKind::Claude) {
-        return platform::SessionHost::Unknown;
-    }
-    if let Some(entry) = known_sessions.get(session_id) {
-        if entry.host != platform::SessionHost::Unknown {
-            return entry.host;
-        }
-        if let Some(path) = entry.transcript_path.as_deref() {
-            if let Some(host) = host_from_transcript_path(path) {
-                return host;
+    match agent {
+        AgentKind::Claude => {
+            if let Some(entry) = known_sessions.get(session_id) {
+                if entry.host != platform::SessionHost::Unknown {
+                    return entry.host;
+                }
+                if let Some(path) = entry.transcript_path.as_deref() {
+                    if let Some(host) = host_from_claude_transcript_path(path) {
+                        return host;
+                    }
+                }
             }
+            let detected = platform::detect_claude_session_host(cwd);
+            if detected != platform::SessionHost::Unknown {
+                return detected;
+            }
+            if platform::is_claude_desktop_app_running() && !platform::frontmost_is_terminal() {
+                return platform::SessionHost::ClaudeDesktop;
+            }
+            platform::SessionHost::Unknown
         }
+        AgentKind::Codex => {
+            if let Some(entry) = known_sessions.get(session_id) {
+                if entry.host != platform::SessionHost::Unknown {
+                    return entry.host;
+                }
+                if let Some(path) = entry.transcript_path.as_deref() {
+                    if let Some(host) = host_from_codex_transcript_path(path) {
+                        return host;
+                    }
+                }
+            }
+            let detected = platform::detect_codex_session_host(cwd);
+            if detected != platform::SessionHost::Unknown {
+                return detected;
+            }
+            if platform::is_codex_desktop_app_running() && !platform::frontmost_is_terminal() {
+                return platform::SessionHost::CodexDesktop;
+            }
+            platform::SessionHost::Unknown
+        }
+        _ => platform::SessionHost::Unknown,
     }
-    let detected = platform::detect_claude_session_host(cwd);
-    if detected != platform::SessionHost::Unknown {
-        return detected;
-    }
-    if platform::is_claude_desktop_app_running() && !platform::frontmost_is_terminal() {
-        return platform::SessionHost::ClaudeDesktop;
-    }
-    platform::SessionHost::Unknown
 }
 
-fn host_from_transcript_path(path: &str) -> Option<platform::SessionHost> {
+fn host_from_claude_transcript_path(path: &str) -> Option<platform::SessionHost> {
     if path.contains("/Application Support/") && !path.contains("/.claude/") {
         return Some(platform::SessionHost::ClaudeDesktop);
     }
@@ -1383,6 +1449,21 @@ fn host_from_transcript_path(path: &str) -> Option<platform::SessionHost> {
         }
         // Ambiguous: Desktop is running and path looks like CLI — return None
         // so the caller uses other detection methods.
+        return None;
+    }
+    None
+}
+
+fn host_from_codex_transcript_path(path: &str) -> Option<platform::SessionHost> {
+    if path.contains("com.openai.codex")
+        || (path.contains("/Application Support/") && path.contains("codex"))
+    {
+        return Some(platform::SessionHost::CodexDesktop);
+    }
+    if path.contains("/.codex/sessions/") || path.contains("/.codex/") {
+        if !platform::is_codex_desktop_app_running() {
+            return Some(platform::SessionHost::CodexCli);
+        }
         return None;
     }
     None
@@ -1679,14 +1760,13 @@ fn get_codex_hook_status(app: AppHandle) -> Result<HookStatus, String> {
 
 #[tauri::command]
 fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let script_path = resolve_hook_script_path(&app, "atoll-codex-hook.mjs")
-        .ok_or_else(|| "Cannot locate hook script".to_string())?;
+    let script_path = resolve_install_hook_script_path(&app, "atoll-codex-hook.mjs")?;
 
     if !std::path::Path::new(&script_path).exists() {
         return Err(format!("Hook script not found at: {script_path}"));
     }
 
-    let node_path = resolve_node_executable()?;
+    let node_path = resolve_node_executable_for_codex()?;
 
     let hooks_path = codex_hooks_path()
         .ok_or_else(|| "Cannot determine home directory".to_string())?;
@@ -1712,7 +1792,7 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
     let atoll_hooks = serde_json::json!({
         "PermissionRequest": [
             {
-                "matcher": "",
+                "matcher": "*",
                 "hooks": [
                     {
                         "type": "command",
@@ -1725,7 +1805,7 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
         ],
         "PostToolUse": [
             {
-                "matcher": "",
+                "matcher": "*",
                 "hooks": [
                     {
                         "type": "command",
@@ -1738,7 +1818,7 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
         ],
         "Stop": [
             {
-                "matcher": "",
+                "matcher": "*",
                 "hooks": [
                     {
                         "type": "command",
@@ -1751,7 +1831,7 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
         ],
         "SubagentStop": [
             {
-                "matcher": "",
+                "matcher": "*",
                 "hooks": [
                     {
                         "type": "command",
@@ -1912,6 +1992,71 @@ fn resolve_node_executable() -> Result<String, String> {
         }
         Ok(normalize_hook_script_path(&path))
     }
+}
+
+/// Prefer Codex Desktop's bundled Node when available so hooks work in the app sandbox.
+fn resolve_codex_desktop_node_executable() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        for candidate in [
+            "/Applications/Codex.app/Contents/Resources/cua_node/bin/node",
+            "/Applications/Codex.app/Contents/Resources/node/bin/node",
+        ] {
+            if std::path::Path::new(candidate).is_file() {
+                return Some(normalize_hook_script_path(candidate));
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            let candidate = std::path::PathBuf::from(local_app_data)
+                .join("Programs")
+                .join("Codex")
+                .join("resources")
+                .join("cua_node")
+                .join("bin")
+                .join("node.exe");
+            if candidate.is_file() {
+                return Some(normalize_hook_script_path(&candidate.to_string_lossy()));
+            }
+        }
+        for candidate in [
+            r"C:\Program Files\Codex\resources\cua_node\bin\node.exe",
+            r"C:\Program Files (x86)\Codex\resources\cua_node\bin\node.exe",
+        ] {
+            if std::path::Path::new(candidate).is_file() {
+                return Some(normalize_hook_script_path(candidate));
+            }
+        }
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = ();
+    }
+
+    None
+}
+
+fn resolve_node_executable_for_codex() -> Result<String, String> {
+    if let Some(path) = resolve_codex_desktop_node_executable() {
+        return Ok(path);
+    }
+    resolve_node_executable()
+}
+
+/// Prefer the bundled hook script from the running Atoll app over dev build paths.
+fn resolve_install_hook_script_path(app: &AppHandle, script_name: &str) -> Result<String, String> {
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let candidate = resource_dir.join("scripts").join(script_name);
+        if candidate.is_file() {
+            return Ok(normalize_hook_script_path(&candidate.to_string_lossy()));
+        }
+    }
+    resolve_hook_script_path(app, script_name)
+        .ok_or_else(|| format!("Cannot locate hook script: {script_name}"))
 }
 
 fn format_hook_command(
@@ -3801,26 +3946,87 @@ mod core_tests {
     }
 
     #[test]
-    fn host_from_transcript_path_patterns() {
+    fn host_from_claude_transcript_path_patterns() {
         assert_eq!(
-            host_from_transcript_path("/Users/me/.claude/projects/-tmp-project/abc.jsonl"),
+            host_from_claude_transcript_path("/Users/me/.claude/projects/-tmp-project/abc.jsonl"),
             Some(platform::SessionHost::ClaudeCli),
         );
         assert_eq!(
-            host_from_transcript_path("/Users/me/Library/Application Support/Claude-3p/local-agent-mode-sessions/xyz.jsonl"),
+            host_from_claude_transcript_path("/Users/me/Library/Application Support/Claude-3p/local-agent-mode-sessions/xyz.jsonl"),
             Some(platform::SessionHost::ClaudeDesktop),
         );
         assert_eq!(
-            host_from_transcript_path("/Users/me/Library/Application Support/com.anthropic.claudefordesktop/agent-sessions/xyz.jsonl"),
+            host_from_claude_transcript_path("/Users/me/Library/Application Support/com.anthropic.claudefordesktop/agent-sessions/xyz.jsonl"),
             Some(platform::SessionHost::ClaudeDesktop),
         );
         assert_eq!(
-            host_from_transcript_path("/Users/me/Library/Application Support/Claude/projects/xyz.jsonl"),
+            host_from_claude_transcript_path("/Users/me/Library/Application Support/Claude/projects/xyz.jsonl"),
             Some(platform::SessionHost::ClaudeDesktop),
         );
         assert_eq!(
-            host_from_transcript_path("/some/random/path/transcript.jsonl"),
+            host_from_claude_transcript_path("/some/random/path/transcript.jsonl"),
             None,
+        );
+    }
+
+    #[test]
+    fn host_from_codex_transcript_path_patterns() {
+        assert_eq!(
+            host_from_codex_transcript_path("/Users/me/.codex/sessions/2026/06/23/rollout.jsonl"),
+            Some(platform::SessionHost::CodexCli),
+        );
+        assert_eq!(
+            host_from_codex_transcript_path("/Users/me/Library/Application Support/com.openai.codex/sessions/abc.jsonl"),
+            Some(platform::SessionHost::CodexDesktop),
+        );
+        assert_eq!(
+            host_from_codex_transcript_path("/some/random/path/transcript.jsonl"),
+            None,
+        );
+    }
+
+    #[test]
+    fn session_host_for_summary_codex_trusts_stored_host() {
+        let known_sessions = HashMap::from([
+            (
+                "codex-cli-session".into(),
+                KnownSession {
+                    agent: AgentKind::Codex,
+                    cwd: "/tmp/codex-cli".into(),
+                    transcript_path: None,
+                    last_activity: iso_timestamp_now(),
+                    host: platform::SessionHost::CodexCli,
+                },
+            ),
+            (
+                "codex-desktop-session".into(),
+                KnownSession {
+                    agent: AgentKind::Codex,
+                    cwd: "/tmp/codex-desktop".into(),
+                    transcript_path: None,
+                    last_activity: iso_timestamp_now(),
+                    host: platform::SessionHost::CodexDesktop,
+                },
+            ),
+        ]);
+
+        assert_eq!(
+            session_host_for_summary(
+                &known_sessions,
+                "codex-cli-session",
+                "/tmp/codex-cli",
+                &AgentKind::Codex,
+            ),
+            platform::SessionHost::CodexCli,
+        );
+        assert_eq!(
+            session_host_for_summary(
+                &known_sessions,
+                "codex-desktop-session",
+                "/tmp/codex-desktop",
+                &AgentKind::Codex,
+            ),
+            platform::SessionHost::CodexDesktop,
         );
     }
 
@@ -4432,7 +4638,7 @@ mod hook_bridge_tests {
         assert_eq!(request.id, "request-codex-1");
         assert!(matches!(request.agent, crate::AgentKind::Codex));
         assert_eq!(request.session, "codex-session-1");
-        assert_eq!(request.command, "exec_command");
+        assert_eq!(request.command, "Bash: npm test");
         assert_eq!(request.detail, "Run tests");
         assert_eq!(request.cwd, "/Users/test/project");
         assert_eq!(request.tool_use_id.as_deref(), Some("tool-codex-1"));
@@ -4555,7 +4761,7 @@ mod hook_script_path_tests {
         let config = json!({
             "hooks": {
                 "PermissionRequest": [{
-                    "matcher": "",
+                    "matcher": "*",
                     "hooks": [{
                         "command": "node \"/Applications/Atoll.app/Contents/Resources/scripts/atoll-codex-hook.mjs\""
                     }]
@@ -4581,7 +4787,7 @@ mod codex_hooks_tests {
     fn sample_atoll_codex_hooks() -> serde_json::Value {
         json!({
             "PermissionRequest": [{
-                "matcher": "",
+                "matcher": "*",
                 "hooks": [{
                     "type": "command",
                     "command": "node \"/tmp/atoll-codex-hook.mjs\"",
@@ -4590,7 +4796,7 @@ mod codex_hooks_tests {
                 }]
             }],
             "PostToolUse": [{
-                "matcher": "",
+                "matcher": "*",
                 "hooks": [{
                     "type": "command",
                     "command": "node \"/tmp/atoll-codex-hook.mjs\"",
@@ -4598,7 +4804,7 @@ mod codex_hooks_tests {
                 }]
             }],
             "Stop": [{
-                "matcher": "",
+                "matcher": "*",
                 "hooks": [{
                     "type": "command",
                     "command": "node \"/tmp/atoll-codex-hook.mjs\"",
@@ -4606,7 +4812,7 @@ mod codex_hooks_tests {
                 }]
             }],
             "SubagentStop": [{
-                "matcher": "",
+                "matcher": "*",
                 "hooks": [{
                     "type": "command",
                     "command": "node \"/tmp/atoll-codex-hook.mjs\"",
@@ -4641,7 +4847,7 @@ mod codex_hooks_tests {
     }
 
     #[test]
-    fn format_hook_command_quotes_paths_with_spaces() {
+    fn format_hook_command_quotes_paths_with_spaces_codex() {
         let command = format_hook_command(
             None,
             "/opt/homebrew/bin/node",
@@ -4771,7 +4977,7 @@ mod claude_hooks_tests {
     fn upsert_preserves_user_notification_hooks() {
         let mut hooks = json!({
             "Notification": [{
-                "matcher": "",
+                "matcher": "*",
                 "hooks": [{
                     "type": "command",
                     "command": "osascript -e 'display notification \"hi\"'"
@@ -4803,7 +5009,7 @@ mod claude_hooks_tests {
     fn uninstall_removes_only_atoll_claude_hooks() {
         let mut hooks = json!({
             "Notification": [{
-                "matcher": "",
+                "matcher": "*",
                 "hooks": [{
                     "type": "command",
                     "command": "osascript -e 'display notification \"hi\"'"

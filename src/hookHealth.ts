@@ -30,6 +30,12 @@ export function hookStatusIssue(status: HookStatus | null | undefined): string |
   if (status.nodeFound === false) {
     return "Node.js not found at the configured hook path. Install Node.js, then reinstall hooks.";
   }
+  if (
+    status.scriptPath.includes("/target/debug/") ||
+    status.scriptPath.includes("/target/release/")
+  ) {
+    return "Hook points to a dev build path. Reinstall hooks from Atoll.app, then trust again in Codex.";
+  }
   return null;
 }
 
@@ -135,6 +141,9 @@ export function hookAttentionTitle(
 
 export const CLAUDE_DESKTOP_HOOK_NOTE =
   "Works with Claude Code CLI and Desktop. After install: use Ask permissions in Claude Desktop, restart Claude, then trigger a Bash permission once.";
+
+export const CODEX_DESKTOP_HOOK_NOTE =
+  "Works with Codex CLI and Desktop. After install: trust the Atoll hook in Codex Desktop or via /hooks, restart Codex, then trigger one shell permission.";
 
 export type HeaderLogoDisplay =
   | { kind: "atoll"; activity: AtollActivity }

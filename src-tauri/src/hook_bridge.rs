@@ -440,15 +440,15 @@ fn route_codex_request(
         )
         .or_else(|error| Ok(hook_defer_response(&hook_event_name, &error))),
         "PostToolUse" => {
-            sync_tool_completion(app, payload, AgentKind::Codex, None)?;
+            sync_tool_completion(app, payload, AgentKind::Codex, Some(stream))?;
             Ok(json!({}))
         }
         "Stop" => {
-            sync_turn_completion(app, payload, AgentKind::Codex, true, None)?;
+            sync_turn_completion(app, payload, AgentKind::Codex, true, Some(stream))?;
             Ok(json!({}))
         }
         "SubagentStop" => {
-            sync_turn_completion(app, payload, AgentKind::Codex, false, None)?;
+            sync_turn_completion(app, payload, AgentKind::Codex, false, Some(stream))?;
             Ok(json!({}))
         }
         _ => Ok(json!({})),
@@ -520,7 +520,20 @@ fn submit_blocking_permission_request(
         );
         let host = detect_host_for_claude_hook(&state, stream, &session_cwd, &request_transcript_path);
         if host != platform::SessionHost::Unknown {
-            crate::store_claude_session_host(&state, &session_id, host);
+            crate::store_session_host(&state, &session_id, host);
+        }
+    }
+    if matches!(session_agent, AgentKind::Codex) {
+        register_known_session(
+            &state,
+            &session_id,
+            session_agent.clone(),
+            &session_cwd,
+            request_transcript_path.as_deref(),
+        );
+        let host = detect_host_for_codex_hook(&state, stream, &session_cwd, &request_transcript_path);
+        if host != platform::SessionHost::Unknown {
+            crate::store_session_host(&state, &session_id, host);
         }
     }
     let snapshot = build_snapshot(&app, &state);
@@ -701,9 +714,15 @@ fn sync_tool_completion(
                 completed_transcript_path.as_deref(),
             );
             if matches!(agent, AgentKind::Claude) {
-                let host = detect_host_for_non_permission_hook(stream, &cwd, completed_transcript_path.as_deref());
+                let host = detect_host_for_claude_non_permission_hook(stream, &cwd, completed_transcript_path.as_deref());
                 if host != platform::SessionHost::Unknown {
-                    crate::store_claude_session_host(&state, session_id, host);
+                    crate::store_session_host(&state, session_id, host);
+                }
+            }
+            if matches!(agent, AgentKind::Codex) {
+                let host = detect_host_for_codex_non_permission_hook(stream, &cwd, completed_transcript_path.as_deref());
+                if host != platform::SessionHost::Unknown {
+                    crate::store_session_host(&state, session_id, host);
                 }
             }
         }
@@ -828,9 +847,15 @@ fn sync_turn_completion(
                 transcript_path.as_deref(),
             );
             if matches!(agent, AgentKind::Claude) {
-                let host = detect_host_for_non_permission_hook(stream, &cwd, transcript_path.as_deref());
+                let host = detect_host_for_claude_non_permission_hook(stream, &cwd, transcript_path.as_deref());
                 if host != platform::SessionHost::Unknown {
-                    crate::store_claude_session_host(&state, session_id, host);
+                    crate::store_session_host(&state, session_id, host);
+                }
+            }
+            if matches!(agent, AgentKind::Codex) {
+                let host = detect_host_for_codex_non_permission_hook(stream, &cwd, transcript_path.as_deref());
+                if host != platform::SessionHost::Unknown {
+                    crate::store_session_host(&state, session_id, host);
                 }
             }
             if let Err(error) = refresh_session_token_usage(
@@ -941,7 +966,70 @@ fn detect_host_for_claude_hook(
     fallback
 }
 
-/// Identify the session host by tracing the hook HTTP peer's process tree.
+/// Determine SessionHost for a Codex session.
+///
+/// Priority: peer process tree → transcript path → Codex Desktop running check → frontmost/cwd detection.
+fn detect_host_for_codex_hook(
+    state: &AppState,
+    stream: &TcpStream,
+    cwd: &str,
+    transcript_path: &Option<String>,
+) -> platform::SessionHost {
+    eprintln!("[Atoll:host-detect] === Codex session host detection ===");
+    eprintln!("[Atoll:host-detect] cwd={cwd:?}");
+    eprintln!("[Atoll:host-detect] transcript_path={transcript_path:?}");
+
+    let peer_host = hook_peer_codex_session_host(stream);
+    eprintln!("[Atoll:host-detect] peer_process_tree → {peer_host:?}");
+    if peer_host != platform::SessionHost::Unknown {
+        eprintln!("[Atoll:host-detect] RESULT: {peer_host:?} (from peer process tree)");
+        return peer_host;
+    }
+
+    if let Some(path) = transcript_path.as_deref() {
+        if is_codex_desktop_transcript_path(path) {
+            eprintln!("[Atoll:host-detect] RESULT: CodexDesktop (transcript path matched Desktop)");
+            return platform::SessionHost::CodexDesktop;
+        }
+        if is_codex_cli_transcript_path(path) {
+            if !is_codex_desktop_app_running() {
+                eprintln!("[Atoll:host-detect] RESULT: CodexCli (CLI path + Desktop NOT running)");
+                return platform::SessionHost::CodexCli;
+            }
+            eprintln!("[Atoll:host-detect] CLI-style path but Desktop IS running, need further signals...");
+        }
+    } else {
+        eprintln!("[Atoll:host-detect] transcript_path is None");
+    }
+
+    let desktop_running = is_codex_desktop_app_running();
+    eprintln!("[Atoll:host-detect] codex_desktop_running={desktop_running}");
+    if desktop_running {
+        let prev_pid = state.previous_app_pid.lock().ok().and_then(|g| *g);
+        eprintln!("[Atoll:host-detect] previous_app_pid={prev_pid:?}");
+        if let Some(pid) = prev_pid.map(|p| p as u32) {
+            let from_pid = platform::detect_codex_session_host_from_peer_pid(pid);
+            eprintln!("[Atoll:host-detect] detect_from_previous_pid({pid}) → {from_pid:?}");
+            if from_pid == platform::SessionHost::CodexDesktop {
+                eprintln!("[Atoll:host-detect] RESULT: CodexDesktop (previous_app_pid in Desktop tree)");
+                return platform::SessionHost::CodexDesktop;
+            }
+        }
+        let terminal_front = is_any_terminal_frontmost();
+        eprintln!("[Atoll:host-detect] terminal_frontmost={terminal_front}");
+        if !terminal_front {
+            eprintln!("[Atoll:host-detect] RESULT: CodexDesktop (Desktop running + no terminal frontmost)");
+            return platform::SessionHost::CodexDesktop;
+        }
+    }
+
+    let prev_pid = state.previous_app_pid.lock().ok().and_then(|g| *g);
+    let fallback = platform::detect_codex_session_host_at_hook(cwd, prev_pid);
+    eprintln!("[Atoll:host-detect] RESULT: {fallback:?} (final fallback, prev_pid={prev_pid:?})");
+    fallback
+}
+
+/// Identify the Claude session host by tracing the hook HTTP peer's process tree.
 fn hook_peer_session_host(stream: &TcpStream) -> platform::SessionHost {
     let peer = match stream.peer_addr() {
         Ok(addr) => addr,
@@ -1003,11 +1091,65 @@ fn is_any_terminal_frontmost() -> bool {
     platform::frontmost_is_terminal()
 }
 
-/// Detect session host for non-permission hooks (Stop, PostToolUse, SubagentStop).
-/// Uses peer process tree as primary signal (same as PreToolUse), with transcript
-/// path and Desktop running-state as fallbacks.
-fn detect_host_for_non_permission_hook(stream: Option<&TcpStream>, cwd: &str, transcript_path: Option<&str>) -> platform::SessionHost {
-    eprintln!("[Atoll:host-detect] === non-permission hook detection ===");
+/// Identify the Codex session host by tracing the hook HTTP peer's process tree.
+fn hook_peer_codex_session_host(stream: &TcpStream) -> platform::SessionHost {
+    let peer = match stream.peer_addr() {
+        Ok(addr) => addr,
+        Err(e) => {
+            eprintln!("[Atoll:host-detect] peer_addr() failed: {e}");
+            return platform::SessionHost::Unknown;
+        }
+    };
+    let port = peer.port();
+    let own_pid = std::process::id();
+    eprintln!("[Atoll:host-detect] peer port={port}, own_pid={own_pid}");
+
+    let output = match std::process::Command::new("lsof")
+        .args(["-i", &format!("TCP@127.0.0.1:{port}"), "-n", "-P", "-t"])
+        .output()
+    {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("[Atoll:host-detect] lsof exec failed: {e}");
+            return platform::SessionHost::Unknown;
+        }
+    };
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    let stderr_text = String::from_utf8_lossy(&output.stderr);
+    eprintln!("[Atoll:host-detect] lsof stdout={text:?}, stderr={stderr_text:?}");
+    for line in text.lines() {
+        if let Ok(pid) = line.trim().parse::<u32>() {
+            if pid != own_pid {
+                let result = platform::detect_codex_session_host_from_peer_pid(pid);
+                eprintln!("[Atoll:host-detect] peer_pid={pid} → {result:?}");
+                return result;
+            }
+        }
+    }
+    platform::SessionHost::Unknown
+}
+
+fn is_codex_cli_transcript_path(path: &str) -> bool {
+    path.contains("/.codex/sessions/") || path.contains("/.codex/")
+}
+
+fn is_codex_desktop_transcript_path(path: &str) -> bool {
+    path.contains("com.openai.codex")
+        || (path.contains("/Application Support/") && path.contains("codex"))
+}
+
+fn is_codex_desktop_app_running() -> bool {
+    platform::is_codex_desktop_app_running()
+}
+
+/// Detect Claude session host for non-permission hooks (Stop, PostToolUse, SubagentStop).
+fn detect_host_for_claude_non_permission_hook(
+    stream: Option<&TcpStream>,
+    cwd: &str,
+    transcript_path: Option<&str>,
+) -> platform::SessionHost {
+    eprintln!("[Atoll:host-detect] === Claude non-permission hook detection ===");
     eprintln!("[Atoll:host-detect] cwd={cwd:?}, transcript_path={transcript_path:?}");
 
     if let Some(stream) = stream {
@@ -1041,6 +1183,50 @@ fn detect_host_for_non_permission_hook(stream: Option<&TcpStream>, cwd: &str, tr
     }
 
     let fallback = platform::detect_claude_session_host(cwd);
+    eprintln!("[Atoll:host-detect] RESULT: {fallback:?} (CWD fallback)");
+    fallback
+}
+
+/// Detect Codex session host for non-permission hooks (Stop, PostToolUse, SubagentStop).
+fn detect_host_for_codex_non_permission_hook(
+    stream: Option<&TcpStream>,
+    cwd: &str,
+    transcript_path: Option<&str>,
+) -> platform::SessionHost {
+    eprintln!("[Atoll:host-detect] === Codex non-permission hook detection ===");
+    eprintln!("[Atoll:host-detect] cwd={cwd:?}, transcript_path={transcript_path:?}");
+
+    if let Some(stream) = stream {
+        let peer_host = hook_peer_codex_session_host(stream);
+        eprintln!("[Atoll:host-detect] peer_process_tree → {peer_host:?}");
+        if peer_host != platform::SessionHost::Unknown {
+            eprintln!("[Atoll:host-detect] RESULT: {peer_host:?} (from peer process tree)");
+            return peer_host;
+        }
+    }
+
+    if let Some(path) = transcript_path {
+        if is_codex_desktop_transcript_path(path) {
+            eprintln!("[Atoll:host-detect] RESULT: CodexDesktop (transcript path matched Desktop)");
+            return platform::SessionHost::CodexDesktop;
+        }
+        if is_codex_cli_transcript_path(path) {
+            if !is_codex_desktop_app_running() {
+                eprintln!("[Atoll:host-detect] RESULT: CodexCli (CLI path + Desktop NOT running)");
+                return platform::SessionHost::CodexCli;
+            }
+            eprintln!("[Atoll:host-detect] CLI-style path but Desktop IS running, checking further...");
+        }
+    }
+
+    let desktop_running = is_codex_desktop_app_running();
+    eprintln!("[Atoll:host-detect] codex_desktop_running={desktop_running}");
+    if desktop_running && !is_any_terminal_frontmost() {
+        eprintln!("[Atoll:host-detect] RESULT: CodexDesktop (Desktop running + no terminal frontmost)");
+        return platform::SessionHost::CodexDesktop;
+    }
+
+    let fallback = platform::detect_codex_session_host(cwd);
     eprintln!("[Atoll:host-detect] RESULT: {fallback:?} (CWD fallback)");
     fallback
 }
@@ -1192,7 +1378,7 @@ fn write_json_response(stream: &mut TcpStream, body: Value) -> std::io::Result<(
 }
 
 fn command_label(tool_name: &str, tool_input: &Value) -> String {
-    if tool_name == "Bash" {
+    if tool_name == "Bash" || tool_name == "exec_command" {
         if let Some(command) = tool_input.get("command").and_then(Value::as_str) {
             return format!("Bash: {command}");
         }
@@ -1270,5 +1456,23 @@ mod bridge_bind_tests {
             .contains("/codex/hook"));
 
         let _ = std::fs::remove_dir_all(temp);
+    }
+}
+
+#[cfg(test)]
+mod payload_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn exec_command_uses_bash_label() {
+        let input = json!({"command": "printf hello"});
+        assert_eq!(command_label("exec_command", &input), "Bash: printf hello");
+    }
+
+    #[test]
+    fn bash_command_label_unchanged() {
+        let input = json!({"command": "ls -la"});
+        assert_eq!(command_label("Bash", &input), "Bash: ls -la");
     }
 }

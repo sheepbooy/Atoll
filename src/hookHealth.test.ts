@@ -83,6 +83,14 @@ describe("hookHealth", () => {
     expect(hookStatusIssue(nodeMissing)).toContain("Node.js not found");
   });
 
+  it("warns when hook script points at a dev build path", () => {
+    const devPath = {
+      ...ready,
+      scriptPath: "/Users/test/code/Atoll/src-tauri/target/debug/scripts/atoll-codex-hook.mjs",
+    };
+    expect(hookStatusIssue(devPath)).toContain("dev build path");
+  });
+
   it("treats missing scripts as drift only when hooks were installed", () => {
     expect(isHookReady(drifted)).toBe(false);
     expect(isHookDrifted(drifted)).toBe(true);

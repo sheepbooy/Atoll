@@ -4,7 +4,7 @@ use tauri::{App, AppHandle, LogicalPosition, Monitor, PhysicalSize, WebviewWindo
 
 use crate::{AppState, HomeWindowBounds, NotchMetrics};
 
-/// Where a Claude session is running — used to restore focus correctly.
+/// Where an agent session is running — used to restore focus correctly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SessionHost {
@@ -12,6 +12,8 @@ pub enum SessionHost {
     Unknown,
     ClaudeDesktop,
     ClaudeCli,
+    CodexDesktop,
+    CodexCli,
 }
 
 #[cfg(target_os = "macos")]
@@ -210,15 +212,69 @@ pub fn detect_claude_session_host_at_hook(cwd: &str, previous_app_pid: Option<i6
     }
 }
 
-/// Determine session host by checking the hook peer process's ancestry.
+/// Determine Claude session host by checking the hook peer process's ancestry.
 pub fn detect_session_host_from_peer_pid(pid: u32) -> SessionHost {
     #[cfg(target_os = "macos")]
     {
         return macos::detect_session_host_from_peer_pid(pid);
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        return windows::detect_claude_session_host_from_peer_pid(pid);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = pid;
+        SessionHost::Unknown
+    }
+}
+
+/// Determine Codex session host by checking the hook peer process's ancestry.
+pub fn detect_codex_session_host_from_peer_pid(pid: u32) -> SessionHost {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::detect_codex_session_host_from_peer_pid(pid);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return windows::detect_codex_session_host_from_peer_pid(pid);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = pid;
+        SessionHost::Unknown
+    }
+}
+
+pub fn detect_codex_session_host(cwd: &str) -> SessionHost {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::detect_codex_session_host(cwd);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return windows::detect_codex_session_host(cwd);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = cwd;
+        SessionHost::Unknown
+    }
+}
+
+pub fn detect_codex_session_host_at_hook(cwd: &str, previous_app_pid: Option<i64>) -> SessionHost {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::detect_codex_session_host_at_hook(cwd, previous_app_pid);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = previous_app_pid;
+        return windows::detect_codex_session_host(cwd);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = (cwd, previous_app_pid);
         SessionHost::Unknown
     }
 }
@@ -230,6 +286,22 @@ pub fn is_claude_desktop_app_running() -> bool {
         return macos::is_claude_desktop_app_running();
     }
     #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+/// Check if Codex Desktop app is currently running on the system.
+pub fn is_codex_desktop_app_running() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::is_codex_desktop_app_running();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return windows::is_codex_desktop_app_running();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         false
     }
@@ -280,17 +352,28 @@ fn deactivate_atoll_app(state: &AppState) {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ClaudeApprovalFocusFallback {
+enum ApprovalFocusFallback {
     OpenTerminal,
     ActivateClaude,
+    ActivateCodex,
     DeactivateOnly,
 }
 
-fn claude_approval_focus_fallback(host: SessionHost) -> ClaudeApprovalFocusFallback {
+fn claude_approval_focus_fallback(host: SessionHost) -> ApprovalFocusFallback {
     match host {
-        SessionHost::ClaudeCli => ClaudeApprovalFocusFallback::OpenTerminal,
-        SessionHost::ClaudeDesktop => ClaudeApprovalFocusFallback::ActivateClaude,
-        SessionHost::Unknown => ClaudeApprovalFocusFallback::DeactivateOnly,
+        SessionHost::ClaudeCli => ApprovalFocusFallback::OpenTerminal,
+        SessionHost::ClaudeDesktop => ApprovalFocusFallback::ActivateClaude,
+        SessionHost::Unknown => ApprovalFocusFallback::DeactivateOnly,
+        _ => ApprovalFocusFallback::DeactivateOnly,
+    }
+}
+
+fn codex_approval_focus_fallback(host: SessionHost) -> ApprovalFocusFallback {
+    match host {
+        SessionHost::CodexCli => ApprovalFocusFallback::OpenTerminal,
+        SessionHost::CodexDesktop => ApprovalFocusFallback::ActivateCodex,
+        SessionHost::Unknown => ApprovalFocusFallback::DeactivateOnly,
+        _ => ApprovalFocusFallback::DeactivateOnly,
     }
 }
 
@@ -309,17 +392,36 @@ pub fn restore_focus_after_approval(
         if let (Some(session_id), Some(cwd)) = (session_id, cwd) {
             let host = crate::claude_session_host(state, session_id, cwd);
             match claude_approval_focus_fallback(host) {
-                ClaudeApprovalFocusFallback::OpenTerminal => {
+                ApprovalFocusFallback::OpenTerminal => {
                     if open_in_terminal(cwd).is_ok() {
                         return;
                     }
                 }
-                ClaudeApprovalFocusFallback::ActivateClaude => {
+                ApprovalFocusFallback::ActivateClaude => {
                     if activate_claude_app(app).is_ok() {
                         return;
                     }
                 }
-                ClaudeApprovalFocusFallback::DeactivateOnly => {}
+                ApprovalFocusFallback::ActivateCodex | ApprovalFocusFallback::DeactivateOnly => {}
+            }
+        }
+    }
+
+    if agent == Some("codex") {
+        if let (Some(session_id), Some(cwd)) = (session_id, cwd) {
+            let host = crate::codex_session_host(state, session_id, cwd);
+            match codex_approval_focus_fallback(host) {
+                ApprovalFocusFallback::OpenTerminal => {
+                    if open_in_terminal(cwd).is_ok() {
+                        return;
+                    }
+                }
+                ApprovalFocusFallback::ActivateCodex => {
+                    if activate_codex_app(app).is_ok() {
+                        return;
+                    }
+                }
+                ApprovalFocusFallback::ActivateClaude | ApprovalFocusFallback::DeactivateOnly => {}
             }
         }
     }
@@ -342,6 +444,19 @@ pub fn open_agent_app(
             SessionHost::ClaudeDesktop => focus_claude_app(app),
             SessionHost::ClaudeCli => open_in_terminal(cwd),
             SessionHost::Unknown => focus_claude_app(app),
+            _ => open_in_terminal(cwd),
+        };
+    }
+
+    if agent == "codex" {
+        let host = session_id
+            .map(|id| crate::codex_session_host(state, id, cwd))
+            .unwrap_or_else(|| detect_codex_session_host(cwd));
+        return match host {
+            SessionHost::CodexDesktop => focus_codex_app(app),
+            SessionHost::CodexCli => open_in_terminal(cwd),
+            SessionHost::Unknown => focus_codex_app(app),
+            _ => open_in_terminal(cwd),
         };
     }
 
@@ -380,6 +495,40 @@ pub fn focus_claude_app(app: &AppHandle) -> Result<(), String> {
     {
         let _ = app;
         Err("focus_claude_app is not supported on this platform".to_string())
+    }
+}
+
+pub fn activate_codex_app(app: &AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::activate_codex_app(app);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        return windows::focus_codex_app();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = app;
+        Err("activate_codex_app is not supported on this platform".to_string())
+    }
+}
+
+pub fn focus_codex_app(app: &AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::focus_codex_app(app);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        return windows::focus_codex_app();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = app;
+        Err("focus_codex_app is not supported on this platform".to_string())
     }
 }
 
@@ -493,7 +642,7 @@ mod tests {
     fn claude_approval_fallback_prefers_terminal_for_cli_host() {
         assert_eq!(
             claude_approval_focus_fallback(SessionHost::ClaudeCli),
-            ClaudeApprovalFocusFallback::OpenTerminal
+            ApprovalFocusFallback::OpenTerminal
         );
     }
 
@@ -501,7 +650,7 @@ mod tests {
     fn claude_approval_fallback_activates_existing_desktop_without_launch() {
         assert_eq!(
             claude_approval_focus_fallback(SessionHost::ClaudeDesktop),
-            ClaudeApprovalFocusFallback::ActivateClaude
+            ApprovalFocusFallback::ActivateClaude
         );
     }
 
@@ -509,7 +658,31 @@ mod tests {
     fn claude_approval_fallback_deactivates_when_host_unknown() {
         assert_eq!(
             claude_approval_focus_fallback(SessionHost::Unknown),
-            ClaudeApprovalFocusFallback::DeactivateOnly
+            ApprovalFocusFallback::DeactivateOnly
+        );
+    }
+
+    #[test]
+    fn codex_approval_fallback_prefers_terminal_for_cli_host() {
+        assert_eq!(
+            codex_approval_focus_fallback(SessionHost::CodexCli),
+            ApprovalFocusFallback::OpenTerminal
+        );
+    }
+
+    #[test]
+    fn codex_approval_fallback_activates_existing_desktop_without_launch() {
+        assert_eq!(
+            codex_approval_focus_fallback(SessionHost::CodexDesktop),
+            ApprovalFocusFallback::ActivateCodex
+        );
+    }
+
+    #[test]
+    fn codex_approval_fallback_deactivates_when_host_unknown() {
+        assert_eq!(
+            codex_approval_focus_fallback(SessionHost::Unknown),
+            ApprovalFocusFallback::DeactivateOnly
         );
     }
 }
