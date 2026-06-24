@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="72" height="81" viewBox="-16 -36 96 108" role="img" aria-label="Offline">
+  <rect x="8" y="18" width="48" height="26" fill="#38BDD8"/>
+  <rect x="8" y="18" width="48" height="5" fill="#5FD8EC"/>
+  <rect x="19" y="28" width="5" height="2" fill="#1a1a1a"/>
+  <rect x="38" y="28" width="5" height="2" fill="#1a1a1a"/>
+  <polygon points="22,16 54,16 58,-6" fill="#6B5B9A"/>
+  <rect x="20" y="14" width="36" height="5" fill="#8070B0"/>
+  <circle cx="60" cy="-8" r="4" fill="#E8E0F0"/>
+  <text x="48" y="8" font-size="12" font-weight="700" fill="#aab4ff" font-family="ui-monospace,monospace">z</text>
+  <text x="56" y="-4" font-size="15" font-weight="700" fill="#aab4ff" font-family="ui-monospace,monospace">z</text>
+  <text x="64" y="-18" font-size="18" font-weight="700" fill="#aab4ff" font-family="ui-monospace,monospace">z</text>
+</svg>

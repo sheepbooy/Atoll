@@ -118,6 +118,118 @@ pub fn seed_approval_demo(app: &AppHandle, state: &AppState) {
     let _ = app.emit("snapshot-changed", &snapshot);
 }
 
+fn plan_question_tool_input() -> Value {
+    json!({
+        "questions": [{
+            "header": "Scope",
+            "question": "Which areas should we focus on first?",
+            "multiSelect": true,
+            "options": [
+                {
+                    "label": "Hook bridge",
+                    "description": "Permission events and local HTTP bridge"
+                },
+                {
+                    "label": "Plan mode UI",
+                    "description": "Questions card and build approval preview"
+                },
+                {
+                    "label": "Token tracking",
+                    "description": "Heatmap and session usage metrics"
+                }
+            ]
+        }]
+    })
+}
+
+fn plan_approval_tool_input() -> Value {
+    json!({
+        "plan": "# Plan Mode Integration\n\n## Overview\nAdd Claude Code plan-mode hooks to the Atoll floating island.\n\n## Steps\n1. **Question card** — render `AskUserQuestion` with multi-select options\n2. **Build approval** — preview plan Markdown from `ExitPlanMode`\n3. **Keyboard flow** — Submit / Deny without leaving the menu bar\n\n## Files\n- `src/App.tsx` — PlanQuestionCard, PlanApprovalCard\n- `src/styles.css` — plan-* styles\n"
+    })
+}
+
+pub fn seed_plan_question_demo(app: &AppHandle, state: &AppState) {
+    FORCE_HOOK_UNINSTALLED.store(false, std::sync::atomic::Ordering::SeqCst);
+    let now = iso_timestamp_now();
+
+    let pending = PermissionRequest {
+        id: "capture-plan-question".into(),
+        tool_use_id: Some("tool-plan-q".into()),
+        agent: AgentKind::Claude,
+        session: "session-atoll".into(),
+        command: "AskUserQuestion".into(),
+        detail: "Agent needs your input to continue planning.".into(),
+        cwd: "~/code/Atoll".into(),
+        requested_at: now.clone(),
+        status: PermissionStatus::Pending,
+        archived: false,
+        supports_always: false,
+        transcript_path: None,
+        tool_input: Some(plan_question_tool_input()),
+    };
+
+    {
+        let mut requests = state.requests.lock().expect("state mutex poisoned");
+        requests.clear();
+        requests.push(pending.clone());
+    }
+
+    {
+        let mut pinned = state
+            .pinned_sessions
+            .lock()
+            .expect("state mutex poisoned");
+        pinned.clear();
+        pinned.insert("session-atoll".into());
+    }
+
+    touch_session_activity(state, "session-atoll");
+
+    let snapshot = build_snapshot(app, state);
+    let _ = app.emit("snapshot-changed", &snapshot);
+}
+
+pub fn seed_plan_approval_demo(app: &AppHandle, state: &AppState) {
+    FORCE_HOOK_UNINSTALLED.store(false, std::sync::atomic::Ordering::SeqCst);
+    let now = iso_timestamp_now();
+
+    let pending = PermissionRequest {
+        id: "capture-plan-approval".into(),
+        tool_use_id: Some("tool-plan-a".into()),
+        agent: AgentKind::Claude,
+        session: "session-atoll".into(),
+        command: "ExitPlanMode".into(),
+        detail: "Agent is ready to start building.".into(),
+        cwd: "~/code/Atoll".into(),
+        requested_at: now.clone(),
+        status: PermissionStatus::Pending,
+        archived: false,
+        supports_always: false,
+        transcript_path: None,
+        tool_input: Some(plan_approval_tool_input()),
+    };
+
+    {
+        let mut requests = state.requests.lock().expect("state mutex poisoned");
+        requests.clear();
+        requests.push(pending.clone());
+    }
+
+    {
+        let mut pinned = state
+            .pinned_sessions
+            .lock()
+            .expect("state mutex poisoned");
+        pinned.clear();
+        pinned.insert("session-atoll".into());
+    }
+
+    touch_session_activity(state, "session-atoll");
+
+    let snapshot = build_snapshot(app, state);
+    let _ = app.emit("snapshot-changed", &snapshot);
+}
+
 pub fn seed_idle_demo(app: &AppHandle, state: &AppState) {
     FORCE_HOOK_UNINSTALLED.store(true, std::sync::atomic::Ordering::SeqCst);
     {
@@ -238,6 +350,14 @@ pub fn route_http(app: &AppHandle, path: &str) -> Option<Value> {
         "/capture/hooks" => {
             seed_idle_demo(app, &state);
             let _ = app.emit("capture-open-hooks", ());
+            Some(json!({ "ok": true }))
+        }
+        "/capture/plan-question" => {
+            seed_plan_question_demo(app, &state);
+            Some(json!({ "ok": true }))
+        }
+        "/capture/plan-approval" => {
+            seed_plan_approval_demo(app, &state);
             Some(json!({ "ok": true }))
         }
         _ => None,

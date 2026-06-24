@@ -1,0 +1,188 @@
+/* Agent mascot showcase — animations aligned with src/styles.css */
+
+@keyframes clawd-float {
+  0%, 100% { transform: translateY(6%); }
+  50% { transform: translateY(-6%); }
+}
+
+@keyframes clawd-alert-hop {
+  0%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-13%); }
+  60% { transform: translateY(0); }
+}
+
+@keyframes clawd-claw-wave-l {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-24deg); }
+}
+
+@keyframes clawd-claw-wave-r {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(24deg); }
+}
+
+@keyframes clawd-bang-pop {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-14%) scale(1.14); }
+}
+
+@keyframes clawd-eye-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  96% { transform: scaleY(0.15); }
+}
+
+@keyframes codex-cursor-blink {
+  0%, 45% { opacity: 1; }
+  50%, 100% { opacity: 0.12; }
+}
+
+.agent-mascot-grid {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 40px;
+  flex-wrap: wrap;
+  padding: 28px 32px 24px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  margin-bottom: 48px;
+}
+
+.agent-mascot-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  min-width: 96px;
+}
+
+.agent-mascot-slot {
+  width: 88px;
+  height: 79px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.agent-mascot-slot .clawd,
+.agent-mascot-slot .codex {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 88px;
+  height: 79px;
+  line-height: 0;
+  will-change: transform;
+}
+
+.agent-mascot-slot .clawd-svg,
+.agent-mascot-slot .codex-svg {
+  overflow: visible;
+  width: 100%;
+  height: 100%;
+}
+
+.agent-mascot-slot .clawd-claw,
+.agent-mascot-slot .clawd-leg,
+.agent-mascot-slot .clawd-bang,
+.agent-mascot-slot .codex-leg,
+.agent-mascot-slot .codex-bang,
+.agent-mascot-slot .codex-cursor {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.agent-mascot-slot .clawd-eye {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}
+
+.agent-mascot-slot .clawd.is-calm {
+  animation: clawd-float 2.8s ease-in-out infinite;
+}
+
+.agent-mascot-slot .clawd.is-calm .clawd-eye {
+  animation: clawd-eye-blink 4.2s ease-in-out infinite;
+}
+
+.agent-mascot-card[data-agent="claude"] .clawd-eye {
+  animation-delay: 0.4s;
+}
+
+.agent-mascot-slot .clawd.is-alert {
+  animation: clawd-alert-hop 0.85s ease-in-out infinite;
+}
+
+.agent-mascot-slot .clawd.is-alert .clawd-claw-left {
+  transform-origin: right center;
+  animation: clawd-claw-wave-l 0.5s ease-in-out infinite;
+}
+
+.agent-mascot-slot .clawd.is-alert .clawd-claw-right {
+  transform-origin: left center;
+  animation: clawd-claw-wave-r 0.5s ease-in-out infinite;
+}
+
+.agent-mascot-slot .clawd.is-alert .clawd-bang {
+  animation: clawd-bang-pop 0.7s ease-in-out infinite;
+}
+
+.agent-mascot-slot .codex .codex-svg {
+  filter:
+    drop-shadow(0 0 1px var(--codex-glow-inner, rgba(158, 220, 255, 0.75)))
+    drop-shadow(0 0 6px var(--codex-glow-outer, rgba(56, 168, 220, 0.28)));
+}
+
+.agent-mascot-slot .codex.is-calm {
+  animation: clawd-float 2.8s ease-in-out infinite;
+}
+
+.agent-mascot-slot .codex-cursor {
+  animation: codex-cursor-blink 1.1s step-end infinite;
+}
+
+.agent-mascot-card figcaption {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.agent-mascot-card[data-agent="claude"] figcaption { color: var(--accent-coral); }
+.agent-mascot-card[data-agent="codex"] figcaption { color: var(--accent-cyan); }
+.agent-mascot-card[data-agent="gemini"] figcaption { color: var(--text-muted); }
+
+.mascot-unknown {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 88px;
+  height: 79px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed var(--border-medium);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.mascot-unknown--sm {
+  width: 28px;
+  height: 25px;
+  font-size: 0.875rem;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-mascot-slot .clawd,
+  .agent-mascot-slot .codex,
+  .agent-mascot-slot .clawd-eye,
+  .agent-mascot-slot .clawd-claw,
+  .agent-mascot-slot .clawd-bang,
+  .agent-mascot-slot .codex-cursor {
+    animation: none !important;
+  }
+}

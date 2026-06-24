@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="132" viewBox="0 0 480 132" role="img" aria-label="100 percent local: Agent and Atoll communicate via localhost only">
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#16181d"/>
+      <stop offset="100%" stop-color="#111317"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="7" markerHeight="7" refX="5.5" refY="3.5" orient="auto">
+      <path d="M0,0 L7,3.5 L0,7 Z" fill="#b2ea7e"/>
+    </marker>
+  </defs>
+  <rect width="480" height="132" rx="12" fill="url(#panel)" stroke="rgba(255,255,255,0.08)"/>
+  <rect x="24" y="18" width="432" height="72" rx="14" fill="rgba(178,234,126,0.04)" stroke="#b2ea7e" stroke-opacity="0.28" stroke-dasharray="6 4"/>
+  <text x="240" y="34" text-anchor="middle" fill="#b2ea7e" font-family="system-ui,sans-serif" font-size="10" font-weight="600" letter-spacing="0.06em">YOUR MACHINE</text>
+  <rect x="44" y="44" width="88" height="36" rx="8" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.1)"/>
+  <text x="88" y="58" text-anchor="middle" fill="#ff8175" font-family="system-ui,sans-serif" font-size="10" font-weight="600">Agent</text>
+  <text x="88" y="72" text-anchor="middle" fill="#6d6b64" font-family="ui-monospace,monospace" font-size="9">&gt; terminal</text>
+  <line x1="132" y1="62" x2="168" y2="62" stroke="#b2ea7e" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="168" y="46" width="144" height="32" rx="16" fill="rgba(178,234,126,0.1)" stroke="#b2ea7e" stroke-opacity="0.35"/>
+  <text x="240" y="66" text-anchor="middle" fill="#b2ea7e" font-family="ui-monospace,monospace" font-size="11" font-weight="600">127.0.0.1</text>
+  <line x1="312" y1="62" x2="348" y2="62" stroke="#b2ea7e" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="348" y="44" width="88" height="36" rx="18" fill="rgba(255,255,255,0.06)" stroke="rgba(205,193,255,0.35)"/>
+  <circle cx="366" cy="62" r="5" fill="#6fe0a4"/>
+  <rect x="378" y="56" width="46" height="12" rx="6" fill="rgba(255,255,255,0.1)"/>
+  <text x="392" y="78" text-anchor="middle" fill="#6d6b64" font-family="system-ui,sans-serif" font-size="8">Atoll</text>
+  <g transform="translate(408, 8)" opacity="0.55">
+    <path d="M18 14c0-3.3 2.7-6 6-6 2.8 0 5.2 1.9 5.8 4.5 2.5.3 4.4 2.4 4.4 4.9 0 2.7-2.2 4.9-4.9 4.9H8.5C5.5 18.3 3 15.8 3 12.7S5.5 7 8.5 7c.6 0 1.2.1 1.7.3C11.4 4.5 14.4 3 18 3c4.4 0 8 3.6 8 8 0 .4 0 .7-.1 1" fill="none" stroke="#8d8a82" stroke-width="1.2" transform="scale(0.85) translate(2,2)"/>
+    <line x1="6" y1="6" x2="28" y2="22" stroke="#ff8175" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <rect x="72" y="100" width="72" height="22" rx="11" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="108" y="115" text-anchor="middle" fill="#b7b4ac" font-family="system-ui,sans-serif" font-size="10">No cloud</text>
+  <rect x="156" y="100" width="80" height="22" rx="11" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="196" y="115" text-anchor="middle" fill="#b7b4ac" font-family="system-ui,sans-serif" font-size="10">No upload</text>
+  <rect x="248" y="100" width="96" height="22" rx="11" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="296" y="115" text-anchor="middle" fill="#b7b4ac" font-family="system-ui,sans-serif" font-size="10">No telemetry</text>
+  <rect x="356" y="100" width="52" height="22" rx="11" fill="rgba(178,234,126,0.1)" stroke="#b2ea7e" stroke-opacity="0.25"/>
+  <text x="382" y="115" text-anchor="middle" fill="#b2ea7e" font-family="system-ui,sans-serif" font-size="10" font-weight="600">100%</text>
+</svg>

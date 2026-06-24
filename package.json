@@ -11,6 +11,8 @@
     "tauri": "tauri",
     "capture:gif": "node scripts/capture-app-media.mjs",
     "capture:media": "node scripts/capture-app-media.mjs",
+    "capture:compact-bar": "node scripts/capture-compact-bar.mjs",
+    "capture:plan-gif": "node scripts/capture-plan-app-media.mjs",
     "export:assets": "node scripts/export-readme-assets.mjs",
     "export:brand": "node scripts/export-brand-assets.mjs",
     "export:icons": "tauri icon docs/assets/app-icon.svg -o src-tauri/icons"

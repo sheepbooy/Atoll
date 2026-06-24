@@ -1,0 +1,215 @@
+/* Atoll logo states — loop animations for landing page */
+
+@keyframes atoll-idle-float-pos {
+  0%, 100% { transform: translate3d(0, 6%, 0); }
+  50% { transform: translate3d(0, -6%, 0); }
+}
+
+@keyframes atoll-desk-shake {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(-0.5px, -0.5px, 0); }
+}
+
+@keyframes atoll-coding-body-type {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+@keyframes atoll-leg-step {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes atoll-code-blink {
+  0%, 40% { opacity: 1; }
+  50%, 100% { opacity: 0.3; }
+}
+
+@keyframes atoll-cursor-move {
+  0% { transform: translateX(0); opacity: 1; }
+  50% { transform: translateX(8px); opacity: 1; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes atoll-key-tap {
+  0%, 100% { transform: translateY(0); opacity: 1; }
+  50% { transform: translateY(1.5px); opacity: 0.55; }
+}
+
+@keyframes atoll-think-chin-tap {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(-2deg); }
+  50% { transform: translate3d(0, 2px, 0) rotate(2deg); }
+}
+
+@keyframes atoll-bubble-bob {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-3px) scale(1.04); }
+}
+
+@keyframes atoll-leg-shift-l {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  50% { transform: translateX(-2px) rotate(-6deg); }
+}
+
+@keyframes atoll-leg-shift-r {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  50% { transform: translateX(2px) rotate(6deg); }
+}
+
+@keyframes atoll-nap-breathe {
+  0%, 100% { transform: rotate(-3deg) scale(1); }
+  50% { transform: rotate(-4deg) scale(0.99, 1.01); }
+}
+
+@keyframes atoll-cap-pom-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12%); }
+}
+
+@keyframes atoll-zzz-rise {
+  0% { opacity: 0; transform: translate3d(0, 15%, 0); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(30%, -85%, 0); }
+}
+
+@keyframes atoll-eye-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  96% { transform: scaleY(0.15); }
+}
+
+.atoll-logo-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 81px;
+  line-height: 0;
+}
+
+.atoll-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 81px;
+  line-height: 0;
+  transform-origin: center bottom;
+}
+
+.atoll-logo-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  display: block;
+}
+
+.atoll-body-group,
+.atoll-limb,
+.atoll-prop,
+.atoll-z,
+.atoll-cap-pom,
+.atoll-cursor,
+.atoll-key,
+.atoll-code-line {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.atoll-body-group { transform-origin: center 82%; }
+
+.atoll-logo.is-idle.is-phase-loop {
+  animation: atoll-idle-float-pos 2.2s ease-in-out infinite;
+}
+
+.atoll-logo.is-coding.is-phase-loop {
+  animation: atoll-desk-shake 0.48s linear infinite;
+}
+
+.atoll-logo.is-coding.is-phase-loop .atoll-body-group {
+  animation: atoll-coding-body-type 0.96s linear infinite;
+}
+
+.atoll-logo.is-coding.is-phase-loop .atoll-leg-left {
+  animation: atoll-leg-step 0.48s linear infinite;
+}
+
+.atoll-logo.is-coding.is-phase-loop .atoll-leg-right {
+  animation: atoll-leg-step 0.48s linear infinite 0.12s;
+}
+
+.atoll-logo.is-coding.is-phase-loop .atoll-code-line {
+  animation: atoll-code-blink 0.9s step-end infinite;
+}
+
+.atoll-logo.is-coding.is-phase-loop .atoll-code-1 { animation-delay: 0.15s; }
+.atoll-logo.is-coding.is-phase-loop .atoll-code-2 { animation-delay: 0.3s; }
+.atoll-logo.is-coding.is-phase-loop .atoll-code-3 { animation-delay: 0.45s; }
+
+.atoll-logo.is-coding.is-phase-loop .atoll-cursor {
+  animation: atoll-cursor-move 1.44s steps(5) infinite;
+}
+
+.atoll-logo.is-coding.is-phase-loop .atoll-key-0 { animation: atoll-key-tap 0.48s linear infinite; }
+.atoll-logo.is-coding.is-phase-loop .atoll-key-1 { animation: atoll-key-tap 0.48s linear infinite 0.08s; }
+.atoll-logo.is-coding.is-phase-loop .atoll-key-2 { animation: atoll-key-tap 0.48s linear infinite 0.16s; }
+.atoll-logo.is-coding.is-phase-loop .atoll-key-3 { animation: atoll-key-tap 0.48s linear infinite 0.24s; }
+.atoll-logo.is-coding.is-phase-loop .atoll-key-4 { animation: atoll-key-tap 0.48s linear infinite 0.32s; }
+
+.atoll-logo.is-thinking.is-phase-loop .atoll-body-group {
+  animation: atoll-think-chin-tap 2.4s ease-in-out infinite;
+}
+
+.atoll-logo.is-thinking.is-phase-loop .atoll-thought {
+  animation: atoll-bubble-bob 1.8s ease-in-out infinite;
+}
+
+.atoll-logo.is-thinking.is-phase-loop .atoll-leg-left {
+  animation: atoll-leg-shift-r 2.4s ease-in-out infinite;
+}
+
+.atoll-logo.is-thinking.is-phase-loop .atoll-leg-right {
+  animation: atoll-leg-shift-l 2.4s ease-in-out infinite;
+}
+
+.atoll-logo.is-napping.is-phase-loop .atoll-body-group,
+.atoll-logo.is-napping.is-phase-loop .atoll-sleep-cap,
+.atoll-logo.is-napping.is-phase-loop .atoll-zzz {
+  animation: atoll-nap-breathe 3.6s ease-in-out infinite;
+}
+
+.atoll-logo.is-napping.is-phase-loop .atoll-cap-pom {
+  animation: atoll-cap-pom-bob 2.4s ease-in-out infinite;
+}
+
+.atoll-logo.is-napping.is-phase-loop .atoll-z {
+  opacity: 0;
+}
+
+.atoll-logo.is-napping.is-phase-loop .atoll-z-0 {
+  animation: atoll-zzz-rise 2s ease-in-out infinite 0.2s;
+}
+
+.atoll-logo.is-napping.is-phase-loop .atoll-z-1 {
+  animation: atoll-zzz-rise 2s ease-in-out infinite 0.55s;
+}
+
+.atoll-logo.is-napping.is-phase-loop .atoll-z-2 {
+  animation: atoll-zzz-rise 2s ease-in-out infinite 0.9s;
+}
+
+.atoll-logo .atoll-eye {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}
+
+.atoll-logo.is-blinking .atoll-eye {
+  animation: atoll-eye-blink 0.13s ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atoll-logo,
+  .atoll-logo *,
+  .atoll-logo.is-blinking .atoll-eye {
+    animation: none !important;
+  }
+}

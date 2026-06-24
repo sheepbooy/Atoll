@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="80" viewBox="0 0 480 80" role="img" aria-label="Atoll compact menu bar capsule">
+  <defs>
+    <linearGradient id="cb-panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#16181d"/>
+      <stop offset="100%" stop-color="#111317"/>
+    </linearGradient>
+    <linearGradient id="cb-pill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a1d24"/>
+      <stop offset="100%" stop-color="#12151a"/>
+    </linearGradient>
+    <linearGradient id="cb-pending" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffe6ad"/>
+      <stop offset="100%" stop-color="#f3c862"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="480" height="80" rx="12" fill="url(#cb-panel)" stroke="rgba(255,255,255,0.08)"/>
+  <rect x="36" y="22" width="408" height="36" rx="18" fill="url(#cb-pill)" stroke="rgba(255,255,255,0.12)"/>
+
+  <!-- Left: logo, listener, sessions -->
+  <g transform="translate(50, 28) scale(0.38)" shape-rendering="crispEdges">
+    <rect x="8" y="18" width="48" height="26" fill="#38BDD8"/>
+    <rect x="8" y="18" width="48" height="5" fill="#5FD8EC"/>
+    <rect x="19" y="24" width="5" height="11" fill="#1a1a1a"/>
+    <rect x="38" y="24" width="5" height="11" fill="#1a1a1a"/>
+  </g>
+  <circle cx="84" cy="40" r="3.5" fill="#6fe0a4"/>
+
+  <g transform="translate(98, 29)">
+    <rect width="24" height="22" rx="4" fill="rgba(255,129,117,0.14)"/>
+    <rect x="6" y="5" width="8" height="8" rx="2" fill="#ff8175"/>
+    <rect x="7" y="6" width="2" height="2" fill="#fff"/>
+    <rect x="10" y="6" width="2" height="2" fill="#fff"/>
+    <rect x="5" y="14" width="3" height="5" fill="#8b5a42"/>
+    <rect x="16" y="14" width="3" height="5" fill="#8b5a42"/>
+    <rect x="11" y="1" width="2" height="5" fill="#f8dda0"/>
+    <rect x="11" y="5" width="2" height="2" fill="#f8dda0"/>
+  </g>
+  <g transform="translate(126, 29)">
+    <rect width="24" height="22" rx="4" fill="rgba(111,220,255,0.1)"/>
+    <rect x="5" y="4" width="14" height="12" rx="1" fill="#61d8f7" stroke="#9ed8f4" stroke-width="0.8"/>
+    <rect x="7" y="6" width="10" height="8" fill="#0c1018"/>
+    <text x="12" y="12" text-anchor="middle" fill="#6fdcff" font-family="ui-monospace,monospace" font-size="7" font-weight="700">&gt;</text>
+    <rect x="7" y="16" width="3" height="4" fill="#3589b8"/>
+    <rect x="14" y="16" width="3" height="4" fill="#3589b8"/>
+  </g>
+
+  <!-- Right: token scope + count + pending badge -->
+  <circle cx="326" cy="40" r="2.2" fill="#22d3ee"/>
+  <text x="334" y="43" fill="#f7f4ee" font-family="ui-monospace,monospace" font-size="12" font-weight="600">170,580</text>
+  <rect x="402" y="31" width="22" height="18" rx="9" fill="url(#cb-pending)"/>
+  <text x="413" y="43" text-anchor="middle" fill="#1a160c" font-family="system-ui,sans-serif" font-size="10" font-weight="800">1</text>
+</svg>

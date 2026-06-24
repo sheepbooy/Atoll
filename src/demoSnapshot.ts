@@ -1,6 +1,13 @@
 import type { HookStatus, IslandSnapshot, PermissionRequest } from "./tauri";
 
-export type DemoMode = "compact" | "approval" | "idle" | "sessions" | "gif";
+export type DemoMode =
+  | "compact"
+  | "approval"
+  | "idle"
+  | "sessions"
+  | "gif"
+  | "plan-question"
+  | "plan-approval";
 
 export function getDemoMode(): DemoMode | null {
   if ("__TAURI_INTERNALS__" in window) return null;
@@ -10,7 +17,9 @@ export function getDemoMode(): DemoMode | null {
     mode === "approval" ||
     mode === "idle" ||
     mode === "sessions" ||
-    mode === "gif"
+    mode === "gif" ||
+    mode === "plan-question" ||
+    mode === "plan-approval"
   ) {
     return mode;
   }
@@ -29,6 +38,84 @@ const pendingRequest: PermissionRequest = {
   status: "pending",
   supportsAlways: true,
 };
+
+const planQuestionRequest: PermissionRequest = {
+  id: "demo-plan-question",
+  toolUseId: "tool-plan-q",
+  agent: "claude",
+  session: "session-atoll",
+  command: "AskUserQuestion",
+  detail: "Agent needs your input to continue planning.",
+  cwd: "~/code/Atoll",
+  requestedAt: new Date().toISOString(),
+  status: "pending",
+  supportsAlways: false,
+  toolInput: {
+    questions: [
+      {
+        header: "Scope",
+        question: "Which areas should we focus on first?",
+        multiSelect: true,
+        options: [
+          {
+            label: "Hook bridge",
+            description: "Permission events and local HTTP bridge",
+          },
+          {
+            label: "Plan mode UI",
+            description: "Questions card and build approval preview",
+          },
+          {
+            label: "Token tracking",
+            description: "Heatmap and session usage metrics",
+          },
+        ],
+      },
+    ],
+  },
+};
+
+const planApprovalRequest: PermissionRequest = {
+  id: "demo-plan-approval",
+  toolUseId: "tool-plan-a",
+  agent: "claude",
+  session: "session-atoll",
+  command: "ExitPlanMode",
+  detail: "Agent is ready to start building.",
+  cwd: "~/code/Atoll",
+  requestedAt: new Date().toISOString(),
+  status: "pending",
+  supportsAlways: false,
+  toolInput: {
+    plan: `# Plan Mode Integration
+
+## Overview
+Add Claude Code plan-mode hooks to the Atoll floating island.
+
+## Steps
+1. **Question card** — render \`AskUserQuestion\` with multi-select options
+2. **Build approval** — preview plan Markdown from \`ExitPlanMode\`
+3. **Keyboard flow** — Submit / Deny without leaving the menu bar
+
+## Files
+- \`src/App.tsx\` — PlanQuestionCard, PlanApprovalCard
+- \`src/styles.css\` — plan-* styles
+`,
+  },
+};
+
+const planSessions = [
+  {
+    sessionId: "session-atoll",
+    agent: "claude" as const,
+    cwd: "~/code/Atoll",
+    pendingCount: 1,
+    totalCount: 6,
+    lastActivity: new Date().toISOString(),
+    transcriptPath: null,
+    pinned: true,
+  },
+];
 
 const sessions = [
   {
@@ -142,6 +229,22 @@ export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {
         recent: [pendingRequest],
         sessions,
       };
+    case "plan-question":
+      return {
+        ...base,
+        pendingCount: 1,
+        activeRequest: planQuestionRequest,
+        recent: [planQuestionRequest],
+        sessions: planSessions,
+      };
+    case "plan-approval":
+      return {
+        ...base,
+        pendingCount: 1,
+        activeRequest: planApprovalRequest,
+        recent: [planApprovalRequest],
+        sessions: planSessions,
+      };
     case "idle":
     default:
       return base;
@@ -157,7 +260,13 @@ export function getDemoCodexHookStatus(mode: DemoMode): HookStatus {
 }
 
 export function shouldAutoExpandDemo(mode: DemoMode): boolean {
-  return mode === "approval" || mode === "sessions" || mode === "idle";
+  return (
+    mode === "approval" ||
+    mode === "sessions" ||
+    mode === "idle" ||
+    mode === "plan-question" ||
+    mode === "plan-approval"
+  );
 }
 
 export function isGifCaptureMode(): boolean {

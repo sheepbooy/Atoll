@@ -1,0 +1,193 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="168" viewBox="0 0 420 168" role="img" aria-label="Token usage heatmap preview">
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#16181d"/>
+      <stop offset="100%" stop-color="#111317"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="420" height="168" rx="12" fill="url(#panel)" stroke="rgba(255,255,255,0.08)"/>
+
+  <!-- Stats -->
+  <text x="16" y="24" fill="rgba(255,255,255,0.48)" font-family="system-ui,sans-serif" font-size="9" letter-spacing="0.04em">TODAY</text>
+  <text x="16" y="40" fill="#fff" font-family="ui-monospace,monospace" font-size="13" font-weight="600">42.5K</text>
+
+  <text x="110" y="24" fill="rgba(255,255,255,0.48)" font-family="system-ui,sans-serif" font-size="9" letter-spacing="0.04em">7-DAY</text>
+  <text x="110" y="40" fill="#fff" font-family="ui-monospace,monospace" font-size="13" font-weight="600">186K</text>
+
+  <text x="204" y="24" fill="rgba(255,255,255,0.48)" font-family="system-ui,sans-serif" font-size="9" letter-spacing="0.04em">BEST DAY</text>
+  <text x="204" y="40" fill="#fff" font-family="ui-monospace,monospace" font-size="13" font-weight="600">89K</text>
+
+  <!-- Weekday labels -->
+  <text x="16" y="62" fill="rgba(255,255,255,0.38)" font-family="system-ui,sans-serif" font-size="8">M</text>
+  <text x="16" y="78" fill="rgba(255,255,255,0.38)" font-family="system-ui,sans-serif" font-size="8">W</text>
+  <text x="16" y="94" fill="rgba(255,255,255,0.38)" font-family="system-ui,sans-serif" font-size="8">F</text>
+  <text x="16" y="110" fill="rgba(255,255,255,0.38)" font-family="system-ui,sans-serif" font-size="8">S</text>
+
+  <!-- Heatmap grid: 18 weeks x 7 days, 9px cells, 3px gap, start x=28 -->
+  <!-- Level colors: 0=#ffffff14 1=#ffffff2e 2=#ffffff57 3=#ffffff8f 4=#fff -->
+  <!-- Week data patterns (7 rows each, 0-4 levels) -->
+  <g transform="translate(28, 54)">
+    <!-- Generated pattern: realistic usage with spikes -->
+    <!-- col 0 -->
+    <rect x="0" y="0" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+    <rect x="0" y="12" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+    <rect x="0" y="24" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+    <rect x="0" y="36" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+    <rect x="0" y="48" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+    <rect x="0" y="60" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+    <rect x="0" y="72" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+
+    <!-- cols 1-17 with varied levels -->
+    <g>
+      <!-- helper: each week column at x = col * 12 -->
+      <!-- week 1 -->
+      <rect x="12" y="0" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="12" y="12" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="12" y="24" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="12" y="36" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="12" y="48" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="12" y="60" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+      <rect x="12" y="72" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <!-- week 2 -->
+      <rect x="24" y="0" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+      <rect x="24" y="12" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="24" y="24" width="9" height="9" rx="2" fill="#fff"/>
+      <rect x="24" y="36" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="24" y="48" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="24" y="60" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="24" y="72" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+      <!-- week 3 -->
+      <rect x="36" y="0" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="36" y="12" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="36" y="24" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="36" y="36" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="36" y="48" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+      <rect x="36" y="60" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="36" y="72" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <!-- week 4 -->
+      <rect x="48" y="0" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="48" y="12" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+      <rect x="48" y="24" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="48" y="36" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="48" y="48" width="9" height="9" rx="2" fill="#fff"/>
+      <rect x="48" y="60" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="48" y="72" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <!-- week 5 -->
+      <rect x="60" y="0" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+      <rect x="60" y="12" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="60" y="24" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="60" y="36" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="60" y="48" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="60" y="60" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+      <rect x="60" y="72" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+      <!-- week 6 -->
+      <rect x="72" y="0" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="72" y="12" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="72" y="24" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="72" y="36" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="72" y="48" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="72" y="60" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="72" y="72" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <!-- week 7 -->
+      <rect x="84" y="0" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+      <rect x="84" y="12" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="84" y="24" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+      <rect x="84" y="36" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="84" y="48" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="84" y="60" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="84" y="72" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <!-- week 8 -->
+      <rect x="96" y="0" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="96" y="12" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="96" y="24" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="96" y="36" width="9" height="9" rx="2" fill="#fff"/>
+      <rect x="96" y="48" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="96" y="60" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="96" y="72" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+      <!-- week 9 -->
+      <rect x="108" y="0" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="108" y="12" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+      <rect x="108" y="24" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="108" y="36" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="108" y="48" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="108" y="60" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+      <rect x="108" y="72" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <!-- week 10 -->
+      <rect x="120" y="0" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="120" y="12" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="120" y="24" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="120" y="36" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="120" y="48" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="120" y="60" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="120" y="72" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <!-- week 11 -->
+      <rect x="132" y="0" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+      <rect x="132" y="12" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="132" y="24" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="132" y="36" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="132" y="48" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="132" y="60" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="132" y="72" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+      <!-- week 12 -->
+      <rect x="144" y="0" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="144" y="12" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="144" y="24" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="144" y="36" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="144" y="48" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+      <rect x="144" y="60" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="144" y="72" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <!-- week 13 -->
+      <rect x="156" y="0" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="156" y="12" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="156" y="24" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="156" y="36" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="156" y="48" width="9" height="9" rx="2" fill="#fff"/>
+      <rect x="156" y="60" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="156" y="72" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <!-- week 14 -->
+      <rect x="168" y="0" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+      <rect x="168" y="12" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="168" y="24" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="168" y="36" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="168" y="48" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="168" y="60" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="168" y="72" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <!-- week 15 -->
+      <rect x="180" y="0" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="180" y="12" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="180" y="24" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="180" y="36" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="180" y="48" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="180" y="60" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="180" y="72" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <!-- week 16 (today column - highlight last cell) -->
+      <rect x="192" y="0" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+      <rect x="192" y="12" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="192" y="24" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="192" y="36" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="192" y="48" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+      <rect x="192" y="60" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+      <rect x="192" y="72" width="9" height="9" rx="2" fill="#fff" stroke="rgba(255,255,255,0.72)" stroke-width="1"/>
+    </g>
+  </g>
+
+  <!-- Legend -->
+  <text x="16" y="148" fill="rgba(255,255,255,0.38)" font-family="system-ui,sans-serif" font-size="8">Less</text>
+  <rect x="38" y="140" width="9" height="9" rx="2" fill="rgba(255,255,255,0.08)"/>
+  <rect x="50" y="140" width="9" height="9" rx="2" fill="rgba(255,255,255,0.18)"/>
+  <rect x="62" y="140" width="9" height="9" rx="2" fill="rgba(255,255,255,0.34)"/>
+  <rect x="74" y="140" width="9" height="9" rx="2" fill="rgba(255,255,255,0.56)"/>
+  <rect x="86" y="140" width="9" height="9" rx="2" fill="#fff"/>
+  <text x="100" y="148" fill="rgba(255,255,255,0.38)" font-family="system-ui,sans-serif" font-size="8">More</text>
+
+  <!-- Agent breakdown -->
+  <circle cx="290" cy="144" r="4" fill="#ff8b78"/>
+  <text x="298" y="147" fill="rgba(255,255,255,0.55)" font-family="system-ui,sans-serif" font-size="9">Claude 62%</text>
+  <circle cx="360" cy="144" r="4" fill="#61d8f7"/>
+  <text x="368" y="147" fill="rgba(255,255,255,0.55)" font-family="system-ui,sans-serif" font-size="9">Codex 38%</text>
+
+  <!-- Mini trend sparkline -->
+  <polyline points="290,90 302,82 314,86 326,72 338,68 352,58 364,52 376,48 388,42 400,38" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="290" y="78" fill="rgba(255,255,255,0.38)" font-family="system-ui,sans-serif" font-size="8" letter-spacing="0.04em">30-DAY TREND</text>
+</svg>
