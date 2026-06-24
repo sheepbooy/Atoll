@@ -2506,6 +2506,13 @@ pub fn run() {
             capture::capture_provide_screenshot
         ])
         .setup(|app| {
+            #[cfg(desktop)]
+            {
+                app.handle()
+                    .plugin(tauri_plugin_updater::Builder::new().build())?;
+                app.handle().plugin(tauri_plugin_process::init())?;
+            }
+
             if !platform::setup_app(app) {
                 std::process::exit(0);
             }

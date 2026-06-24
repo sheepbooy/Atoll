@@ -56,6 +56,9 @@ jobs:
         run: npm ci
 
       - name: Build Tauri app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri -- build --target aarch64-apple-darwin
 
       - name: Ad-hoc sign .app
@@ -67,11 +70,18 @@ jobs:
       - name: Stage macOS artifacts
         run: |
           BUNDLE_DIR="src-tauri/target/aarch64-apple-darwin/release/bundle"
+          MACOS_DIR="$BUNDLE_DIR/macos"
           DMG=$(ls "$BUNDLE_DIR/dmg/"*.dmg | head -1)
+          TAR_GZ=$(ls "$MACOS_DIR"/*.tar.gz | grep -v '\.sig$' | head -1)
+          TAR_SIG=$(ls "$MACOS_DIR"/*.tar.gz.sig | head -1)
           test -f "$DMG" || { echo "dmg not found"; exit 1; }
+          test -f "$TAR_GZ" || { echo "updater tar.gz not found"; exit 1; }
+          test -f "$TAR_SIG" || { echo "updater tar.gz.sig not found"; exit 1; }
 
           mkdir -p staging
           cp "$DMG" "staging/Atoll-aarch64.dmg"
+          cp "$TAR_GZ" "staging/Atoll.app.tar.gz"
+          cp "$TAR_SIG" "staging/Atoll.app.tar.gz.sig"
           cd staging
           shasum -a 256 "Atoll-aarch64.dmg" | awk '{print $1}' > "Atoll-aarch64.dmg.sha256"
 
@@ -124,20 +134,27 @@ jobs:
         run: npm ci
 
       - name: Build Tauri app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri -- build --bundles msi
 
       - name: Stage Windows artifacts
         shell: bash
         run: |
           BUNDLE_DIR="src-tauri/target/release/bundle"
+          MSI_DIR="$BUNDLE_DIR/msi"
           echo "Bundle contents:"
           ls -la "$BUNDLE_DIR" || true
-          ls -la "$BUNDLE_DIR/msi/" || true
-          MSI=$(ls "$BUNDLE_DIR/msi/"*.msi | head -1)
+          ls -la "$MSI_DIR" || true
+          MSI=$(ls "$MSI_DIR"/*.msi | head -1)
+          MSI_SIG=$(ls "$MSI_DIR"/*.msi.sig | head -1)
           test -f "$MSI" || { echo "msi not found"; exit 1; }
+          test -f "$MSI_SIG" || { echo "msi.sig not found"; exit 1; }
 
           mkdir -p staging
           cp "$MSI" "staging/Atoll-x64.msi"
+          cp "$MSI_SIG" "staging/Atoll-x64.msi.sig"
           cd staging
           sha256sum "Atoll-x64.msi" | awk '{print $1}' > "Atoll-x64.msi.sha256"
 
@@ -198,6 +215,14 @@ jobs:
           EOF
           chmod +x release/Fix-Atoll.command
 
+      - name: Generate latest.json for updater
+        run: |
+          bash scripts/generate-latest-json.sh \
+            "${{ steps.version.outputs.value }}" \
+            macos-staging \
+            windows-staging \
+            release/latest.json
+
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
@@ -207,8 +232,12 @@ jobs:
           files: |
             release/Atoll-aarch64.dmg
             release/Atoll-aarch64.dmg.sha256
+            release/Atoll.app.tar.gz
+            release/Atoll.app.tar.gz.sig
             release/Atoll-x64.msi
+            release/Atoll-x64.msi.sig
             release/Atoll-x64.msi.sha256
+            release/latest.json
             release/install.sh
             release/install.ps1
             release/install.cmd

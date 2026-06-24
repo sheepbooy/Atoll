@@ -14,6 +14,7 @@ const DECISION_SHORTCUTS = {
 import {
   Archive,
   ArrowLeft,
+  ArrowUpCircle,
   Check,
   CheckCheck,
   ChevronRight,
@@ -26,11 +27,19 @@ import {
   Pin,
   PinOff,
   Power,
+  RefreshCw,
   Settings2,
   TriangleAlert,
   Trash2,
   X,
 } from "lucide-react";
+import {
+  checkAppUpdate,
+  installAppUpdate,
+  UPDATE_INITIAL_DELAY_MS,
+  UPDATE_RECHECK_MS,
+  type AppUpdateState,
+} from "./appUpdate";
 import {
   analyzeHookHealth,
   CLAUDE_DESKTOP_HOOK_NOTE,
@@ -513,6 +522,8 @@ export function App() {
   const lastNativePresentationKeyRef = useRef<string | null>(null);
   const [busyDecision, setBusyDecision] = useState<Decision | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [updateState, setUpdateState] = useState<AppUpdateState>({ status: "idle" });
+  const updateCheckInFlightRef = useRef(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef<Decision | null>(null);
   busyRef.current = busyDecision;
@@ -883,6 +894,41 @@ export function App() {
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [menuOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const runSilentCheck = async () => {
+      if (updateCheckInFlightRef.current) {
+        return;
+      }
+      updateCheckInFlightRef.current = true;
+      const result = await checkAppUpdate();
+      updateCheckInFlightRef.current = false;
+      if (cancelled || result.status === "error") {
+        return;
+      }
+      setUpdateState(result);
+    };
+
+    const initialTimer = window.setTimeout(() => {
+      if (!cancelled) {
+        void runSilentCheck();
+      }
+    }, UPDATE_INITIAL_DELAY_MS);
+
+    const intervalId = window.setInterval(() => {
+      if (!cancelled) {
+        void runSilentCheck();
+      }
+    }, UPDATE_RECHECK_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(initialTimer);
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -1625,6 +1671,50 @@ export function App() {
     (hookHealthAnalysis.needsFirstTimeSetup || hookHealthAnalysis.needsReconnect);
   const hooksSetupSummary = hookHealthAnalysis.summary;
 
+  const updateAvailable = updateState.status === "available";
+  const updateVersion =
+    updateState.status === "available" || updateState.status === "downloading"
+      ? updateState.version
+      : null;
+  const updateDownloading = updateState.status === "downloading";
+  const updateDownloadProgress =
+    updateState.status === "downloading" ? updateState.progress : 0;
+  const updateChecking = updateState.status === "checking";
+
+  async function runUpdateCheck() {
+    if (updateCheckInFlightRef.current || updateDownloading) {
+      return;
+    }
+    updateCheckInFlightRef.current = true;
+    setUpdateState({ status: "checking" });
+    const result = await checkAppUpdate();
+    updateCheckInFlightRef.current = false;
+    if (result.status === "error") {
+      setUpdateState({ status: "idle" });
+      return;
+    }
+    setUpdateState(result);
+  }
+
+  async function handleCheckForUpdates() {
+    await runUpdateCheck();
+  }
+
+  async function handleInstallUpdate() {
+    if (!updateAvailable || !updateVersion) {
+      return;
+    }
+    setMenuOpen(false);
+    setUpdateState({ status: "downloading", version: updateVersion, progress: 0 });
+    try {
+      await installAppUpdate((progress) => {
+        setUpdateState({ status: "downloading", version: updateVersion, progress });
+      });
+    } catch {
+      setUpdateState({ status: "idle" });
+    }
+  }
+
   async function handleQuit() {
     setMenuOpen(false);
     await quitAtoll().catch(() => undefined);
@@ -1915,9 +2005,19 @@ export function App() {
             className={`header-main ${showPanelAgentTabs ? "has-agent-tabs" : ""}${isSubview ? " has-subview-nav" : ""}`}
           >
             <span className="atoll-indicator-wrap">
+              {updateAvailable ? (
+                <span
+                  className="atoll-update-badge"
+                  aria-label={`Update ${updateVersion} available`}
+                />
+              ) : null}
               <span
-                className={`atoll-indicator is-app-${appLogoState} ${snapshot.online ? "is-online" : "is-offline"}${hooksNeedAttention ? " is-hook-attention" : ""}`}
-                title={hookAttention}
+                className={`atoll-indicator is-app-${appLogoState} ${snapshot.online ? "is-online" : "is-offline"}${hooksNeedAttention ? " is-hook-attention" : ""}${updateAvailable ? " is-update-available" : ""}`}
+                title={
+                  updateAvailable
+                    ? `Update available: v${updateVersion}`
+                    : hookAttention
+                }
                 role={hooksNeedAttention ? "button" : undefined}
                 tabIndex={hooksNeedAttention ? 0 : undefined}
                 onClick={
@@ -2075,7 +2175,7 @@ export function App() {
               <ChevronUp size={16} />
             </button>
             <button
-              className="icon-button"
+              className={`icon-button${updateAvailable ? " has-update" : ""}`}
               type="button"
               onClick={() => setMenuOpen((open) => !open)}
               aria-label="More options"
@@ -2110,6 +2210,32 @@ export function App() {
                   <Settings2 size={14} />
                   Settings
                 </button>
+                {updateDownloading ? (
+                  <button type="button" role="menuitem" disabled>
+                    <RefreshCw size={14} />
+                    Downloading… {Math.round(updateDownloadProgress * 100)}%
+                  </button>
+                ) : updateAvailable ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="accent"
+                    onClick={handleInstallUpdate}
+                  >
+                    <ArrowUpCircle size={14} />
+                    Update to v{updateVersion}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleCheckForUpdates}
+                    disabled={updateChecking}
+                  >
+                    <RefreshCw size={14} />
+                    {updateChecking ? "Checking…" : "Check for updates"}
+                  </button>
+                )}
                 <div className="menu-separator" />
                 <button
                   type="button"

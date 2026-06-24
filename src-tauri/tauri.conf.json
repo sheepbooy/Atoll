@@ -34,6 +34,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -48,6 +49,17 @@
       "../scripts/atoll-claude-hook.mjs": "scripts/atoll-claude-hook.mjs",
       "../scripts/atoll-codex-hook.mjs": "scripts/atoll-codex-hook.mjs",
       "../scripts/atoll-hook-bridge.mjs": "scripts/atoll-hook-bridge.mjs"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZFNzhBMUZFNjUwOUUwNUUKUldSZTRBbGwvcUY0L3BjZmFja29JNUNSYnpBckRKVkZCU3RyeFFqU1pESStUT3FVa095NU1Nc3AK",
+      "endpoints": [
+        "https://github.com/sheepbooy/Atoll/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

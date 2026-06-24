@@ -714,6 +714,49 @@ kbd {
   align-items: center;
 }
 
+.atoll-update-badge {
+  position: absolute;
+  z-index: 2;
+  top: -1px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-amber, #f0c060);
+  box-shadow: 0 0 8px rgba(240, 192, 96, 0.55);
+  pointer-events: none;
+}
+
+.atoll-update-badge::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1px solid rgba(240, 192, 96, 0.85);
+  animation: pulse-ring 3s ease-out infinite;
+}
+
+.atoll-indicator.is-update-available {
+  cursor: default;
+}
+
+.icon-button.has-update {
+  position: relative;
+}
+
+.icon-button.has-update::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-amber, #f0c060);
+  box-shadow: 0 0 6px rgba(240, 192, 96, 0.5);
+  pointer-events: none;
+}
+
 .atoll-indicator {
   display: inline-flex;
   flex: 0 0 auto;
@@ -3075,6 +3118,14 @@ kbd {
 
 .more-menu button.danger:hover::before {
   background: rgba(255, 129, 117, 0.12);
+}
+
+.more-menu button.accent {
+  color: var(--color-amber, #f0c060);
+}
+
+.more-menu button.accent:hover::before {
+  background: rgba(240, 192, 96, 0.12);
 }
 
 .more-menu button:disabled {

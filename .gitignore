@@ -13,6 +13,7 @@ src-tauri/icons/ios/
 .worktrees
 .tools/
 .cursor/
+src-tauri/.tauri-keys/
 
 # Local-only (not shipped)
 docs/superpowers/

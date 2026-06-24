@@ -111,6 +111,19 @@ const windowBridge = vi.hoisted(() => ({
   startDragging: vi.fn(),
 }));
 
+const appUpdateBridge = vi.hoisted(() => ({
+  checkAppUpdate: vi.fn(),
+  installAppUpdate: vi.fn(),
+}));
+
+vi.mock("./appUpdate", () => ({
+  checkAppUpdate: (...args: unknown[]) => appUpdateBridge.checkAppUpdate(...args),
+  installAppUpdate: (...args: unknown[]) => appUpdateBridge.installAppUpdate(...args),
+  UPDATE_INITIAL_DELAY_MS: 3_000,
+  UPDATE_RECHECK_MS: 6 * 60 * 60 * 1000,
+  isTauriUpdateRuntime: () => true,
+}));
+
 let emitIslandHover: ((state: { hovering: boolean }) => void) | null = null;
 let emitSnapshot: ((snapshot: import("./tauri").IslandSnapshot) => void) | null =
   null;
@@ -217,6 +230,8 @@ describe("App", () => {
       hookHealth: connectedHookHealth,
     });
     windowBridge.startDragging.mockResolvedValue(undefined);
+    appUpdateBridge.checkAppUpdate.mockResolvedValue({ status: "idle" });
+    appUpdateBridge.installAppUpdate.mockResolvedValue(undefined);
   });
 
   it("renders the command as compact code and contains no demo control", async () => {
@@ -839,5 +854,40 @@ describe("App", () => {
     );
     vi.useRealTimers();
     Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+  });
+
+  it("shows update badge and menu action when an update is available", async () => {
+    appUpdateBridge.checkAppUpdate.mockResolvedValue({
+      status: "available",
+      version: "0.2.0",
+    });
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    vi.useFakeTimers();
+    const { container } = render(<App />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    vi.useRealTimers();
+
+    await waitForExpandedPanel(container);
+    await waitFor(() =>
+      expect(container.querySelector(".atoll-update-badge")).not.toBeNull(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    expect(
+      screen.getByRole("menuitem", { name: /Update to v0.2.0/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /More options/i }).classList.contains("has-update"),
+    ).toBe(true);
   });
 });

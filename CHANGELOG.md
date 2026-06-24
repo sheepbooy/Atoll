@@ -2,6 +2,12 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.21] - 2026-06-24
+
+### 新增
+- **应用内自动更新**：启动时检测 GitHub Release 新版本，Logo 角标提示，三点菜单支持一键下载安装并重启
+- CI 发版流程生成 `latest.json` 与 updater 签名产物（`.tar.gz.sig` / `.msi.sig`）
+
 ## [0.1.16] - 2026-06-23
 
 ### 新增
