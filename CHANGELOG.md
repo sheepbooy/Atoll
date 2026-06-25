@@ -2,6 +2,11 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.29] - 2026-06-25
+
+### 修复
+- **开机自启动**：macOS 改用 SMAppService 注册登录项，修复重启后未自动启动的问题；自动清理旧 LaunchAgent 中指向 dev 二进制的不正确配置
+
 ## [0.1.28] - 2026-06-25
 
 ### 新增
@@ -223,6 +228,7 @@
 ### 变更
 - 仅保留 Apple Silicon 构建（移除 Intel Mac 产物）
 
+[0.1.29]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.29
 [0.1.28]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.28
 [0.1.27]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.27
 [0.1.26]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.26
