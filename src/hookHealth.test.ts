@@ -11,7 +11,6 @@ import {
   preferHookStatus,
 } from "./hookHealth";
 import type { HookHealthSnapshot } from "./tauri";
-import { EMPTY_HOOK_HEALTH } from "./tauri";
 
 const ready = {
   installed: true,
@@ -34,12 +33,17 @@ const drifted = {
   scriptPath: "",
 };
 
+function hookHealth(
+  claude: typeof ready,
+  codex: typeof ready,
+  cursor: typeof ready = ready,
+): HookHealthSnapshot {
+  return { claude, codex, cursor };
+}
+
 describe("hookHealth", () => {
   it("detects first-time setup when no agents are connected", () => {
-    const analysis = analyzeHookHealth({
-      claude: missing,
-      codex: missing,
-    });
+    const analysis = analyzeHookHealth(hookHealth(missing, missing, missing));
 
     expect(analysis.needsFirstTimeSetup).toBe(true);
     expect(analysis.needsReconnect).toBe(false);
@@ -48,28 +52,22 @@ describe("hookHealth", () => {
   });
 
   it("flags an uninstalled agent when another agent stays connected", () => {
-    const analysis = analyzeHookHealth({
-      claude: missing,
-      codex: ready,
-    });
+    const analysis = analyzeHookHealth(hookHealth(missing, ready, ready));
 
     expect(analysis.needsFirstTimeSetup).toBe(false);
     expect(analysis.needsReconnect).toBe(true);
-    expect(analysis.connectedCount).toBe(1);
+    expect(analysis.connectedCount).toBe(2);
     expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["claude"]);
-    expect(analysis.summary).toBe("1 of 2 connected");
+    expect(analysis.summary).toBe("2 of 3 connected");
     expect(hookAttentionTitle(analysis)).toContain("Claude Code");
   });
 
   it("detects partial drift when one installed agent loses its shim", () => {
-    const analysis = analyzeHookHealth({
-      claude: drifted,
-      codex: ready,
-    });
+    const analysis = analyzeHookHealth(hookHealth(drifted, ready, ready));
 
     expect(analysis.needsFirstTimeSetup).toBe(false);
     expect(analysis.needsReconnect).toBe(true);
-    expect(analysis.connectedCount).toBe(1);
+    expect(analysis.connectedCount).toBe(2);
     expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["claude"]);
     expect(hookAttentionTitle(analysis)).toContain("Claude Code");
   });
@@ -108,13 +106,13 @@ describe("hookHealth", () => {
       scriptPath: "/Applications/Atoll.app/Contents/Resources/scripts/atoll-claude-hook.mjs",
     };
     expect(isHookReady(pathOnly)).toBe(true);
-    const analysis = analyzeHookHealth({ claude: pathOnly, codex: ready });
+    const analysis = analyzeHookHealth(hookHealth(pathOnly, ready, ready));
     expect(analysis.needsFirstTimeSetup).toBe(false);
     expect(analysis.allConnected).toBe(true);
   });
 
   it("does not treat first-time setup when hooks are installed but not ready", () => {
-    const analysis = analyzeHookHealth({ claude: drifted, codex: drifted });
+    const analysis = analyzeHookHealth(hookHealth(drifted, drifted, drifted));
     expect(analysis.needsFirstTimeSetup).toBe(false);
     expect(analysis.needsReconnect).toBe(false);
     expect(deriveHeaderLogoDisplay(analysis, "idle")).toEqual({
@@ -125,8 +123,8 @@ describe("hookHealth", () => {
 
   it("prefers a ready hook status when snapshot loads race", () => {
     const merged = mergeHookHealthPreferReady(
-      { claude: drifted, codex: missing },
-      { claude: ready, codex: ready },
+      hookHealth(drifted, missing, missing),
+      hookHealth(ready, ready, ready),
     );
     expect(merged.claude).toEqual(ready);
     expect(merged.codex).toEqual(ready);
@@ -136,18 +134,14 @@ describe("hookHealth", () => {
 
   it("does not downgrade ready hook health to an empty startup snapshot", () => {
     const merged = mergeHookHealthPreferReady(
-      { claude: ready, codex: ready },
-      { claude: missing, codex: missing },
+      hookHealth(ready, ready, ready),
+      hookHealth(missing, missing, missing),
     );
-    expect(merged).toEqual({
-      claude: ready,
-      codex: ready,
-      cursor: EMPTY_HOOK_HEALTH.cursor,
-    });
+    expect(merged).toEqual(hookHealth(ready, ready, ready));
     const analysis = analyzeHookHealth(merged);
-    expect(analysis.connectedCount).toBe(2);
-    expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["cursor"]);
-    expect(analysis.allConnected).toBe(false);
+    expect(analysis.connectedCount).toBe(3);
+    expect(analysis.disconnectedAgents).toEqual([]);
+    expect(analysis.allConnected).toBe(true);
   });
 
   it("handles undefined health gracefully", () => {
@@ -157,7 +151,7 @@ describe("hookHealth", () => {
   });
 
   it("derives normal atoll logo when all agents are connected", () => {
-    const analysis = analyzeHookHealth({ claude: ready, codex: ready, cursor: ready });
+    const analysis = analyzeHookHealth(hookHealth(ready, ready, ready));
     expect(deriveHeaderLogoDisplay(analysis, "idle")).toEqual({
       kind: "atoll",
       activity: "idle",
@@ -165,7 +159,7 @@ describe("hookHealth", () => {
   });
 
   it("derives dead agent logo when one agent is uninstalled", () => {
-    const analysis = analyzeHookHealth({ claude: missing, codex: ready });
+    const analysis = analyzeHookHealth(hookHealth(missing, ready, ready));
     expect(deriveHeaderLogoDisplay(analysis, "coding")).toEqual({
       kind: "agent",
       agent: "claude",
@@ -174,7 +168,7 @@ describe("hookHealth", () => {
   });
 
   it("derives dead agent logo for a single drifted agent", () => {
-    const analysis = analyzeHookHealth({ claude: drifted, codex: ready });
+    const analysis = analyzeHookHealth(hookHealth(drifted, ready, ready));
     expect(deriveHeaderLogoDisplay(analysis, "coding")).toEqual({
       kind: "agent",
       agent: "claude",
@@ -219,7 +213,7 @@ describe("hookHealth", () => {
   });
 
   it("derives dead atoll logo when all agents are disconnected", () => {
-    const analysis = analyzeHookHealth({ claude: missing, codex: missing });
+    const analysis = analyzeHookHealth(hookHealth(missing, missing, missing));
     expect(deriveHeaderLogoDisplay(analysis, "idle")).toEqual({
       kind: "atoll",
       activity: "dead",

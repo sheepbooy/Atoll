@@ -46,7 +46,13 @@ export function preferHookStatus(
   a: HookStatus | undefined,
   b: HookStatus | undefined,
 ): HookStatus {
-  if (!a) return b;
+  const empty: HookStatus = {
+    installed: false,
+    scriptFound: false,
+    settingsPath: "",
+    scriptPath: "",
+  };
+  if (!a) return b ?? empty;
   if (!b) return a;
   if (isHookReady(a)) return a;
   if (isHookReady(b)) return b;

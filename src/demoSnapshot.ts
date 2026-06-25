@@ -184,6 +184,24 @@ const demoCodexHookMissing: HookStatus = {
   nodeFound: true,
 };
 
+const demoCursorHookInstalled: HookStatus = {
+  installed: true,
+  scriptFound: true,
+  settingsPath: "~/.cursor/hooks.json",
+  scriptPath: "/Applications/Atoll.app/.../atoll-cursor-hook.mjs",
+  nodePath: "/opt/homebrew/bin/node",
+  nodeFound: true,
+};
+
+const demoCursorHookMissing: HookStatus = {
+  installed: false,
+  scriptFound: true,
+  settingsPath: "~/.cursor/hooks.json",
+  scriptPath: "/Applications/Atoll.app/.../atoll-cursor-hook.mjs",
+  nodePath: "/opt/homebrew/bin/node",
+  nodeFound: true,
+};
+
 export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {
   const base: IslandSnapshot = {
     online: true,
@@ -207,6 +225,7 @@ export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {
     hookHealth: {
       claude: demoHookInstalled,
       codex: demoCodexHookInstalled,
+      cursor: demoCursorHookInstalled,
     },
   };
 
@@ -257,6 +276,10 @@ export function getDemoHookStatus(mode: DemoMode): HookStatus {
 
 export function getDemoCodexHookStatus(mode: DemoMode): HookStatus {
   return mode === "idle" ? demoCodexHookMissing : demoCodexHookInstalled;
+}
+
+export function getDemoCursorHookStatus(mode: DemoMode): HookStatus {
+  return mode === "idle" ? demoCursorHookMissing : demoCursorHookInstalled;
 }
 
 export function shouldAutoExpandDemo(mode: DemoMode): boolean {
