@@ -2,6 +2,20 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.31] - 2026-06-26
+
+### 新增
+- **Cursor IDE 支持**：Hook 集成、像素风 Cursor mascot、会话 transcript 解析、Token 计数、subagent 追踪，以及顶栏 **Open Cursor** 一键跳回 IDE
+- Cursor `preToolUse` 事件自动放行（Cursor 自带权限 UI，Atoll 负责会话追踪与用量统计）
+- 解析 `workspace_roots`，准确识别 Cursor 会话工作区路径
+
+### 改进
+- 优化会话切换时的导航竞态
+- Cursor mascot 在 compact / micro / expanded 各布局下与 Claude、Codex 尺寸对齐
+
+### 修复
+- **Windows 折叠态**：修复从 session 子视图点击 Open Cursor（及 Open Claude / Open Codex）后错误进入超级折叠态（micro）的问题
+
 ## [0.1.30] - 2026-06-25
 
 ### 修复

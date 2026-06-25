@@ -570,6 +570,86 @@ describe("App", () => {
     vi.useRealTimers();
   });
 
+  it("keeps compact when opening Cursor from a session subview on Windows micro island", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {},
+    });
+    const originalUserAgent = navigator.userAgent;
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    });
+
+    const session = {
+      sessionId: "session-cursor",
+      agent: "cursor" as const,
+      cwd: "/tmp/cursor-project",
+      pendingCount: 0,
+      totalCount: 1,
+      lastActivity: "2026-06-10T08:00:00Z",
+      transcriptPath: null,
+    };
+    const baseSnapshot = {
+      online: true,
+      pendingCount: 0,
+      archivedCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [session],
+      hookHealth: connectedHookHealth,
+    };
+    bridge.getSnapshot.mockResolvedValue(baseSnapshot);
+    bridge.getSessionRequests.mockResolvedValue([]);
+    bridge.getSessionTranscript.mockResolvedValue([]);
+    bridge.usesMicroIsland.mockResolvedValue(true);
+
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+    const island = screen.getByLabelText("Atoll");
+
+    fireEvent.pointerEnter(island);
+    await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+
+    await user.click(await screen.findByRole("button", { name: /cursor-project/i }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Open Cursor" })).toBeInTheDocument(),
+    );
+
+    bridge.setIslandPresentation.mockClear();
+
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Open Cursor" }));
+    expect(container.querySelector(".is-closing")).not.toBeNull();
+    expect(bridge.openAgentApp).toHaveBeenCalledWith(
+      "cursor",
+      "/tmp/cursor-project",
+      "session-cursor",
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(420);
+    });
+
+    expect(container.querySelector(".is-compact")).not.toBeNull();
+    expect(container.querySelector(".is-micro")).toBeNull();
+    expect(
+      bridge.setIslandPresentation.mock.calls.some(
+        (call) => call[0] === "compact" && call[5] === true,
+      ),
+    ).toBe(true);
+    expect(
+      bridge.setIslandPresentation.mock.calls.some((call) => call[0] === "micro"),
+    ).toBe(false);
+
+    vi.useRealTimers();
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: originalUserAgent,
+    });
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+  });
+
   it("does not reopen from a stale hover event after manual collapse", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const { container } = render(<App />);

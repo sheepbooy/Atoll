@@ -49,6 +49,7 @@
 - **Token 热力图** — 持久化每日用量，展开态计数器可查看热力图、Agent 占比与 30 天趋势
 - **开机自启动** — Settings → General 可开启 Launch at login（macOS / Windows）
 - **应用内更新** — 启动时自动检测新版本，三点菜单一键下载安装并重启
+- **Cursor IDE** — 追踪 Cursor Agent 会话与 subagent，顶栏一键 **Open Cursor** 跳回 IDE
 - **全程本地** — Hook 桥接 `127.0.0.1:47777`，数据不出本机
 
 目前支持 **Claude Code**（CLI 与 Desktop）、**Codex**（CLI 与 Desktop）和 **Cursor IDE**（macOS Apple Silicon 与 Windows x64）。
@@ -134,7 +135,7 @@ Atoll 通过应用内 **一键安装 Hook**，无需手动编辑配置文件。
 | **Codex**（CLI + Desktop） | 同上 → Install Codex | Desktop/CLI：安装后在 Codex 中打开 `/hooks` 并信任 Atoll hook，完全退出并重启 Codex Desktop，再触发一次 shell 权限验证 |
 | **Cursor**（IDE Agent） | 同上 → Install Cursor | 安装后在 Cursor Settings → Hooks 确认 hook 已加载，重启 Cursor，再在 Agent 模式触发一次 Shell 工具权限验证 |
 
-Hook 注册 `PermissionRequest`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）或 `~/.codex/hooks.json`。安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`。
+Hook 注册 `PermissionRequest`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）、`~/.codex/hooks.json` 或 Cursor hooks 配置。安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`。
 
 卸载：Settings → Agent hooks → Uninstall（仅移除 Atoll 条目，保留你的其他 hooks）。
 
@@ -216,7 +217,7 @@ npm run export:brand     # Logo 状态 + Agent 形象
 发布新版本（Git Bash / WSL / macOS）：
 
 ```bash
-./scripts/release.sh 0.1.27
+./scripts/release.sh 0.1.31
 ```
 
 推送 `v*` tag 后会并行构建 macOS DMG 与 Windows MSI，并上传到 GitHub Releases。

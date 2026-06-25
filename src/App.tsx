@@ -1574,7 +1574,8 @@ export function App() {
     const wasSessionSubview =
       leavingPanel === "session" || leavingPanel === "subagent" || leavingPanel === "subagentList";
     const collapseMode =
-      wasSessionSubview && naturalCollapseMode === "dormant"
+      wasSessionSubview &&
+      (naturalCollapseMode === "dormant" || naturalCollapseMode === "micro")
         ? "compact"
         : naturalCollapseMode;
 
@@ -1642,7 +1643,7 @@ export function App() {
           if (wasSessionSubview) {
             suppressPostCollapseSyncRef.current = true;
           }
-          setPresentationPhase(collapsedRestPhase());
+          setPresentationPhase(collapseMode === "micro" ? "micro" : "compact");
         }
       } catch {
         releaseFrozenCollapseMetrics();
