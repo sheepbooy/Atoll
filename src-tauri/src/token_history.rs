@@ -244,7 +244,15 @@ pub(crate) fn sync_today_to_history(state: &AppState) -> Result<(), String> {
         .lock()
         .map_err(|error| error.to_string())?;
     let agent_by_session = build_agent_by_session(state);
-    let record = aggregate_day_record(&session_usage, &agent_by_session);
+    let mut record = aggregate_day_record(&session_usage, &agent_by_session);
+    let persisted_floor = *state
+        .daily_tokens_baseline
+        .lock()
+        .map_err(|error| error.to_string())?;
+    record.usage = TokenUsageRecord::from(crate::effective_daily_tokens(
+        &session_usage,
+        persisted_floor,
+    ));
     drop(session_usage);
 
     let mut file = load_history_file();

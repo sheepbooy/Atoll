@@ -4248,22 +4248,28 @@ function SubagentDetailView({
   const subagentColor = getSubagentColor(agentId);
   const subagentMood = getSubagentMood(agentId, Boolean(completedAt));
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [loadFailed, setLoadFailed] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(0);
 
   useEffect(() => {
     if (!transcriptPath) return;
     let active = true;
+    setLoadFailed(false);
     function load() {
       getSessionTranscript(transcriptPath!)
         .then((msgs) => {
           if (!active) return;
+          setLoadFailed(false);
           if (msgs.length !== prevCountRef.current) {
             prevCountRef.current = msgs.length;
             setMessages(msgs);
           }
         })
-        .catch(() => undefined);
+        .catch(() => {
+          if (!active) return;
+          setLoadFailed(true);
+        });
     }
     load();
     const pollMs = completedAt ? 0 : 2000;
@@ -4312,7 +4318,11 @@ function SubagentDetailView({
         <div className="chat-messages" ref={scrollRef}>
           {messages.length === 0 && !lastMessage ? (
             <div className="chat-empty">
-              {transcriptPath ? "Loading..." : "No transcript path available."}
+              {!transcriptPath
+                ? "No transcript path available."
+                : loadFailed && completedAt
+                  ? "Transcript unavailable."
+                  : "Loading..."}
             </div>
           ) : null}
           {messages.map((msg, i) => (

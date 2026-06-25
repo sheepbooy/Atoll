@@ -157,6 +157,50 @@ impl TokenUsage {
             cache_creation_tokens: self.cache_creation_tokens.max(other.cache_creation_tokens),
         }
     }
+
+    fn token_total(self) -> u64 {
+        self.input_tokens
+            .saturating_add(self.output_tokens)
+            .saturating_add(self.cache_read_tokens)
+            .saturating_add(self.cache_creation_tokens)
+    }
+
+    fn is_zero(self) -> bool {
+        self.input_tokens == 0
+            && self.output_tokens == 0
+            && self.cache_read_tokens == 0
+            && self.cache_creation_tokens == 0
+    }
+
+    /// Merge in-memory session totals with the persisted daily floor.
+    ///
+    /// After restart `session_token_usage` is empty while the floor still holds
+    /// today's persisted total. New hook events only populate the in-memory map,
+    /// so we add those increments on top of the floor until transcript-based
+    /// refresh rebuilds a full session sum that dominates the floor.
+    fn combine_with_persisted_floor(self, floor: TokenUsage) -> TokenUsage {
+        if self.is_zero() {
+            return floor;
+        }
+        if self.token_total() >= floor.token_total() {
+            self
+        } else {
+            let mut combined = floor;
+            combined.add_assign(self);
+            combined
+        }
+    }
+}
+
+pub(crate) fn effective_daily_tokens(
+    session_token_usage: &HashMap<String, TokenUsage>,
+    persisted_floor: TokenUsage,
+) -> TokenUsage {
+    let mut session_sum = TokenUsage::default();
+    for usage in session_token_usage.values() {
+        session_sum.add_assign(*usage);
+    }
+    session_sum.combine_with_persisted_floor(persisted_floor)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -443,6 +487,11 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
     );
     drop(pinned);
     drop(known_sessions);
+    let persisted_floor = *state
+        .daily_tokens_baseline
+        .lock()
+        .expect("state mutex poisoned");
+    snapshot.daily_tokens = effective_daily_tokens(&token_usage, persisted_floor);
     drop(token_usage);
     drop(last_seen);
     drop(requests);
@@ -490,15 +539,6 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
     persist_session_hosts(state, &snapshot.sessions);
     snapshot.hook_health = hook_health;
     let _ = token_history::sync_today_to_history(state);
-
-    // Ensure daily_tokens never drops below what was persisted before restart.
-    let mut baseline = state
-        .daily_tokens_baseline
-        .lock()
-        .expect("state mutex poisoned");
-    snapshot.daily_tokens = snapshot.daily_tokens.component_wise_max(*baseline);
-    *baseline = snapshot.daily_tokens;
-    drop(baseline);
 
     snapshot
 }
@@ -2249,34 +2289,156 @@ fn sanitize_subagent_id_for_filename(agent_id: &str) -> String {
         .collect()
 }
 
+fn cursor_subagents_dir(main_transcript: &str) -> Option<std::path::PathBuf> {
+    std::path::Path::new(main_transcript)
+        .parent()
+        .map(|parent| parent.join("subagents"))
+}
+
+fn subagent_transcript_filename_candidates(
+    agent_id: &str,
+    conversation_id: Option<&str>,
+) -> Vec<String> {
+    let mut candidates = Vec::new();
+    if let Some(conv) = conversation_id.filter(|value| !value.is_empty()) {
+        candidates.push(format!("{conv}.jsonl"));
+    }
+    let sanitized = sanitize_subagent_id_for_filename(agent_id);
+    if agent_id.starts_with("agent-") {
+        candidates.push(format!("{agent_id}.jsonl"));
+    } else {
+        candidates.push(format!("agent-{agent_id}.jsonl"));
+    }
+    candidates.push(format!("{agent_id}.jsonl"));
+    if sanitized.starts_with("agent-") {
+        candidates.push(format!("{sanitized}.jsonl"));
+    } else {
+        candidates.push(format!("agent-{sanitized}.jsonl"));
+    }
+    candidates.push(format!("{sanitized}.jsonl"));
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
+fn scan_subagents_dir_for_transcript(
+    subagents_dir: &std::path::Path,
+    started_at: Option<&str>,
+) -> Option<String> {
+    if !subagents_dir.is_dir() {
+        return None;
+    }
+    let started_ts = started_at.map(parse_iso_timestamp_secs);
+    let mut matches: Vec<(u64, std::path::PathBuf)> = std::fs::read_dir(subagents_dir)
+        .ok()?
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+                return None;
+            }
+            let modified = entry
+                .metadata()
+                .ok()
+                .and_then(|meta| meta.modified().ok())
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|duration| duration.as_secs())
+                .unwrap_or(0);
+            if let Some(started_ts) = started_ts {
+                if modified + 2 < started_ts {
+                    return None;
+                }
+            }
+            Some((modified, path))
+        })
+        .collect();
+    if matches.is_empty() {
+        return None;
+    }
+    matches.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
+    matches
+        .first()
+        .map(|(_, path)| path.to_string_lossy().into_owned())
+}
+
 fn derive_subagent_transcript_path(
     main_transcript: Option<&str>,
     agent_id: &str,
+    conversation_id: Option<&str>,
+    started_at: Option<&str>,
 ) -> Option<String> {
     let main = main_transcript?;
-    let stem = main.strip_suffix(".jsonl").unwrap_or(main);
-    let sanitized = sanitize_subagent_id_for_filename(agent_id);
-    let candidates = [
-        if agent_id.starts_with("agent-") {
-            format!("{agent_id}.jsonl")
-        } else {
-            format!("agent-{agent_id}.jsonl")
-        },
-        format!("{agent_id}.jsonl"),
-        if sanitized.starts_with("agent-") {
-            format!("{sanitized}.jsonl")
-        } else {
-            format!("agent-{sanitized}.jsonl")
-        },
-        format!("{sanitized}.jsonl"),
-    ];
-    for filename in &candidates {
-        let path = format!("{stem}/subagents/{filename}");
-        if std::path::Path::new(&path).exists() {
-            return Some(path);
+    let subagents_dir = cursor_subagents_dir(main)?;
+
+    for filename in subagent_transcript_filename_candidates(agent_id, conversation_id) {
+        let path = subagents_dir.join(&filename);
+        if path.exists() {
+            return Some(path.to_string_lossy().into_owned());
         }
     }
-    Some(format!("{stem}/subagents/{}", candidates[0].clone()))
+
+    if let Some(path) = scan_subagents_dir_for_transcript(&subagents_dir, started_at) {
+        return Some(path);
+    }
+
+    if let Some(conv) = conversation_id.filter(|value| !value.is_empty()) {
+        return Some(
+            subagents_dir
+                .join(format!("{conv}.jsonl"))
+                .to_string_lossy()
+                .into_owned(),
+        );
+    }
+
+    None
+}
+
+fn known_session_transcript_path(state: &AppState, session_id: &str) -> Option<String> {
+    state
+        .known_sessions
+        .lock()
+        .ok()
+        .and_then(|known| {
+            known
+                .get(session_id)
+                .and_then(|entry| entry.transcript_path.clone())
+        })
+}
+
+fn refresh_subagent_transcript_path(state: &AppState, sub: &mut ActiveSubagent) {
+    let main_transcript = known_session_transcript_path(state, &sub.session_id);
+    let Some(resolved) = derive_subagent_transcript_path(
+        main_transcript.as_deref(),
+        &sub.agent_id,
+        sub.conversation_id.as_deref(),
+        Some(&sub.started_at),
+    ) else {
+        return;
+    };
+    let current_missing = sub
+        .agent_transcript_path
+        .as_ref()
+        .is_none_or(|path| !std::path::Path::new(path).exists());
+    let resolved_exists = std::path::Path::new(&resolved).exists();
+    if current_missing && (resolved_exists || sub.conversation_id.is_some()) {
+        sub.agent_transcript_path = Some(resolved);
+    }
+}
+
+fn resolve_complete_transcript_path(
+    state: &AppState,
+    sub: &ActiveSubagent,
+    payload_path: Option<String>,
+) -> Option<String> {
+    if let Some(path) = payload_path.filter(|value| !value.is_empty()) {
+        return Some(path);
+    }
+    derive_subagent_transcript_path(
+        known_session_transcript_path(state, &sub.session_id).as_deref(),
+        &sub.agent_id,
+        sub.conversation_id.as_deref(),
+        Some(&sub.started_at),
+    )
 }
 
 fn bind_cursor_subagent_conversation(state: &AppState, conv_id: &str, parent_session_id: &str) {
@@ -2364,6 +2526,7 @@ pub(crate) fn resolve_cursor_session_for_payload(
                 && !s.archived
         }) {
             sub.conversation_id = Some(conv_id.to_string());
+            refresh_subagent_transcript_path(state, sub);
         }
     }
     Some(parent)
@@ -2382,7 +2545,12 @@ pub(crate) fn register_subagent_start(
     let agent_transcript_path = payload_subagent_transcript_path(payload)
         .map(str::to_string)
         .or_else(|| {
-            derive_subagent_transcript_path(payload_main_transcript_path(payload), &agent_id)
+            derive_subagent_transcript_path(
+                payload_main_transcript_path(payload),
+                &agent_id,
+                None,
+                None,
+            )
         });
 
     if agent_id.is_empty() || session_id.is_empty() {
@@ -2410,13 +2578,15 @@ pub(crate) fn register_subagent_start(
 }
 
 pub(crate) fn complete_subagent(state: &AppState, payload: &serde_json::Value) {
-    let transcript_path = payload_subagent_transcript_path(payload).map(str::to_string);
+    let payload_transcript_path = payload_subagent_transcript_path(payload).map(str::to_string);
     let last_message = payload_subagent_last_message(payload);
 
     if let Some(agent_id) = payload_subagent_id(payload) {
         if let Ok(mut subagents) = state.active_subagents.lock() {
             if let Some(sub) = subagents.iter_mut().find(|s| s.agent_id == agent_id) {
                 let conv_id = sub.conversation_id.clone();
+                let transcript_path =
+                    resolve_complete_transcript_path(state, sub, payload_transcript_path);
                 mark_subagent_complete(sub, transcript_path, last_message);
                 drop(subagents);
                 unbind_cursor_subagent_conversation(state, conv_id.as_deref());
@@ -2453,6 +2623,8 @@ pub(crate) fn complete_subagent(state: &AppState, payload: &serde_json::Value) {
         if let Ok(mut subagents) = state.active_subagents.lock() {
             if let Some(sub) = subagents.get_mut(idx) {
                 let conv_id = sub.conversation_id.clone();
+                let transcript_path =
+                    resolve_complete_transcript_path(state, sub, payload_transcript_path);
                 mark_subagent_complete(sub, transcript_path, last_message);
                 drop(subagents);
                 unbind_cursor_subagent_conversation(state, conv_id.as_deref());
@@ -2479,6 +2651,18 @@ fn mark_subagent_complete(
 }
 
 pub(crate) fn reconcile_incomplete_subagents(state: &AppState) {
+    {
+        let mut subagents = match state.active_subagents.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+        for sub in subagents.iter_mut() {
+            if sub.completed_at.is_none() && !sub.archived {
+                refresh_subagent_transcript_path(state, sub);
+            }
+        }
+    }
+
     let pending_paths: Vec<(usize, String)> = {
         let subagents = match state.active_subagents.lock() {
             Ok(guard) => guard,
@@ -5686,9 +5870,17 @@ mod core_tests {
 
         // UI floor: daily total must not drop below persisted baseline.
         let live_daily = TokenUsage::default();
-        let protected = live_daily.component_wise_max(baseline);
+        let protected = live_daily.combine_with_persisted_floor(baseline);
         assert_eq!(protected.input_tokens, 3000);
         assert_eq!(protected.output_tokens, 1200);
+
+        // Post-restart increments must add on top of the persisted floor.
+        let mut post_restart = TokenUsage::default();
+        post_restart.input_tokens = 500;
+        post_restart.output_tokens = 100;
+        let combined = post_restart.combine_with_persisted_floor(baseline);
+        assert_eq!(combined.input_tokens, 3500);
+        assert_eq!(combined.output_tokens, 1300);
 
         let _ = std::fs::remove_file(&history_path);
         std::env::remove_var("ATOLL_TOKEN_HISTORY_PATH");
@@ -6098,6 +6290,160 @@ mod cursor_subagent_tests {
             subagents[0].conversation_id.as_deref(),
             Some("conv-subagent-new")
         );
+    }
+
+    #[test]
+    fn derive_subagent_transcript_path_uses_parent_directory() {
+        let parent_uuid = "819943d1-a823-47ce-bef3-97ca63fa0f34";
+        let sub_uuid = "60bcad01-8db6-4e9f-91b3-d3e55f2b504c";
+        let dir = std::env::temp_dir().join(format!(
+            "atoll-subagent-derive-{}",
+            std::process::id()
+        ));
+        let parent_dir = dir.join(parent_uuid);
+        let subagents_dir = parent_dir.join("subagents");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&subagents_dir).expect("create subagents dir");
+        let main = parent_dir.join(format!("{parent_uuid}.jsonl"));
+        std::fs::write(&main, "{}").expect("write parent transcript");
+        let sub_path = subagents_dir.join(format!("{sub_uuid}.jsonl"));
+        std::fs::write(&sub_path, "{}").expect("write subagent transcript");
+        let main_str = main.to_string_lossy().into_owned();
+
+        let resolved = derive_subagent_transcript_path(
+            Some(&main_str),
+            "call_tool_id",
+            Some(sub_uuid),
+            None,
+        )
+        .expect("resolved path");
+
+        assert_eq!(resolved, sub_path.to_string_lossy().into_owned());
+        assert!(
+            !resolved.contains(&format!("{parent_uuid}/{parent_uuid}/subagents")),
+            "should not nest an extra parent-uuid directory"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn cursor_subagent_conversation_binding_updates_transcript_path() {
+        let state = test_app_state();
+        let parent_uuid = "conv-parent";
+        let sub_uuid = "conv-subagent-new";
+        let dir = std::env::temp_dir().join(format!(
+            "atoll-subagent-bind-{}",
+            std::process::id()
+        ));
+        let parent_dir = dir.join(parent_uuid);
+        let subagents_dir = parent_dir.join("subagents");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&subagents_dir).expect("create subagents dir");
+        let main = parent_dir.join(format!("{parent_uuid}.jsonl"));
+        std::fs::write(&main, "{}").expect("write parent transcript");
+        let sub_path = subagents_dir.join(format!("{sub_uuid}.jsonl"));
+        std::fs::write(&sub_path, "{}").expect("write subagent transcript");
+        let main_str = main.to_string_lossy().into_owned();
+
+        register_known_session(
+            &state,
+            parent_uuid,
+            AgentKind::Cursor,
+            "/tmp/project",
+            Some(&main_str),
+        );
+        register_subagent_start(
+            &state,
+            &json!({
+                "subagent_id": "sub-abc",
+                "conversation_id": "conv-parent",
+                "subagent_type": "explore",
+                "transcript_path": main_str
+            }),
+            AgentKind::Cursor,
+        );
+
+        let parent = resolve_cursor_session_for_payload(
+            &state,
+            &json!({
+                "conversation_id": sub_uuid,
+                "hook_event_name": "preToolUse"
+            }),
+        );
+        assert_eq!(parent.as_deref(), Some(parent_uuid));
+
+        let subagents = state.active_subagents.lock().expect("lock");
+        assert_eq!(
+            subagents[0].agent_transcript_path.as_deref(),
+            Some(sub_path.to_string_lossy().as_ref())
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn complete_subagent_falls_back_to_conversation_transcript_path() {
+        let state = test_app_state();
+        let parent_uuid = "conv-parent";
+        let sub_uuid = "conv-subagent-new";
+        let dir = std::env::temp_dir().join(format!(
+            "atoll-subagent-complete-{}",
+            std::process::id()
+        ));
+        let parent_dir = dir.join(parent_uuid);
+        let subagents_dir = parent_dir.join("subagents");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&subagents_dir).expect("create subagents dir");
+        let main = parent_dir.join(format!("{parent_uuid}.jsonl"));
+        std::fs::write(&main, "{}").expect("write parent transcript");
+        let sub_path = subagents_dir.join(format!("{sub_uuid}.jsonl"));
+        std::fs::write(&sub_path, "{}").expect("write subagent transcript");
+        let main_str = main.to_string_lossy().into_owned();
+
+        register_known_session(
+            &state,
+            parent_uuid,
+            AgentKind::Cursor,
+            "/tmp/project",
+            Some(&main_str),
+        );
+        register_subagent_start(
+            &state,
+            &json!({
+                "subagent_id": "sub-abc",
+                "conversation_id": "conv-parent",
+                "subagent_type": "explore",
+                "transcript_path": main_str
+            }),
+            AgentKind::Cursor,
+        );
+        let _ = resolve_cursor_session_for_payload(
+            &state,
+            &json!({
+                "conversation_id": sub_uuid,
+                "hook_event_name": "preToolUse"
+            }),
+        );
+
+        complete_subagent(
+            &state,
+            &json!({
+                "hook_event_name": "subagentStop",
+                "conversation_id": "conv-parent",
+                "subagent_type": "explore",
+                "summary": "Done"
+            }),
+        );
+
+        let subagents = state.active_subagents.lock().expect("lock");
+        assert!(subagents[0].completed_at.is_some());
+        assert_eq!(
+            subagents[0].agent_transcript_path.as_deref(),
+            Some(sub_path.to_string_lossy().as_ref())
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
