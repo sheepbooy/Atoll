@@ -1,17 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn();
-const autostartEnable = vi.fn();
-const autostartDisable = vi.fn();
-const autostartIsEnabled = vi.fn();
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
-vi.mock("@tauri-apps/plugin-autostart", () => ({
-  enable: autostartEnable,
-  disable: autostartDisable,
-  isEnabled: autostartIsEnabled,
-}));
 
 function setTauriRuntime(enabled: boolean) {
   if (enabled) {
@@ -29,9 +21,6 @@ describe("Tauri bridge", () => {
   beforeEach(() => {
     vi.resetModules();
     invoke.mockReset();
-    autostartEnable.mockReset();
-    autostartDisable.mockReset();
-    autostartIsEnabled.mockReset();
     setTauriRuntime(false);
   });
 
@@ -143,16 +132,14 @@ describe("Tauri bridge", () => {
     await enableAutostart();
     await disableAutostart();
 
-    expect(autostartEnable).not.toHaveBeenCalled();
-    expect(autostartDisable).not.toHaveBeenCalled();
-    expect(autostartIsEnabled).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
   });
 
-  it("delegates autostart controls to the plugin in the Tauri runtime", async () => {
+  it("delegates autostart controls to Tauri commands in the Tauri runtime", async () => {
     setTauriRuntime(true);
-    autostartIsEnabled.mockResolvedValueOnce(true);
-    autostartEnable.mockResolvedValueOnce(undefined);
-    autostartDisable.mockResolvedValueOnce(undefined);
+    invoke.mockResolvedValueOnce(true);
+    invoke.mockResolvedValueOnce(undefined);
+    invoke.mockResolvedValueOnce(undefined);
 
     const { isAutostartEnabled, enableAutostart, disableAutostart } = await import("./tauri");
 
@@ -160,8 +147,8 @@ describe("Tauri bridge", () => {
     await enableAutostart();
     await disableAutostart();
 
-    expect(autostartIsEnabled).toHaveBeenCalledOnce();
-    expect(autostartEnable).toHaveBeenCalledOnce();
-    expect(autostartDisable).toHaveBeenCalledOnce();
+    expect(invoke).toHaveBeenNthCalledWith(1, "is_autostart_enabled");
+    expect(invoke).toHaveBeenNthCalledWith(2, "set_autostart_enabled", { enabled: true });
+    expect(invoke).toHaveBeenNthCalledWith(3, "set_autostart_enabled", { enabled: false });
   });
 });

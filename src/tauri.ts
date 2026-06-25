@@ -1,10 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import {
-  disable as disableAutostartPlugin,
-  enable as enableAutostartPlugin,
-  isEnabled as isAutostartEnabledPlugin,
-} from "@tauri-apps/plugin-autostart";
 import { getDemoCodexHookStatus, getDemoHookStatus, getDemoMode, getDemoSnapshot } from "./demoSnapshot";
 
 export type PermissionStatus = "pending" | "approved" | "denied";
@@ -659,7 +654,7 @@ export async function isAutostartEnabled(): Promise<boolean> {
     return false;
   }
 
-  return isAutostartEnabledPlugin();
+  return invoke<boolean>("is_autostart_enabled");
 }
 
 export async function enableAutostart(): Promise<void> {
@@ -667,7 +662,7 @@ export async function enableAutostart(): Promise<void> {
     return;
   }
 
-  return enableAutostartPlugin();
+  return invoke<void>("set_autostart_enabled", { enabled: true });
 }
 
 export async function disableAutostart(): Promise<void> {
@@ -675,5 +670,5 @@ export async function disableAutostart(): Promise<void> {
     return;
   }
 
-  return disableAutostartPlugin();
+  return invoke<void>("set_autostart_enabled", { enabled: false });
 }

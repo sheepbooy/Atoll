@@ -3296,7 +3296,7 @@ function SettingsView({
           <span className="settings-section-label">General</span>
           <SettingsToggle
             label="Launch at login"
-            desc="Start Atoll automatically when you log in."
+            desc="Start Atoll automatically when you log in. Requires the installed Atoll.app from Applications."
             checked={launchAtLogin}
             disabled={launchAtLoginBusy}
             onChange={onChangeLaunchAtLogin}

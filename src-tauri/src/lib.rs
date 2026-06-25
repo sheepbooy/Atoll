@@ -3067,6 +3067,20 @@ fn open_url(app: AppHandle, url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn is_autostart_enabled() -> Result<bool, String> {
+    platform::autostart::is_enabled()
+}
+
+#[tauri::command]
+fn set_autostart_enabled(enabled: bool) -> Result<(), String> {
+    if enabled {
+        platform::autostart::enable()
+    } else {
+        platform::autostart::disable()
+    }
+}
+
+#[tauri::command]
 fn quit_atoll(app: AppHandle) {
     exit_atoll(&app);
 }
@@ -3101,10 +3115,6 @@ fn open_agent_app(
 
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ))
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
             requests: Mutex::new(Vec::new()),
@@ -3163,6 +3173,8 @@ pub fn run() {
             open_agent_app,
             focus_claude_app,
             open_url,
+            is_autostart_enabled,
+            set_autostart_enabled,
             quit_atoll,
             deactivate_atoll,
             capture::capture_provide_screenshot

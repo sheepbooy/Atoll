@@ -21,6 +21,8 @@ mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
+pub mod autostart;
+
 /// AppKit screen frame metadata (macOS) or unused defaults elsewhere.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ScreenGeometry {
@@ -34,6 +36,7 @@ pub fn setup_app(app: &mut App) -> bool {
     #[cfg(target_os = "macos")]
     {
         let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+        autostart::migrate_legacy_if_needed();
     }
     #[cfg(not(target_os = "macos"))]
     let _ = app;

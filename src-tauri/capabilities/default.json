@@ -9,7 +9,6 @@
     "core:window:allow-start-dragging",
     "opener:default",
     "updater:default",
-    "process:default",
-    "autostart:default"
+    "process:default"
   ]
 }
