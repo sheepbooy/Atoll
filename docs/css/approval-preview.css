@@ -38,8 +38,14 @@
 }
 
 .approval-tab.cyan,
-.approval-tab.lime {
+.approval-tab.lime,
+.approval-tab.violet {
   opacity: 0.72;
+}
+
+.approval-tab.violet.is-active {
+  opacity: 1;
+  box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.28);
 }
 
 .approval-tab-pending {
@@ -67,14 +73,16 @@
 }
 
 .approval-preview .mascot-slot .clawd,
-.approval-preview .mascot-slot .codex {
+.approval-preview .mascot-slot .codex,
+.approval-preview .mascot-slot .cursor-mascot {
   width: 28px;
   height: 25px;
   overflow: hidden;
 }
 
 .approval-preview .mascot-slot .clawd-svg,
-.approval-preview .mascot-slot .codex-svg {
+.approval-preview .mascot-slot .codex-svg,
+.approval-preview .mascot-slot .cursor-mascot-svg {
   width: 100%;
   height: 100%;
   display: block;
@@ -101,7 +109,8 @@
 }
 
 .approval-kicker .mascot-slot .clawd,
-.approval-kicker .mascot-slot .codex {
+.approval-kicker .mascot-slot .codex,
+.approval-kicker .mascot-slot .cursor-mascot {
   width: 22px;
   height: 20px;
   overflow: hidden;
@@ -127,6 +136,12 @@
   color: #ff8175;
   background: rgba(255, 129, 117, 0.12);
   box-shadow: inset 0 0 0 1px rgba(255, 129, 117, 0.25);
+}
+
+.approval-agent-pill.violet {
+  color: #c4b5fd;
+  background: rgba(167, 139, 250, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.25);
 }
 
 .approval-command {
@@ -259,7 +274,10 @@
   .approval-preview .mascot-slot .clawd,
   .approval-preview .mascot-slot .clawd-claw,
   .approval-preview .mascot-slot .clawd-bang,
-  .approval-preview .mascot-slot .codex-cursor {
+  .approval-preview .mascot-slot .codex-cursor,
+  .approval-preview .mascot-slot .cursor-mascot,
+  .approval-preview .mascot-slot .cursor-mascot-figure,
+  .approval-preview .mascot-slot .cursor-mascot-bang {
     animation: none !important;
   }
 }

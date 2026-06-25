@@ -67,7 +67,8 @@
 }
 
 .agent-mascot-slot .clawd,
-.agent-mascot-slot .codex {
+.agent-mascot-slot .codex,
+.agent-mascot-slot .cursor-mascot {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -78,7 +79,8 @@
 }
 
 .agent-mascot-slot .clawd-svg,
-.agent-mascot-slot .codex-svg {
+.agent-mascot-slot .codex-svg,
+.agent-mascot-slot .cursor-mascot-svg {
   overflow: visible;
   width: 100%;
   height: 100%;
@@ -135,6 +137,55 @@
     drop-shadow(0 0 6px var(--codex-glow-outer, rgba(56, 168, 220, 0.28)));
 }
 
+.agent-mascot-slot .cursor-mascot .cursor-mascot-svg {
+  filter:
+    drop-shadow(0 0 1px var(--glow-inner, rgba(196, 181, 253, 0.75)))
+    drop-shadow(0 0 6px var(--glow-outer, rgba(124, 95, 212, 0.28)));
+}
+
+.agent-mascot-slot .cursor-mascot.is-calm .cursor-mascot-figure {
+  animation: clawd-float 2.8s ease-in-out infinite;
+}
+
+.agent-mascot-slot .cursor-mascot.is-alert .cursor-mascot-figure {
+  animation: clawd-alert-hop 0.85s ease-in-out infinite;
+}
+
+.agent-mascot-slot .cursor-mascot.is-alert .cursor-mascot-bang {
+  animation: clawd-bang-pop 0.7s ease-in-out infinite;
+}
+
+.agent-mascot-slot .cursor-mascot.is-happy .cursor-mascot-figure {
+  animation: clawd-float 2.8s ease-in-out infinite;
+}
+
+.agent-mascot-slot .cursor-mascot-star-0 {
+  animation: cursor-star-twinkle 1.2s ease-in-out infinite;
+}
+
+.agent-mascot-slot .cursor-mascot-star-1 {
+  animation: cursor-star-twinkle 1.2s ease-in-out infinite 0.4s;
+}
+
+.agent-mascot-slot .cursor-mascot-star-2 {
+  animation: cursor-star-twinkle 1.2s ease-in-out infinite 0.8s;
+}
+
+.agent-mascot-slot .cursor-mascot-heart {
+  animation: cursor-heart-rise 1.8s ease-out infinite;
+}
+
+@keyframes cursor-star-twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.3); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes cursor-heart-rise {
+  0% { opacity: 0; transform: translateY(10%) scale(0.6); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-45%) scale(1.1); }
+}
+
 .agent-mascot-slot .codex.is-calm {
   animation: clawd-float 2.8s ease-in-out infinite;
 }
@@ -151,6 +202,7 @@
 
 .agent-mascot-card[data-agent="claude"] figcaption { color: var(--accent-coral); }
 .agent-mascot-card[data-agent="codex"] figcaption { color: var(--accent-cyan); }
+.agent-mascot-card[data-agent="cursor"] figcaption { color: var(--accent-violet); }
 .agent-mascot-card[data-agent="gemini"] figcaption { color: var(--text-muted); }
 
 .mascot-unknown {
@@ -179,6 +231,13 @@
 @media (prefers-reduced-motion: reduce) {
   .agent-mascot-slot .clawd,
   .agent-mascot-slot .codex,
+  .agent-mascot-slot .cursor-mascot,
+  .agent-mascot-slot .cursor-mascot-figure,
+  .agent-mascot-slot .cursor-mascot-bang,
+  .agent-mascot-slot .cursor-mascot-star-0,
+  .agent-mascot-slot .cursor-mascot-star-1,
+  .agent-mascot-slot .cursor-mascot-star-2,
+  .agent-mascot-slot .cursor-mascot-heart,
   .agent-mascot-slot .clawd-eye,
   .agent-mascot-slot .clawd-claw,
   .agent-mascot-slot .clawd-bang,

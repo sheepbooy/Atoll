@@ -134,6 +134,9 @@
               <span class="compact-session-dot cyan">
                 <span class="mascot-slot" data-agent="codex"></span>
               </span>
+              <span class="compact-session-dot violet">
+                <span class="mascot-slot" data-agent="cursor"></span>
+              </span>
               <span class="compact-bar-spacer" aria-hidden="true"></span>
               <span class="compact-bar-metrics" aria-hidden="true">
                 <span class="compact-bar-token-mark"></span>
@@ -174,8 +177,8 @@
               <div class="approval-tab cyan">
                 <span class="mascot-slot" data-agent="codex"></span>
               </div>
-              <div class="approval-tab lime">
-                <span class="mascot-unknown mascot-unknown--sm" aria-hidden="true">?</span>
+              <div class="approval-tab violet">
+                <span class="mascot-slot" data-agent="cursor"></span>
               </div>
             </div>
             <div class="approval-card">
@@ -455,7 +458,9 @@
             </div>
           </article>
           <article class="agent-card">
-            <div class="agent-icon agent-icon--unknown" aria-hidden="true">C</div>
+            <div class="agent-card-mascot" aria-hidden="true">
+              <span class="mascot-slot" data-agent="cursor"></span>
+            </div>
             <div>
               <h3>Cursor（IDE Agent）</h3>
               <p>Settings → Agent hooks → Install Cursor。安装后在 Cursor Settings → Hooks 确认 hook 已加载，重启 Cursor 后触发 Shell 权限验证。</p>
@@ -485,7 +490,7 @@
     <section id="visual" class="container reveal">
       <span class="section-label">视觉</span>
       <h2 class="section-title">像素风 mascot，状态一目了然</h2>
-      <p class="section-desc">菜单栏 Logo 反映 App 全局状态；每个 Agent 有独立的像素风形象。</p>
+      <p class="section-desc">菜单栏 Logo 反映 App 全局状态；每个 Agent 有独立的像素风形象，包括 Claude、Codex 与 Cursor 立方体 mascot。</p>
 
       <div class="visual-showcase">
         <div class="state-grid">
@@ -528,6 +533,10 @@
             <figure class="agent-mascot-card">
               <div class="agent-mascot-slot" data-agent="codex"></div>
               <figcaption>Codex</figcaption>
+            </figure>
+            <figure class="agent-mascot-card">
+              <div class="agent-mascot-slot" data-agent="cursor"></div>
+              <figcaption>Cursor</figcaption>
             </figure>
             <figure class="agent-mascot-card" data-agent="gemini">
               <div class="agent-mascot-slot">
@@ -662,6 +671,7 @@
     revealEls.forEach(el => observer.observe(el));
   </script>
   <script src="js/atoll-logo.js"></script>
+  <script src="js/cursor-mascot.js"></script>
   <script src="js/agent-mascots.js"></script>
 </body>
 </html>

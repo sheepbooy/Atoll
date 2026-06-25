@@ -19,7 +19,23 @@
       accent: "#b2e578",
       accentDark: "#7aa44d",
     },
+    cursor: {
+      type: "cursor",
+      mood: "calm",
+      accent: "#a78bfa",
+      accentDark: "#7c5fd4",
+    },
   };
+
+  function slotMascotSize(slot) {
+    if (slot.closest(".compact-session-dot")) return 22;
+    if (slot.closest(".approval-kicker")) return 20;
+    if (slot.closest(".approval-tab")) return 25;
+    if (slot.closest(".agent-card-mascot")) return 48;
+    if (slot.classList.contains("agent-mascot-slot")) return 79;
+    if (slot.closest(".approval-preview")) return 25;
+    return 28;
+  }
 
   function mixHex(from, to, amount) {
     const parse = (hex) => {
@@ -112,10 +128,14 @@
     </span>`;
   }
 
-  function renderAgent(agentId, moodOverride) {
+  function renderAgent(agentId, moodOverride, size) {
     const config = AGENTS[agentId];
     if (!config) return "";
     const mood = moodOverride || config.mood;
+
+    if (config.type === "cursor" && window.AtollCursorMascot) {
+      return window.AtollCursorMascot.render(mood, size || 79, false);
+    }
 
     if (config.type === "codex") {
       const palette = {
@@ -132,7 +152,15 @@
   function init() {
     document.querySelectorAll(".mascot-slot[data-agent], .agent-mascot-slot[data-agent]").forEach((slot) => {
       const agentId = slot.dataset.agent;
-      slot.innerHTML = renderAgent(agentId, slot.dataset.mood || undefined);
+      const config = AGENTS[agentId];
+      const mood = slot.dataset.mood || config?.mood || "calm";
+      const size = slotMascotSize(slot);
+
+      if (config?.type === "cursor" && window.AtollCursorMascot?.mount) {
+        window.AtollCursorMascot.mount(slot, mood, size);
+      } else {
+        slot.innerHTML = renderAgent(agentId, slot.dataset.mood || undefined, size);
+      }
 
       const card = slot.closest(".agent-mascot-card");
       if (card) {

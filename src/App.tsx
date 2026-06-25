@@ -526,6 +526,7 @@ export function App() {
   const frozenCollapseWidthRef = useRef<number | null>(null);
   const frozenCollapseLeftWidthRef = useRef<number | null>(null);
   const suppressPostCollapseSyncRef = useRef(false);
+  const holdCompactAfterSubviewOpenRef = useRef(false);
   const expandCollapseAnchorRef = useRef<{
     width: number;
     leftWidth: number;
@@ -661,7 +662,9 @@ export function App() {
     phase,
   );
   const collapsedMode: "micro" | "compact" | "dormant" =
-    suppressPostCollapseSyncRef.current && rawCollapsedMode === "dormant"
+    (suppressPostCollapseSyncRef.current ||
+      holdCompactAfterSubviewOpenRef.current) &&
+    (rawCollapsedMode === "dormant" || rawCollapsedMode === "micro")
       ? "compact"
       : rawCollapsedMode;
   const tabAgents = useMemo(() => {
@@ -1300,7 +1303,9 @@ export function App() {
       const panel = panelViewRef.current;
       const inExpandedSessionSubview =
         phaseRef.current === "expanded" &&
-        (panel.kind === "session" || panel.kind === "subagent");
+        (panel.kind === "session" ||
+          panel.kind === "subagent" ||
+          panel.kind === "subagentList");
       const collapseInFlight = frozenCollapseWidthRef.current !== null;
       if (!inExpandedSessionSubview && !collapseInFlight) {
         scheduleIdleCollapse();
@@ -1380,6 +1385,7 @@ export function App() {
 
   async function promoteToCompact(options?: { skipExpand?: boolean }) {
     if (phaseRef.current !== "micro") return;
+    holdCompactAfterSubviewOpenRef.current = false;
     clearIdleTimer();
 
     const idleCompact =
@@ -1416,6 +1422,7 @@ export function App() {
 
   async function shrinkToMicro() {
     if (phaseRef.current !== "compact") return;
+    if (holdCompactAfterSubviewOpenRef.current) return;
     if (
       !shouldRestInMicro(usesMicroIslandRef.current)
     ) {
@@ -1439,6 +1446,7 @@ export function App() {
   function scheduleShrinkToMicro() {
     clearIdleTimer();
     if (
+      holdCompactAfterSubviewOpenRef.current ||
       hoveringRef.current ||
       snapshotRef.current.pendingCount > 0 ||
       isTextEntryActive()
@@ -1461,6 +1469,7 @@ export function App() {
 
   async function expandIsland() {
     clearIdleTimer();
+    holdCompactAfterSubviewOpenRef.current = false;
 
     const next = beginExpand(phaseRef.current);
     if (next === phaseRef.current) return;
@@ -1642,6 +1651,7 @@ export function App() {
           };
           if (wasSessionSubview) {
             suppressPostCollapseSyncRef.current = true;
+            holdCompactAfterSubviewOpenRef.current = true;
           }
           setPresentationPhase(collapseMode === "micro" ? "micro" : "compact");
         }
@@ -2189,6 +2199,8 @@ export function App() {
   const isDormant =
     !isExpanded &&
     !isMicro &&
+    !suppressPostCollapseSyncRef.current &&
+    !holdCompactAfterSubviewOpenRef.current &&
     (collapsedMode === "dormant" ||
       (usesMicroIslandRef.current &&
         phase === "compact" &&

@@ -642,6 +642,17 @@ describe("App", () => {
       bridge.setIslandPresentation.mock.calls.some((call) => call[0] === "micro"),
     ).toBe(false);
 
+    bridge.setIslandPresentation.mockClear();
+    emitIslandHover?.({ hovering: false });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(container.querySelector(".is-compact")).not.toBeNull();
+    expect(container.querySelector(".is-micro")).toBeNull();
+    expect(
+      bridge.setIslandPresentation.mock.calls.some((call) => call[0] === "micro"),
+    ).toBe(false);
+
     vi.useRealTimers();
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,

@@ -966,11 +966,27 @@ section {
 }
 
 .agent-card img,
-.agent-icon {
+.agent-icon,
+.agent-card-mascot {
   width: 48px;
   height: 48px;
   flex-shrink: 0;
   border-radius: var(--radius-sm);
+}
+
+.agent-card-mascot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(167, 139, 250, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.16);
+  overflow: hidden;
+}
+
+.agent-card-mascot .mascot-slot,
+.agent-card-mascot .cursor-mascot {
+  width: 48px;
+  height: 48px;
 }
 
 .agent-card img {
