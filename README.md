@@ -44,7 +44,11 @@
 
 - **平时** — 紧凑胶囊，显示在线状态、活跃会话、待审批数量
 - **有请求时** — 自动展开，展示命令详情，一键 **Approve / Deny / Always**
+- **Plan 模式** — 在顶栏回答规划问题、预览 Markdown 计划，再决定是否开始构建
 - **Subagent** — 追踪子 agent 生命周期，会话内 chip 预览、列表视图与 transcript 详情，支持批量归档
+- **Token 热力图** — 持久化每日用量，展开态计数器可查看热力图、Agent 占比与 30 天趋势
+- **开机自启动** — Settings → General 可开启 Launch at login（macOS / Windows）
+- **应用内更新** — 启动时自动检测新版本，三点菜单一键下载安装并重启
 - **全程本地** — Hook 桥接 `127.0.0.1:47777`，数据不出本机
 
 目前支持 **Claude Code**（CLI 与 Desktop）和 **Codex CLI 与 Desktop**（macOS Apple Silicon 与 Windows x64）。

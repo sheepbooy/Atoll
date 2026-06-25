@@ -67,7 +67,7 @@
           <img src="assets/logo.svg" alt="Atoll mascot" class="hero-logo" width="64" height="72" />
           <div class="hero-badge">
             <span class="dot"></span>
-            v0.1.27 · macOS &amp; Windows
+            v0.1.30 · macOS &amp; Windows
           </div>
           <h1>
             <span class="gradient">AI 权限审批</span>
@@ -216,10 +216,23 @@
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
             </div>
             <h3>Token 用量追踪</h3>
-            <p>解析 JSONL 会话记录，实时展示 Token 消耗热力图。多 Session 概览，终端里写代码也能掌握用量。</p>
+            <p>解析 JSONL 会话记录，实时展示 Token 消耗热力图、Agent 占比与 30 天趋势。更新后历史用量也会保留。</p>
           </div>
           <div class="feature-preview">
             <img src="assets/token-heatmap-preview.svg" alt="Token 消耗热力图预览" width="420" loading="lazy" />
+          </div>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-card-body">
+            <div class="feature-icon lime">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            </div>
+            <h3>开机自启动</h3>
+            <p>Settings → General 开启 Launch at login，登录 macOS 或 Windows 后自动启动 Atoll。v0.1.28 起支持，macOS 使用 SMAppService 注册登录项。</p>
+          </div>
+          <div class="feature-preview feature-preview--note" aria-hidden="true">
+            <span class="plan-note">Launch at login · Settings → General</span>
           </div>
         </article>
       </div>
@@ -524,7 +537,7 @@
     <section id="updates" class="container reveal">
       <span class="section-label">更新</span>
       <h2 class="section-title">自动检查更新，持续演进</h2>
-      <p class="section-desc">Atoll 还在快速迭代。应用启动时会自动检测 GitHub 新版本——有新版本时菜单栏 Logo 会出现角标，可在三点菜单中一键下载安装并重启。</p>
+      <p class="section-desc">Atoll 还在快速迭代。应用启动时会自动检测 GitHub 新版本——有新版本时在三点菜单显示更新入口，可一键下载安装并重启。</p>
 
       <div class="update-grid">
         <article class="update-card">
@@ -538,8 +551,8 @@
           <div class="update-card-icon coral">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
           </div>
-          <h3>Logo 角标提醒</h3>
-          <p>有新版本时在菜单栏 Logo 上显示更新提示。</p>
+          <h3>菜单内更新提示</h3>
+          <p>有新版本时在三点菜单显示更新入口，也可手动 Check for updates。</p>
         </article>
         <article class="update-card">
           <div class="update-card-icon lime">
