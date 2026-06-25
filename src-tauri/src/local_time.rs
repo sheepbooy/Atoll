@@ -18,10 +18,7 @@ pub fn is_local_today(timestamp: &str, local_today_key: &str) -> bool {
 }
 
 #[allow(dead_code)]
-pub fn local_day_key_from_iso_in_offset(
-    timestamp: &str,
-    offset: FixedOffset,
-) -> Option<String> {
+pub fn local_day_key_from_iso_in_offset(timestamp: &str, offset: FixedOffset) -> Option<String> {
     parse_iso_timestamp(timestamp)
         .map(|dt| format_local_day_key(dt.with_timezone(&offset).date_naive()))
 }

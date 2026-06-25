@@ -106,6 +106,9 @@ const bridge = vi.hoisted(() => ({
   getSessionRetention: vi.fn(),
   setSessionRetention: vi.fn(),
   openAgentApp: vi.fn(),
+  isAutostartEnabled: vi.fn(),
+  enableAutostart: vi.fn(),
+  disableAutostart: vi.fn(),
 }));
 
 const windowBridge = vi.hoisted(() => ({
@@ -200,6 +203,9 @@ describe("App", () => {
       height: 0,
     });
     bridge.setSessionRetention.mockResolvedValue(300);
+    bridge.isAutostartEnabled.mockResolvedValue(false);
+    bridge.enableAutostart.mockResolvedValue(undefined);
+    bridge.disableAutostart.mockResolvedValue(undefined);
     bridge.installClaudeHooks.mockResolvedValue({
       installed: true,
       scriptFound: true,
@@ -1006,5 +1012,26 @@ describe("App", () => {
     );
     expect(screen.getByRole("alertdialog")).toHaveTextContent("You're up to date");
     expect(screen.getByRole("alertdialog")).toHaveTextContent("v0.1.21");
+  });
+
+  it("shows launch at login in settings", async () => {
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    const { container } = render(<App />);
+
+    await waitForExpandedPanel(container);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Settings/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("switch", { name: /Launch at login/i })).toBeInTheDocument(),
+    );
+    expect(bridge.isAutostartEnabled).toHaveBeenCalled();
   });
 });

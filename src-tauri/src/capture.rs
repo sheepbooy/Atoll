@@ -85,10 +85,7 @@ pub fn seed_approval_demo(app: &AppHandle, state: &AppState) {
     }
 
     {
-        let mut pinned = state
-            .pinned_sessions
-            .lock()
-            .expect("state mutex poisoned");
+        let mut pinned = state.pinned_sessions.lock().expect("state mutex poisoned");
         pinned.clear();
         pinned.insert("session-atoll".into());
     }
@@ -175,10 +172,7 @@ pub fn seed_plan_question_demo(app: &AppHandle, state: &AppState) {
     }
 
     {
-        let mut pinned = state
-            .pinned_sessions
-            .lock()
-            .expect("state mutex poisoned");
+        let mut pinned = state.pinned_sessions.lock().expect("state mutex poisoned");
         pinned.clear();
         pinned.insert("session-atoll".into());
     }
@@ -216,10 +210,7 @@ pub fn seed_plan_approval_demo(app: &AppHandle, state: &AppState) {
     }
 
     {
-        let mut pinned = state
-            .pinned_sessions
-            .lock()
-            .expect("state mutex poisoned");
+        let mut pinned = state.pinned_sessions.lock().expect("state mutex poisoned");
         pinned.clear();
         pinned.insert("session-atoll".into());
     }
@@ -237,10 +228,7 @@ pub fn seed_idle_demo(app: &AppHandle, state: &AppState) {
         requests.clear();
     }
     {
-        let mut pinned = state
-            .pinned_sessions
-            .lock()
-            .expect("state mutex poisoned");
+        let mut pinned = state.pinned_sessions.lock().expect("state mutex poisoned");
         pinned.clear();
     }
     let snapshot = build_snapshot(app, state);
@@ -270,16 +258,13 @@ fn capture_main_window_png(app: &AppHandle) -> Result<(Vec<u8>, u32, u32), Strin
         .wait_timeout(guard, Duration::from_secs(8))
         .map_err(|error| error.to_string())?;
 
-    let png = guard
-        .as_ref()
-        .cloned()
-        .ok_or_else(|| {
-            if timeout.timed_out() {
-                "screenshot timed out (frontend did not respond)".to_string()
-            } else {
-                "screenshot unavailable".to_string()
-            }
-        })?;
+    let png = guard.as_ref().cloned().ok_or_else(|| {
+        if timeout.timed_out() {
+            "screenshot timed out (frontend did not respond)".to_string()
+        } else {
+            "screenshot unavailable".to_string()
+        }
+    })?;
 
     let img = ImageReader::new(std::io::Cursor::new(&png))
         .with_guessed_format()

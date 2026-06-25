@@ -4888,6 +4888,53 @@ kbd {
   line-height: 1.45;
 }
 
+.settings-toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 34px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
+}
+
+.settings-toggle:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.settings-toggle.is-on {
+  background: rgba(111, 220, 255, 0.22);
+  border-color: rgba(111, 220, 255, 0.35);
+}
+
+.settings-toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.settings-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform var(--duration-fast) ease;
+}
+
+.settings-toggle.is-on .settings-toggle-thumb {
+  transform: translateX(14px);
+  background: rgba(111, 220, 255, 0.95);
+}
+
 /* -- range slider -- */
 .settings-slider-wrap {
   display: grid;

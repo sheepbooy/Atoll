@@ -10,9 +10,9 @@ use socket2::{Domain, Socket, Type};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
-    build_snapshot, emit_subagent_snapshot, iso_timestamp_now, is_codex_internal_session, platform,
-    purge_tracked_session, complete_subagent, refresh_session_token_usage, register_known_session,
-    register_subagent_start, resolve_codex_session_cwd,
+    build_snapshot, complete_subagent, emit_subagent_snapshot, is_codex_internal_session,
+    iso_timestamp_now, platform, purge_tracked_session, refresh_session_token_usage,
+    register_known_session, register_subagent_start, resolve_codex_session_cwd,
     roll_over_token_usage_if_needed, show_main_window_for_approval, touch_session_activity,
     AgentKind, AppState, Decision, DecisionWithNote, PermissionRequest, PermissionStatus,
 };
@@ -54,10 +54,7 @@ pub(crate) fn write_bridge_config(port: u16) -> std::io::Result<()> {
 }
 
 pub(crate) fn refresh_bridge_config_file(app: &AppHandle) -> std::io::Result<()> {
-    let port = app
-        .state::<AppState>()
-        .bridge_port
-        .load(Ordering::SeqCst);
+    let port = app.state::<AppState>().bridge_port.load(Ordering::SeqCst);
     if port == 0 {
         return Ok(());
     }
@@ -105,9 +102,7 @@ fn bind_hook_listener() -> std::io::Result<(TcpListener, u16)> {
 
     Err(std::io::Error::new(
         std::io::ErrorKind::AddrInUse,
-        format!(
-            "no available hook bridge port in {DEFAULT_HOOK_PORT}..{HOOK_FALLBACK_PORT_END}"
-        ),
+        format!("no available hook bridge port in {DEFAULT_HOOK_PORT}..{HOOK_FALLBACK_PORT_END}"),
     ))
 }
 
@@ -119,7 +114,10 @@ fn bridge_port_from_config_file() -> Option<u16> {
     let path = bridge_config_path()?;
     let content = std::fs::read_to_string(path).ok()?;
     let value: Value = serde_json::from_str(&content).ok()?;
-    value.get("port").and_then(Value::as_u64).and_then(|port| u16::try_from(port).ok())
+    value
+        .get("port")
+        .and_then(Value::as_u64)
+        .and_then(|port| u16::try_from(port).ok())
 }
 
 fn refresh_listening_snapshot(app: &AppHandle) {
@@ -133,10 +131,7 @@ fn refresh_listening_snapshot(app: &AppHandle) {
 
 /// True when the local hook bridge accepts TCP connections on its bind address.
 pub(crate) fn is_bridge_reachable(app: &AppHandle) -> bool {
-    let stored_port = app
-        .state::<AppState>()
-        .bridge_port
-        .load(Ordering::SeqCst);
+    let stored_port = app.state::<AppState>().bridge_port.load(Ordering::SeqCst);
     let mut ports = Vec::new();
     if stored_port != 0 {
         ports.push(stored_port);
@@ -216,17 +211,15 @@ pub(crate) fn permission_request_from_codex_payload(
 
     let transcript_path = payload_transcript_path(&payload);
     let cwd = resolve_codex_session_cwd(
-        payload
-            .get("cwd")
-            .and_then(Value::as_str)
-            .unwrap_or("."),
+        payload.get("cwd").and_then(Value::as_str).unwrap_or("."),
         transcript_path,
     );
     if is_codex_internal_session(&AgentKind::Codex, &cwd, None) {
         return None;
     }
 
-    let mut request = permission_request_from_tool_payload(id, payload, requested_at, AgentKind::Codex, false)?;
+    let mut request =
+        permission_request_from_tool_payload(id, payload, requested_at, AgentKind::Codex, false)?;
     request.cwd = cwd;
     Some(request)
 }
@@ -284,9 +277,13 @@ fn permission_request_from_tool_payload(
             .get("transcript_path")
             .and_then(Value::as_str)
             .map(str::to_string),
-        tool_input: payload
-            .get("tool_input")
-            .and_then(|value| if value.is_null() { None } else { Some(value.clone()) }),
+        tool_input: payload.get("tool_input").and_then(|value| {
+            if value.is_null() {
+                None
+            } else {
+                Some(value.clone())
+            }
+        }),
     })
 }
 
@@ -344,7 +341,10 @@ pub(crate) fn permission_hook_response(
     });
     if matches!(decision, Decision::Approved) {
         if let Some(input) = updated_input {
-            output.as_object_mut().unwrap().insert("updatedInput".to_string(), input);
+            output
+                .as_object_mut()
+                .unwrap()
+                .insert("updatedInput".to_string(), input);
         }
     }
     json!({ "hookSpecificOutput": output })
@@ -381,7 +381,11 @@ fn handle_connection(app: AppHandle, mut stream: TcpStream) {
     let _ = write_json_response(&mut stream, result);
 }
 
-fn route_request(app: AppHandle, request: HttpRequest, stream: &TcpStream) -> Result<Value, String> {
+fn route_request(
+    app: AppHandle,
+    request: HttpRequest,
+    stream: &TcpStream,
+) -> Result<Value, String> {
     if let Some(response) = crate::capture::route_http(&app, &request.path) {
         return Ok(response);
     }
@@ -552,7 +556,12 @@ fn submit_blocking_permission_request(
         }
         let snapshot = build_snapshot(&app, &state);
         let _ = app.emit("snapshot-changed", &snapshot);
-        return Ok(permission_hook_response(hook_event_name, Decision::Approved, "", None));
+        return Ok(permission_hook_response(
+            hook_event_name,
+            Decision::Approved,
+            "",
+            None,
+        ));
     }
 
     let (sender, receiver) = mpsc::sync_channel(1);
@@ -584,7 +593,8 @@ fn submit_blocking_permission_request(
             &session_cwd,
             None,
         );
-        let host = detect_host_for_claude_hook(&state, stream, &session_cwd, &request_transcript_path);
+        let host =
+            detect_host_for_claude_hook(&state, stream, &session_cwd, &request_transcript_path);
         if host != platform::SessionHost::Unknown {
             crate::store_session_host(&state, &session_id, host);
         }
@@ -597,7 +607,8 @@ fn submit_blocking_permission_request(
             &session_cwd,
             request_transcript_path.as_deref(),
         );
-        let host = detect_host_for_codex_hook(&state, stream, &session_cwd, &request_transcript_path);
+        let host =
+            detect_host_for_codex_hook(&state, stream, &session_cwd, &request_transcript_path);
         if host != platform::SessionHost::Unknown {
             crate::store_session_host(&state, &session_id, host);
         }
@@ -615,12 +626,14 @@ fn submit_blocking_permission_request(
                 decision,
                 note,
                 updated_input,
-            }) => return Ok(permission_hook_response(
-                hook_event_name,
-                decision,
-                &note,
-                updated_input,
-            )),
+            }) => {
+                return Ok(permission_hook_response(
+                    hook_event_name,
+                    decision,
+                    &note,
+                    updated_input,
+                ))
+            }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 remove_pending_waiter(&state, &request_id);
                 return Ok(hook_defer_response(hook_event_name, "Atoll internal error"));
@@ -704,7 +717,11 @@ fn mark_request_completed_externally(
             }
         }
         roll_over_token_usage_if_needed(state);
-        (resolved_session_id, resolved_transcript_path, resolved_agent)
+        (
+            resolved_session_id,
+            resolved_transcript_path,
+            resolved_agent,
+        )
     };
 
     if let Some(session_id) = resolved_session_id.as_deref() {
@@ -755,10 +772,7 @@ fn sync_tool_completion(
     let transcript_path = payload_transcript_path(&payload).map(str::to_string);
     let cwd = if matches!(agent, AgentKind::Codex) {
         resolve_codex_session_cwd(
-            payload
-                .get("cwd")
-                .and_then(Value::as_str)
-                .unwrap_or("."),
+            payload.get("cwd").and_then(Value::as_str).unwrap_or("."),
             transcript_path.as_deref(),
         )
     } else {
@@ -773,11 +787,7 @@ fn sync_tool_completion(
 
     if let Some(session_id) = completed_session_id.as_deref() {
         if codex_internal {
-            purge_tracked_session(
-                &state,
-                session_id,
-                completed_transcript_path.as_deref(),
-            );
+            purge_tracked_session(&state, session_id, completed_transcript_path.as_deref());
         } else {
             register_known_session(
                 &state,
@@ -787,13 +797,21 @@ fn sync_tool_completion(
                 completed_transcript_path.as_deref(),
             );
             if matches!(agent, AgentKind::Claude) {
-                let host = detect_host_for_claude_non_permission_hook(stream, &cwd, completed_transcript_path.as_deref());
+                let host = detect_host_for_claude_non_permission_hook(
+                    stream,
+                    &cwd,
+                    completed_transcript_path.as_deref(),
+                );
                 if host != platform::SessionHost::Unknown {
                     crate::store_session_host(&state, session_id, host);
                 }
             }
             if matches!(agent, AgentKind::Codex) {
-                let host = detect_host_for_codex_non_permission_hook(stream, &cwd, completed_transcript_path.as_deref());
+                let host = detect_host_for_codex_non_permission_hook(
+                    stream,
+                    &cwd,
+                    completed_transcript_path.as_deref(),
+                );
                 if host != platform::SessionHost::Unknown {
                     crate::store_session_host(&state, session_id, host);
                 }
@@ -807,7 +825,9 @@ fn sync_tool_completion(
             mark_matching_pending_request_complete(&mut requests, &payload, &completed_suffix);
 
         if let Some(request_id) = completed_request_id.as_deref() {
-            if let Some(completed_request) = requests.iter().find(|request| request.id == request_id) {
+            if let Some(completed_request) =
+                requests.iter().find(|request| request.id == request_id)
+            {
                 if completed_session_id.is_none() {
                     completed_session_id = Some(completed_request.session.clone());
                 }
@@ -875,10 +895,7 @@ fn sync_turn_completion(
     let transcript_path = payload_transcript_path(&payload).map(str::to_string);
     let cwd = if matches!(agent, AgentKind::Codex) {
         resolve_codex_session_cwd(
-            payload
-                .get("cwd")
-                .and_then(Value::as_str)
-                .unwrap_or("."),
+            payload.get("cwd").and_then(Value::as_str).unwrap_or("."),
             transcript_path.as_deref(),
         )
     } else {
@@ -921,13 +938,21 @@ fn sync_turn_completion(
                 transcript_path.as_deref(),
             );
             if matches!(agent, AgentKind::Claude) {
-                let host = detect_host_for_claude_non_permission_hook(stream, &cwd, transcript_path.as_deref());
+                let host = detect_host_for_claude_non_permission_hook(
+                    stream,
+                    &cwd,
+                    transcript_path.as_deref(),
+                );
                 if host != platform::SessionHost::Unknown {
                     crate::store_session_host(&state, session_id, host);
                 }
             }
             if matches!(agent, AgentKind::Codex) {
-                let host = detect_host_for_codex_non_permission_hook(stream, &cwd, transcript_path.as_deref());
+                let host = detect_host_for_codex_non_permission_hook(
+                    stream,
+                    &cwd,
+                    transcript_path.as_deref(),
+                );
                 if host != platform::SessionHost::Unknown {
                     crate::store_session_host(&state, session_id, host);
                 }
@@ -999,7 +1024,9 @@ fn detect_host_for_claude_hook(
 
     if let Some(path) = transcript_path.as_deref() {
         if is_desktop_transcript_path(path) {
-            eprintln!("[Atoll:host-detect] RESULT: ClaudeDesktop (transcript path matched Desktop)");
+            eprintln!(
+                "[Atoll:host-detect] RESULT: ClaudeDesktop (transcript path matched Desktop)"
+            );
             return platform::SessionHost::ClaudeDesktop;
         }
         if is_cli_transcript_path(path) {
@@ -1023,7 +1050,9 @@ fn detect_host_for_claude_hook(
             let from_pid = platform::detect_session_host_from_peer_pid(pid);
             eprintln!("[Atoll:host-detect] detect_from_previous_pid({pid}) → {from_pid:?}");
             if from_pid == platform::SessionHost::ClaudeDesktop {
-                eprintln!("[Atoll:host-detect] RESULT: ClaudeDesktop (previous_app_pid in Desktop tree)");
+                eprintln!(
+                    "[Atoll:host-detect] RESULT: ClaudeDesktop (previous_app_pid in Desktop tree)"
+                );
                 return platform::SessionHost::ClaudeDesktop;
             }
         }
@@ -1086,7 +1115,9 @@ fn detect_host_for_codex_hook(
             let from_pid = platform::detect_codex_session_host_from_peer_pid(pid);
             eprintln!("[Atoll:host-detect] detect_from_previous_pid({pid}) → {from_pid:?}");
             if from_pid == platform::SessionHost::CodexDesktop {
-                eprintln!("[Atoll:host-detect] RESULT: CodexDesktop (previous_app_pid in Desktop tree)");
+                eprintln!(
+                    "[Atoll:host-detect] RESULT: CodexDesktop (previous_app_pid in Desktop tree)"
+                );
                 return platform::SessionHost::CodexDesktop;
             }
         }
@@ -1238,7 +1269,9 @@ fn detect_host_for_claude_non_permission_hook(
 
     if let Some(path) = transcript_path {
         if is_desktop_transcript_path(path) {
-            eprintln!("[Atoll:host-detect] RESULT: ClaudeDesktop (transcript path matched Desktop)");
+            eprintln!(
+                "[Atoll:host-detect] RESULT: ClaudeDesktop (transcript path matched Desktop)"
+            );
             return platform::SessionHost::ClaudeDesktop;
         }
         if is_cli_transcript_path(path) {
@@ -1246,14 +1279,18 @@ fn detect_host_for_claude_non_permission_hook(
                 eprintln!("[Atoll:host-detect] RESULT: ClaudeCli (CLI path + Desktop NOT running)");
                 return platform::SessionHost::ClaudeCli;
             }
-            eprintln!("[Atoll:host-detect] CLI-style path but Desktop IS running, checking further...");
+            eprintln!(
+                "[Atoll:host-detect] CLI-style path but Desktop IS running, checking further..."
+            );
         }
     }
 
     let desktop_running = is_claude_desktop_app_running();
     eprintln!("[Atoll:host-detect] claude_desktop_running={desktop_running}");
     if desktop_running && !is_any_terminal_frontmost() {
-        eprintln!("[Atoll:host-detect] RESULT: ClaudeDesktop (Desktop running + no terminal frontmost)");
+        eprintln!(
+            "[Atoll:host-detect] RESULT: ClaudeDesktop (Desktop running + no terminal frontmost)"
+        );
         return platform::SessionHost::ClaudeDesktop;
     }
 
@@ -1290,14 +1327,18 @@ fn detect_host_for_codex_non_permission_hook(
                 eprintln!("[Atoll:host-detect] RESULT: CodexCli (CLI path + Desktop NOT running)");
                 return platform::SessionHost::CodexCli;
             }
-            eprintln!("[Atoll:host-detect] CLI-style path but Desktop IS running, checking further...");
+            eprintln!(
+                "[Atoll:host-detect] CLI-style path but Desktop IS running, checking further..."
+            );
         }
     }
 
     let desktop_running = is_codex_desktop_app_running();
     eprintln!("[Atoll:host-detect] codex_desktop_running={desktop_running}");
     if desktop_running && !is_any_terminal_frontmost() {
-        eprintln!("[Atoll:host-detect] RESULT: CodexDesktop (Desktop running + no terminal frontmost)");
+        eprintln!(
+            "[Atoll:host-detect] RESULT: CodexDesktop (Desktop running + no terminal frontmost)"
+        );
         return platform::SessionHost::CodexDesktop;
     }
 
@@ -1382,7 +1423,9 @@ fn latest_pending_request_index(
     requests
         .iter()
         .enumerate()
-        .find(|(_, request)| request.status == PermissionStatus::Pending && request.session == session)
+        .find(|(_, request)| {
+            request.status == PermissionStatus::Pending && request.session == session
+        })
         .map(|(index, _)| index)
 }
 
@@ -1500,10 +1543,7 @@ mod bridge_bind_tests {
 
     #[test]
     fn write_bridge_config_json_shape() {
-        let temp = std::env::temp_dir().join(format!(
-            "atoll-bridge-test-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let temp = std::env::temp_dir().join(format!("atoll-bridge-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp).expect("temp dir");
         let config_path = temp.join("bridge.json");
 
@@ -1518,7 +1558,10 @@ mod bridge_bind_tests {
 
         let parsed: Value =
             serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
-        assert_eq!(parsed.get("port").and_then(Value::as_u64), Some(port as u64));
+        assert_eq!(
+            parsed.get("port").and_then(Value::as_u64),
+            Some(port as u64)
+        );
         assert!(parsed
             .get("claudeUrl")
             .and_then(Value::as_str)

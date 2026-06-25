@@ -17,7 +17,7 @@ fn hidden_command(program: &str) -> Command {
 
 use tauri::{AppHandle, LogicalPosition, Manager, Monitor, PhysicalSize, WebviewWindow};
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::{GetLastError, HANDLE, ERROR_ALREADY_EXISTS};
+use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS, HANDLE};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
 };
@@ -26,8 +26,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
 };
 
-use crate::{AppState, HomeWindowBounds};
 use super::SessionHost;
+use crate::{AppState, HomeWindowBounds};
 
 struct InstanceMutex(#[allow(dead_code)] HANDLE);
 
@@ -49,9 +49,7 @@ pub const COMPACT_HOVER_EXPAND_DWELL_MS: u64 = 350;
 
 /// Returns false when another Atoll instance already holds the global mutex.
 pub fn ensure_single_instance() -> bool {
-    let name: Vec<u16> = "Global\\com.atoll.agentisland\0"
-        .encode_utf16()
-        .collect();
+    let name: Vec<u16> = "Global\\com.atoll.agentisland\0".encode_utf16().collect();
 
     unsafe {
         let handle = match CreateMutexW(None, true, PCWSTR(name.as_ptr())) {
@@ -295,12 +293,7 @@ fn process_name_for_hwnd(hwnd: windows::Win32::Foundation::HWND) -> Option<Strin
             return None;
         }
         let path = String::from_utf16_lossy(&buffer[..len as usize]);
-        Some(
-            path.rsplit(['\\', '/'])
-                .next()
-                .unwrap_or(&path)
-                .to_string(),
-        )
+        Some(path.rsplit(['\\', '/']).next().unwrap_or(&path).to_string())
     }
 }
 
@@ -435,10 +428,9 @@ fn window_hwnd(window: &WebviewWindow) -> Option<windows::Win32::Foundation::HWN
 
     let handle = window.window_handle().ok()?;
     match handle.as_raw() {
-        RawWindowHandle::Win32(raw) => Some(windows::Win32::Foundation::HWND(
-            raw.hwnd.get() as *mut _,
-        )),
+        RawWindowHandle::Win32(raw) => {
+            Some(windows::Win32::Foundation::HWND(raw.hwnd.get() as *mut _))
+        }
         _ => None,
     }
 }
-

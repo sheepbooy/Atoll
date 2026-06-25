@@ -463,7 +463,6 @@ pub fn open_agent_app(
     open_in_terminal(cwd)
 }
 
-
 pub fn activate_claude_app(app: &AppHandle) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -557,8 +556,8 @@ pub fn tray_icon(app: &AppHandle) -> Option<tauri::image::Image<'static>> {
 
 /// Crop transparent padding and scale the logo to fill the menu-bar tray canvas.
 fn enlarged_tray_icon_from_png(bytes: &[u8]) -> Option<tauri::image::Image<'static>> {
-    use image::RgbaImage;
     use image::imageops;
+    use image::RgbaImage;
 
     let img = image::load_from_memory(bytes).ok()?.to_rgba8();
     let (width, height) = img.dimensions();
@@ -583,14 +582,8 @@ fn enlarged_tray_icon_from_png(bytes: &[u8]) -> Option<tauri::image::Image<'stat
         return None;
     }
 
-    let cropped = imageops::crop_imm(
-        &img,
-        min_x,
-        min_y,
-        max_x - min_x + 1,
-        max_y - min_y + 1,
-    )
-    .to_image();
+    let cropped =
+        imageops::crop_imm(&img, min_x, min_y, max_x - min_x + 1, max_y - min_y + 1).to_image();
     let (crop_w, crop_h) = cropped.dimensions();
     let target = (TRAY_ICON_CANVAS as f32 * TRAY_ICON_FILL) as u32;
     let scale = (target as f32 / crop_w as f32).min(target as f32 / crop_h as f32);
@@ -598,11 +591,19 @@ fn enlarged_tray_icon_from_png(bytes: &[u8]) -> Option<tauri::image::Image<'stat
     let scaled_h = (crop_h as f32 * scale).round().max(1.0) as u32;
     let scaled = imageops::resize(&cropped, scaled_w, scaled_h, imageops::FilterType::Lanczos3);
 
-    let mut canvas =
-        RgbaImage::from_pixel(TRAY_ICON_CANVAS, TRAY_ICON_CANVAS, image::Rgba([0, 0, 0, 0]));
+    let mut canvas = RgbaImage::from_pixel(
+        TRAY_ICON_CANVAS,
+        TRAY_ICON_CANVAS,
+        image::Rgba([0, 0, 0, 0]),
+    );
     let offset_x = (TRAY_ICON_CANVAS - scaled_w) / 2;
     let offset_y = (TRAY_ICON_CANVAS - scaled_h) / 2;
-    imageops::overlay(&mut canvas, &scaled, i64::from(offset_x), i64::from(offset_y));
+    imageops::overlay(
+        &mut canvas,
+        &scaled,
+        i64::from(offset_x),
+        i64::from(offset_y),
+    );
 
     Some(tauri::image::Image::new_owned(
         canvas.into_raw(),

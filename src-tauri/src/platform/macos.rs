@@ -137,24 +137,24 @@ pub fn detect_notch_metrics(
 }
 pub fn set_island_cursor_events_ignored(window: &tauri::WebviewWindow, ignore: bool) {
     let panel_ptr = panel_store::get_raw();
-        if !panel_ptr.is_null() {
-            // setIgnoresMouseEvents: MUST run on the main thread.
-            // animate_island_window_mode calls us from a tokio worker,
-            // so dispatch via run_on_main_thread.
-            let ptr_val = panel_ptr as usize;
-            let _ = window.run_on_main_thread(move || unsafe {
-                use objc2::runtime::{AnyObject, Bool};
-                let ptr = ptr_val as *mut AnyObject;
-                let val = if ignore { Bool::YES } else { Bool::NO };
-                let _: () = objc2::msg_send![ptr, setIgnoresMouseEvents: val];
-                // Non-activating NSPanels do not deliver mouse-moved events to
-                // the WKWebView until the panel becomes key (first click). Enable
-                // mouse-moved delivery while expanded so CSS :hover works on hover.
-                let moved = if ignore { Bool::NO } else { Bool::YES };
-                let _: () = objc2::msg_send![ptr, setAcceptsMouseMovedEvents: moved];
-            });
-            return;
-        }
+    if !panel_ptr.is_null() {
+        // setIgnoresMouseEvents: MUST run on the main thread.
+        // animate_island_window_mode calls us from a tokio worker,
+        // so dispatch via run_on_main_thread.
+        let ptr_val = panel_ptr as usize;
+        let _ = window.run_on_main_thread(move || unsafe {
+            use objc2::runtime::{AnyObject, Bool};
+            let ptr = ptr_val as *mut AnyObject;
+            let val = if ignore { Bool::YES } else { Bool::NO };
+            let _: () = objc2::msg_send![ptr, setIgnoresMouseEvents: val];
+            // Non-activating NSPanels do not deliver mouse-moved events to
+            // the WKWebView until the panel becomes key (first click). Enable
+            // mouse-moved delivery while expanded so CSS :hover works on hover.
+            let moved = if ignore { Bool::NO } else { Bool::YES };
+            let _: () = objc2::msg_send![ptr, setAcceptsMouseMovedEvents: moved];
+        });
+        return;
+    }
     let _ = window.set_ignore_cursor_events(ignore);
 }
 
@@ -316,8 +316,7 @@ fn promote_to_floating_panel(ns_window: &objc2_app_kit::NSWindow) {
         let frame = ns_window.frame();
 
         let raw: *mut AnyObject = objc2::msg_send![panel_cls, alloc];
-        let style_bits: usize =
-            NSWindowStyleMask::Borderless.0 as usize | (1usize << 7);
+        let style_bits: usize = NSWindowStyleMask::Borderless.0 as usize | (1usize << 7);
         let raw: *mut AnyObject = objc2::msg_send![
             raw,
             initWithContentRect: frame,
@@ -398,8 +397,7 @@ fn promote_to_floating_panel(ns_window: &objc2_app_kit::NSWindow) {
             let subviews: *mut AnyObject = objc2::msg_send![content_view, subviews];
             let count: usize = objc2::msg_send![subviews, count];
             if count > 0 {
-                let wk: *mut AnyObject =
-                    objc2::msg_send![subviews, objectAtIndex: 0usize];
+                let wk: *mut AnyObject = objc2::msg_send![subviews, objectAtIndex: 0usize];
 
                 // addSubview: on the panel's contentView automatically
                 // removes `wk` from the Tauri window's contentView.
@@ -429,7 +427,10 @@ fn promote_to_floating_panel(ns_window: &objc2_app_kit::NSWindow) {
         eprintln!(
             "[Atoll] floating panel ready, floating={}, level={}",
             is_floating.as_bool(),
-            { let lvl: isize = objc2::msg_send![raw, level]; lvl },
+            {
+                let lvl: isize = objc2::msg_send![raw, level];
+                lvl
+            },
         );
     });
 }
@@ -476,15 +477,13 @@ fn apply_accepts_first_mouse(ns_window: &objc2_app_kit::NSWindow) {
         // Also patch the floating panel's views (contentView + WKWebView).
         let panel_ptr = panel_store::get_raw();
         if !panel_ptr.is_null() {
-            let pcv: *mut AnyObject =
-                objc2::msg_send![panel_ptr as *mut AnyObject, contentView];
+            let pcv: *mut AnyObject = objc2::msg_send![panel_ptr as *mut AnyObject, contentView];
             patch_view_class(pcv);
             if !pcv.is_null() {
                 let subviews: *mut AnyObject = objc2::msg_send![pcv, subviews];
                 let count: usize = objc2::msg_send![subviews, count];
                 for i in 0..count {
-                    let sv: *mut AnyObject =
-                        objc2::msg_send![subviews, objectAtIndex: i];
+                    let sv: *mut AnyObject = objc2::msg_send![subviews, objectAtIndex: i];
                     patch_view_class(sv);
                 }
             }
@@ -569,8 +568,7 @@ pub fn remember_frontmost_app(app: &AppHandle) {
         let Some(ws_class) = objc2::runtime::AnyClass::get(c"NSWorkspace") else {
             return;
         };
-        let workspace: *mut objc2::runtime::AnyObject =
-            objc2::msg_send![ws_class, sharedWorkspace];
+        let workspace: *mut objc2::runtime::AnyObject = objc2::msg_send![ws_class, sharedWorkspace];
         if workspace.is_null() {
             return;
         }
@@ -652,9 +650,7 @@ fn focus_codex_app_on_main_thread(_app: &AppHandle, launch_if_needed: bool) -> R
     deactivate_own_application();
 
     let focused = if launch_if_needed {
-        run_open_codex()
-            || activate_codex_by_bundle_id()
-            || activate_codex_via_applescript()
+        run_open_codex() || activate_codex_by_bundle_id() || activate_codex_via_applescript()
     } else {
         activate_codex_by_bundle_id() || activate_codex_via_applescript()
     };
@@ -710,8 +706,7 @@ fn activate_codex_by_bundle_id() -> bool {
                     continue;
                 }
 
-                let ok: objc2::runtime::Bool =
-                    objc2::msg_send![app, activateWithOptions: options];
+                let ok: objc2::runtime::Bool = objc2::msg_send![app, activateWithOptions: options];
                 if ok.as_bool() {
                     return true;
                 }
@@ -752,9 +747,7 @@ fn focus_claude_app_on_main_thread(_app: &AppHandle, launch_if_needed: bool) -> 
     deactivate_own_application();
 
     let focused = if launch_if_needed {
-        run_open_claude()
-            || activate_claude_by_bundle_id()
-            || activate_claude_via_applescript()
+        run_open_claude() || activate_claude_by_bundle_id() || activate_claude_via_applescript()
     } else {
         activate_claude_by_bundle_id() || activate_claude_via_applescript()
     };
@@ -824,8 +817,7 @@ fn activate_claude_by_bundle_id() -> bool {
                     continue;
                 }
 
-                let ok: objc2::runtime::Bool =
-                    objc2::msg_send![app, activateWithOptions: options];
+                let ok: objc2::runtime::Bool = objc2::msg_send![app, activateWithOptions: options];
                 if ok.as_bool() {
                     return true;
                 }
@@ -1244,10 +1236,8 @@ fn pids_with_cwd(cwd: &str) -> Vec<u32> {
     pids
 }
 
-const CLAUDE_DESKTOP_BUNDLE_IDS: &[&str] = &[
-    "com.anthropic.claudefordesktop",
-    "com.anthropic.claude",
-];
+const CLAUDE_DESKTOP_BUNDLE_IDS: &[&str] =
+    &["com.anthropic.claudefordesktop", "com.anthropic.claude"];
 
 fn is_claude_desktop_bundle(bundle: &str) -> bool {
     CLAUDE_DESKTOP_BUNDLE_IDS.contains(&bundle)
@@ -1332,8 +1322,7 @@ fn bundle_id_for_pid(pid: i32) -> Option<String> {
         if running.is_null() {
             return None;
         }
-        let bundle: *mut objc2_foundation::NSString =
-            objc2::msg_send![running, bundleIdentifier];
+        let bundle: *mut objc2_foundation::NSString = objc2::msg_send![running, bundleIdentifier];
         if bundle.is_null() {
             return None;
         }

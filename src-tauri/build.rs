@@ -17,10 +17,7 @@ fn build_hook_runner_resource() {
     }
 
     fs::create_dir_all(&generated_dir).unwrap_or_else(|error| {
-        panic!(
-            "failed to create {}: {error}",
-            generated_dir.display()
-        );
+        panic!("failed to create {}: {error}", generated_dir.display());
     });
 
     let status = Command::new("rustc")

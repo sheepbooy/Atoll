@@ -45,7 +45,9 @@ impl TokenUsageRecord {
     fn add_assign(&mut self, other: TokenUsageRecord) {
         self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
         self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
-        self.cache_read_tokens = self.cache_read_tokens.saturating_add(other.cache_read_tokens);
+        self.cache_read_tokens = self
+            .cache_read_tokens
+            .saturating_add(other.cache_read_tokens);
         self.cache_creation_tokens = self
             .cache_creation_tokens
             .saturating_add(other.cache_creation_tokens);
@@ -169,8 +171,7 @@ pub(crate) fn build_agent_by_session(state: &AppState) -> HashMap<String, String
 
     if let Ok(requests) = state.requests.lock() {
         for request in requests.iter() {
-            map
-                .entry(request.session.clone())
+            map.entry(request.session.clone())
                 .or_insert_with(|| agent_kind_key(&request.agent));
         }
     }
@@ -265,7 +266,8 @@ pub(crate) fn load_today_baseline() -> TokenUsage {
 pub fn get_token_history(days: u32) -> Result<TokenHistoryResponse, String> {
     let file = load_history_file();
     let today_key = current_local_day_key();
-    let today = NaiveDate::parse_from_str(&today_key, "%Y-%m-%d").map_err(|error| error.to_string())?;
+    let today =
+        NaiveDate::parse_from_str(&today_key, "%Y-%m-%d").map_err(|error| error.to_string())?;
     let span = days.max(1).min(365) as i64;
 
     let mut result = Vec::new();
@@ -343,10 +345,7 @@ mod tests {
                     by_agent: HashMap::new(),
                 },
             ),
-            (
-                format_local_day_key(today),
-                TokenDayRecord::default(),
-            ),
+            (format_local_day_key(today), TokenDayRecord::default()),
         ]);
 
         prune_old_days(&mut days);

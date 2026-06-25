@@ -139,7 +139,9 @@ impl TokenUsage {
     fn add_assign(&mut self, other: TokenUsage) {
         self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
         self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
-        self.cache_read_tokens = self.cache_read_tokens.saturating_add(other.cache_read_tokens);
+        self.cache_read_tokens = self
+            .cache_read_tokens
+            .saturating_add(other.cache_read_tokens);
         self.cache_creation_tokens = self
             .cache_creation_tokens
             .saturating_add(other.cache_creation_tokens);
@@ -318,16 +320,19 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
     roll_over_token_usage_if_needed(state);
     reconcile_incomplete_subagents(state);
     let requests = state.requests.lock().expect("state mutex poisoned");
-    let last_seen = state.session_last_seen.lock().expect("state mutex poisoned");
-    let retention = *state.session_retention_secs.lock().expect("state mutex poisoned");
+    let last_seen = state
+        .session_last_seen
+        .lock()
+        .expect("state mutex poisoned");
+    let retention = *state
+        .session_retention_secs
+        .lock()
+        .expect("state mutex poisoned");
     let token_usage = state
         .session_token_usage
         .lock()
         .expect("state mutex poisoned");
-    let known_sessions = state
-        .known_sessions
-        .lock()
-        .expect("state mutex poisoned");
+    let known_sessions = state.known_sessions.lock().expect("state mutex poisoned");
     let pinned = state.pinned_sessions.lock().expect("state mutex poisoned");
     let online = compute_listening_online(app);
     let hook_health = build_hook_health(app);
@@ -353,10 +358,7 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let active_subagents = state
-        .active_subagents
-        .lock()
-        .expect("state mutex poisoned");
+    let active_subagents = state.active_subagents.lock().expect("state mutex poisoned");
     for session in snapshot.sessions.iter_mut() {
         session.active_subagents = active_subagents
             .iter()
@@ -744,7 +746,8 @@ async fn set_island_presentation(
                 .lock()
                 .map_err(|error| error.to_string())?;
             // apply_island_window_mode touches AppKit; must run on the main thread.
-            let (sync_tx, sync_rx) = std::sync::mpsc::sync_channel::<Result<Option<HomeWindowBounds>, String>>(0);
+            let (sync_tx, sync_rx) =
+                std::sync::mpsc::sync_channel::<Result<Option<HomeWindowBounds>, String>>(0);
             let frame_window = window.clone();
             window
                 .run_on_main_thread(move || {
@@ -758,9 +761,7 @@ async fn set_island_presentation(
                     let _ = sync_tx.send(result);
                 })
                 .map_err(|error| error.to_string())?;
-            let home = sync_rx
-                .recv()
-                .map_err(|error| error.to_string())??;
+            let home = sync_rx.recv().map_err(|error| error.to_string())??;
             if let Some(home) = home {
                 if let Ok(mut home_bounds) = state.home_bounds.lock() {
                     *home_bounds = Some(home);
@@ -845,10 +846,7 @@ fn archive_request(
 }
 
 #[tauri::command]
-fn get_session_requests(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Vec<PermissionRequest> {
+fn get_session_requests(state: State<'_, AppState>, session_id: String) -> Vec<PermissionRequest> {
     let requests = state.requests.lock().expect("state mutex poisoned");
     requests
         .iter()
@@ -876,8 +874,7 @@ fn get_session_transcript(transcript_path: String) -> Result<Vec<ChatMessage>, S
     use std::io::{BufRead, BufReader};
 
     let format = transcript::detect_transcript_format(&transcript_path);
-    let file = File::open(&transcript_path)
-        .map_err(|e| format!("Cannot open transcript: {e}"))?;
+    let file = File::open(&transcript_path).map_err(|e| format!("Cannot open transcript: {e}"))?;
     let reader = BufReader::new(file);
 
     let mut messages: Vec<ChatMessage> = Vec::new();
@@ -936,7 +933,10 @@ fn get_session_transcript(transcript_path: String) -> Result<Vec<ChatMessage>, S
                         .and_then(|arr| {
                             arr.iter().find_map(|block| {
                                 if block.get("type")?.as_str()? == "tool_use" {
-                                    let name = block.get("name").and_then(Value::as_str).map(String::from)?;
+                                    let name = block
+                                        .get("name")
+                                        .and_then(Value::as_str)
+                                        .map(String::from)?;
                                     let input = block.get("input").cloned();
                                     Some((name, input))
                                 } else {
@@ -1256,14 +1256,20 @@ fn archive_all_resolved(
     state: State<'_, AppState>,
 ) -> Result<IslandSnapshot, String> {
     let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
-    let pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
+    let pinned = state
+        .pinned_sessions
+        .lock()
+        .map_err(|error| error.to_string())?;
     // Archive-all: keep pending requests and requests belonging to pinned sessions.
     requests.retain(|request| {
         request.status == PermissionStatus::Pending || pinned.contains(&request.session)
     });
     // Also remove non-pinned known sessions.
     {
-        let mut known = state.known_sessions.lock().map_err(|error| error.to_string())?;
+        let mut known = state
+            .known_sessions
+            .lock()
+            .map_err(|error| error.to_string())?;
         known.retain(|session_id, _| pinned.contains(session_id));
     }
     drop(requests);
@@ -1310,11 +1316,17 @@ fn archive_session(
         requests.retain(|request| request.session != session_id);
     }
     {
-        let mut known = state.known_sessions.lock().map_err(|error| error.to_string())?;
+        let mut known = state
+            .known_sessions
+            .lock()
+            .map_err(|error| error.to_string())?;
         known.remove(&session_id);
     }
     {
-        let mut pinned = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
+        let mut pinned = state
+            .pinned_sessions
+            .lock()
+            .map_err(|error| error.to_string())?;
         pinned.remove(&session_id);
     }
     if let Ok(mut last_seen) = state.session_last_seen.lock() {
@@ -1336,7 +1348,10 @@ fn pin_session(
     pinned: bool,
 ) -> Result<IslandSnapshot, String> {
     {
-        let mut pinned_set = state.pinned_sessions.lock().map_err(|error| error.to_string())?;
+        let mut pinned_set = state
+            .pinned_sessions
+            .lock()
+            .map_err(|error| error.to_string())?;
         if pinned {
             pinned_set.insert(session_id);
         } else {
@@ -1421,17 +1436,20 @@ fn persist_retention_minutes(minutes: u64) {
 
 #[tauri::command]
 fn get_session_retention(state: State<'_, AppState>) -> u64 {
-    *state.session_retention_secs.lock().expect("state mutex poisoned")
+    *state
+        .session_retention_secs
+        .lock()
+        .expect("state mutex poisoned")
 }
 
 #[tauri::command]
-fn set_session_retention(
-    state: State<'_, AppState>,
-    minutes: u64,
-) -> u64 {
+fn set_session_retention(state: State<'_, AppState>, minutes: u64) -> u64 {
     let clamped_minutes = minutes.clamp(1, 60);
     let secs = clamped_minutes * 60;
-    let mut retention = state.session_retention_secs.lock().expect("state mutex poisoned");
+    let mut retention = state
+        .session_retention_secs
+        .lock()
+        .expect("state mutex poisoned");
     *retention = secs;
     persist_retention_minutes(clamped_minutes);
     secs
@@ -1439,17 +1457,20 @@ fn set_session_retention(
 
 #[tauri::command]
 fn get_subagent_retention(state: State<'_, AppState>) -> u64 {
-    *state.subagent_retention_secs.lock().expect("state mutex poisoned")
+    *state
+        .subagent_retention_secs
+        .lock()
+        .expect("state mutex poisoned")
 }
 
 #[tauri::command]
-fn set_subagent_retention(
-    state: State<'_, AppState>,
-    minutes: u64,
-) -> u64 {
+fn set_subagent_retention(state: State<'_, AppState>, minutes: u64) -> u64 {
     let clamped_minutes = minutes.clamp(1, 60);
     let secs = clamped_minutes * 60;
-    let mut retention = state.subagent_retention_secs.lock().expect("state mutex poisoned");
+    let mut retention = state
+        .subagent_retention_secs
+        .lock()
+        .expect("state mutex poisoned");
     *retention = secs;
     persist_settings(None, Some(clamped_minutes));
     secs
@@ -1480,10 +1501,7 @@ fn archive_completed_subagents(
 ) -> Result<IslandSnapshot, String> {
     if let Ok(mut subagents) = state.active_subagents.lock() {
         for sub in subagents.iter_mut() {
-            if sub.session_id == session_id
-                && sub.completed_at.is_some()
-                && !sub.archived
-            {
+            if sub.session_id == session_id && sub.completed_at.is_some() && !sub.archived {
                 sub.archived = true;
             }
         }
@@ -1556,7 +1574,11 @@ pub(crate) fn is_codex_internal_session(
     is_codex_internal_cwd(&resolved)
 }
 
-pub(crate) fn purge_tracked_session(state: &AppState, session_id: &str, transcript_path: Option<&str>) {
+pub(crate) fn purge_tracked_session(
+    state: &AppState,
+    session_id: &str,
+    transcript_path: Option<&str>,
+) {
     if let Ok(mut known) = state.known_sessions.lock() {
         known.remove(session_id);
     }
@@ -1613,7 +1635,11 @@ pub(crate) fn register_known_session(
     }
 }
 
-pub(crate) fn claude_session_host(state: &AppState, session_id: &str, cwd: &str) -> platform::SessionHost {
+pub(crate) fn claude_session_host(
+    state: &AppState,
+    session_id: &str,
+    cwd: &str,
+) -> platform::SessionHost {
     if let Ok(known) = state.known_sessions.lock() {
         if let Some(entry) = known.get(session_id) {
             if entry.host != platform::SessionHost::Unknown {
@@ -1636,7 +1662,11 @@ pub(crate) fn claude_session_host(state: &AppState, session_id: &str, cwd: &str)
     detected
 }
 
-pub(crate) fn codex_session_host(state: &AppState, session_id: &str, cwd: &str) -> platform::SessionHost {
+pub(crate) fn codex_session_host(
+    state: &AppState,
+    session_id: &str,
+    cwd: &str,
+) -> platform::SessionHost {
     if let Ok(known) = state.known_sessions.lock() {
         if let Some(entry) = known.get(session_id) {
             if entry.host != platform::SessionHost::Unknown {
@@ -1780,7 +1810,10 @@ pub(crate) fn touch_session_activity(state: &AppState, session_id: &str) {
     }
 }
 
-fn derive_subagent_transcript_path(main_transcript: Option<&str>, agent_id: &str) -> Option<String> {
+fn derive_subagent_transcript_path(
+    main_transcript: Option<&str>,
+    agent_id: &str,
+) -> Option<String> {
     let main = main_transcript?;
     let stem = main.strip_suffix(".jsonl").unwrap_or(main);
     let filename = if agent_id.starts_with("agent-") {
@@ -1799,7 +1832,11 @@ fn derive_subagent_transcript_path(main_transcript: Option<&str>, agent_id: &str
     Some(path)
 }
 
-pub(crate) fn register_subagent_start(state: &AppState, payload: &serde_json::Value, agent_kind: AgentKind) {
+pub(crate) fn register_subagent_start(
+    state: &AppState,
+    payload: &serde_json::Value,
+    agent_kind: AgentKind,
+) {
     let agent_id = payload
         .get("agent_id")
         .and_then(serde_json::Value::as_str)
@@ -1821,7 +1858,9 @@ pub(crate) fn register_subagent_start(state: &AppState, payload: &serde_json::Va
         .and_then(serde_json::Value::as_str)
         .map(str::to_string)
         .or_else(|| {
-            let main_path = payload.get("transcript_path").and_then(serde_json::Value::as_str);
+            let main_path = payload
+                .get("transcript_path")
+                .and_then(serde_json::Value::as_str);
             derive_subagent_transcript_path(main_path, &agent_id)
         });
 
@@ -1994,8 +2033,7 @@ fn get_claude_hook_status(app: AppHandle) -> Result<HookStatus, String> {
             resolve_hook_script_path(&app, "atoll-claude-hook.mjs").unwrap_or_default();
         return Ok(HookStatus {
             installed: false,
-            script_found: !script_path.is_empty()
-                && std::path::Path::new(&script_path).exists(),
+            script_found: !script_path.is_empty() && std::path::Path::new(&script_path).exists(),
             settings_path: claude_settings_path()
                 .map(|path| path.to_string_lossy().into_owned())
                 .unwrap_or_default(),
@@ -2018,8 +2056,8 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
 
     let node_path = resolve_node_executable()?;
 
-    let settings_path = claude_settings_path()
-        .ok_or_else(|| "Cannot determine home directory".to_string())?;
+    let settings_path =
+        claude_settings_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
 
     if let Some(parent) = settings_path.parent() {
         std::fs::create_dir_all(parent)
@@ -2136,8 +2174,7 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
 
     let formatted = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("Cannot serialize settings: {e}"))?;
-    std::fs::write(&settings_path, formatted)
-        .map_err(|e| format!("Cannot write settings: {e}"))?;
+    std::fs::write(&settings_path, formatted).map_err(|e| format!("Cannot write settings: {e}"))?;
 
     if let Err(error) = hook_bridge::refresh_bridge_config_file(&app) {
         eprintln!("Atoll failed to refresh bridge.json after Claude hook install: {error}");
@@ -2157,8 +2194,8 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
 
 #[tauri::command]
 fn uninstall_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let settings_path = claude_settings_path()
-        .ok_or_else(|| "Cannot determine home directory".to_string())?;
+    let settings_path =
+        claude_settings_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
 
     if !settings_path.exists() {
         return Ok(HookStatus {
@@ -2187,8 +2224,7 @@ fn uninstall_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
 
     let formatted = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("Cannot serialize settings: {e}"))?;
-    std::fs::write(&settings_path, formatted)
-        .map_err(|e| format!("Cannot write settings: {e}"))?;
+    std::fs::write(&settings_path, formatted).map_err(|e| format!("Cannot write settings: {e}"))?;
 
     let state = app.state::<AppState>();
     let snapshot = build_snapshot(&app, &state);
@@ -2217,8 +2253,7 @@ fn get_codex_hook_status(app: AppHandle) -> Result<HookStatus, String> {
             resolve_hook_script_path(&app, "atoll-codex-hook.mjs").unwrap_or_default();
         return Ok(HookStatus {
             installed: false,
-            script_found: !script_path.is_empty()
-                && std::path::Path::new(&script_path).exists(),
+            script_found: !script_path.is_empty() && std::path::Path::new(&script_path).exists(),
             settings_path: codex_hooks_path()
                 .map(|path| path.to_string_lossy().into_owned())
                 .unwrap_or_default(),
@@ -2240,8 +2275,8 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
 
     let node_path = resolve_node_executable_for_codex()?;
 
-    let hooks_path = codex_hooks_path()
-        .ok_or_else(|| "Cannot determine home directory".to_string())?;
+    let hooks_path =
+        codex_hooks_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
 
     if let Some(parent) = hooks_path.parent() {
         std::fs::create_dir_all(parent)
@@ -2249,8 +2284,8 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
     }
 
     let mut config: Value = if hooks_path.exists() {
-        let content = std::fs::read_to_string(&hooks_path)
-            .map_err(|e| format!("Cannot read hooks: {e}"))?;
+        let content =
+            std::fs::read_to_string(&hooks_path).map_err(|e| format!("Cannot read hooks: {e}"))?;
         serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()))
     } else {
         Value::Object(Default::default())
@@ -2339,11 +2374,10 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
 
     let formatted = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Cannot serialize hooks: {e}"))?;
-    std::fs::write(&hooks_path, formatted)
-        .map_err(|e| format!("Cannot write hooks: {e}"))?;
+    std::fs::write(&hooks_path, formatted).map_err(|e| format!("Cannot write hooks: {e}"))?;
 
-    let written = std::fs::read_to_string(&hooks_path)
-        .map_err(|e| format!("Cannot verify hooks: {e}"))?;
+    let written =
+        std::fs::read_to_string(&hooks_path).map_err(|e| format!("Cannot verify hooks: {e}"))?;
     let verify: Value = serde_json::from_str(&written)
         .map_err(|e| format!("Cannot parse hooks after write: {e}"))?;
     if !has_atoll_codex_hooks(&verify) {
@@ -2371,8 +2405,8 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
 
 #[tauri::command]
 fn uninstall_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let hooks_path = codex_hooks_path()
-        .ok_or_else(|| "Cannot determine home directory".to_string())?;
+    let hooks_path =
+        codex_hooks_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
 
     if !hooks_path.exists() {
         return Ok(HookStatus {
@@ -2385,8 +2419,8 @@ fn uninstall_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
         });
     }
 
-    let content = std::fs::read_to_string(&hooks_path)
-        .map_err(|e| format!("Cannot read hooks: {e}"))?;
+    let content =
+        std::fs::read_to_string(&hooks_path).map_err(|e| format!("Cannot read hooks: {e}"))?;
     let mut config: Value =
         serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()));
 
@@ -2396,8 +2430,7 @@ fn uninstall_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
 
     let formatted = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Cannot serialize hooks: {e}"))?;
-    std::fs::write(&hooks_path, formatted)
-        .map_err(|e| format!("Cannot write hooks: {e}"))?;
+    std::fs::write(&hooks_path, formatted).map_err(|e| format!("Cannot write hooks: {e}"))?;
 
     let state = app.state::<AppState>();
     let snapshot = build_snapshot(&app, &state);
@@ -2428,9 +2461,7 @@ fn resolve_node_executable_from_path() -> Option<String> {
         for dir in std::env::split_paths(&path_var) {
             let candidate = dir.join("node.exe");
             if candidate.is_file() {
-                return Some(normalize_hook_script_path(
-                    &candidate.to_string_lossy(),
-                ));
+                return Some(normalize_hook_script_path(&candidate.to_string_lossy()));
             }
         }
     }
@@ -2544,11 +2575,7 @@ fn resolve_install_hook_script_path(app: &AppHandle, script_name: &str) -> Resul
         .ok_or_else(|| format!("Cannot locate hook script: {script_name}"))
 }
 
-fn format_hook_command(
-    runner_path: Option<&str>,
-    node_path: &str,
-    script_path: &str,
-) -> String {
+fn format_hook_command(runner_path: Option<&str>, node_path: &str, script_path: &str) -> String {
     let node_path = {
         let mut path = normalize_hook_script_path(node_path);
         #[cfg(windows)]
@@ -2848,11 +2875,11 @@ fn resolve_hook_script_readiness(
 ) -> (String, bool) {
     let marker = script_name.trim_end_matches(".mjs");
     let mut script_path = resolve_hook_script_path(app, script_name).unwrap_or_default();
-    let mut script_found =
-        !script_path.is_empty() && std::path::Path::new(&script_path).exists();
+    let mut script_found = !script_path.is_empty() && std::path::Path::new(&script_path).exists();
 
     if !script_found {
-        if let Some(configured) = config.and_then(|cfg| configured_atoll_hook_script_path(cfg, marker))
+        if let Some(configured) =
+            config.and_then(|cfg| configured_atoll_hook_script_path(cfg, marker))
         {
             if std::path::Path::new(&configured).exists() {
                 script_found = true;
@@ -2879,12 +2906,7 @@ fn resolve_hook_script_path(app: &AppHandle, script_name: &str) -> Option<String
             candidates.push(exe_dir.join("scripts").join(script_name));
         }
         for ancestor in exe.ancestors().skip(1) {
-            candidates.push(
-                ancestor
-                    .join("Resources")
-                    .join("scripts")
-                    .join(script_name),
-            );
+            candidates.push(ancestor.join("Resources").join("scripts").join(script_name));
             candidates.push(ancestor.join("scripts").join(script_name));
             if ancestor.join("src-tauri").exists() {
                 candidates.push(ancestor.join("scripts").join(script_name));
@@ -2894,9 +2916,7 @@ fn resolve_hook_script_path(app: &AppHandle, script_name: &str) -> Option<String
 
     for candidate in candidates {
         if candidate.exists() {
-            return Some(normalize_hook_script_path(
-                &candidate.to_string_lossy(),
-            ));
+            return Some(normalize_hook_script_path(&candidate.to_string_lossy()));
         }
     }
 
@@ -2947,9 +2967,7 @@ fn resolve_hook_runner_path(app: &AppHandle) -> Option<String> {
 
     for candidate in candidates {
         if candidate.is_file() {
-            return Some(normalize_hook_script_path(
-                &candidate.to_string_lossy(),
-            ));
+            return Some(normalize_hook_script_path(&candidate.to_string_lossy()));
         }
     }
 
@@ -3053,7 +3071,6 @@ fn quit_atoll(app: AppHandle) {
     exit_atoll(&app);
 }
 
-
 #[tauri::command]
 fn deactivate_atoll(
     app: AppHandle,
@@ -3084,6 +3101,10 @@ fn open_agent_app(
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
             requests: Mutex::new(Vec::new()),
@@ -3196,12 +3217,9 @@ pub fn run() {
                 } else {
                     IslandWindowMode::Compact
                 };
-                if let Ok(Some(home)) = apply_island_window_mode(
-                    &window,
-                    initial_mode,
-                    COMPACT_WINDOW_WIDTH,
-                    0.0,
-                ) {
+                if let Ok(Some(home)) =
+                    apply_island_window_mode(&window, initial_mode, COMPACT_WINDOW_WIDTH, 0.0)
+                {
                     eprintln!("[Atoll] step: island window mode applied");
                     let state = app.state::<AppState>();
                     if let Ok(mut home_bounds) = state.home_bounds.lock() {
@@ -3277,9 +3295,14 @@ fn start_auto_archive_timer(app: AppHandle) {
             let Ok(mut requests) = state.requests.lock() else {
                 continue;
             };
-            let retention_secs =
-                *state.session_retention_secs.lock().unwrap_or_else(|e| e.into_inner());
-            let pinned = state.pinned_sessions.lock().unwrap_or_else(|e| e.into_inner());
+            let retention_secs = *state
+                .session_retention_secs
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let pinned = state
+                .pinned_sessions
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             let last_seen_map = state
                 .session_last_seen
                 .lock()
@@ -3327,7 +3350,10 @@ fn start_auto_archive_timer(app: AppHandle) {
                     .session_last_seen
                     .lock()
                     .unwrap_or_else(|e| e.into_inner());
-                let mut known = state.known_sessions.lock().unwrap_or_else(|e| e.into_inner());
+                let mut known = state
+                    .known_sessions
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
                 let mut expired: Vec<(String, Option<String>)> = Vec::new();
                 known.retain(|session_id, info| {
                     if pinned.contains(session_id) {
@@ -3391,7 +3417,10 @@ fn start_token_refresh_timer(app: AppHandle) {
             let state = app.state::<AppState>();
             let tracked_sessions = {
                 let requests = state.requests.lock().unwrap_or_else(|e| e.into_inner());
-                let known_sessions = state.known_sessions.lock().unwrap_or_else(|e| e.into_inner());
+                let known_sessions = state
+                    .known_sessions
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
                 collect_session_transcript_paths(&requests, &known_sessions)
             };
             if tracked_sessions.is_empty() {
@@ -3519,8 +3548,9 @@ fn start_island_hover_monitor(app: AppHandle) {
                 if compact_hover_since.is_none() {
                     compact_hover_since = Some(now);
                 }
-                compact_hover_since
-                    .is_some_and(|since| now.duration_since(since) >= platform::compact_hover_expand_dwell())
+                compact_hover_since.is_some_and(|since| {
+                    now.duration_since(since) >= platform::compact_hover_expand_dwell()
+                })
             } else {
                 compact_hover_since = None;
                 false
@@ -3980,16 +4010,14 @@ fn snapshot_from(
                     continue;
                 }
             }
-            let entry = retained_map
-                .entry(&request.session)
-                .or_insert_with(|| {
-                    (
-                        request.cwd.clone(),
-                        request.requested_at.clone(),
-                        request.transcript_path.clone(),
-                        request.agent.clone(),
-                    )
-                });
+            let entry = retained_map.entry(&request.session).or_insert_with(|| {
+                (
+                    request.cwd.clone(),
+                    request.requested_at.clone(),
+                    request.transcript_path.clone(),
+                    request.agent.clone(),
+                )
+            });
             if request.requested_at > entry.1 {
                 entry.0 = request.cwd.clone();
                 entry.1 = request.requested_at.clone();
@@ -4001,8 +4029,7 @@ fn snapshot_from(
         }
 
         for (session_id, (cwd, last_activity, transcript_path, agent)) in retained_map {
-            let session_host =
-                session_host_for_summary(known_sessions, session_id, &cwd, &agent);
+            let session_host = session_host_for_summary(known_sessions, session_id, &cwd, &agent);
             sessions.push(SessionSummary {
                 session_id: session_id.to_string(),
                 agent,
@@ -4018,7 +4045,8 @@ fn snapshot_from(
         }
 
         sessions.sort_by(|a, b| {
-            b.pinned.cmp(&a.pinned)
+            b.pinned
+                .cmp(&a.pinned)
                 .then(b.pending_count.cmp(&a.pending_count))
                 .then(b.last_activity.cmp(&a.last_activity))
         });
@@ -4027,8 +4055,7 @@ fn snapshot_from(
     // Include known sessions (from Stop/PostToolUse events) that have no
     // permission requests – these are sessions with only text output.
     {
-        let existing_ids: HashSet<String> =
-            sessions.iter().map(|s| s.session_id.clone()).collect();
+        let existing_ids: HashSet<String> = sessions.iter().map(|s| s.session_id.clone()).collect();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -4038,11 +4065,7 @@ fn snapshot_from(
             if existing_ids.contains(session_id.as_str()) {
                 continue;
             }
-            if is_codex_internal_session(
-                &info.agent,
-                &info.cwd,
-                info.transcript_path.as_deref(),
-            ) {
+            if is_codex_internal_session(&info.agent, &info.cwd, info.transcript_path.as_deref()) {
                 continue;
             }
             // Pinned sessions always included; non-pinned filtered by retention.
@@ -4068,19 +4091,15 @@ fn snapshot_from(
                 session_host: if info.host != platform::SessionHost::Unknown {
                     info.host
                 } else {
-                    session_host_for_summary(
-                        known_sessions,
-                        session_id,
-                        &info.cwd,
-                        &info.agent,
-                    )
+                    session_host_for_summary(known_sessions, session_id, &info.cwd, &info.agent)
                 },
                 active_subagents: Vec::new(),
             });
         }
 
         sessions.sort_by(|a, b| {
-            b.pinned.cmp(&a.pinned)
+            b.pinned
+                .cmp(&a.pinned)
                 .then(b.pending_count.cmp(&a.pending_count))
                 .then(b.last_activity.cmp(&a.last_activity))
         });
@@ -4179,7 +4198,11 @@ fn build_session_summaries(visible: &[&PermissionRequest]) -> Vec<SessionSummary
         )
         .collect();
 
-    summaries.sort_by(|a, b| b.pending_count.cmp(&a.pending_count).then(b.last_activity.cmp(&a.last_activity)));
+    summaries.sort_by(|a, b| {
+        b.pending_count
+            .cmp(&a.pending_count)
+            .then(b.last_activity.cmp(&a.last_activity))
+    });
     summaries
 }
 
@@ -4272,9 +4295,9 @@ mod core_tests {
             status: PermissionStatus::Approved,
             archived: true,
             supports_always: false,
-        transcript_path: None,
-        tool_input: None,
-    }];
+            transcript_path: None,
+            tool_input: None,
+        }];
 
         let snapshot = snapshot_from(
             &requests,
@@ -4476,7 +4499,9 @@ mod core_tests {
             Some(platform::SessionHost::ClaudeDesktop),
         );
         assert_eq!(
-            host_from_claude_transcript_path("/Users/me/Library/Application Support/Claude/projects/xyz.jsonl"),
+            host_from_claude_transcript_path(
+                "/Users/me/Library/Application Support/Claude/projects/xyz.jsonl"
+            ),
             Some(platform::SessionHost::ClaudeDesktop),
         );
         assert_eq!(
@@ -4492,7 +4517,9 @@ mod core_tests {
             Some(platform::SessionHost::CodexCli),
         );
         assert_eq!(
-            host_from_codex_transcript_path("/Users/me/Library/Application Support/com.openai.codex/sessions/abc.jsonl"),
+            host_from_codex_transcript_path(
+                "/Users/me/Library/Application Support/com.openai.codex/sessions/abc.jsonl"
+            ),
             Some(platform::SessionHost::CodexDesktop),
         );
         assert_eq!(
@@ -4548,10 +4575,7 @@ mod core_tests {
 
     #[test]
     fn codex_missing_cwd_is_resolved_from_transcript() {
-        let dir = std::env::temp_dir().join(format!(
-            "atoll-codex-session-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("atoll-codex-session-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let transcript_path = dir.join("rollout-test.jsonl");
         std::fs::write(
@@ -4588,9 +4612,9 @@ mod core_tests {
             status: PermissionStatus::Approved,
             archived: false,
             supports_always: false,
-        transcript_path: None,
-        tool_input: None,
-    }];
+            transcript_path: None,
+            tool_input: None,
+        }];
         let token_usage = HashMap::from([
             (
                 "session-active".into(),
@@ -4630,17 +4654,15 @@ mod core_tests {
 
     #[test]
     fn archived_session_tokens_still_count_toward_daily_total() {
-        let token_usage = HashMap::from([
-            (
-                "session-archived".into(),
-                TokenUsage {
-                    input_tokens: 400,
-                    output_tokens: 100,
-                    cache_read_tokens: 0,
-                    cache_creation_tokens: 0,
-                },
-            ),
-        ]);
+        let token_usage = HashMap::from([(
+            "session-archived".into(),
+            TokenUsage {
+                input_tokens: 400,
+                output_tokens: 100,
+                cache_read_tokens: 0,
+                cache_creation_tokens: 0,
+            },
+        )]);
 
         let snapshot = snapshot_from(
             &[],
@@ -4788,8 +4810,11 @@ mod core_tests {
                 }
             }
         });
-        std::fs::write(&history_path, serde_json::to_string_pretty(&seed).expect("serialize"))
-            .expect("write seed history");
+        std::fs::write(
+            &history_path,
+            serde_json::to_string_pretty(&seed).expect("serialize"),
+        )
+        .expect("write seed history");
 
         std::env::set_var(
             "ATOLL_TOKEN_HISTORY_PATH",
@@ -4802,10 +4827,7 @@ mod core_tests {
         assert_eq!(baseline.output_tokens, 1200);
 
         let state = test_app_state();
-        *state
-            .daily_tokens_baseline
-            .lock()
-            .expect("lock") = baseline;
+        *state.daily_tokens_baseline.lock().expect("lock") = baseline;
 
         // First snapshot sync with no active sessions (upgrade/restart edge case).
         token_history::sync_today_to_history(&state).expect("sync");
@@ -4870,11 +4892,7 @@ mod core_tests {
         }
 
         // Simulate auto-archive timer purging a retention-expired known session.
-        purge_tracked_session(
-            &state,
-            &session_id,
-            Some("/tmp/project/transcript.jsonl"),
-        );
+        purge_tracked_session(&state, &session_id, Some("/tmp/project/transcript.jsonl"));
 
         let usage_after = state
             .session_token_usage
@@ -5022,13 +5040,8 @@ mod core_tests {
         };
         let center_x = 756.0;
         let left_pane = 58.0;
-        let origin = compact_window_origin_x(
-            center_x,
-            460.0,
-            notch,
-            left_pane,
-            IslandWindowMode::Compact,
-        );
+        let origin =
+            compact_window_origin_x(center_x, 460.0, notch, left_pane, IslandWindowMode::Compact);
         assert_eq!(origin, center_x - notch.width / 2.0 - left_pane);
     }
 
@@ -5047,18 +5060,29 @@ mod core_tests {
 
         // Dormant: uses the same FALLBACK_NOTCH_WIDTH reference + padding.
         let dormant = island_window_logical_size(IslandWindowMode::Dormant, 132.0, no_notch, false);
-        assert_eq!(dormant.width, FALLBACK_NOTCH_WIDTH + 2.0 * DORMANT_NOTCH_PADDING);
+        assert_eq!(
+            dormant.width,
+            FALLBACK_NOTCH_WIDTH + 2.0 * DORMANT_NOTCH_PADDING
+        );
         assert_eq!(dormant.height, DORMANT_WINDOW_HEIGHT);
     }
 
     #[test]
     fn micro_window_is_a_thin_top_strip() {
-        let micro =
-            island_window_logical_size(IslandWindowMode::Micro, 132.0, NotchMetrics::default(), false);
+        let micro = island_window_logical_size(
+            IslandWindowMode::Micro,
+            132.0,
+            NotchMetrics::default(),
+            false,
+        );
         assert_eq!(micro.width, 132.0);
         assert_eq!(micro.height, MICRO_WINDOW_HEIGHT);
-        let narrow =
-            island_window_logical_size(IslandWindowMode::Micro, 48.0, NotchMetrics::default(), false);
+        let narrow = island_window_logical_size(
+            IslandWindowMode::Micro,
+            48.0,
+            NotchMetrics::default(),
+            false,
+        );
         assert_eq!(narrow.width, MICRO_WINDOW_WIDTH);
     }
 
@@ -5193,9 +5217,9 @@ mod hook_bridge_tests {
             status: crate::PermissionStatus::Pending,
             archived: false,
             supports_always: false,
-        transcript_path: None,
-        tool_input: None,
-    }];
+            transcript_path: None,
+            tool_input: None,
+        }];
 
         let payload = json!({
             "session_id": "session-123",
@@ -5207,12 +5231,11 @@ mod hook_bridge_tests {
             "tool_use_id": "tool-123"
         });
 
-        let completed_id =
-            crate::hook_bridge::mark_matching_pending_request_complete(
-                &mut requests,
-                &payload,
-                "Completed in Claude.",
-            );
+        let completed_id = crate::hook_bridge::mark_matching_pending_request_complete(
+            &mut requests,
+            &payload,
+            "Completed in Claude.",
+        );
 
         assert_eq!(completed_id.as_deref(), Some("request-123"));
         assert_eq!(requests[0].status, crate::PermissionStatus::Approved);
@@ -5233,21 +5256,20 @@ mod hook_bridge_tests {
             status: crate::PermissionStatus::Pending,
             archived: false,
             supports_always: false,
-        transcript_path: None,
-        tool_input: None,
-    }];
+            transcript_path: None,
+            tool_input: None,
+        }];
 
         let payload = json!({
             "session_id": "session-123",
             "hook_event_name": "PostToolUse"
         });
 
-        let completed_id =
-            crate::hook_bridge::mark_matching_pending_request_complete(
-                &mut requests,
-                &payload,
-                "Completed in Claude.",
-            );
+        let completed_id = crate::hook_bridge::mark_matching_pending_request_complete(
+            &mut requests,
+            &payload,
+            "Completed in Claude.",
+        );
 
         assert_eq!(completed_id.as_deref(), Some("request-123"));
         assert_eq!(requests[0].status, crate::PermissionStatus::Approved);
@@ -5296,12 +5318,11 @@ mod hook_bridge_tests {
             "hook_event_name": "PostToolUse"
         });
 
-        let completed_id =
-            crate::hook_bridge::mark_matching_pending_request_complete(
-                &mut requests,
-                &payload,
-                "Completed in Claude.",
-            );
+        let completed_id = crate::hook_bridge::mark_matching_pending_request_complete(
+            &mut requests,
+            &payload,
+            "Completed in Claude.",
+        );
 
         assert_eq!(completed_id.as_deref(), Some("request-newer"));
         assert_eq!(requests[0].status, crate::PermissionStatus::Approved);
@@ -5328,8 +5349,12 @@ mod hook_bridge_tests {
             })
         );
 
-        let denied =
-            crate::hook_bridge::permission_hook_response("PermissionRequest", crate::Decision::Denied, "", None);
+        let denied = crate::hook_bridge::permission_hook_response(
+            "PermissionRequest",
+            crate::Decision::Denied,
+            "",
+            None,
+        );
         assert_eq!(
             denied,
             json!({
@@ -5368,8 +5393,12 @@ mod hook_bridge_tests {
 
     #[test]
     fn encodes_hook_decision_for_claude_pre_tool_use() {
-        let approved =
-            crate::hook_bridge::permission_hook_response("PreToolUse", crate::Decision::Approved, "", None);
+        let approved = crate::hook_bridge::permission_hook_response(
+            "PreToolUse",
+            crate::Decision::Approved,
+            "",
+            None,
+        );
         assert_eq!(
             approved,
             json!({
@@ -5476,8 +5505,7 @@ mod hook_bridge_tests {
 
     #[test]
     fn encodes_permission_request_ask_as_empty_response() {
-        let ask =
-            crate::hook_bridge::hook_defer_response("PermissionRequest", "Atoll unavailable");
+        let ask = crate::hook_bridge::hook_defer_response("PermissionRequest", "Atoll unavailable");
 
         assert_eq!(ask, json!({}));
     }
@@ -5799,7 +5827,9 @@ mod claude_hooks_tests {
         remove_atoll_claude_hooks(&mut hooks);
 
         assert!(hooks.get("Notification").is_some());
-        let permission = hooks.get("PermissionRequest").and_then(|value| value.as_array());
+        let permission = hooks
+            .get("PermissionRequest")
+            .and_then(|value| value.as_array());
         assert!(permission.map(|arr| arr.is_empty()).unwrap_or(true));
     }
 }

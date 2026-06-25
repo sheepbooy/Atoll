@@ -1,9 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn();
+const autostartEnable = vi.fn();
+const autostartDisable = vi.fn();
+const autostartIsEnabled = vi.fn();
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
+vi.mock("@tauri-apps/plugin-autostart", () => ({
+  enable: autostartEnable,
+  disable: autostartDisable,
+  isEnabled: autostartIsEnabled,
+}));
 
 function setTauriRuntime(enabled: boolean) {
   if (enabled) {
@@ -21,6 +29,9 @@ describe("Tauri bridge", () => {
   beforeEach(() => {
     vi.resetModules();
     invoke.mockReset();
+    autostartEnable.mockReset();
+    autostartDisable.mockReset();
+    autostartIsEnabled.mockReset();
     setTauriRuntime(false);
   });
 
@@ -123,5 +134,34 @@ describe("Tauri bridge", () => {
       configurable: true,
       value: originalUserAgent,
     });
+  });
+
+  it("returns false for autostart outside the Tauri runtime", async () => {
+    const { isAutostartEnabled, enableAutostart, disableAutostart } = await import("./tauri");
+
+    await expect(isAutostartEnabled()).resolves.toBe(false);
+    await enableAutostart();
+    await disableAutostart();
+
+    expect(autostartEnable).not.toHaveBeenCalled();
+    expect(autostartDisable).not.toHaveBeenCalled();
+    expect(autostartIsEnabled).not.toHaveBeenCalled();
+  });
+
+  it("delegates autostart controls to the plugin in the Tauri runtime", async () => {
+    setTauriRuntime(true);
+    autostartIsEnabled.mockResolvedValueOnce(true);
+    autostartEnable.mockResolvedValueOnce(undefined);
+    autostartDisable.mockResolvedValueOnce(undefined);
+
+    const { isAutostartEnabled, enableAutostart, disableAutostart } = await import("./tauri");
+
+    await expect(isAutostartEnabled()).resolves.toBe(true);
+    await enableAutostart();
+    await disableAutostart();
+
+    expect(autostartIsEnabled).toHaveBeenCalledOnce();
+    expect(autostartEnable).toHaveBeenCalledOnce();
+    expect(autostartDisable).toHaveBeenCalledOnce();
   });
 });

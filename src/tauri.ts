@@ -1,5 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import {
+  disable as disableAutostartPlugin,
+  enable as enableAutostartPlugin,
+  isEnabled as isAutostartEnabledPlugin,
+} from "@tauri-apps/plugin-autostart";
 import { getDemoCodexHookStatus, getDemoHookStatus, getDemoMode, getDemoSnapshot } from "./demoSnapshot";
 
 export type PermissionStatus = "pending" | "approved" | "denied";
@@ -647,4 +652,28 @@ export async function captureProvideScreenshot(pngBase64: string) {
   }
 
   await invoke("capture_provide_screenshot", { pngBase64 });
+}
+
+export async function isAutostartEnabled(): Promise<boolean> {
+  if (!isTauriRuntime) {
+    return false;
+  }
+
+  return isAutostartEnabledPlugin();
+}
+
+export async function enableAutostart(): Promise<void> {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  return enableAutostartPlugin();
+}
+
+export async function disableAutostart(): Promise<void> {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  return disableAutostartPlugin();
 }

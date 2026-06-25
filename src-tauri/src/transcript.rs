@@ -25,7 +25,9 @@ impl TokenUsageDelta {
     pub fn add_assign(&mut self, other: TokenUsageDelta) {
         self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
         self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
-        self.cache_read_tokens = self.cache_read_tokens.saturating_add(other.cache_read_tokens);
+        self.cache_read_tokens = self
+            .cache_read_tokens
+            .saturating_add(other.cache_read_tokens);
         self.cache_creation_tokens = self
             .cache_creation_tokens
             .saturating_add(other.cache_creation_tokens);
@@ -179,7 +181,10 @@ fn extract_claude_transcript_text(entry: &Value) -> String {
                     .iter()
                     .filter_map(|block| {
                         if block.get("type")?.as_str()? == "text" {
-                            block.get("text").and_then(Value::as_str).map(str::to_string)
+                            block
+                                .get("text")
+                                .and_then(Value::as_str)
+                                .map(str::to_string)
                         } else {
                             None
                         }
@@ -323,7 +328,9 @@ pub fn parse_codex_tokens_from_reader<R: std::io::BufRead + std::io::Seek>(
             continue;
         }
 
-        if let Some(total) = token_usage_from_codex_usage(info.and_then(|v| v.get("total_token_usage"))) {
+        if let Some(total) =
+            token_usage_from_codex_usage(info.and_then(|v| v.get("total_token_usage")))
+        {
             session_total = total;
         }
 
@@ -386,10 +393,8 @@ mod tests {
 
     #[test]
     fn reads_codex_cwd_from_session_meta() {
-        let dir = std::env::temp_dir().join(format!(
-            "atoll-codex-transcript-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("atoll-codex-transcript-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("rollout-test.jsonl");
         std::fs::write(
@@ -424,10 +429,8 @@ mod tests {
 
     #[test]
     fn detects_subagent_interruption_in_claude_transcript() {
-        let dir = std::env::temp_dir().join(format!(
-            "atoll-subagent-terminal-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("atoll-subagent-terminal-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("agent-test.jsonl");
         std::fs::write(

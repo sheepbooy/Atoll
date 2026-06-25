@@ -135,6 +135,9 @@ import {
   openAgentApp,
   type SessionHost,
   openUrl,
+  isAutostartEnabled,
+  enableAutostart,
+  disableAutostart,
 } from "./tauri";
 
 type Decision = "approved" | "denied";
@@ -559,6 +562,8 @@ export function App() {
   const [maxSubagentDisplay, setMaxSubagentDisplay] = useState<number>(() => readMaxSubagentDisplay());
   const [idleIntervalSec, setIdleIntervalSec] = useState<number>(() => readIdleInterval());
   const [idleDurationSec, setIdleDurationSec] = useState<number>(() => readIdleDuration());
+  const [launchAtLogin, setLaunchAtLogin] = useState(false);
+  const [launchAtLoginBusy, setLaunchAtLoginBusy] = useState(false);
   const [justResolved, setJustResolved] = useState(false);
   const [hookHealthHydrated, setHookHealthHydrated] = useState(false);
   const prevPendingRef = useRef(0);
@@ -1120,6 +1125,34 @@ export function App() {
   useEffect(() => {
     try { window.localStorage.setItem(IDLE_DURATION_SETTING_KEY, String(idleDurationSec)); } catch {}
   }, [idleDurationSec]);
+
+  useEffect(() => {
+    isAutostartEnabled()
+      .then(setLaunchAtLogin)
+      .catch(() => undefined);
+  }, []);
+
+  async function handleChangeLaunchAtLogin(enabled: boolean) {
+    if (launchAtLoginBusy) {
+      return;
+    }
+
+    const previous = launchAtLogin;
+    setLaunchAtLogin(enabled);
+    setLaunchAtLoginBusy(true);
+    try {
+      if (enabled) {
+        await enableAutostart();
+      } else {
+        await disableAutostart();
+      }
+    } catch (error) {
+      setLaunchAtLogin(previous);
+      console.error("[Atoll] autostart toggle failed", error);
+    } finally {
+      setLaunchAtLoginBusy(false);
+    }
+  }
 
   useEffect(() => {
     markSettingsInitialized();
@@ -2292,6 +2325,9 @@ export function App() {
           onChangeIdleInterval={(v) => setIdleIntervalSec(clampIdleInterval(v))}
           idleDurationSec={idleDurationSec}
           onChangeIdleDuration={(v) => setIdleDurationSec(clampIdleDuration(v))}
+          launchAtLogin={launchAtLogin}
+          launchAtLoginBusy={launchAtLoginBusy}
+          onChangeLaunchAtLogin={handleChangeLaunchAtLogin}
           onOpenHooks={handleOpenHooksFromSettings}
           onOpenTokens={handleOpenTokensFromSettings}
           todayTokenTotal={dailyTokenTotal}
@@ -3130,11 +3166,49 @@ interface SettingsViewProps {
   onChangeIdleInterval: (value: number) => void;
   idleDurationSec: number;
   onChangeIdleDuration: (value: number) => void;
+  launchAtLogin: boolean;
+  launchAtLoginBusy?: boolean;
+  onChangeLaunchAtLogin: (enabled: boolean) => void;
   onOpenHooks: () => void;
   onOpenTokens: () => void;
   todayTokenTotal: number;
   hooksSummary: string;
   hooksNeedAttention: boolean;
+}
+
+function SettingsToggle({
+  label,
+  desc,
+  checked,
+  disabled = false,
+  onChange,
+}: {
+  label: string;
+  desc: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  return (
+    <div className="settings-card">
+      <div className="settings-card-head">
+        <span className="settings-card-title">{label}</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={checked}
+          aria-label={label}
+          className={`settings-toggle${checked ? " is-on" : ""}`}
+          disabled={disabled}
+          onClick={() => onChange(!checked)}
+          data-no-drag
+        >
+          <span className="settings-toggle-thumb" />
+        </button>
+      </div>
+      <span className="settings-card-desc">{desc}</span>
+    </div>
+  );
 }
 
 function SettingsSlider({
@@ -3201,6 +3275,9 @@ function SettingsView({
   onChangeIdleInterval,
   idleDurationSec,
   onChangeIdleDuration,
+  launchAtLogin,
+  launchAtLoginBusy = false,
+  onChangeLaunchAtLogin,
   onOpenHooks,
   onOpenTokens,
   todayTokenTotal,
@@ -3215,6 +3292,17 @@ function SettingsView({
   return (
     <div className="settings-view" data-no-drag>
       <div className="settings-body">
+        <div className="settings-section">
+          <span className="settings-section-label">General</span>
+          <SettingsToggle
+            label="Launch at login"
+            desc="Start Atoll automatically when you log in."
+            checked={launchAtLogin}
+            disabled={launchAtLoginBusy}
+            onChange={onChangeLaunchAtLogin}
+          />
+        </div>
+
         <div className="settings-section">
           <span className="settings-section-label">Usage</span>
           <button

@@ -30,6 +30,7 @@ iana-time-zone = "0.1"
 socket2 = "0.5"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png"] }
+tauri-plugin-autostart = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
