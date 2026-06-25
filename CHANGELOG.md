@@ -2,6 +2,11 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.28] - 2026-06-25
+
+### 新增
+- **开机自启动**：Settings → General 新增 Launch at login 开关，支持 macOS 与 Windows 登录后自动启动 Atoll
+
 ## [0.1.27] - 2026-06-25
 
 ### 新增
@@ -218,6 +223,18 @@
 ### 变更
 - 仅保留 Apple Silicon 构建（移除 Intel Mac 产物）
 
+[0.1.28]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.28
+[0.1.27]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.27
+[0.1.26]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.26
+[0.1.25]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.25
+[0.1.24]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.24
+[0.1.23]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.23
+[0.1.22]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.22
+[0.1.21]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.21
+[0.1.20]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.20
+[0.1.19]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.19
+[0.1.18]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.18
+[0.1.17]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.17
 [0.1.16]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.16
 [0.1.15]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.15
 [0.1.14]: https://github.com/sheepbooy/Atoll/releases/tag/v0.1.14

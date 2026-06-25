@@ -1,6 +1,6 @@
 [package]
 name = "atoll"
-version = "0.1.27"
+version = "0.1.28"
 description = "A floating approval island for local coding agents."
 authors = ["Atoll"]
 edition = "2021"
