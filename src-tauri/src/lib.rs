@@ -93,6 +93,8 @@ struct ActiveSubagent {
     #[serde(default)]
     archived: bool,
     last_message: Option<String>,
+    /// Cursor subagent's independent conversation_id (bound on first preToolUse).
+    conversation_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -249,8 +251,16 @@ pub(crate) struct AppState {
     /// Local hook bridge TCP port (0 until bound).
     bridge_port: AtomicU16,
     active_subagents: Mutex<Vec<ActiveSubagent>>,
+    /// Maps Cursor subagent conversation_id → parent session_id.
+    cursor_subagent_conversations: Mutex<HashMap<String, String>>,
     /// Rate-limiter for SubagentStart/SubagentStop snapshot emissions.
     last_subagent_snapshot_emit: Mutex<Instant>,
+    /// Debounce generation for Cursor observer snapshot emits.
+    snapshot_debounce_generation: AtomicU64,
+    /// Rate-limiter for subagent transcript reconciliation in build_snapshot.
+    last_subagent_reconcile: Mutex<Instant>,
+    /// Last hook HTTP activity; used to back off token refresh when idle.
+    last_hook_activity: Mutex<Instant>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -283,6 +293,7 @@ pub(crate) struct NotchMetrics {
 #[tauri::command]
 fn get_snapshot(app: AppHandle, state: State<'_, AppState>) -> IslandSnapshot {
     roll_over_token_usage_if_needed(&state);
+    refresh_hook_health_cache(&app, &state);
     let tracked_sessions = {
         let requests = state.requests.lock().expect("state mutex poisoned");
         let known_sessions = state.known_sessions.lock().expect("state mutex poisoned");
@@ -319,9 +330,91 @@ pub(crate) fn compute_listening_online(app: &AppHandle) -> bool {
     any_installed && any_script_found && hook_bridge::is_bridge_reachable(app)
 }
 
+pub(crate) fn touch_hook_activity(state: &AppState) {
+    if let Ok(mut last) = state.last_hook_activity.lock() {
+        *last = Instant::now();
+    }
+}
+
+pub(crate) fn get_stored_session_host(
+    state: &AppState,
+    session_id: &str,
+) -> platform::SessionHost {
+    state
+        .known_sessions
+        .lock()
+        .ok()
+        .and_then(|known| known.get(session_id).map(|entry| entry.host))
+        .unwrap_or(platform::SessionHost::Unknown)
+}
+
+pub(crate) fn schedule_observer_snapshot_emit(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let generation = state
+        .snapshot_debounce_generation
+        .fetch_add(1, Ordering::SeqCst)
+        + 1;
+    let app = app.clone();
+    thread::spawn(move || {
+        thread::sleep(OBSERVER_SNAPSHOT_DEBOUNCE);
+        let state = app.state::<AppState>();
+        if state
+            .snapshot_debounce_generation
+            .load(Ordering::SeqCst)
+            != generation
+        {
+            return;
+        }
+        let snapshot = build_snapshot(&app, &state);
+        let _ = app.emit("snapshot-changed", &snapshot);
+    });
+}
+
+pub(crate) fn refresh_hook_health_cache(app: &AppHandle, state: &AppState) {
+    let health = build_hook_health(app);
+    remember_hook_health(state, &health);
+}
+
+fn cached_hook_health(app: &AppHandle, state: &AppState) -> HookHealthSnapshot {
+    if let Ok(last) = state.last_hook_health.lock() {
+        if let Some(cached) = last.as_ref() {
+            return cached.clone();
+        }
+    }
+    let health = build_hook_health(app);
+    remember_hook_health(state, &health);
+    health
+}
+
+pub(crate) fn reconcile_incomplete_subagents_now(state: &AppState) {
+    reconcile_incomplete_subagents(state);
+    if let Ok(mut last) = state.last_subagent_reconcile.lock() {
+        *last = Instant::now();
+    }
+}
+
+fn reconcile_incomplete_subagents_if_due(state: &AppState) {
+    let should_run = {
+        let mut last = state
+            .last_subagent_reconcile
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let now = Instant::now();
+        if now.duration_since(*last) < SUBAGENT_RECONCILE_MIN_INTERVAL {
+            false
+        } else {
+            *last = now;
+            true
+        }
+    };
+    if should_run {
+        reconcile_incomplete_subagents(state);
+    }
+}
+
 pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapshot {
     roll_over_token_usage_if_needed(state);
-    reconcile_incomplete_subagents(state);
+    reconcile_incomplete_subagents_if_due(state);
     let requests = state.requests.lock().expect("state mutex poisoned");
     let last_seen = state
         .session_last_seen
@@ -338,7 +431,7 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
     let known_sessions = state.known_sessions.lock().expect("state mutex poisoned");
     let pinned = state.pinned_sessions.lock().expect("state mutex poisoned");
     let online = compute_listening_online(app);
-    let hook_health = build_hook_health(app);
+    let hook_health = cached_hook_health(app, state);
     let mut snapshot = snapshot_from(
         &requests,
         &last_seen,
@@ -1677,7 +1770,10 @@ fn archive_subagent(
 ) -> Result<IslandSnapshot, String> {
     if let Ok(mut subagents) = state.active_subagents.lock() {
         if let Some(sub) = subagents.iter_mut().find(|s| s.agent_id == agent_id) {
+            let conv_id = sub.conversation_id.clone();
             sub.archived = true;
+            drop(subagents);
+            unbind_cursor_subagent_conversation(state.inner(), conv_id.as_deref());
         }
     }
     let snapshot = build_snapshot(&app, &state);
@@ -2029,26 +2125,248 @@ pub(crate) fn touch_session_activity(state: &AppState, session_id: &str) {
     }
 }
 
+pub(crate) fn payload_subagent_id(payload: &Value) -> Option<&str> {
+    payload
+        .get("agent_id")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            payload
+                .get("subagent_id")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+        })
+        .or_else(|| {
+            payload
+                .get("tool_call_id")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+        })
+}
+
+pub(crate) fn payload_subagent_parent_session_id(payload: &Value) -> Option<&str> {
+    payload
+        .get("session_id")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            payload
+                .get("sessionId")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+        })
+        .or_else(|| {
+            payload
+                .get("parent_conversation_id")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+        })
+        .or_else(|| {
+            payload
+                .get("parentConversationId")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+        })
+        .or_else(|| {
+            payload
+                .get("conversation_id")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+        })
+        .or_else(|| {
+            payload
+                .get("conversationId")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+        })
+}
+
+pub(crate) fn payload_subagent_type(payload: &Value) -> &str {
+    payload
+        .get("agent_type")
+        .and_then(Value::as_str)
+        .or_else(|| payload.get("subagent_type").and_then(Value::as_str))
+        .unwrap_or("unknown")
+}
+
+pub(crate) fn payload_subagent_transcript_path(payload: &Value) -> Option<&str> {
+    payload
+        .get("agent_transcript_path")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            payload
+                .get("agentTranscriptPath")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+        })
+}
+
+pub(crate) fn payload_main_transcript_path(payload: &Value) -> Option<&str> {
+    payload
+        .get("transcript_path")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            payload
+                .get("transcriptPath")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+        })
+}
+
+pub(crate) fn payload_subagent_last_message(payload: &Value) -> Option<String> {
+    payload
+        .get("last_assistant_message")
+        .and_then(Value::as_str)
+        .or_else(|| payload.get("summary").and_then(Value::as_str))
+        .map(|s| s.chars().take(200).collect())
+}
+
+pub(crate) fn payload_conversation_id(payload: &Value) -> Option<&str> {
+    payload
+        .get("conversation_id")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            payload
+                .get("conversationId")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+        })
+}
+
+fn sanitize_subagent_id_for_filename(agent_id: &str) -> String {
+    agent_id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 fn derive_subagent_transcript_path(
     main_transcript: Option<&str>,
     agent_id: &str,
 ) -> Option<String> {
     let main = main_transcript?;
     let stem = main.strip_suffix(".jsonl").unwrap_or(main);
-    let filename = if agent_id.starts_with("agent-") {
-        format!("{agent_id}.jsonl")
-    } else {
-        format!("agent-{agent_id}.jsonl")
-    };
-    let path = format!("{stem}/subagents/{filename}");
-    if std::path::Path::new(&path).exists() {
-        return Some(path);
+    let sanitized = sanitize_subagent_id_for_filename(agent_id);
+    let candidates = [
+        if agent_id.starts_with("agent-") {
+            format!("{agent_id}.jsonl")
+        } else {
+            format!("agent-{agent_id}.jsonl")
+        },
+        format!("{agent_id}.jsonl"),
+        if sanitized.starts_with("agent-") {
+            format!("{sanitized}.jsonl")
+        } else {
+            format!("agent-{sanitized}.jsonl")
+        },
+        format!("{sanitized}.jsonl"),
+    ];
+    for filename in &candidates {
+        let path = format!("{stem}/subagents/{filename}");
+        if std::path::Path::new(&path).exists() {
+            return Some(path);
+        }
     }
-    let alt = format!("{stem}/subagents/{agent_id}.jsonl");
-    if std::path::Path::new(&alt).exists() {
-        return Some(alt);
+    Some(format!("{stem}/subagents/{}", candidates[0].clone()))
+}
+
+fn bind_cursor_subagent_conversation(state: &AppState, conv_id: &str, parent_session_id: &str) {
+    if let Ok(mut map) = state.cursor_subagent_conversations.lock() {
+        map.insert(conv_id.to_string(), parent_session_id.to_string());
     }
-    Some(path)
+}
+
+fn unbind_cursor_subagent_conversation(state: &AppState, conv_id: Option<&str>) {
+    if let Some(conv_id) = conv_id {
+        if let Ok(mut map) = state.cursor_subagent_conversations.lock() {
+            map.remove(conv_id);
+        }
+    }
+}
+
+/// Resolve a Cursor hook payload to its parent session when the event belongs to a subagent.
+pub(crate) fn resolve_cursor_session_for_payload(
+    state: &AppState,
+    payload: &Value,
+) -> Option<String> {
+    if let Some(agent_id) = payload_subagent_id(payload) {
+        if let Ok(subagents) = state.active_subagents.lock() {
+            if let Some(sub) = subagents.iter().find(|s| {
+                s.agent_id == agent_id && !s.archived && s.completed_at.is_none()
+            }) {
+                return Some(sub.session_id.clone());
+            }
+        }
+    }
+
+    let conv_id = payload_conversation_id(payload)?;
+
+    if let Ok(map) = state.cursor_subagent_conversations.lock() {
+        if let Some(parent) = map.get(conv_id) {
+            return Some(parent.clone());
+        }
+    }
+
+    let subagents = state.active_subagents.lock().ok()?;
+    let is_known_parent = subagents.iter().any(|s| {
+        s.session_id == conv_id && s.completed_at.is_none() && !s.archived
+    });
+    if is_known_parent {
+        return None;
+    }
+
+    let mut running_unbound: Vec<&ActiveSubagent> = subagents
+        .iter()
+        .filter(|s| {
+            matches!(s.agent_kind, AgentKind::Cursor)
+                && s.completed_at.is_none()
+                && !s.archived
+                && s.conversation_id.is_none()
+        })
+        .collect();
+    if running_unbound.is_empty() {
+        return None;
+    }
+
+    if let Some(type_filter) = payload
+        .get("subagent_type")
+        .or_else(|| payload.get("agent_type"))
+        .and_then(Value::as_str)
+    {
+        running_unbound.retain(|s| s.agent_type == type_filter);
+        if running_unbound.is_empty() {
+            return None;
+        }
+    }
+
+    let parent = running_unbound
+        .iter()
+        .min_by_key(|s| &s.started_at)?
+        .session_id
+        .clone();
+    drop(subagents);
+
+    bind_cursor_subagent_conversation(state, conv_id, &parent);
+    if let Ok(mut subagents) = state.active_subagents.lock() {
+        if let Some(sub) = subagents.iter_mut().find(|s| {
+            s.session_id == parent
+                && s.conversation_id.is_none()
+                && s.completed_at.is_none()
+                && !s.archived
+        }) {
+            sub.conversation_id = Some(conv_id.to_string());
+        }
+    }
+    Some(parent)
 }
 
 pub(crate) fn register_subagent_start(
@@ -2056,31 +2374,15 @@ pub(crate) fn register_subagent_start(
     payload: &serde_json::Value,
     agent_kind: AgentKind,
 ) {
-    let agent_id = payload
-        .get("agent_id")
-        .and_then(serde_json::Value::as_str)
+    let agent_id = payload_subagent_id(payload).unwrap_or("").to_string();
+    let session_id = payload_subagent_parent_session_id(payload)
         .unwrap_or("")
         .to_string();
-    let session_id = payload
-        .get("session_id")
-        .and_then(serde_json::Value::as_str)
-        .or_else(|| payload.get("sessionId").and_then(serde_json::Value::as_str))
-        .unwrap_or("")
-        .to_string();
-    let agent_type = payload
-        .get("agent_type")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("unknown")
-        .to_string();
-    let agent_transcript_path = payload
-        .get("agent_transcript_path")
-        .and_then(serde_json::Value::as_str)
+    let agent_type = payload_subagent_type(payload).to_string();
+    let agent_transcript_path = payload_subagent_transcript_path(payload)
         .map(str::to_string)
         .or_else(|| {
-            let main_path = payload
-                .get("transcript_path")
-                .and_then(serde_json::Value::as_str);
-            derive_subagent_transcript_path(main_path, &agent_id)
+            derive_subagent_transcript_path(payload_main_transcript_path(payload), &agent_id)
         });
 
     if agent_id.is_empty() || session_id.is_empty() {
@@ -2097,6 +2399,7 @@ pub(crate) fn register_subagent_start(
         completed_at: None,
         archived: false,
         last_message: None,
+        conversation_id: None,
     };
 
     if let Ok(mut subagents) = state.active_subagents.lock() {
@@ -2107,24 +2410,53 @@ pub(crate) fn register_subagent_start(
 }
 
 pub(crate) fn complete_subagent(state: &AppState, payload: &serde_json::Value) {
-    let agent_id = payload
-        .get("agent_id")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("");
-    if agent_id.is_empty() {
+    let transcript_path = payload_subagent_transcript_path(payload).map(str::to_string);
+    let last_message = payload_subagent_last_message(payload);
+
+    if let Some(agent_id) = payload_subagent_id(payload) {
+        if let Ok(mut subagents) = state.active_subagents.lock() {
+            if let Some(sub) = subagents.iter_mut().find(|s| s.agent_id == agent_id) {
+                let conv_id = sub.conversation_id.clone();
+                mark_subagent_complete(sub, transcript_path, last_message);
+                drop(subagents);
+                unbind_cursor_subagent_conversation(state, conv_id.as_deref());
+            }
+        }
         return;
     }
-    let transcript_path = payload
-        .get("agent_transcript_path")
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_string);
-    let last_message = payload
-        .get("last_assistant_message")
-        .and_then(serde_json::Value::as_str)
-        .map(|s| s.chars().take(200).collect::<String>());
-    if let Ok(mut subagents) = state.active_subagents.lock() {
-        if let Some(sub) = subagents.iter_mut().find(|s| s.agent_id == agent_id) {
-            mark_subagent_complete(sub, transcript_path, last_message);
+
+    let Some(parent_session) = payload_subagent_parent_session_id(payload) else {
+        return;
+    };
+    let type_filter = payload
+        .get("subagent_type")
+        .or_else(|| payload.get("agent_type"))
+        .and_then(Value::as_str);
+
+    let target_idx = {
+        let subagents = match state.active_subagents.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+        subagents
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| {
+                s.session_id == parent_session && s.completed_at.is_none() && !s.archived
+            })
+            .filter(|(_, s)| type_filter.map(|t| s.agent_type == t).unwrap_or(true))
+            .min_by_key(|(_, s)| s.started_at.clone())
+            .map(|(i, _)| i)
+    };
+
+    if let Some(idx) = target_idx {
+        if let Ok(mut subagents) = state.active_subagents.lock() {
+            if let Some(sub) = subagents.get_mut(idx) {
+                let conv_id = sub.conversation_id.clone();
+                mark_subagent_complete(sub, transcript_path, last_message);
+                drop(subagents);
+                unbind_cursor_subagent_conversation(state, conv_id.as_deref());
+            }
         }
     }
 }
@@ -2189,6 +2521,11 @@ pub(crate) fn reconcile_incomplete_subagents(state: &AppState) {
 }
 
 const SUBAGENT_SNAPSHOT_MIN_INTERVAL: Duration = Duration::from_millis(300);
+const SUBAGENT_RECONCILE_MIN_INTERVAL: Duration = Duration::from_secs(2);
+const OBSERVER_SNAPSHOT_DEBOUNCE: Duration = Duration::from_millis(400);
+const TOKEN_REFRESH_INTERVAL_ACTIVE: Duration = Duration::from_millis(900);
+const TOKEN_REFRESH_INTERVAL_IDLE: Duration = Duration::from_secs(5);
+const HOOK_ACTIVITY_IDLE_THRESHOLD: Duration = Duration::from_secs(30);
 
 /// Emit a snapshot for subagent lifecycle events with rate-limiting.
 /// Returns true if a snapshot was emitted, false if throttled.
@@ -2203,6 +2540,7 @@ pub(crate) fn emit_subagent_snapshot(app: &AppHandle, state: &AppState) -> bool 
     }
     *last = now;
     drop(last);
+    reconcile_incomplete_subagents_now(state);
     let snapshot = build_snapshot(app, state);
     let _ = app.emit("snapshot-changed", &snapshot);
     true
@@ -2741,7 +3079,7 @@ fn install_cursor_hooks(app: AppHandle) -> Result<HookStatus, String> {
     let hooks_obj = config_obj
         .entry("hooks")
         .or_insert_with(|| Value::Object(Default::default()));
-    upsert_cursor_hook_events(hooks_obj, &hook_command);
+    upsert_cursor_hook_events(hooks_obj, &hook_command, &hook_bridge::cursor_hook_url_for_app(&app));
 
     let formatted = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Cannot serialize hooks: {e}"))?;
@@ -2763,6 +3101,7 @@ fn install_cursor_hooks(app: AppHandle) -> Result<HookStatus, String> {
     }
 
     let state = app.state::<AppState>();
+    refresh_hook_health_cache(&app, &state);
     let snapshot = build_snapshot(&app, &state);
     if let Ok(mut last) = state.last_listening_online.lock() {
         *last = Some(snapshot.online);
@@ -2946,27 +3285,25 @@ fn resolve_install_hook_script_path(app: &AppHandle, script_name: &str) -> Resul
         .ok_or_else(|| format!("Cannot locate hook script: {script_name}"))
 }
 
-fn format_hook_command(runner_path: Option<&str>, node_path: &str, script_path: &str) -> String {
-    let node_path = {
-        let mut path = normalize_hook_script_path(node_path);
-        #[cfg(windows)]
-        {
-            path = path.replace('\\', "/");
-        }
+fn normalize_hook_command_path(path: &str) -> String {
+    let path = normalize_hook_script_path(path);
+    #[cfg(windows)]
+    {
+        path.replace('\\', "/")
+    }
+    #[cfg(not(windows))]
+    {
         path
-    };
-    let script_path = {
-        let mut path = normalize_hook_script_path(script_path);
-        #[cfg(windows)]
-        {
-            path = path.replace('\\', "/");
-        }
-        path
-    };
+    }
+}
+
+fn format_hook_command(_runner_path: Option<&str>, node_path: &str, script_path: &str) -> String {
+    let node_path = normalize_hook_command_path(node_path);
+    let script_path = normalize_hook_command_path(script_path);
 
     #[cfg(windows)]
-    if let Some(runner_path) = runner_path {
-        let runner_path = normalize_hook_script_path(runner_path).replace('\\', "/");
+    if let Some(runner_path) = _runner_path {
+        let runner_path = normalize_hook_command_path(runner_path);
         return format!(
             "\"{}\" \"{}\" \"{}\"",
             runner_path.replace('"', "\\\""),
@@ -3430,7 +3767,7 @@ fn hook_entry_has_atoll_cursor(entry: &Value) -> bool {
         .unwrap_or(false)
 }
 
-fn upsert_cursor_hook_events(hooks: &mut Value, hook_command: &str) {
+fn upsert_cursor_hook_events(hooks: &mut Value, hook_command: &str, hook_url: &str) {
     let Some(hooks_obj) = hooks.as_object_mut() else {
         return;
     };
@@ -3454,7 +3791,10 @@ fn upsert_cursor_hook_events(hooks: &mut Value, hook_command: &str) {
             .unwrap_or_default();
         merged.push(json!({
             "command": hook_command,
-            "timeout": timeout
+            "timeout": timeout,
+            "env": {
+                "ATOLL_HOOK_URL": hook_url
+            }
         }));
         hooks_obj.insert(event.to_string(), Value::Array(merged));
     }
@@ -3584,7 +3924,11 @@ pub fn run() {
             last_hook_health: Mutex::new(None),
             bridge_port: AtomicU16::new(0),
             active_subagents: Mutex::new(Vec::new()),
+            cursor_subagent_conversations: Mutex::new(HashMap::new()),
             last_subagent_snapshot_emit: Mutex::new(Instant::now() - Duration::from_secs(10)),
+            snapshot_debounce_generation: AtomicU64::new(0),
+            last_subagent_reconcile: Mutex::new(Instant::now() - Duration::from_secs(10)),
+            last_hook_activity: Mutex::new(Instant::now()),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -3742,7 +4086,6 @@ fn tray_menu_entries() -> [(&'static str, &'static str); 2] {
 }
 
 const AUTO_ARCHIVE_INTERVAL: Duration = Duration::from_secs(10);
-const TOKEN_REFRESH_INTERVAL: Duration = Duration::from_millis(900);
 const TOKEN_SNAPSHOT_MIN_INTERVAL: Duration = Duration::from_secs(2);
 
 fn start_auto_archive_timer(app: AppHandle) {
@@ -3871,8 +4214,6 @@ fn start_token_refresh_timer(app: AppHandle) {
         let mut last_snapshot_emit = Instant::now() - TOKEN_SNAPSHOT_MIN_INTERVAL;
 
         loop {
-            thread::sleep(TOKEN_REFRESH_INTERVAL);
-
             let state = app.state::<AppState>();
             let tracked_sessions = {
                 let requests = state.requests.lock().unwrap_or_else(|e| e.into_inner());
@@ -3882,6 +4223,23 @@ fn start_token_refresh_timer(app: AppHandle) {
                     .unwrap_or_else(|e| e.into_inner());
                 collect_session_transcript_paths(&requests, &known_sessions)
             };
+
+            let sleep_duration = if tracked_sessions.is_empty() {
+                TOKEN_REFRESH_INTERVAL_IDLE
+            } else {
+                let recently_active = state
+                    .last_hook_activity
+                    .lock()
+                    .map(|last| last.elapsed() < HOOK_ACTIVITY_IDLE_THRESHOLD)
+                    .unwrap_or(true);
+                if recently_active {
+                    TOKEN_REFRESH_INTERVAL_ACTIVE
+                } else {
+                    TOKEN_REFRESH_INTERVAL_IDLE
+                }
+            };
+            thread::sleep(sleep_duration);
+
             if tracked_sessions.is_empty() {
                 continue;
             }
@@ -3985,6 +4343,7 @@ pub(crate) fn show_main_window_for_approval(app: &AppHandle) {
 fn start_island_hover_monitor(app: AppHandle) {
     thread::spawn(move || {
         let mut last_hovering = false;
+        let mut last_client: Option<(f64, f64)> = None;
         #[cfg(target_os = "windows")]
         let mut compact_hover_since: Option<Instant> = None;
 
@@ -4026,14 +4385,18 @@ fn start_island_hover_monitor(app: AppHandle) {
             };
 
             if hovering {
-                let _ = app.emit(
-                    "island-hover-changed",
-                    IslandHoverChanged {
-                        hovering: true,
-                        client_x: client.map(|(x, _)| x),
-                        client_y: client.map(|(_, y)| y),
-                    },
-                );
+                let client_changed = client != last_client;
+                if !last_hovering || client_changed {
+                    let _ = app.emit(
+                        "island-hover-changed",
+                        IslandHoverChanged {
+                            hovering: true,
+                            client_x: client.map(|(x, _)| x),
+                            client_y: client.map(|(_, y)| y),
+                        },
+                    );
+                    last_client = client;
+                }
                 last_hovering = true;
             } else if last_hovering {
                 let _ = app.emit(
@@ -4045,6 +4408,7 @@ fn start_island_hover_monitor(app: AppHandle) {
                     },
                 );
                 last_hovering = false;
+                last_client = None;
             }
         }
     });
@@ -5165,7 +5529,11 @@ mod core_tests {
             last_hook_health: Mutex::new(None),
             bridge_port: AtomicU16::new(0),
             active_subagents: Mutex::new(Vec::new()),
+            cursor_subagent_conversations: Mutex::new(HashMap::new()),
             last_subagent_snapshot_emit: Mutex::new(Instant::now() - Duration::from_secs(10)),
+            snapshot_debounce_generation: AtomicU64::new(0),
+            last_subagent_reconcile: Mutex::new(Instant::now() - Duration::from_secs(10)),
+            last_hook_activity: Mutex::new(Instant::now()),
         }
     }
 
@@ -5575,6 +5943,192 @@ mod core_tests {
 
         assert_eq!(appkit_window_origin_y(0.0, 1260.0, 28.0, 0.0, 0.0), 1232.0);
         assert_eq!(appkit_window_origin_y(0.0, 1260.0, 320.0, 0.0, 0.0), 940.0);
+    }
+}
+
+#[cfg(test)]
+mod cursor_subagent_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn test_app_state() -> AppState {
+        AppState {
+            requests: Mutex::new(Vec::new()),
+            hook_waiters: Mutex::new(HashMap::new()),
+            auto_approve_sessions: Mutex::new(HashSet::new()),
+            compact_width: Mutex::new(COMPACT_WINDOW_WIDTH),
+            compact_left_width: Mutex::new(0.0),
+            presentation_generation: Arc::new(AtomicU64::new(0)),
+            home_bounds: Mutex::new(None),
+            notch_metrics: Mutex::new(NotchMetrics::default()),
+            session_last_seen: Mutex::new(HashMap::new()),
+            session_retention_secs: Mutex::new(DEFAULT_SESSION_RETENTION_SECS),
+            subagent_retention_secs: Mutex::new(DEFAULT_SUBAGENT_RETENTION_SECS),
+            session_token_usage: Mutex::new(HashMap::new()),
+            session_agent_map: Mutex::new(HashMap::new()),
+            token_usage_file_offsets: Mutex::new(HashMap::new()),
+            token_usage_day: Mutex::new(current_local_day_key()),
+            daily_tokens_baseline: Mutex::new(TokenUsage::default()),
+            known_sessions: Mutex::new(HashMap::new()),
+            pinned_sessions: Mutex::new(HashSet::new()),
+            previous_app_pid: Mutex::new(None),
+            last_listening_online: Mutex::new(None),
+            last_hook_health: Mutex::new(None),
+            bridge_port: AtomicU16::new(0),
+            active_subagents: Mutex::new(Vec::new()),
+            cursor_subagent_conversations: Mutex::new(HashMap::new()),
+            last_subagent_snapshot_emit: Mutex::new(Instant::now() - Duration::from_secs(10)),
+            snapshot_debounce_generation: AtomicU64::new(0),
+            last_subagent_reconcile: Mutex::new(Instant::now() - Duration::from_secs(10)),
+            last_hook_activity: Mutex::new(Instant::now()),
+        }
+    }
+
+    #[test]
+    fn payload_helpers_support_claude_and_cursor_fields() {
+        let claude = json!({
+            "agent_id": "agent-claude",
+            "session_id": "sess-claude",
+            "agent_type": "explore"
+        });
+        assert_eq!(payload_subagent_id(&claude), Some("agent-claude"));
+        assert_eq!(
+            payload_subagent_parent_session_id(&claude),
+            Some("sess-claude")
+        );
+        assert_eq!(payload_subagent_type(&claude), "explore");
+
+        let cursor = json!({
+            "subagent_id": "sub-123",
+            "conversation_id": "conv-parent",
+            "subagent_type": "generalPurpose"
+        });
+        assert_eq!(payload_subagent_id(&cursor), Some("sub-123"));
+        assert_eq!(
+            payload_subagent_parent_session_id(&cursor),
+            Some("conv-parent")
+        );
+        assert_eq!(payload_subagent_type(&cursor), "generalPurpose");
+    }
+
+    #[test]
+    fn cursor_subagent_start_registers_subagent() {
+        let state = test_app_state();
+        let payload = json!({
+            "hook_event_name": "subagentStart",
+            "subagent_id": "sub-abc",
+            "conversation_id": "conv-parent",
+            "subagent_type": "explore",
+            "transcript_path": "/tmp/main.jsonl"
+        });
+        register_subagent_start(&state, &payload, AgentKind::Cursor);
+
+        let subagents = state.active_subagents.lock().expect("lock");
+        assert_eq!(subagents.len(), 1);
+        assert_eq!(subagents[0].agent_id, "sub-abc");
+        assert_eq!(subagents[0].session_id, "conv-parent");
+        assert_eq!(subagents[0].agent_type, "explore");
+        assert!(subagents[0].completed_at.is_none());
+    }
+
+    #[test]
+    fn cursor_subagent_stop_completes_without_agent_id() {
+        let state = test_app_state();
+        register_subagent_start(
+            &state,
+            &json!({
+                "subagent_id": "sub-abc",
+                "conversation_id": "conv-parent",
+                "subagent_type": "explore"
+            }),
+            AgentKind::Cursor,
+        );
+
+        complete_subagent(
+            &state,
+            &json!({
+                "hook_event_name": "subagentStop",
+                "conversation_id": "conv-parent",
+                "subagent_type": "explore",
+                "summary": "Found auth module",
+                "agent_transcript_path": "/tmp/subagents/agent-sub-abc.jsonl"
+            }),
+        );
+
+        let subagents = state.active_subagents.lock().expect("lock");
+        assert_eq!(subagents.len(), 1);
+        assert!(subagents[0].completed_at.is_some());
+        assert_eq!(
+            subagents[0].agent_transcript_path.as_deref(),
+            Some("/tmp/subagents/agent-sub-abc.jsonl")
+        );
+        assert_eq!(subagents[0].last_message.as_deref(), Some("Found auth module"));
+    }
+
+    #[test]
+    fn cursor_subagent_conversation_maps_to_parent_session() {
+        let state = test_app_state();
+        register_subagent_start(
+            &state,
+            &json!({
+                "subagent_id": "sub-abc",
+                "conversation_id": "conv-parent",
+                "subagent_type": "explore"
+            }),
+            AgentKind::Cursor,
+        );
+
+        let parent = resolve_cursor_session_for_payload(
+            &state,
+            &json!({
+                "conversation_id": "conv-subagent-new",
+                "hook_event_name": "preToolUse"
+            }),
+        );
+        assert_eq!(parent.as_deref(), Some("conv-parent"));
+
+        let map = state
+            .cursor_subagent_conversations
+            .lock()
+            .expect("lock");
+        assert_eq!(map.get("conv-subagent-new").map(String::as_str), Some("conv-parent"));
+
+        let subagents = state.active_subagents.lock().expect("lock");
+        assert_eq!(
+            subagents[0].conversation_id.as_deref(),
+            Some("conv-subagent-new")
+        );
+    }
+
+    #[test]
+    fn parent_conversation_id_is_not_treated_as_subagent_session() {
+        let state = test_app_state();
+        register_subagent_start(
+            &state,
+            &json!({
+                "subagent_id": "sub-abc",
+                "conversation_id": "conv-parent",
+                "subagent_type": "explore"
+            }),
+            AgentKind::Cursor,
+        );
+
+        let parent = resolve_cursor_session_for_payload(
+            &state,
+            &json!({
+                "conversation_id": "conv-parent",
+                "hook_event_name": "preToolUse"
+            }),
+        );
+        assert!(parent.is_none());
+    }
+
+    #[test]
+    fn sanitize_subagent_id_strips_newlines_for_transcript_path() {
+        let agent_id = "call_abc\nfc_def";
+        let sanitized = sanitize_subagent_id_for_filename(agent_id);
+        assert!(!sanitized.contains('\n'));
+        assert!(sanitized.contains("call_abc"));
     }
 }
 
@@ -6313,13 +6867,21 @@ mod cursor_hooks_tests {
     #[test]
     fn upsert_and_detect_cursor_hooks() {
         let mut hooks = json!({});
-        upsert_cursor_hook_events(&mut hooks, "node \"/tmp/atoll-cursor-hook.mjs\"");
+        upsert_cursor_hook_events(
+            &mut hooks,
+            "node \"/tmp/atoll-cursor-hook.mjs\"",
+            "http://127.0.0.1:47777/cursor/hook",
+        );
 
         let config = json!({ "version": 1, "hooks": hooks });
         assert!(has_atoll_cursor_hooks(&config));
         assert!(hook_entry_has_atoll_cursor(
             &config["hooks"]["preToolUse"].as_array().unwrap()[0]
         ));
+        assert_eq!(
+            config["hooks"]["preToolUse"].as_array().unwrap()[0]["env"]["ATOLL_HOOK_URL"],
+            "http://127.0.0.1:47777/cursor/hook"
+        );
     }
 
     #[test]

@@ -10,12 +10,14 @@ use socket2::{Domain, Socket, Type};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
-    build_snapshot, complete_subagent, emit_subagent_snapshot,
+    build_snapshot, complete_subagent, emit_subagent_snapshot, get_stored_session_host,
     ingest_cursor_stop_token_usage, is_codex_internal_session, iso_timestamp_now, platform,
-    purge_tracked_session, refresh_session_token_usage, register_known_session,
-    register_subagent_start, resolve_codex_session_cwd, roll_over_token_usage_if_needed,
-    show_main_window_for_approval, touch_session_activity, AgentKind, AppState, Decision,
-    DecisionWithNote, PermissionRequest, PermissionStatus,
+    payload_subagent_id, payload_subagent_parent_session_id, purge_tracked_session,
+    refresh_session_token_usage, register_known_session, register_subagent_start,
+    resolve_codex_session_cwd, resolve_cursor_session_for_payload, roll_over_token_usage_if_needed,
+    schedule_observer_snapshot_emit, show_main_window_for_approval, touch_hook_activity,
+    touch_session_activity, AgentKind, AppState, Decision, DecisionWithNote, PermissionRequest,
+    PermissionStatus,
 };
 
 pub(crate) const DEFAULT_HOOK_PORT: u16 = 47_777;
@@ -53,6 +55,19 @@ pub(crate) fn write_bridge_config(port: u16) -> std::io::Result<()> {
         "cursorUrl": format!("http://{HOOK_BIND_HOST}:{port}/cursor/hook"),
     });
     std::fs::write(path, serde_json::to_string_pretty(&config)?)
+}
+
+pub(crate) fn cursor_hook_url(port: u16) -> String {
+    format!("http://{HOOK_BIND_HOST}:{port}/cursor/hook")
+}
+
+pub(crate) fn cursor_hook_url_for_app(app: &AppHandle) -> String {
+    let port = app.state::<AppState>().bridge_port.load(Ordering::SeqCst);
+    if port == 0 {
+        cursor_hook_url(DEFAULT_HOOK_PORT)
+    } else {
+        cursor_hook_url(port)
+    }
 }
 
 pub(crate) fn refresh_bridge_config_file(app: &AppHandle) -> std::io::Result<()> {
@@ -478,6 +493,7 @@ pub(crate) fn hook_defer_response(hook_event_name: &str, reason: &str) -> Value 
 }
 
 fn handle_connection(app: AppHandle, mut stream: TcpStream) {
+    touch_hook_activity(&app.state::<AppState>());
     let result = read_http_request(&mut stream)
         .and_then(|request| route_request(app, request, &stream))
         .unwrap_or_else(|error| fallback_hook_response("PreToolUse", &error));
@@ -651,19 +667,10 @@ fn route_codex_request(
 /// auto-approved so Atoll acts as an observer (session tracking, token usage)
 /// rather than a secondary permission gate.
 
-/// Check if the payload's `agent_id` matches a known active subagent and return
-/// the parent session_id.  This prevents subagent tool-use events from being
+/// Resolve parent session for Cursor subagent tool/stop events so they are not
 /// registered as independent sessions.
 fn resolve_cursor_subagent_parent(state: &AppState, payload: &Value) -> Option<String> {
-    let agent_id = payload.get("agent_id").and_then(Value::as_str)?;
-    if agent_id.is_empty() {
-        return None;
-    }
-    let subagents = state.active_subagents.lock().ok()?;
-    subagents
-        .iter()
-        .find(|s| s.agent_id == agent_id)
-        .map(|s| s.session_id.clone())
+    resolve_cursor_session_for_payload(state, payload)
 }
 
 fn route_cursor_request(
@@ -721,11 +728,7 @@ fn route_cursor_request(
         "stop" => {
             let state = app.state::<AppState>();
             let parent_session = resolve_cursor_subagent_parent(&state, &payload);
-            if payload
-                .get("agent_id")
-                .and_then(Value::as_str)
-                .is_some_and(|id| !id.is_empty())
-            {
+            if payload_subagent_id(&payload).is_some() {
                 complete_subagent(&state, &payload);
             }
             drop(state);
@@ -744,7 +747,9 @@ fn route_cursor_request(
         "subagentStart" => {
             let state = app.state::<AppState>();
             register_subagent_start(&state, &payload, AgentKind::Cursor);
-            let session_id = payload_session_id(&payload).unwrap_or("cursor");
+            let session_id = payload_subagent_parent_session_id(&payload)
+                .or_else(|| payload_session_id(&payload))
+                .unwrap_or("cursor");
             let cwd = resolve_cursor_cwd(&payload);
             let transcript_path = payload_transcript_path(&payload);
             register_known_session(&state, session_id, AgentKind::Cursor, &cwd, transcript_path);
@@ -754,8 +759,20 @@ fn route_cursor_request(
         }
         "subagentStop" => {
             let state = app.state::<AppState>();
+            let parent_session = resolve_cursor_subagent_parent(&state, &payload).or_else(|| {
+                payload_subagent_parent_session_id(&payload).map(str::to_string)
+            });
             complete_subagent(&state, &payload);
             drop(state);
+            let payload = if let Some(parent_id) = parent_session {
+                let mut p = payload;
+                p.as_object_mut()
+                    .unwrap()
+                    .insert("session_id".to_string(), Value::String(parent_id));
+                p
+            } else {
+                payload
+            };
             sync_turn_completion(app, payload, AgentKind::Cursor, false, Some(stream))?;
             Ok(json!({}))
         }
@@ -861,9 +878,11 @@ fn submit_blocking_permission_request(
             &session_cwd,
             request_transcript_path.as_deref(),
         );
-        let host = detect_host_for_cursor_hook(stream);
-        if host != platform::SessionHost::Unknown {
-            crate::store_session_host(&state, &session_id, host);
+        if get_stored_session_host(&state, &session_id) == platform::SessionHost::Unknown {
+            let host = detect_host_for_cursor_hook(stream);
+            if host != platform::SessionHost::Unknown {
+                crate::store_session_host(&state, &session_id, host);
+            }
         }
     }
     let snapshot = build_snapshot(&app, &state);
@@ -1077,10 +1096,7 @@ fn sync_tool_completion(
                 }
             }
             if matches!(agent, AgentKind::Cursor) {
-                let host = detect_host_for_cursor_non_permission_hook(stream);
-                if host != platform::SessionHost::Unknown {
-                    crate::store_session_host(&state, session_id, host);
-                }
+                maybe_detect_and_store_cursor_host(&state, session_id, stream);
             }
         }
     }
@@ -1140,6 +1156,11 @@ fn sync_tool_completion(
     }
 
     roll_over_token_usage_if_needed(&state);
+    if matches!(agent, AgentKind::Cursor) {
+        schedule_observer_snapshot_emit(&app);
+        return Ok(());
+    }
+
     let snapshot = build_snapshot(&app, &state);
 
     app.emit("snapshot-changed", &snapshot)
@@ -1224,10 +1245,7 @@ fn sync_turn_completion(
                 }
             }
             if matches!(agent, AgentKind::Cursor) {
-                let host = detect_host_for_cursor_non_permission_hook(stream);
-                if host != platform::SessionHost::Unknown {
-                    crate::store_session_host(&state, session_id, host);
-                }
+                maybe_detect_and_store_cursor_host(&state, session_id, stream);
             }
             if matches!(agent, AgentKind::Cursor) {
                 if let Err(error) =
@@ -1259,6 +1277,11 @@ fn sync_turn_completion(
     }
 
     roll_over_token_usage_if_needed(&state);
+    if matches!(agent, AgentKind::Cursor) {
+        schedule_observer_snapshot_emit(&app);
+        return Ok(());
+    }
+
     let snapshot = build_snapshot(&app, &state);
 
     app.emit("snapshot-changed", &snapshot)
@@ -1562,6 +1585,20 @@ fn detect_host_for_cursor_non_permission_hook(stream: Option<&TcpStream>) -> pla
         return platform::SessionHost::CursorIde;
     }
     platform::SessionHost::Unknown
+}
+
+fn maybe_detect_and_store_cursor_host(
+    state: &AppState,
+    session_id: &str,
+    stream: Option<&TcpStream>,
+) {
+    if get_stored_session_host(state, session_id) != platform::SessionHost::Unknown {
+        return;
+    }
+    let host = detect_host_for_cursor_non_permission_hook(stream);
+    if host != platform::SessionHost::Unknown {
+        crate::store_session_host(state, session_id, host);
+    }
 }
 
 /// Identify the Cursor session host by tracing the hook HTTP peer's process tree.
