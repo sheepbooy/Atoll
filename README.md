@@ -44,6 +44,7 @@
 
 - **平时** — 紧凑胶囊，显示在线状态、活跃会话、待审批数量
 - **有请求时** — 自动展开，展示命令详情，一键 **Approve / Deny / Always**
+- **Subagent** — 追踪子 agent 生命周期，会话内 chip 预览、列表视图与 transcript 详情，支持批量归档
 - **全程本地** — Hook 桥接 `127.0.0.1:47777`，数据不出本机
 
 目前支持 **Claude Code**（CLI 与 Desktop）和 **Codex CLI 与 Desktop**（macOS Apple Silicon 与 Windows x64）。
@@ -210,7 +211,7 @@ npm run export:brand     # Logo 状态 + Agent 形象
 发布新版本（Git Bash / WSL / macOS）：
 
 ```bash
-./scripts/release.sh 0.1.11
+./scripts/release.sh 0.1.27
 ```
 
 推送 `v*` tag 后会并行构建 macOS DMG 与 Windows MSI，并上传到 GitHub Releases。

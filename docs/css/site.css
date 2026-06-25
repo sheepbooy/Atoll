@@ -647,6 +647,125 @@ section {
   max-width: none;
 }
 
+.demo-frame--subtle {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 20px;
+}
+
+.subagent-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.subagent-preview-session {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.subagent-preview-mascot {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+}
+
+.subagent-preview-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.subagent-preview-name {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.subagent-preview-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.subagent-preview-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.subagent-preview-chip.coral {
+  color: var(--accent-coral);
+  background: rgba(255, 129, 117, 0.12);
+  border-color: rgba(255, 129, 117, 0.22);
+}
+
+.subagent-preview-chip.cyan {
+  color: var(--accent-cyan);
+  background: rgba(111, 220, 255, 0.12);
+  border-color: rgba(111, 220, 255, 0.22);
+}
+
+.subagent-preview-chip.lime {
+  color: var(--accent-lime);
+  background: rgba(178, 234, 126, 0.12);
+  border-color: rgba(178, 234, 126, 0.22);
+}
+
+.subagent-preview-chip.is-done {
+  opacity: 0.75;
+  border-style: dashed;
+}
+
+.subagent-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.subagent-preview-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.subagent-preview-status {
+  font-size: 0.6875rem;
+  font-weight: 650;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.subagent-preview-status.running {
+  color: rgba(100, 180, 255, 0.9);
+  background: rgba(100, 180, 255, 0.15);
+}
+
+.subagent-preview-status.done {
+  color: rgba(168, 230, 120, 0.85);
+  background: rgba(168, 230, 120, 0.12);
+}
+
+.plan-phase-icon.coral {
+  background: rgba(255, 129, 117, 0.12);
+  color: var(--accent-coral);
+}
+
 .section-desc code {
   font-family: var(--font-mono);
   font-size: 0.875em;

@@ -2,6 +2,19 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.27] - 2026-06-25
+
+### 新增
+- **Subagent 列表视图**：会话内可查看全部 subagent，支持状态、时间与 last message 展示，点击进入详情
+- **Subagent 显示上限与批量归档**：Settings 可调显示数量，会话行一键归档已完成 subagent
+
+### 改进
+- 优化会话列表中 subagent chips 与归档按钮排版，新增「查看全部」入口
+
+### 修复
+- 修复重启后每日 token 计数器未持久化的问题
+- 修复大量 subagent 并发时界面卡顿冻结
+
 ## [0.1.26] - 2026-06-24
 
 ### 新增
