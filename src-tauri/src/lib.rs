@@ -2047,8 +2047,7 @@ fn get_claude_hook_status(app: AppHandle) -> Result<HookStatus, String> {
 
 #[tauri::command]
 fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let script_path = resolve_hook_script_path(&app, "atoll-claude-hook.mjs")
-        .ok_or_else(|| "Cannot locate hook script".to_string())?;
+    let script_path = resolve_install_hook_script_path(&app, "atoll-claude-hook.mjs")?;
 
     if !std::path::Path::new(&script_path).exists() {
         return Err(format!("Hook script not found at: {script_path}"));
@@ -2175,6 +2174,17 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
     let formatted = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("Cannot serialize settings: {e}"))?;
     std::fs::write(&settings_path, formatted).map_err(|e| format!("Cannot write settings: {e}"))?;
+
+    let written =
+        std::fs::read_to_string(&settings_path).map_err(|e| format!("Cannot verify settings: {e}"))?;
+    let verify: Value = serde_json::from_str(&written)
+        .map_err(|e| format!("Cannot parse settings after write: {e}"))?;
+    if !has_atoll_claude_hooks(&verify) {
+        return Err(
+            "Claude hooks were not saved correctly. Check permissions on ~/.claude/settings.json."
+                .into(),
+        );
+    }
 
     if let Err(error) = hook_bridge::refresh_bridge_config_file(&app) {
         eprintln!("Atoll failed to refresh bridge.json after Claude hook install: {error}");
