@@ -4744,6 +4744,99 @@ mod core_tests {
     }
 
     #[test]
+    fn restart_preserves_historical_days_when_sessions_are_empty() {
+        use chrono::{Duration, Local};
+
+        let history_path = std::env::temp_dir().join(format!(
+            "atoll-token-history-{}-{}.json",
+            std::process::id(),
+            "restart-test"
+        ));
+        let _ = std::fs::remove_file(&history_path);
+
+        let today = Local::now().date_naive();
+        let yesterday = today - Duration::days(1);
+        let two_days_ago = today - Duration::days(2);
+        let today_key = today.format("%Y-%m-%d").to_string();
+        let yesterday_key = yesterday.format("%Y-%m-%d").to_string();
+        let two_days_ago_key = two_days_ago.format("%Y-%m-%d").to_string();
+
+        let seed = serde_json::json!({
+            "version": 1,
+            "timezone": "Asia/Shanghai",
+            "days": {
+                &two_days_ago_key: {
+                    "inputTokens": 1000,
+                    "outputTokens": 500,
+                    "cacheReadTokens": 0,
+                    "cacheCreationTokens": 0,
+                    "byAgent": { "claude": { "inputTokens": 1000, "outputTokens": 500, "cacheReadTokens": 0, "cacheCreationTokens": 0 } }
+                },
+                &yesterday_key: {
+                    "inputTokens": 2000,
+                    "outputTokens": 800,
+                    "cacheReadTokens": 0,
+                    "cacheCreationTokens": 0,
+                    "byAgent": { "codex": { "inputTokens": 2000, "outputTokens": 800, "cacheReadTokens": 0, "cacheCreationTokens": 0 } }
+                },
+                &today_key: {
+                    "inputTokens": 3000,
+                    "outputTokens": 1200,
+                    "cacheReadTokens": 0,
+                    "cacheCreationTokens": 0,
+                    "byAgent": { "claude": { "inputTokens": 3000, "outputTokens": 1200, "cacheReadTokens": 0, "cacheCreationTokens": 0 } }
+                }
+            }
+        });
+        std::fs::write(&history_path, serde_json::to_string_pretty(&seed).expect("serialize"))
+            .expect("write seed history");
+
+        std::env::set_var(
+            "ATOLL_TOKEN_HISTORY_PATH",
+            history_path.to_string_lossy().as_ref(),
+        );
+
+        // Simulate app restart: baseline loaded from persisted file, sessions empty.
+        let baseline = token_history::load_today_baseline();
+        assert_eq!(baseline.input_tokens, 3000);
+        assert_eq!(baseline.output_tokens, 1200);
+
+        let state = test_app_state();
+        *state
+            .daily_tokens_baseline
+            .lock()
+            .expect("lock") = baseline;
+
+        // First snapshot sync with no active sessions (upgrade/restart edge case).
+        token_history::sync_today_to_history(&state).expect("sync");
+
+        let history = token_history::get_token_history(365).expect("history");
+        let past_two = history
+            .days
+            .iter()
+            .find(|day| day.date == two_days_ago_key)
+            .expect("two days ago");
+        let past_one = history
+            .days
+            .iter()
+            .find(|day| day.date == yesterday_key)
+            .expect("yesterday");
+        assert_eq!(past_two.usage.input_tokens, 1000);
+        assert_eq!(past_two.usage.output_tokens, 500);
+        assert_eq!(past_one.usage.input_tokens, 2000);
+        assert_eq!(past_one.usage.output_tokens, 800);
+
+        // UI floor: daily total must not drop below persisted baseline.
+        let live_daily = TokenUsage::default();
+        let protected = live_daily.component_wise_max(baseline);
+        assert_eq!(protected.input_tokens, 3000);
+        assert_eq!(protected.output_tokens, 1200);
+
+        let _ = std::fs::remove_file(&history_path);
+        std::env::remove_var("ATOLL_TOKEN_HISTORY_PATH");
+    }
+
+    #[test]
     fn auto_archive_retention_purge_preserves_session_token_usage() {
         let state = test_app_state();
         let session_id = "session-auto-archived".to_string();

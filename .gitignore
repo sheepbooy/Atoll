@@ -18,6 +18,7 @@ src-tauri/.tauri-keys/
 # Local-only (not shipped)
 docs/superpowers/
 docs/assets/.gif-frames/
+docs/assets/.plan-gif-frames/
 preview-logos.html
 src/preview-logos-main.tsx
 src/LogoConceptPreview.tsx
