@@ -235,6 +235,15 @@ export async function archiveSubagent(agentId: string): Promise<IslandSnapshot> 
   return getSnapshot();
 }
 
+export async function archiveCompletedSubagents(sessionId: string): Promise<IslandSnapshot> {
+  if (isTauriRuntime) {
+    return normalizeSnapshot(
+      await invoke<IslandSnapshot>("archive_completed_subagents", { sessionId }),
+    );
+  }
+  return getSnapshot();
+}
+
 export async function getSubagentRetention(): Promise<number> {
   if (isTauriRuntime) {
     return invoke<number>("get_subagent_retention");

@@ -111,7 +111,9 @@ import {
   archiveAllResolved,
   archiveSession,
   archiveSubagent,
+  archiveCompletedSubagents,
   pinSession,
+  SubagentSummary,
   deactivateAtoll,
   quitAtoll,
   resolvePermissionRequest,
@@ -146,7 +148,11 @@ type PanelView =
 const COMPACT_ICON_SETTING_KEY = "atoll.maxCompactIcons";
 const RETENTION_SETTING_KEY = "atoll.sessionRetentionMinutes";
 const SUBAGENT_RETENTION_SETTING_KEY = "atoll.subagentRetentionMinutes";
+const MAX_SUBAGENT_DISPLAY_SETTING_KEY = "atoll.maxSubagentDisplay";
 const DEFAULT_MAX_COMPACT_ICONS = 3;
+const DEFAULT_MAX_SUBAGENT_DISPLAY = 3;
+const MIN_MAX_SUBAGENT_DISPLAY = 1;
+const MAX_MAX_SUBAGENT_DISPLAY = 10;
 const DEFAULT_RETENTION_MINUTES = 15;
 const DEFAULT_SUBAGENT_RETENTION_MINUTES = 10;
 const MIN_RETENTION_MINUTES = 1;
@@ -286,6 +292,21 @@ function readSubagentRetentionMinutes() {
     SUBAGENT_RETENTION_SETTING_KEY,
     DEFAULT_SUBAGENT_RETENTION_MINUTES,
     clampRetentionMinutes,
+  );
+}
+
+function clampMaxSubagentDisplay(value: number) {
+  return Math.min(
+    MAX_MAX_SUBAGENT_DISPLAY,
+    Math.max(MIN_MAX_SUBAGENT_DISPLAY, Math.round(value)),
+  );
+}
+
+function readMaxSubagentDisplay() {
+  return readStoredSetting(
+    MAX_SUBAGENT_DISPLAY_SETTING_KEY,
+    DEFAULT_MAX_SUBAGENT_DISPLAY,
+    clampMaxSubagentDisplay,
   );
 }
 
@@ -534,6 +555,7 @@ export function App() {
   const [maxCompactIcons, setMaxCompactIcons] = useState<number>(() => readCompactIconLimit());
   const [retentionMinutes, setRetentionMinutes] = useState<number>(() => readRetentionMinutes());
   const [subagentRetentionMinutes, setSubagentRetentionMinutes] = useState<number>(() => readSubagentRetentionMinutes());
+  const [maxSubagentDisplay, setMaxSubagentDisplay] = useState<number>(() => readMaxSubagentDisplay());
   const [idleIntervalSec, setIdleIntervalSec] = useState<number>(() => readIdleInterval());
   const [idleDurationSec, setIdleDurationSec] = useState<number>(() => readIdleDuration());
   const [justResolved, setJustResolved] = useState(false);
@@ -1081,6 +1103,14 @@ export function App() {
     } catch {}
     setSubagentRetention(subagentRetentionMinutes).catch(() => undefined);
   }, [subagentRetentionMinutes]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(MAX_SUBAGENT_DISPLAY_SETTING_KEY, String(maxSubagentDisplay));
+    } catch {
+      // ignore local storage errors
+    }
+  }, [maxSubagentDisplay]);
 
   useEffect(() => {
     try { window.localStorage.setItem(IDLE_INTERVAL_SETTING_KEY, String(idleIntervalSec)); } catch {}
@@ -1946,6 +1976,24 @@ export function App() {
     }
   }
 
+  async function handleArchiveCompletedSubagents(sessionId: string) {
+    const nextSnapshot = await archiveCompletedSubagents(sessionId).catch(() => null);
+    if (!nextSnapshot) {
+      return;
+    }
+    applySnapshot(nextSnapshot);
+    const currentView = panelViewRef.current;
+    if (
+      currentView.kind === "subagent"
+      && currentView.sessionId === sessionId
+      && !nextSnapshot.sessions
+        .find((session) => session.sessionId === sessionId)
+        ?.activeSubagents?.some((sub) => sub.agentId === currentView.agentId)
+    ) {
+      setPanelView({ kind: "home" });
+    }
+  }
+
   function handleSelectAgent(agent: AgentKind) {
     setSelectedAgent(agent);
     if (panelView.kind !== "home") {
@@ -2212,6 +2260,10 @@ export function App() {
           onChangeSubagentRetentionMinutes={(nextValue) =>
             setSubagentRetentionMinutes(clampRetentionMinutes(nextValue))
           }
+          maxSubagentDisplay={maxSubagentDisplay}
+          onChangeMaxSubagentDisplay={(nextValue) =>
+            setMaxSubagentDisplay(clampMaxSubagentDisplay(nextValue))
+          }
           idleIntervalSec={idleIntervalSec}
           onChangeIdleInterval={(v) => setIdleIntervalSec(clampIdleInterval(v))}
           idleDurationSec={idleDurationSec}
@@ -2277,9 +2329,11 @@ export function App() {
           activeRequest={selectedAgentRequest}
           justResolved={justResolved}
           isExpanded={isExpandedChrome}
+          maxSubagentDisplay={maxSubagentDisplay}
           onSelectSession={navigateToSession}
           onSelectSubagent={navigateToSubagent}
           onArchiveSession={handleArchiveSession}
+          onArchiveCompletedSubagents={handleArchiveCompletedSubagents}
           onPinSession={handlePinSession}
         />
       );
@@ -2787,10 +2841,26 @@ interface SessionListViewProps {
   activeRequest: PermissionRequest | null;
   justResolved: boolean;
   isExpanded: boolean;
+  maxSubagentDisplay: number;
   onSelectSession: (sessionId: string) => void;
   onSelectSubagent: (sessionId: string, agentId: string) => void;
   onArchiveSession: (sessionId: string) => void;
+  onArchiveCompletedSubagents: (sessionId: string) => void;
   onPinSession: (sessionId: string, pinned: boolean) => void;
+}
+
+function partitionSubagents(subagents: SubagentSummary[], limit: number) {
+  const sorted = [...subagents].sort((a, b) => {
+    const aDone = Boolean(a.completedAt);
+    const bDone = Boolean(b.completedAt);
+    if (aDone !== bDone) {
+      return aDone ? 1 : -1;
+    }
+    return a.startedAt.localeCompare(b.startedAt);
+  });
+  const visible = sorted.slice(0, limit);
+  const overflowCount = sorted.length - visible.length;
+  return { visible, overflowCount, hidden: sorted.slice(limit) };
 }
 
 function SessionListView({
@@ -2798,9 +2868,11 @@ function SessionListView({
   activeRequest,
   justResolved,
   isExpanded,
+  maxSubagentDisplay,
   onSelectSession,
   onSelectSubagent,
   onArchiveSession,
+  onArchiveCompletedSubagents,
   onPinSession,
 }: SessionListViewProps) {
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
@@ -2887,32 +2959,63 @@ function SessionListView({
                     </span>
                     {session.activeSubagents && session.activeSubagents.length > 0 ? (
                       <div className="session-subagents">
-                        {session.activeSubagents.map((sub) => {
-                          const subagentColor = getSubagentColor(sub.agentId);
-                          const subagentMood = getSubagentMood(sub.agentId, Boolean(sub.completedAt));
-                          return (
-                          <button
-                            key={sub.agentId}
-                            className={`subagent-chip ${subagentColor.tone} ${sub.completedAt ? "is-completed" : ""}`}
-                            type="button"
-                            title={sub.completedAt ? `${sub.agentType} (done)` : sub.agentType}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectSubagent(session.sessionId, sub.agentId);
-                            }}
-                          >
-                            <AgentMascot
-                              agent={session.agent}
-                              size={14}
-                              mood={subagentMood}
-                              accent={subagentColor.accent}
-                              accentDark={subagentColor.accentDark}
-                            />
-                            <span className="subagent-chip-label">{sub.agentType}</span>
-                            {sub.completedAt ? <Check size={10} /> : null}
-                          </button>
+                        {(() => {
+                          const { visible, overflowCount, hidden } = partitionSubagents(
+                            session.activeSubagents,
+                            maxSubagentDisplay,
                           );
-                        })}
+                          const hasCompleted = session.activeSubagents.some((sub) => Boolean(sub.completedAt));
+                          return (
+                            <>
+                              {visible.map((sub) => {
+                                const subagentColor = getSubagentColor(sub.agentId);
+                                const subagentMood = getSubagentMood(sub.agentId, Boolean(sub.completedAt));
+                                return (
+                                  <button
+                                    key={sub.agentId}
+                                    className={`subagent-chip ${subagentColor.tone} ${sub.completedAt ? "is-completed" : ""}`}
+                                    type="button"
+                                    title={sub.completedAt ? `${sub.agentType} (done)` : sub.agentType}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onSelectSubagent(session.sessionId, sub.agentId);
+                                    }}
+                                  >
+                                    <AgentMascot
+                                      agent={session.agent}
+                                      size={14}
+                                      mood={subagentMood}
+                                      accent={subagentColor.accent}
+                                      accentDark={subagentColor.accentDark}
+                                    />
+                                    <span className="subagent-chip-label">{sub.agentType}</span>
+                                    {sub.completedAt ? <Check size={10} /> : null}
+                                  </button>
+                                );
+                              })}
+                              {overflowCount > 0 ? (
+                                <span
+                                  className="subagent-chip-overflow"
+                                  title={hidden.map((sub) => sub.agentType).join(", ")}
+                                >
+                                  ×{overflowCount}
+                                </span>
+                              ) : null}
+                              <button
+                                type="button"
+                                className="subagent-bulk-archive-btn"
+                                title="Archive completed subagents"
+                                disabled={!hasCompleted}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onArchiveCompletedSubagents(session.sessionId);
+                                }}
+                              >
+                                <Archive size={12} />
+                              </button>
+                            </>
+                          );
+                        })()}
                       </div>
                     ) : null}
                   </div>
@@ -2956,6 +3059,8 @@ interface SettingsViewProps {
   maxCompactIcons: number;
   maxCompactIconLimit: number;
   onChangeMaxCompactIcons: (value: number) => void;
+  maxSubagentDisplay: number;
+  onChangeMaxSubagentDisplay: (value: number) => void;
   retentionMinutes: number;
   onChangeRetentionMinutes: (value: number) => void;
   subagentRetentionMinutes: number;
@@ -3025,6 +3130,8 @@ function SettingsView({
   maxCompactIcons,
   maxCompactIconLimit,
   onChangeMaxCompactIcons,
+  maxSubagentDisplay,
+  onChangeMaxSubagentDisplay,
   retentionMinutes,
   onChangeRetentionMinutes,
   subagentRetentionMinutes,
@@ -3110,6 +3217,14 @@ function SettingsView({
                 : "Max session icons in compact mode; extras spill to the right beside tokens."
             }
             onChange={onChangeMaxCompactIcons}
+          />
+          <SettingsSlider
+            label="Subagent display limit"
+            value={maxSubagentDisplay}
+            min={MIN_MAX_SUBAGENT_DISPLAY}
+            max={MAX_MAX_SUBAGENT_DISPLAY}
+            desc="Max subagent chips shown per session; extras collapse to ×N."
+            onChange={onChangeMaxSubagentDisplay}
           />
           <SettingsSlider
             label="Session auto-archive"

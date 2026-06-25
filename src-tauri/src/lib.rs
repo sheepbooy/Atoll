@@ -1445,6 +1445,28 @@ fn archive_subagent(
     Ok(snapshot)
 }
 
+#[tauri::command]
+fn archive_completed_subagents(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<IslandSnapshot, String> {
+    if let Ok(mut subagents) = state.active_subagents.lock() {
+        for sub in subagents.iter_mut() {
+            if sub.session_id == session_id
+                && sub.completed_at.is_some()
+                && !sub.archived
+            {
+                sub.archived = true;
+            }
+        }
+    }
+    let snapshot = build_snapshot(&app, &state);
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+    Ok(snapshot)
+}
+
 /// Codex background threads (memories, subagents, etc.) often omit `cwd` in hook payloads.
 /// Atoll defaults missing cwd to `"."`, which would show up as a stray "." session.
 /// Resolve the real workspace from `transcript_path` when possible, and only ignore
@@ -3042,6 +3064,7 @@ pub fn run() {
             get_subagent_retention,
             set_subagent_retention,
             archive_subagent,
+            archive_completed_subagents,
             get_token_history,
             open_in_terminal,
             open_agent_app,

@@ -4146,6 +4146,44 @@ kbd {
   border-style: dashed;
 }
 
+.subagent-chip-overflow {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  padding: 0 4px;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.subagent-bulk-archive-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  flex-shrink: 0;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 6px;
+  background: var(--surface-secondary, rgba(255, 255, 255, 0.06));
+  color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+}
+
+.subagent-bulk-archive-btn:hover:not(:disabled) {
+  background: var(--surface-hover, rgba(255, 255, 255, 0.1));
+  border-color: var(--border-hover, rgba(255, 255, 255, 0.15));
+  color: var(--text-primary, rgba(255, 255, 255, 0.9));
+}
+
+.subagent-bulk-archive-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .subagent-chip.coral {
   color: var(--accent-coral);
   background: rgba(255, 129, 117, 0.12);
