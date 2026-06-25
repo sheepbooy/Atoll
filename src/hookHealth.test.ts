@@ -11,6 +11,7 @@ import {
   preferHookStatus,
 } from "./hookHealth";
 import type { HookHealthSnapshot } from "./tauri";
+import { EMPTY_HOOK_HEALTH } from "./tauri";
 
 const ready = {
   installed: true,
@@ -138,8 +139,15 @@ describe("hookHealth", () => {
       { claude: ready, codex: ready },
       { claude: missing, codex: missing },
     );
-    expect(merged).toEqual({ claude: ready, codex: ready });
-    expect(analyzeHookHealth(merged).allConnected).toBe(true);
+    expect(merged).toEqual({
+      claude: ready,
+      codex: ready,
+      cursor: EMPTY_HOOK_HEALTH.cursor,
+    });
+    const analysis = analyzeHookHealth(merged);
+    expect(analysis.connectedCount).toBe(2);
+    expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["cursor"]);
+    expect(analysis.allConnected).toBe(false);
   });
 
   it("handles undefined health gracefully", () => {
@@ -149,7 +157,7 @@ describe("hookHealth", () => {
   });
 
   it("derives normal atoll logo when all agents are connected", () => {
-    const analysis = analyzeHookHealth({ claude: ready, codex: ready });
+    const analysis = analyzeHookHealth({ claude: ready, codex: ready, cursor: ready });
     expect(deriveHeaderLogoDisplay(analysis, "idle")).toEqual({
       kind: "atoll",
       activity: "idle",
@@ -174,6 +182,42 @@ describe("hookHealth", () => {
     });
   });
 
+  it("derives dead cursor logo when cursor hook drifts", () => {
+    const cursorDrifted = {
+      installed: true,
+      scriptFound: false,
+      settingsPath: "/tmp/hooks.json",
+      scriptPath: "",
+    };
+    const analysis = analyzeHookHealth({
+      claude: ready,
+      codex: ready,
+      cursor: cursorDrifted,
+    });
+    expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["cursor"]);
+    expect(deriveHeaderLogoDisplay(analysis, "idle")).toEqual({
+      kind: "agent",
+      agent: "cursor",
+      mood: "dead",
+    });
+  });
+
+  it("flags uninstalled cursor when other agents stay connected", () => {
+    const analysis = analyzeHookHealth({
+      claude: ready,
+      codex: ready,
+      cursor: missing,
+    });
+    expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["cursor"]);
+    expect(analysis.needsReconnect).toBe(true);
+    expect(analysis.summary).toBe("2 of 3 connected");
+    expect(deriveHeaderLogoDisplay(analysis, "idle")).toEqual({
+      kind: "agent",
+      agent: "cursor",
+      mood: "dead",
+    });
+  });
+
   it("derives dead atoll logo when all agents are disconnected", () => {
     const analysis = analyzeHookHealth({ claude: missing, codex: missing });
     expect(deriveHeaderLogoDisplay(analysis, "idle")).toEqual({
@@ -182,7 +226,7 @@ describe("hookHealth", () => {
     });
   });
 
-  it("derives live atoll logo before hook health is known", () => {
+  it("derives idle atoll logo before hook health is known", () => {
     const analysis = analyzeHookHealth(undefined as HookHealthSnapshot | undefined);
     expect(deriveHeaderLogoDisplay(analysis, "idle", { hookHealthKnown: false })).toEqual({
       kind: "atoll",
@@ -190,7 +234,11 @@ describe("hookHealth", () => {
     });
     expect(deriveHeaderLogoDisplay(analysis, "coding", { hookHealthKnown: false })).toEqual({
       kind: "atoll",
-      activity: "coding",
+      activity: "idle",
+    });
+    expect(deriveHeaderLogoDisplay(analysis, "dead", { hookHealthKnown: false })).toEqual({
+      kind: "atoll",
+      activity: "idle",
     });
   });
 });

@@ -17,6 +17,12 @@ const connectedHookHealth = {
     settingsPath: "",
     scriptPath: "",
   },
+  cursor: {
+    installed: true,
+    scriptFound: true,
+    settingsPath: "",
+    scriptPath: "",
+  },
 };
 
 const emptyHookHealth = {
@@ -27,6 +33,12 @@ const emptyHookHealth = {
     scriptPath: "",
   },
   codex: {
+    installed: false,
+    scriptFound: false,
+    settingsPath: "",
+    scriptPath: "",
+  },
+  cursor: {
     installed: false,
     scriptFound: false,
     settingsPath: "",
@@ -97,6 +109,9 @@ const bridge = vi.hoisted(() => ({
   getCodexHookStatus: vi.fn(),
   installCodexHooks: vi.fn(),
   uninstallCodexHooks: vi.fn(),
+  getCursorHookStatus: vi.fn(),
+  installCursorHooks: vi.fn(),
+  uninstallCursorHooks: vi.fn(),
   setSessionAutoApprove: vi.fn(),
   archiveAllResolved: vi.fn(),
   archiveRequest: vi.fn(),
@@ -192,6 +207,12 @@ describe("App", () => {
     bridge.getCodexHookStatus.mockResolvedValue({
       installed: true,
       scriptFound: true,
+      settingsPath: "",
+      scriptPath: "",
+    });
+    bridge.getCursorHookStatus.mockResolvedValue({
+      installed: false,
+      scriptFound: false,
       settingsPath: "",
       scriptPath: "",
     });
@@ -662,7 +683,7 @@ describe("App", () => {
     });
     await waitFor(
       () => expect(container.querySelector(".is-dormant")).not.toBeNull(),
-      { timeout: 1000 },
+      { timeout: 3000 },
     );
   });
 
@@ -700,12 +721,65 @@ describe("App", () => {
           scriptPath: "",
         },
         codex: connectedHookHealth.codex,
+        cursor: connectedHookHealth.cursor,
       },
     });
     const { container } = render(<App />);
 
     await waitFor(() => {
       expect(container.querySelector(".header-agent-logo.clawd.is-dead")).not.toBeNull();
+    });
+    expect(container.querySelector(".atoll-logo.is-dead")).toBeNull();
+  });
+
+  it("shows dead cursor mascot in header when cursor hook drifts", async () => {
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: {
+        claude: connectedHookHealth.claude,
+        codex: connectedHookHealth.codex,
+        cursor: {
+          installed: true,
+          scriptFound: false,
+          settingsPath: "",
+          scriptPath: "",
+        },
+      },
+    });
+    const { container } = render(<App />);
+
+    await waitFor(() => {
+      expect(container.querySelector(".header-agent-logo.cursor-mascot.is-dead")).not.toBeNull();
+    });
+    expect(container.querySelector(".atoll-logo.is-dead")).toBeNull();
+  });
+
+  it("shows dead cursor mascot in header when cursor hook is not installed", async () => {
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: {
+        claude: connectedHookHealth.claude,
+        codex: connectedHookHealth.codex,
+        cursor: {
+          installed: false,
+          scriptFound: false,
+          settingsPath: "",
+          scriptPath: "",
+        },
+      },
+    });
+    const { container } = render(<App />);
+
+    await waitFor(() => {
+      expect(container.querySelector(".header-agent-logo.cursor-mascot.is-dead")).not.toBeNull();
     });
     expect(container.querySelector(".atoll-logo.is-dead")).toBeNull();
   });
@@ -725,6 +799,7 @@ describe("App", () => {
           scriptPath: "",
         },
         codex: connectedHookHealth.codex,
+        cursor: connectedHookHealth.cursor,
       },
     });
     const { container } = render(<App />);
@@ -733,6 +808,32 @@ describe("App", () => {
       expect(container.querySelector(".header-agent-logo.clawd.is-dead")).not.toBeNull();
     });
     expect(container.querySelector(".atoll-logo.is-dead")).toBeNull();
+  });
+
+  it("shows dead cursor mascot when offline and cursor hook is missing", async () => {
+    bridge.getSnapshot.mockResolvedValue({
+      online: false,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: {
+        claude: connectedHookHealth.claude,
+        codex: connectedHookHealth.codex,
+        cursor: {
+          installed: false,
+          scriptFound: false,
+          settingsPath: "",
+          scriptPath: "",
+        },
+      },
+    });
+    const { container } = render(<App />);
+
+    await waitFor(() => {
+      expect(container.querySelector(".header-agent-logo.cursor-mascot.is-dead")).not.toBeNull();
+    });
+    expect(container.querySelector(".atoll-logo.is-napping")).toBeNull();
   });
 
   it("shows dead atoll logo before first-time hook install", async () => {

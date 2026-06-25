@@ -58,7 +58,7 @@ export const APP_STATE_ACTIVITY_MAP: Record<AppLogoState, AtollActivity> = {
   idle: "idle",
   pending: "thinking",
   working: "coding",
-  offline: "napping",
+  offline: "dead",
 };
 
 /**
@@ -85,6 +85,8 @@ export function activityToAppState(activity: AtollActivity): AppLogoState | null
     case "thinking":
       return "pending";
     case "napping":
+      return "offline";
+    case "dead":
       return "offline";
     default:
       return null;

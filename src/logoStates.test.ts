@@ -11,10 +11,10 @@ import {
 } from "./logoStates";
 
 describe("deriveAtollActivity", () => {
-  it("maps offline to napping", () => {
+  it("maps offline to dead", () => {
     expect(
       deriveAtollActivity({ online: false, pendingCount: 2, sessionCount: 3 }),
-    ).toBe("napping");
+    ).toBe("dead");
   });
 
   it("prioritizes pending over working", () => {
@@ -44,7 +44,7 @@ describe("appStateToActivity", () => {
     expect(appStateToActivity("idle")).toBe("idle");
     expect(appStateToActivity("pending")).toBe("thinking");
     expect(appStateToActivity("working")).toBe("coding");
-    expect(appStateToActivity("offline")).toBe("napping");
+    expect(appStateToActivity("offline")).toBe("dead");
   });
 });
 

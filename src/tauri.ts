@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getDemoCodexHookStatus, getDemoHookStatus, getDemoMode, getDemoSnapshot } from "./demoSnapshot";
 
 export type PermissionStatus = "pending" | "approved" | "denied";
-export type AgentKind = "claude" | "codex" | "gemini" | "other";
+export type AgentKind = "claude" | "codex" | "cursor" | "gemini" | "other";
 
 export interface TokenUsage {
   inputTokens: number;
@@ -44,7 +44,8 @@ export type SessionHost =
   | "claudeDesktop"
   | "claudeCli"
   | "codexDesktop"
-  | "codexCli";
+  | "codexCli"
+  | "cursorIde";
 
 export interface SubagentSummary {
   agentId: string;
@@ -292,6 +293,7 @@ export interface HookStatus {
 export interface HookHealthSnapshot {
   claude: HookStatus;
   codex: HookStatus;
+  cursor: HookStatus;
 }
 
 export const EMPTY_HOOK_HEALTH: HookHealthSnapshot = {
@@ -304,6 +306,14 @@ export const EMPTY_HOOK_HEALTH: HookHealthSnapshot = {
     nodeFound: true,
   },
   codex: {
+    installed: false,
+    scriptFound: false,
+    settingsPath: "",
+    scriptPath: "",
+    nodePath: "",
+    nodeFound: true,
+  },
+  cursor: {
     installed: false,
     scriptFound: false,
     settingsPath: "",
@@ -354,6 +364,7 @@ export function normalizeHookHealth(raw: unknown): HookHealthSnapshot {
   return {
     claude: normalizeHookStatus(record.claude),
     codex: normalizeHookStatus(record.codex),
+    cursor: normalizeHookStatus(record.cursor ?? EMPTY_HOOK_HEALTH.cursor),
   };
 }
 
@@ -419,6 +430,30 @@ export async function installCodexHooks(): Promise<HookStatus> {
 export async function uninstallCodexHooks(): Promise<HookStatus> {
   if (isTauriRuntime) {
     return normalizeHookStatus(await invoke<HookStatus>("uninstall_codex_hooks"));
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
+export async function getCursorHookStatus(): Promise<HookStatus> {
+  if (isTauriRuntime) {
+    return normalizeHookStatus(await invoke<HookStatus>("get_cursor_hook_status"));
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
+export async function installCursorHooks(): Promise<HookStatus> {
+  if (isTauriRuntime) {
+    return normalizeHookStatus(await invoke<HookStatus>("install_cursor_hooks"));
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
+export async function uninstallCursorHooks(): Promise<HookStatus> {
+  if (isTauriRuntime) {
+    return normalizeHookStatus(await invoke<HookStatus>("uninstall_cursor_hooks"));
   }
 
   return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };

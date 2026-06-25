@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Atoll — 菜单栏 AI 权限审批浮岛</title>
-  <meta name="description" content="Atoll 住在 macOS 菜单栏 / Windows 顶栏，为本地 Coding Agent 提供权限审批浮岛。现已支持 Claude Code 与 Codex，100% 本地，数据不出本机。" />
+  <meta name="description" content="Atoll 住在 macOS 菜单栏 / Windows 顶栏，为本地 Coding Agent 提供权限审批浮岛。现已支持 Claude Code、Codex 与 Cursor，100% 本地，数据不出本机。" />
   <meta name="theme-color" content="#0a0b0d" />
 
   <!-- Open Graph -->
@@ -89,7 +89,7 @@
           <div class="hero-meta">
             <span class="pill">100% 本地</span>
             <span class="pill">MIT 开源</span>
-            <span class="pill pill-agents">现已支持 Claude Code · Codex</span>
+            <span class="pill pill-agents">现已支持 Claude Code · Codex · Cursor</span>
           </div>
         </div>
 
@@ -432,7 +432,7 @@
     <!-- Agents -->
     <section id="agents" class="container reveal">
       <span class="section-label">接入 Agent</span>
-      <h2 class="section-title">现已支持 Claude Code &amp; Codex</h2>
+      <h2 class="section-title">现已支持 Claude Code、Codex &amp; Cursor</h2>
       <p class="section-desc">面向本地 Coding Agent 的权限审批浮岛，更多 Agent 持续接入中。Hook 注册 PermissionRequest、PostToolUse、Stop 等事件，写入本地配置文件。</p>
 
       <div class="agents-layout">
@@ -452,6 +452,13 @@
             <div>
               <h3>Codex（CLI + Desktop）</h3>
               <p>Settings → Agent hooks → Install Codex。安装后在 Codex 中打开 /hooks 并信任 Atoll hook，重启后触发验证。</p>
+            </div>
+          </article>
+          <article class="agent-card">
+            <div class="agent-icon agent-icon--unknown" aria-hidden="true">C</div>
+            <div>
+              <h3>Cursor（IDE Agent）</h3>
+              <p>Settings → Agent hooks → Install Cursor。安装后在 Cursor Settings → Hooks 确认 hook 已加载，重启 Cursor 后触发 Shell 权限验证。</p>
             </div>
           </article>
           <article class="agent-card">

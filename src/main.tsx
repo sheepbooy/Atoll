@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./App";
 import { BrandExportPage, getBrandExportMode } from "./BrandExport";
+import { CursorMascotPreviewPage, getCursorPreviewMode } from "./CursorMascotPreview";
 import { getDemoMode } from "./demoSnapshot";
 import "./styles.css";
 
@@ -22,6 +23,12 @@ if (getBrandExportMode()) {
   root.render(
     <React.StrictMode>
       <BrandExportPage />
+    </React.StrictMode>,
+  );
+} else if (getCursorPreviewMode()) {
+  root.render(
+    <React.StrictMode>
+      <CursorMascotPreviewPage />
     </React.StrictMode>,
   );
 } else {

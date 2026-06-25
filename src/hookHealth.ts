@@ -1,9 +1,11 @@
 import type { AtollActivity } from "./AtollLogo";
 import type { HookHealthSnapshot, HookStatus } from "./tauri";
+import { EMPTY_HOOK_HEALTH } from "./tauri";
 
 export const HOOK_AGENT_LABELS = {
   claude: "Claude Code",
   codex: "Codex",
+  cursor: "Cursor",
 } as const;
 
 export type HookAgentKey = keyof typeof HOOK_AGENT_LABELS;
@@ -40,7 +42,12 @@ export function hookStatusIssue(status: HookStatus | null | undefined): string |
 }
 
 /** Keep the most connected hook status when overlapping snapshot loads race. */
-export function preferHookStatus(a: HookStatus, b: HookStatus): HookStatus {
+export function preferHookStatus(
+  a: HookStatus | undefined,
+  b: HookStatus | undefined,
+): HookStatus {
+  if (!a) return b;
+  if (!b) return a;
   if (isHookReady(a)) return a;
   if (isHookReady(b)) return b;
   return {
@@ -57,9 +64,12 @@ export function mergeHookHealthPreferReady(
   base: HookHealthSnapshot,
   upgrade: HookHealthSnapshot,
 ): HookHealthSnapshot {
+  const baseCursor = base.cursor ?? EMPTY_HOOK_HEALTH.cursor;
+  const upgradeCursor = upgrade.cursor ?? baseCursor;
   return {
     claude: preferHookStatus(base.claude, upgrade.claude),
     codex: preferHookStatus(base.codex, upgrade.codex),
+    cursor: preferHookStatus(baseCursor, upgradeCursor),
   };
 }
 
@@ -88,6 +98,7 @@ export function analyzeHookHealth(
   }> = [
     { key: "claude", label: HOOK_AGENT_LABELS.claude, status: health?.claude },
     { key: "codex", label: HOOK_AGENT_LABELS.codex, status: health?.codex },
+    { key: "cursor", label: HOOK_AGENT_LABELS.cursor, status: health?.cursor },
   ];
   const agents = agentEntries.filter(
     (agent): agent is { key: HookAgentKey; label: string; status: HookStatus } =>
@@ -145,6 +156,9 @@ export const CLAUDE_DESKTOP_HOOK_NOTE =
 export const CODEX_DESKTOP_HOOK_NOTE =
   "Works with Codex CLI and Desktop. After install: trust the Atoll hook in Codex Desktop or via /hooks, restart Codex, then trigger one shell permission.";
 
+export const CURSOR_HOOK_NOTE =
+  "Works with Cursor IDE Agent mode. After install: confirm hooks in Cursor Settings, restart Cursor, then trigger one Shell tool permission.";
+
 export type HeaderLogoDisplay =
   | { kind: "atoll"; activity: AtollActivity }
   | { kind: "agent"; agent: HookAgentKey; mood: "dead" };
@@ -155,7 +169,7 @@ export function deriveHeaderLogoDisplay(
   options?: { hookHealthKnown?: boolean },
 ): HeaderLogoDisplay {
   if (options?.hookHealthKnown === false) {
-    return { kind: "atoll", activity };
+    return { kind: "atoll", activity: "idle" };
   }
   if (analysis.needsFirstTimeSetup) {
     return { kind: "atoll", activity: "dead" };

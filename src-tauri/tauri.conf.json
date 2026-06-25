@@ -48,6 +48,7 @@
       "generated/atoll-hook-runner.exe": "scripts/atoll-hook-runner.exe",
       "../scripts/atoll-claude-hook.mjs": "scripts/atoll-claude-hook.mjs",
       "../scripts/atoll-codex-hook.mjs": "scripts/atoll-codex-hook.mjs",
+      "../scripts/atoll-cursor-hook.mjs": "scripts/atoll-cursor-hook.mjs",
       "../scripts/atoll-hook-bridge.mjs": "scripts/atoll-hook-bridge.mjs"
     }
   },

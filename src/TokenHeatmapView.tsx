@@ -20,6 +20,7 @@ const WEEKDAY_LABELS = ["Mon", "", "Wed", "", "Fri", "", "Sun"];
 const AGENT_DOT_CLASS: Record<string, string> = {
   claude: "is-claude",
   codex: "is-codex",
+  cursor: "is-cursor",
   gemini: "is-gemini",
   other: "is-other",
 };
@@ -27,6 +28,7 @@ const AGENT_DOT_CLASS: Record<string, string> = {
 const AGENT_COLOR: Record<string, string> = {
   claude: "#ff8b78",
   codex: "#61d8f7",
+  cursor: "#a78bfa",
   gemini: "#b2e578",
   other: "#c9bcff",
 };
@@ -34,6 +36,7 @@ const AGENT_COLOR: Record<string, string> = {
 const AGENT_LABEL: Record<string, string> = {
   claude: "Claude",
   codex: "Codex",
+  cursor: "Cursor",
   gemini: "Gemini",
   other: "Other",
 };

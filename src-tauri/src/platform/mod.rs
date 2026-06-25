@@ -14,6 +14,7 @@ pub enum SessionHost {
     ClaudeCli,
     CodexDesktop,
     CodexCli,
+    CursorIde,
 }
 
 #[cfg(target_os = "macos")]
@@ -463,6 +464,17 @@ pub fn open_agent_app(
         };
     }
 
+    if agent == "cursor" {
+        let host = session_id
+            .map(|id| crate::cursor_session_host(state, id))
+            .unwrap_or_else(|| detect_cursor_session_host());
+        return match host {
+            SessionHost::CursorIde => focus_cursor_app(app),
+            SessionHost::Unknown => focus_cursor_app(app),
+            _ => focus_cursor_app(app),
+        };
+    }
+
     open_in_terminal(cwd)
 }
 
@@ -514,6 +526,61 @@ pub fn activate_codex_app(app: &AppHandle) -> Result<(), String> {
     {
         let _ = app;
         Err("activate_codex_app is not supported on this platform".to_string())
+    }
+}
+
+pub fn detect_cursor_session_host() -> SessionHost {
+    if is_cursor_app_running() {
+        return SessionHost::CursorIde;
+    }
+    SessionHost::Unknown
+}
+
+pub fn detect_cursor_session_host_from_peer_pid(pid: u32) -> SessionHost {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::detect_cursor_session_host_from_peer_pid(pid);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return windows::detect_cursor_session_host_from_peer_pid(pid);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = pid;
+        SessionHost::Unknown
+    }
+}
+
+pub fn is_cursor_app_running() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::is_cursor_app_running();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return windows::is_cursor_app_running();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        false
+    }
+}
+
+pub fn focus_cursor_app(app: &AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::focus_cursor_app(app);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        return windows::focus_cursor_app();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = app;
+        Err("focus_cursor_app is not supported on this platform".to_string())
     }
 }
 

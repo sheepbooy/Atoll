@@ -321,12 +321,58 @@ pub fn focus_codex_app() -> Result<(), String> {
     Ok(())
 }
 
+pub fn focus_cursor_app() -> Result<(), String> {
+    if try_focus_cursor_process() {
+        return Ok(());
+    }
+
+    hidden_command("cmd")
+        .args(["/C", "start", "", "Cursor"])
+        .spawn()
+        .map_err(|error| format!("Failed to focus Cursor: {error}"))?;
+    Ok(())
+}
+
+pub fn detect_cursor_session_host_from_peer_pid(pid: u32) -> SessionHost {
+    if is_cursor_process_pid(pid) {
+        return SessionHost::CursorIde;
+    }
+    SessionHost::Unknown
+}
+
+pub fn is_cursor_app_running() -> bool {
+    hidden_command("tasklist")
+        .args(["/FI", "IMAGENAME eq Cursor.exe", "/NH"])
+        .output()
+        .map(|output| {
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .any(|line| line.contains("Cursor.exe"))
+        })
+        .unwrap_or(false)
+}
+
+fn is_cursor_process_pid(pid: u32) -> bool {
+    hidden_command("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+        .output()
+        .map(|output| {
+            String::from_utf8_lossy(&output.stdout)
+                .contains("Cursor.exe")
+        })
+        .unwrap_or(false)
+}
+
 fn try_focus_claude_process() -> bool {
     try_focus_process_by_title("Claude")
 }
 
 fn try_focus_codex_process() -> bool {
     try_focus_process_by_title("Codex")
+}
+
+fn try_focus_cursor_process() -> bool {
+    try_focus_process_by_title("Cursor")
 }
 
 fn try_focus_process_by_title(app_name: &'static str) -> bool {

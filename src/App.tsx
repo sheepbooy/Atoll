@@ -49,12 +49,14 @@ import {
   analyzeHookHealth,
   CLAUDE_DESKTOP_HOOK_NOTE,
   CODEX_DESKTOP_HOOK_NOTE,
+  CURSOR_HOOK_NOTE,
   deriveHeaderLogoDisplay,
   hookAttentionTitle,
   hookStatusIssue,
   isHookReady,
   mergeHookHealthPreferReady,
   type HeaderLogoDisplay,
+  type HookAgentKey,
 } from "./hookHealth";
 import {
   beginCollapse,
@@ -66,7 +68,7 @@ import {
   MICRO_SHRINK_DELAY_MS,
   PresentationPhase,
 } from "./islandPresentation";
-import { AgentMascot } from "./AgentMascot";
+import { AgentMascot, AGENT_ACCENT } from "./AgentMascot";
 import type { ClawdMood } from "./ClawdMascot";
 import { getSessionColor, getSubagentColor, getSubagentMood } from "./subagentIdentity";
 import { AtollLogo, type AtollActivity } from "./AtollLogo";
@@ -129,6 +131,8 @@ import {
   uninstallClaudeHooks,
   installCodexHooks,
   uninstallCodexHooks,
+  installCursorHooks,
+  uninstallCursorHooks,
   getSessionRetention,
   setSessionRetention,
   setSubagentRetention,
@@ -351,6 +355,7 @@ const initialSnapshot: IslandSnapshot = {
 const agentLabels: Record<AgentKind, string> = {
   claude: "Claude",
   codex: "Codex",
+  cursor: "Cursor",
   gemini: "Gemini",
   other: "Agent",
 };
@@ -358,6 +363,7 @@ const agentLabels: Record<AgentKind, string> = {
 const agentTone: Record<AgentKind, string> = {
   claude: "coral",
   codex: "cyan",
+  cursor: "violet",
   gemini: "lime",
   other: "neutral",
 };
@@ -365,21 +371,12 @@ const agentTone: Record<AgentKind, string> = {
 const agentSortRank: Record<AgentKind, number> = {
   claude: 0,
   codex: 1,
+  cursor: 2,
   gemini: 2,
   other: 3,
 };
-const agentMascotAccent: Record<AgentKind, string | undefined> = {
-  claude: undefined,
-  codex: "#61d8f7",
-  gemini: "#b2e578",
-  other: "#c9bcff",
-};
-const agentMascotDark: Record<AgentKind, string | undefined> = {
-  claude: undefined,
-  codex: "#3d9fb8",
-  gemini: "#7aa44d",
-  other: "#9182d1",
-};
+const agentMascotAccent = (agent: AgentKind) => AGENT_ACCENT[agent]?.accent;
+const agentMascotDark = (agent: AgentKind) => AGENT_ACCENT[agent]?.accentDark;
 
 type RiskLevel = "danger" | "caution";
 
@@ -551,6 +548,7 @@ export function App() {
   const panelViewRef = useRef<PanelView>({ kind: "home" });
   panelViewRef.current = panelView;
   const [sessionRequests, setSessionRequests] = useState<PermissionRequest[]>([]);
+  const navigationSeqRef = useRef(0);
   const [hookBusy, setHookBusy] = useState(false);
   const [hooksBackTarget, setHooksBackTarget] = useState<"home" | "settings-main">("home");
   const [tokensBackTarget, setTokensBackTarget] = useState<"home" | "settings-main">("home");
@@ -578,18 +576,21 @@ export function App() {
   );
   const claudeHookStatus = snapshot.hookHealth?.claude ?? null;
   const codexHookStatus = snapshot.hookHealth?.codex ?? null;
+  const cursorHookStatus = snapshot.hookHealth?.cursor ?? null;
   const hookAttention = hookAttentionTitle(
     hookHealthAnalysis,
     hookHealthHydrated,
   );
   const atollActivity = useMemo(
-    () =>
-      deriveAtollActivity({
+    () => {
+      if (!hookHealthHydrated) return "idle";
+      return deriveAtollActivity({
         online: snapshot.online,
         pendingCount: snapshot.pendingCount,
         sessionCount: sessions.length,
-      }),
-    [snapshot.online, snapshot.pendingCount, sessions.length],
+      });
+    },
+    [hookHealthHydrated, snapshot.online, snapshot.pendingCount, sessions.length],
   );
   const appLogoState = useMemo(
     () =>
@@ -694,6 +695,7 @@ export function App() {
     const counts: Record<AgentKind, number> = {
       claude: 0,
       codex: 0,
+      cursor: 0,
       gemini: 0,
       other: 0,
     };
@@ -1161,6 +1163,7 @@ export function App() {
   useEffect(() => {
     if (panelView.kind === "session") {
       if (!sessions.some((session) => session.sessionId === panelView.sessionId)) {
+        ++navigationSeqRef.current;
         setPanelView({ kind: "home" });
         setSessionRequests([]);
       }
@@ -1172,6 +1175,7 @@ export function App() {
         (sub) => sub.agentId === panelView.agentId,
       );
       if (!subagent) {
+        ++navigationSeqRef.current;
         if (session) {
           setPanelView({ kind: "session", sessionId: panelView.sessionId });
         } else {
@@ -1182,6 +1186,7 @@ export function App() {
     }
     if (panelView.kind === "subagentList") {
       if (!sessions.some((s) => s.sessionId === panelView.sessionId)) {
+        ++navigationSeqRef.current;
         setPanelView({ kind: "home" });
       }
     }
@@ -1242,11 +1247,14 @@ export function App() {
         : snapshotRef.current.recent.find((item) => item.id === id);
     setBusyDecision(decision);
     try {
+      const seq = ++navigationSeqRef.current;
       const nextSnapshot = await resolvePermissionRequest(id, decision, note);
       applySnapshot(nextSnapshot);
-      if (panelView.kind === "session") {
-        const requests = await getSessionRequests(panelView.sessionId);
-        setSessionRequests(requests);
+      if (panelView.kind === "session" && navigationSeqRef.current === seq) {
+        const requests = await getSessionRequests(panelView.sessionId).catch(() => []);
+        if (navigationSeqRef.current === seq) {
+          setSessionRequests(requests);
+        }
       }
       if (nextSnapshot.pendingCount === 0) {
         scheduleIdleCollapse();
@@ -1301,9 +1309,17 @@ export function App() {
   }
 
   async function navigateToSession(sessionId: string) {
+    const seq = ++navigationSeqRef.current;
+    setSessionRequests([]);
     setPanelView({ kind: "session", sessionId });
-    const requests = await getSessionRequests(sessionId);
-    setSessionRequests(requests);
+    try {
+      const requests = await getSessionRequests(sessionId);
+      if (navigationSeqRef.current === seq) {
+        setSessionRequests(requests);
+      }
+    } catch {
+      // Tauri invoke failed; leave requests empty rather than hanging.
+    }
   }
 
   function navigateToSubagent(sessionId: string, agentId: string) {
@@ -1315,6 +1331,7 @@ export function App() {
   }
 
   function navigateBack() {
+    ++navigationSeqRef.current;
     setPanelView({ kind: "home" });
   }
 
@@ -1548,6 +1565,7 @@ export function App() {
     frozenCollapseWidthRef.current = collapseMetrics.width;
     frozenCollapseLeftWidthRef.current = collapseMetrics.leftWidth;
     setPresentationPhase(next);
+    ++navigationSeqRef.current;
     setPanelView({ kind: "home" });
 
     const compactWidth = collapseCompactWidth();
@@ -1730,11 +1748,12 @@ export function App() {
     snapshotLoadSeqRef.current += 1;
   }
 
-  function applyHookInstallSnapshot(statuses: Partial<Record<"claude" | "codex", HookStatus>>) {
+  function applyHookInstallSnapshot(statuses: Partial<Record<"claude" | "codex" | "cursor", HookStatus>>) {
     invalidatePendingSnapshotLoads();
     const installedHealth: HookHealthSnapshot = {
       claude: statuses.claude ?? snapshotRef.current.hookHealth.claude,
       codex: statuses.codex ?? snapshotRef.current.hookHealth.codex,
+      cursor: statuses.cursor ?? snapshotRef.current.hookHealth.cursor,
     };
     const optimisticHookHealth = mergeHookHealthPreferReady(
       snapshotRef.current.hookHealth,
@@ -1794,15 +1813,17 @@ export function App() {
   async function handleInstallAllHooks() {
     setHookBusy(true);
     try {
-      const [claudeStatus, codexStatus] = await Promise.all([
+      const [claudeStatus, codexStatus, cursorStatus] = await Promise.all([
         installClaudeHooks(),
         installCodexHooks(),
+        installCursorHooks(),
       ]);
       await applyHookInstallSnapshot({
         claude: claudeStatus,
         codex: codexStatus,
+        cursor: cursorStatus,
       });
-      if (claudeStatus.installed || codexStatus.installed) {
+      if (claudeStatus.installed || codexStatus.installed || cursorStatus.installed) {
         collapseIsland(true);
       }
     } catch {
@@ -1864,9 +1885,10 @@ export function App() {
     setMenuOpen(false);
     setHookBusy(true);
     try {
-      const [claudeStatus, codexStatus] = await Promise.all([
+      const [claudeStatus, codexStatus, cursorStatus] = await Promise.all([
         uninstallClaudeHooks(),
         uninstallCodexHooks(),
+        uninstallCursorHooks(),
       ]);
       const nextSnapshot = await getSnapshot().catch(() => null);
       if (nextSnapshot) {
@@ -1875,8 +1897,49 @@ export function App() {
         applySnapshot({
           ...snapshotRef.current,
           hookHealth: {
+            ...snapshotRef.current.hookHealth,
             claude: claudeStatus,
             codex: codexStatus,
+            cursor: cursorStatus,
+          },
+        });
+      }
+    } catch {
+      // keep previous status
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
+  async function handleInstallCursorHooks() {
+    setHookBusy(true);
+    try {
+      const status = await installCursorHooks();
+      await applyHookInstallSnapshot({ cursor: status });
+      if (status.installed) {
+        collapseIsland(true);
+      }
+    } catch {
+      // keep previous status
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
+  async function handleUninstallCursorHooks() {
+    setMenuOpen(false);
+    setHookBusy(true);
+    try {
+      const status = await uninstallCursorHooks();
+      const nextSnapshot = await getSnapshot().catch(() => null);
+      if (nextSnapshot) {
+        applySnapshot(nextSnapshot);
+      } else {
+        applySnapshot({
+          ...snapshotRef.current,
+          hookHealth: {
+            ...snapshotRef.current.hookHealth,
+            cursor: status,
           },
         });
       }
@@ -1907,6 +1970,16 @@ export function App() {
         : `Registers Codex hooks for permission approval. ${CODEX_DESKTOP_HOOK_NOTE}`,
       onInstall: handleInstallCodexHooks,
       onUninstall: handleUninstallCodexHooks,
+    },
+    {
+      key: "cursor",
+      label: "Cursor",
+      status: cursorHookStatus,
+      note: cursorHookStatus.settingsPath
+        ? `Registers hooks in ${cursorHookStatus.settingsPath}. ${CURSOR_HOOK_NOTE}`
+        : `Registers Cursor hooks for permission approval. ${CURSOR_HOOK_NOTE}`,
+      onInstall: handleInstallCursorHooks,
+      onUninstall: handleUninstallCursorHooks,
     },
   ];
 
@@ -2034,6 +2107,7 @@ export function App() {
         .find((session) => session.sessionId === sessionId)
         ?.activeSubagents?.some((sub) => sub.agentId === currentView.agentId)
     ) {
+      ++navigationSeqRef.current;
       setPanelView({ kind: "home" });
     }
   }
@@ -2041,6 +2115,7 @@ export function App() {
   function handleSelectAgent(agent: AgentKind) {
     setSelectedAgent(agent);
     if (panelView.kind !== "home") {
+      ++navigationSeqRef.current;
       setPanelView({ kind: "home" });
     }
   }
@@ -2121,8 +2196,8 @@ export function App() {
   const showCompactHeaderMetrics =
     !isMicro && !isDormant && !isExpanded && !isPresentationTransition;
   const showMicroTokenCounter =
-    isMicro && !isPresentationTransition && activeSessionTokenTotal > 0;
-  const showCompactTokenCounter = activeSessionTokenTotal > 0;
+    isMicro && !isPresentationTransition && sessions.length > 0;
+  const showCompactTokenCounter = sessions.length > 0;
   const showExpandedTokenCounter = true;
   const showCompactNotchSpacer =
     collapsedMode === "compact" && !isExpanded && notchMetrics.hasNotch;
@@ -2256,6 +2331,7 @@ export function App() {
             const next = await archiveSubagent(subviewSubagent.agentId).catch(() => null);
             if (next) {
               applySnapshot(next);
+              ++navigationSeqRef.current;
               setPanelView({ kind: "home" });
             }
           }}
@@ -2808,7 +2884,7 @@ function CompactSessionStack({
               mood={deriveSessionMood(session, activeRequest, justResolved)}
               accent={sessionColor.accent}
               accentDark={sessionColor.accentDark}
-              size={18}
+              size={session.agent === "cursor" ? 20 : 18}
             />
           </span>
         );
@@ -2856,8 +2932,8 @@ function AgentTabBar({
         <AgentMascot
           agent={active}
           mood={mood}
-          accent={agentMascotAccent[active]}
-          accentDark={agentMascotDark[active]}
+          accent={agentMascotAccent(active)}
+          accentDark={agentMascotDark(active)}
           size={compact ? 14 : 16}
         />
         {!compact ? <span>{agentLabels[active]}</span> : null}
@@ -2884,8 +2960,8 @@ function AgentTabBar({
             <AgentMascot
               agent={agent}
               mood={mood}
-              accent={agentMascotAccent[agent]}
-              accentDark={agentMascotDark[agent]}
+              accent={agentMascotAccent(agent)}
+              accentDark={agentMascotDark(agent)}
               size={compact ? 14 : 16}
             />
             {!compact ? <span>{agentLabels[agent]}</span> : null}
@@ -3941,6 +4017,9 @@ function sessionJumpLabel(agent?: AgentKind, sessionHost?: SessionHost): string 
     if (sessionHost === "codexCli") return "Terminal";
     return "Open Codex";
   }
+  if (agent === "cursor") {
+    return "Open Cursor";
+  }
   return "Terminal";
 }
 
@@ -4001,13 +4080,20 @@ function SessionChatView({ transcriptPath, requests }: SessionChatViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let active = true;
+    setMessages([]);
     if (transcriptPath) {
       getSessionTranscript(transcriptPath)
-        .then(setMessages)
-        .catch(() => setMessages([]));
-    } else {
-      setMessages([]);
+        .then((msgs) => {
+          if (active) setMessages(msgs);
+        })
+        .catch(() => {
+          if (active) setMessages([]);
+        });
     }
+    return () => {
+      active = false;
+    };
   }, [transcriptPath]);
 
   useEffect(() => {
@@ -4359,7 +4445,7 @@ function HooksView({
                     {agent.status.settingsPath}
                   </span>
                 ) : null}
-                {agent.note && (!installed || agent.key === "codex" || agent.key === "claude") ? (
+                {agent.note && (!installed || agent.key === "codex" || agent.key === "claude" || agent.key === "cursor") ? (
                   <span className="settings-card-desc">{agent.note}</span>
                 ) : null}
                 {agent.key === "claude" ? (
@@ -4381,6 +4467,17 @@ function HooksView({
                       <li>In Codex Desktop or CLI, open /hooks and trust the Atoll hook.</li>
                       <li>Quit and reopen Codex Desktop after installing hooks.</li>
                       <li>Trigger one shell permission in a local session to verify.</li>
+                    </ul>
+                  </details>
+                ) : null}
+                {agent.key === "cursor" ? (
+                  <details className="settings-hook-desktop-note">
+                    <summary>Cursor checklist</summary>
+                    <ul>
+                      <li>Install Node.js on this machine before installing hooks.</li>
+                      <li>In Cursor, open Settings → Hooks and confirm Atoll hooks are loaded.</li>
+                      <li>Restart Cursor after installing hooks.</li>
+                      <li>Trigger one Shell tool permission in Agent mode to verify.</li>
                     </ul>
                   </details>
                 ) : null}
@@ -4452,6 +4549,8 @@ function HeaderLogo({
         mood={display.mood}
         size={size}
         className="header-agent-logo"
+        accent={agentMascotAccent(display.agent)}
+        accentDark={agentMascotDark(display.agent)}
       />
     );
   }
@@ -4470,7 +4569,7 @@ function HeaderLogo({
 interface IdleViewProps {
   needsHookSetup: boolean;
   needsReconnect: boolean;
-  disconnectedAgents: Array<{ key: "claude" | "codex"; label: string; status: HookStatus }>;
+  disconnectedAgents: Array<{ key: HookAgentKey; label: string; status: HookStatus }>;
   onOpenHooks: () => void;
 }
 

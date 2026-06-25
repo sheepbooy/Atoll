@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>菜单栏 / 顶栏里的 AI 权限审批浮岛</strong><br/>
-  <sub>Claude Code / Codex 发起权限请求时，不用切窗口，一眼批准或拒绝</sub>
+  <sub>Claude Code / Codex / Cursor 发起权限请求时，不用切窗口，一眼批准或拒绝</sub>
 </p>
 
 <p align="center">
@@ -51,7 +51,7 @@
 - **应用内更新** — 启动时自动检测新版本，三点菜单一键下载安装并重启
 - **全程本地** — Hook 桥接 `127.0.0.1:47777`，数据不出本机
 
-目前支持 **Claude Code**（CLI 与 Desktop）和 **Codex CLI 与 Desktop**（macOS Apple Silicon 与 Windows x64）。
+目前支持 **Claude Code**（CLI 与 Desktop）、**Codex**（CLI 与 Desktop）和 **Cursor IDE**（macOS Apple Silicon 与 Windows x64）。
 
 ---
 
@@ -132,6 +132,7 @@ Atoll 通过应用内 **一键安装 Hook**，无需手动编辑配置文件。
 | --- | --- | --- |
 | **Claude Code**（CLI + Desktop） | 菜单 → Settings → Agent hooks → Install | Desktop：权限选 **Ask permissions**，安装后完全退出并重启 Claude Desktop，再在 Code 标签触发一次 Bash 权限验证 |
 | **Codex**（CLI + Desktop） | 同上 → Install Codex | Desktop/CLI：安装后在 Codex 中打开 `/hooks` 并信任 Atoll hook，完全退出并重启 Codex Desktop，再触发一次 shell 权限验证 |
+| **Cursor**（IDE Agent） | 同上 → Install Cursor | 安装后在 Cursor Settings → Hooks 确认 hook 已加载，重启 Cursor，再在 Agent 模式触发一次 Shell 工具权限验证 |
 
 Hook 注册 `PermissionRequest`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）或 `~/.codex/hooks.json`。安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`。
 
@@ -200,7 +201,7 @@ npm run tauri build  # 打包
 
 ```
 src/                          React 浮岛 UI
-src-tauri/src/hook_bridge.rs  本地 HTTP 桥接（Claude + Codex）
+src-tauri/src/hook_bridge.rs  本地 HTTP 桥接（Claude + Codex + Cursor）
 src-tauri/src/transcript.rs   JSONL 会话 & Token 解析
 scripts/atoll-*-hook.mjs      Hook shim（随应用分发）
 ```
@@ -228,7 +229,8 @@ npm run export:brand     # Logo 状态 + Agent 形象
 
 - [ ] Apple 签名 & 公证、Intel Mac 构建
 - [ ] Windows 代码签名
-- [ ] Gemini / Cursor 等更多 Agent 适配
+- [ ] Gemini 等更多 Agent 适配
+- [x] Cursor hook 适配
 - [ ] 新请求自动展开、通知中心提醒
 - [ ] 审批历史导出、会话搜索
 - [x] Codex hook 适配

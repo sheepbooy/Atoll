@@ -4,6 +4,9 @@ use serde_json::Value;
 pub enum TranscriptFormat {
     Claude,
     Codex,
+    /// Cursor transcripts use `{"role": ..., "message": {...}}` without a
+    /// top-level `"type"` field and currently carry no token-usage data.
+    Cursor,
 }
 
 pub struct CodexTokenParseResult {
@@ -45,14 +48,38 @@ pub fn detect_transcript_format_from_line(line: &str) -> Option<TranscriptFormat
         Err(_) => return None,
     };
 
-    let msg_type = entry.get("type").and_then(Value::as_str)?;
-    match msg_type {
-        "session_meta" | "response_item" | "event_msg" | "turn_context" => {
-            Some(TranscriptFormat::Codex)
-        }
-        "human" | "user" | "assistant" => Some(TranscriptFormat::Claude),
-        _ => None,
+    if let Some(msg_type) = entry.get("type").and_then(Value::as_str) {
+        return match msg_type {
+            "session_meta" | "response_item" | "event_msg" | "turn_context" => {
+                Some(TranscriptFormat::Codex)
+            }
+            "human" | "user" | "assistant" => Some(TranscriptFormat::Claude),
+            "turn_ended" => {
+                if entry.get("status").is_some() && entry.get("message").is_none() {
+                    Some(TranscriptFormat::Cursor)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
     }
+
+    // Cursor transcripts use "role" instead of "type" at the top level
+    if let Some(role) = entry.get("role").and_then(Value::as_str) {
+        if matches!(role, "user" | "assistant") && entry.get("message").is_some() {
+            if entry
+                .get("message")
+                .and_then(|m| m.get("usage"))
+                .is_some()
+            {
+                return Some(TranscriptFormat::Claude);
+            }
+            return Some(TranscriptFormat::Cursor);
+        }
+    }
+
+    None
 }
 
 pub fn detect_transcript_format(path: &str) -> TranscriptFormat {
@@ -198,26 +225,38 @@ fn extract_claude_transcript_text(entry: &Value) -> String {
 }
 
 fn terminal_text_from_transcript_entry(entry: &Value) -> Option<String> {
-    match entry.get("type").and_then(Value::as_str)? {
-        "human" | "user" | "assistant" => {
-            let text = extract_claude_transcript_text(entry);
-            if text.is_empty() {
-                None
-            } else {
-                Some(text)
+    if let Some(msg_type) = entry.get("type").and_then(Value::as_str) {
+        return match msg_type {
+            "human" | "user" | "assistant" => {
+                let text = extract_claude_transcript_text(entry);
+                if text.is_empty() {
+                    None
+                } else {
+                    Some(text)
+                }
             }
-        }
-        "response_item" => {
-            let payload = entry.get("payload").unwrap_or(&Value::Null);
-            let content = extract_codex_message_content(payload);
-            if content.is_empty() {
-                None
-            } else {
-                Some(content)
+            "response_item" => {
+                let payload = entry.get("payload").unwrap_or(&Value::Null);
+                let content = extract_codex_message_content(payload);
+                if content.is_empty() {
+                    None
+                } else {
+                    Some(content)
+                }
             }
-        }
-        _ => None,
+            _ => None,
+        };
     }
+
+    // Cursor transcripts use "role" instead of "type"
+    if matches!(entry.get("role").and_then(Value::as_str), Some("assistant")) {
+        let text = extract_claude_transcript_text(entry);
+        if !text.is_empty() {
+            return Some(text);
+        }
+    }
+
+    None
 }
 
 /// Detect subagent termination signals written to transcript when SubagentStop

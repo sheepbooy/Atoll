@@ -1,5 +1,6 @@
 import { AtollLogo } from "./AtollLogo";
-import { AgentMascot } from "./AgentMascot";
+import { AgentMascot, AGENT_ACCENT } from "./AgentMascot";
+import type { ClawdMood } from "./ClawdMascot";
 import {
   APP_LOGO_STATE_LABELS,
   APP_STATE_ACTIVITY_MAP,
@@ -7,10 +8,21 @@ import {
   APP_LOGO_STATES,
 } from "./logoStates";
 
+const MASCOT_MOODS: { mood: ClawdMood; label: string }[] = [
+  { mood: "calm", label: "calm" },
+  { mood: "alert", label: "alert" },
+  { mood: "happy", label: "happy" },
+  { mood: "worried", label: "worried" },
+  { mood: "sad", label: "sad" },
+  { mood: "sleeping", label: "sleeping" },
+  { mood: "dead", label: "dead" },
+];
+
 const AGENTS = [
-  { id: "claude", label: "Claude", accent: undefined, accentDark: undefined },
-  { id: "codex", label: "Codex", accent: "#61d8f7", accentDark: "#3d9fb8" },
-  { id: "gemini", label: "Gemini", accent: "#b2e578", accentDark: "#7aa44d" },
+  { id: "claude", label: "Claude" },
+  { id: "codex", label: "Codex" },
+  { id: "cursor", label: "Cursor" },
+  { id: "gemini", label: "Gemini" },
 ] as const;
 
 export function getBrandExportMode(): boolean {
@@ -106,12 +118,92 @@ export function BrandExportPage() {
                   agent={agent.id}
                   mood="calm"
                   size={64}
-                  accent={agent.accent}
-                  accentDark={agent.accentDark}
+                  accent={AGENT_ACCENT[agent.id]?.accent}
+                  accentDark={AGENT_ACCENT[agent.id]?.accentDark}
                 />
               </div>
               <figcaption style={{ fontSize: 12, opacity: 0.8 }}>
                 {agent.label}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      </section>
+
+      <section style={{ marginTop: 40 }}>
+        <h2 style={{ fontSize: 14, letterSpacing: "0.08em", opacity: 0.65 }}>
+          CURSOR CUBE — ALL MOODS
+        </h2>
+        <div
+          style={{
+            display: "flex",
+            gap: 20,
+            alignItems: "flex-end",
+            flexWrap: "wrap",
+          }}
+        >
+          {MASCOT_MOODS.map(({ mood, label }) => (
+            <figure key={mood} style={{ margin: 0, textAlign: "center" }}>
+              <div
+                style={{
+                  width: 88,
+                  height: 88,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  margin: "0 auto 8px",
+                }}
+              >
+                <AgentMascot
+                  agent="cursor"
+                  mood={mood}
+                  size={72}
+                  accent={AGENT_ACCENT.cursor.accent}
+                  accentDark={AGENT_ACCENT.cursor.accentDark}
+                />
+              </div>
+              <figcaption style={{ fontSize: 11, opacity: 0.75 }}>{label}</figcaption>
+            </figure>
+          ))}
+        </div>
+      </section>
+
+      <section style={{ marginTop: 40 }}>
+        <h2 style={{ fontSize: 14, letterSpacing: "0.08em", opacity: 0.65 }}>
+          AGENT FAMILY — calm
+        </h2>
+        <div
+          style={{
+            display: "flex",
+            gap: 40,
+            alignItems: "flex-end",
+            flexWrap: "wrap",
+          }}
+        >
+          {(["claude", "codex", "cursor"] as const).map((agent) => (
+            <figure key={agent} style={{ margin: 0, textAlign: "center" }}>
+              <div
+                style={{
+                  width: 120,
+                  height: 120,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  margin: "0 auto 8px",
+                  background: "rgba(255,255,255,0.04)",
+                  borderRadius: 12,
+                }}
+              >
+                <AgentMascot
+                  agent={agent}
+                  mood="calm"
+                  size={96}
+                  accent={AGENT_ACCENT[agent]?.accent}
+                  accentDark={AGENT_ACCENT[agent]?.accentDark}
+                />
+              </div>
+              <figcaption style={{ fontSize: 12, opacity: 0.8 }}>
+                {agent === "claude" ? "Clawd" : agent === "codex" ? "Codex" : "Cursor Cube"}
               </figcaption>
             </figure>
           ))}

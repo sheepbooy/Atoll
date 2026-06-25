@@ -760,6 +760,142 @@ fn focus_claude_app_on_main_thread(_app: &AppHandle, launch_if_needed: bool) -> 
     Ok(())
 }
 
+pub fn focus_cursor_app(app: &AppHandle) -> Result<(), String> {
+    let app = app.clone();
+    if is_main_thread() {
+        return focus_cursor_app_on_main_thread(&app, true);
+    }
+
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    window
+        .run_on_main_thread(move || {
+            let _ = tx.send(focus_cursor_app_on_main_thread(&app, true));
+        })
+        .map_err(|error| format!("Failed to dispatch Cursor focus: {error}"))?;
+    rx.recv()
+        .map_err(|_| "Cursor focus dispatch channel closed".to_string())?
+}
+
+fn focus_cursor_app_on_main_thread(_app: &AppHandle, launch_if_needed: bool) -> Result<(), String> {
+    deactivate_own_application();
+
+    let focused = if launch_if_needed {
+        run_open_cursor() || activate_cursor_by_bundle_id()
+    } else {
+        activate_cursor_by_bundle_id()
+    };
+    if !focused {
+        return Err("Failed to focus Cursor".to_string());
+    }
+
+    ensure_island_panel_visible();
+    Ok(())
+}
+
+fn run_open_cursor() -> bool {
+    Command::new("/usr/bin/open")
+        .args(["-a", "Cursor"])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn activate_cursor_by_bundle_id() -> bool {
+    unsafe {
+        let Some(cls) = objc2::runtime::AnyClass::get(c"NSRunningApplication") else {
+            return false;
+        };
+        let options: u64 = 1 << 1;
+        for bundle_id in CURSOR_BUNDLE_IDS {
+            let bundle = objc2_foundation::NSString::from_str(bundle_id);
+            let apps: *mut objc2::runtime::AnyObject = objc2::msg_send![
+                cls,
+                runningApplicationsWithBundleIdentifier: &*bundle
+            ];
+            if apps.is_null() {
+                continue;
+            }
+
+            let count: usize = objc2::msg_send![apps, count];
+            for index in 0..count {
+                let app: *mut objc2::runtime::AnyObject =
+                    objc2::msg_send![apps, objectAtIndex: index];
+                if app.is_null() {
+                    continue;
+                }
+
+                let ok: objc2::runtime::Bool = objc2::msg_send![app, activateWithOptions: options];
+                if ok.as_bool() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
+pub fn detect_cursor_session_host_from_peer_pid(pid: u32) -> SessionHost {
+    if is_in_cursor_tree(pid) {
+        return SessionHost::CursorIde;
+    }
+    SessionHost::Unknown
+}
+
+pub(crate) fn is_cursor_app_running() -> bool {
+    unsafe {
+        let Some(cls) = objc2::runtime::AnyClass::get(c"NSRunningApplication") else {
+            return false;
+        };
+        for bundle_id in CURSOR_BUNDLE_IDS {
+            let bundle = objc2_foundation::NSString::from_str(bundle_id);
+            let apps: *mut objc2::runtime::AnyObject = objc2::msg_send![
+                cls,
+                runningApplicationsWithBundleIdentifier: &*bundle
+            ];
+            if apps.is_null() {
+                continue;
+            }
+            let count: usize = objc2::msg_send![apps, count];
+            if count > 0 {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+fn is_in_cursor_tree(mut pid: u32) -> bool {
+    for _ in 0..32 {
+        if pid <= 1 {
+            return false;
+        }
+        if is_cursor_process(pid) {
+            return true;
+        }
+        let output = match Command::new("ps")
+            .args(["-p", &pid.to_string(), "-o", "ppid="])
+            .output()
+        {
+            Ok(output) => output,
+            Err(_) => return false,
+        };
+        let ppid_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        pid = match ppid_str.parse::<u32>() {
+            Ok(ppid) => ppid,
+            Err(_) => return false,
+        };
+    }
+    false
+}
+
+fn is_cursor_process(pid: u32) -> bool {
+    bundle_id_for_pid(pid as i32)
+        .is_some_and(|bundle| CURSOR_BUNDLE_IDS.contains(&bundle.as_str()))
+}
+
 fn run_open_claude() -> bool {
     Command::new("/usr/bin/open")
         .args(["-a", "Claude"])
@@ -1110,6 +1246,8 @@ fn is_in_codex_desktop_tree(mut pid: u32) -> bool {
 }
 
 const CODEX_DESKTOP_BUNDLE_IDS: &[&str] = &["com.openai.codex"];
+
+const CURSOR_BUNDLE_IDS: &[&str] = &["com.todesktop.230313mzl4w4u92"];
 
 fn is_codex_desktop_bundle(bundle: &str) -> bool {
     CODEX_DESKTOP_BUNDLE_IDS.contains(&bundle)

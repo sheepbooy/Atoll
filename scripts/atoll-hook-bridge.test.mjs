@@ -19,6 +19,7 @@ try {
       port: 47778,
       claudeUrl: "http://127.0.0.1:47778/claude/pre-tool-use",
       codexUrl: "http://127.0.0.1:47778/codex/hook",
+      cursorUrl: "http://127.0.0.1:47778/cursor/hook",
     }),
   );
 
@@ -26,6 +27,7 @@ try {
     port: 47778,
     claudeUrl: "http://127.0.0.1:47778/claude/pre-tool-use",
     codexUrl: "http://127.0.0.1:47778/codex/hook",
+    cursorUrl: "http://127.0.0.1:47778/cursor/hook",
   });
   assert.equal(
     resolveHookUrl("claudeUrl", "http://127.0.0.1:47777/claude/pre-tool-use"),
@@ -34,6 +36,10 @@ try {
   assert.equal(
     resolveHookUrl("codexUrl", "http://127.0.0.1:47777/codex/hook"),
     "http://127.0.0.1:47778/codex/hook",
+  );
+  assert.equal(
+    resolveHookUrl("cursorUrl", "http://127.0.0.1:47777/cursor/hook"),
+    "http://127.0.0.1:47778/cursor/hook",
   );
 
   process.env.ATOLL_HOOK_URL = "http://127.0.0.1:49999/custom";

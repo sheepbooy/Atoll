@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::utils::config::Color;
@@ -162,6 +162,7 @@ impl TokenUsage {
 pub(crate) enum AgentKind {
     Claude,
     Codex,
+    Cursor,
     Gemini,
     Other,
 }
@@ -311,8 +312,10 @@ pub(crate) fn compute_listening_online(app: &AppHandle) -> bool {
     }
     let claude_ready = claude_hook_status(app);
     let codex_ready = codex_hook_status(app);
-    let any_installed = claude_ready.installed || codex_ready.installed;
-    let any_script_found = claude_ready.script_found || codex_ready.script_found;
+    let cursor_ready = cursor_hook_status(app);
+    let any_installed = claude_ready.installed || codex_ready.installed || cursor_ready.installed;
+    let any_script_found =
+        claude_ready.script_found || codex_ready.script_found || cursor_ready.script_found;
     any_installed && any_script_found && hook_bridge::is_bridge_reachable(app)
 }
 
@@ -415,6 +418,7 @@ fn persist_session_hosts(state: &AppState, sessions: &[SessionSummary]) {
                 | platform::SessionHost::ClaudeCli
                 | platform::SessionHost::CodexDesktop
                 | platform::SessionHost::CodexCli
+                | platform::SessionHost::CursorIde
         ) {
             store_session_host(state, &session.session_id, session.session_host);
         }
@@ -475,6 +479,8 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
             resolve_hook_script_path(app, "atoll-claude-hook.mjs").unwrap_or_default();
         let codex_script_path =
             resolve_hook_script_path(app, "atoll-codex-hook.mjs").unwrap_or_default();
+        let cursor_script_path =
+            resolve_hook_script_path(app, "atoll-cursor-hook.mjs").unwrap_or_default();
         return HookHealthSnapshot {
             claude: HookStatus {
                 installed: false,
@@ -498,15 +504,28 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
                 node_path: String::new(),
                 node_found: resolve_node_executable().is_ok(),
             },
+            cursor: HookStatus {
+                installed: false,
+                script_found: !cursor_script_path.is_empty()
+                    && std::path::Path::new(&cursor_script_path).exists(),
+                settings_path: cursor_hooks_path()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                script_path: cursor_script_path,
+                node_path: String::new(),
+                node_found: resolve_node_executable().is_ok(),
+            },
         };
     }
 
     let claude_status = claude_hook_status(app);
     let codex_status = codex_hook_status(app);
+    let cursor_status = cursor_hook_status(app);
 
     HookHealthSnapshot {
         claude: claude_status,
         codex: codex_status,
+        cursor: cursor_status,
     }
 }
 
@@ -564,6 +583,42 @@ fn codex_hook_status(app: &AppHandle) -> HookStatus {
         script_path,
         config.as_ref(),
         "atoll-codex-hook",
+    )
+}
+
+fn cursor_hook_status(app: &AppHandle) -> HookStatus {
+    let hooks_path = cursor_hooks_path()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let config = read_json_file(&hooks_path);
+    let installed = config
+        .as_ref()
+        .map(|hooks| has_atoll_cursor_hooks(hooks))
+        .unwrap_or(false);
+    let (script_path, mut script_found) =
+        resolve_hook_script_readiness(app, "atoll-cursor-hook.mjs", config.as_ref());
+    if installed {
+        if let (Some(cfg), Ok(preferred)) = (
+            config.as_ref(),
+            resolve_install_hook_script_path(app, "atoll-cursor-hook.mjs"),
+        ) {
+            if let Some(configured) = configured_atoll_hook_script_path(cfg, "atoll-cursor-hook") {
+                if is_dev_hook_script_path(&configured)
+                    && configured != preferred
+                    && std::path::Path::new(&preferred).is_file()
+                {
+                    script_found = false;
+                }
+            }
+        }
+    }
+    build_hook_status(
+        installed,
+        script_found,
+        hooks_path,
+        script_path,
+        config.as_ref(),
+        "atoll-cursor-hook",
     )
 }
 
@@ -908,54 +963,64 @@ fn get_session_transcript(transcript_path: String) -> Result<Vec<ChatMessage>, S
                 Err(_) => continue,
             };
 
-            let Some(msg_type) = entry.get("type").and_then(Value::as_str) else {
+            if let Some(msg_type) = entry.get("type").and_then(Value::as_str) {
+                match msg_type {
+                    "human" | "user" => {
+                        let content = extract_transcript_text(&entry);
+                        if !content.is_empty() {
+                            messages.push(ChatMessage {
+                                role: "user".into(),
+                                content,
+                                tool_name: None,
+                                tool_input: None,
+                            });
+                        }
+                    }
+                    "assistant" => {
+                        let content = extract_transcript_text(&entry);
+                        let (tool_name, tool_input) = extract_tool_use_from_entry(&entry);
+                        if !content.is_empty() || tool_name.is_some() {
+                            messages.push(ChatMessage {
+                                role: "assistant".into(),
+                                content,
+                                tool_name,
+                                tool_input,
+                            });
+                        }
+                    }
+                    _ => {}
+                }
                 continue;
-            };
+            }
 
-            match msg_type {
-                "human" | "user" => {
-                    let content = extract_transcript_text(&entry);
-                    if !content.is_empty() {
-                        messages.push(ChatMessage {
-                            role: "user".into(),
-                            content,
-                            tool_name: None,
-                            tool_input: None,
-                        });
+            // Cursor transcripts: top-level "role" instead of "type"
+            if let Some(role) = entry.get("role").and_then(Value::as_str) {
+                match role {
+                    "user" => {
+                        let content = extract_transcript_text(&entry);
+                        if !content.is_empty() {
+                            messages.push(ChatMessage {
+                                role: "user".into(),
+                                content,
+                                tool_name: None,
+                                tool_input: None,
+                            });
+                        }
                     }
-                }
-                "assistant" => {
-                    let content = extract_transcript_text(&entry);
-                    let (tool_name, tool_input) = entry
-                        .get("message")
-                        .and_then(|m| m.get("content"))
-                        .and_then(Value::as_array)
-                        .and_then(|arr| {
-                            arr.iter().find_map(|block| {
-                                if block.get("type")?.as_str()? == "tool_use" {
-                                    let name = block
-                                        .get("name")
-                                        .and_then(Value::as_str)
-                                        .map(String::from)?;
-                                    let input = block.get("input").cloned();
-                                    Some((name, input))
-                                } else {
-                                    None
-                                }
-                            })
-                        })
-                        .map(|(name, input)| (Some(name), input))
-                        .unwrap_or((None, None));
-                    if !content.is_empty() || tool_name.is_some() {
-                        messages.push(ChatMessage {
-                            role: "assistant".into(),
-                            content,
-                            tool_name,
-                            tool_input,
-                        });
+                    "assistant" => {
+                        let content = extract_transcript_text(&entry);
+                        let (tool_name, tool_input) = extract_tool_use_from_entry(&entry);
+                        if !content.is_empty() || tool_name.is_some() {
+                            messages.push(ChatMessage {
+                                role: "assistant".into(),
+                                content,
+                                tool_name,
+                                tool_input,
+                            });
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
         }
     }
@@ -986,6 +1051,28 @@ fn extract_transcript_text(entry: &Value) -> String {
         }
     }
     String::new()
+}
+
+fn extract_tool_use_from_entry(entry: &Value) -> (Option<String>, Option<Value>) {
+    entry
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(Value::as_array)
+        .and_then(|arr| {
+            arr.iter().find_map(|block| {
+                if block.get("type")?.as_str()? == "tool_use" {
+                    let name = block
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .map(String::from)?;
+                    let input = block.get("input").cloned();
+                    Some((Some(name), input))
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap_or((None, None))
 }
 
 fn collect_session_transcript_paths(
@@ -1200,6 +1287,7 @@ pub(crate) fn refresh_session_token_usage(
     let format = match agent {
         Some(AgentKind::Codex) => transcript::TranscriptFormat::Codex,
         Some(AgentKind::Claude) => transcript::TranscriptFormat::Claude,
+        Some(AgentKind::Cursor) => transcript::TranscriptFormat::Cursor,
         _ => transcript::detect_transcript_format(transcript_path),
     };
 
@@ -1209,6 +1297,16 @@ pub(crate) fn refresh_session_token_usage(
         }
         transcript::TranscriptFormat::Claude => {
             parse_claude_token_usage_from_transcript(transcript_path, last_offset, &today_key)?
+        }
+        // Cursor transcripts carry no token-usage data; tokens arrive
+        // via `ingest_cursor_stop_token_usage` from the stop hook payload.
+        // Always set is_full_scan=false so we never overwrite values that
+        // were already injected by the stop hook.
+        transcript::TranscriptFormat::Cursor => {
+            let file_len = std::fs::metadata(transcript_path)
+                .map(|m| m.len())
+                .unwrap_or(last_offset);
+            (TokenUsage::default(), file_len, false)
         }
     };
 
@@ -1243,6 +1341,101 @@ pub(crate) fn refresh_session_token_usage(
     token_history::sync_today_to_history(state)?;
 
     Ok(())
+}
+
+/// Ingest token usage directly from a Cursor `stop` hook payload.
+///
+/// Cursor's JSONL transcript doesn't embed usage data, but the `stop` event
+/// payload carries `input_tokens`, `output_tokens`, `cache_read_tokens`, and
+/// `cache_write_tokens` for the turn that just completed.
+///
+/// Fields may appear at the top level or nested under a `token_usage` object
+/// depending on Cursor version.  Cursor reports `input_tokens` as the total
+/// (cache_read + cache_write + fresh); we store the raw values and let the
+/// display layer decide whether to decompose them.
+pub(crate) fn ingest_cursor_stop_token_usage(
+    state: &AppState,
+    session_id: &str,
+    payload: &serde_json::Value,
+) -> Result<(), String> {
+    let source = payload
+        .get("token_usage")
+        .or_else(|| payload.get("tokenUsage"))
+        .unwrap_or(payload);
+
+    let input_tokens = json_value_as_u64(source.get("input_tokens"))
+        .or_else(|| json_value_as_u64(source.get("inputTokens")))
+        .unwrap_or(0);
+    let output_tokens = json_value_as_u64(source.get("output_tokens"))
+        .or_else(|| json_value_as_u64(source.get("outputTokens")))
+        .unwrap_or(0);
+    let cache_read_tokens = json_value_as_u64(source.get("cache_read_tokens"))
+        .or_else(|| json_value_as_u64(source.get("cacheReadTokens")))
+        .unwrap_or(0);
+    let cache_write_tokens = json_value_as_u64(source.get("cache_write_tokens"))
+        .or_else(|| json_value_as_u64(source.get("cacheWriteTokens")))
+        .unwrap_or(0);
+
+    if input_tokens == 0 && output_tokens == 0 && cache_read_tokens == 0 && cache_write_tokens == 0
+    {
+        let keys: Vec<&str> = payload
+            .as_object()
+            .map(|obj| obj.keys().map(String::as_str).collect())
+            .unwrap_or_default();
+        eprintln!(
+            "Atoll Cursor stop payload has no token fields (session={session_id}, keys={keys:?})"
+        );
+        return Ok(());
+    }
+
+    eprintln!(
+        "Atoll Cursor stop tokens: input={input_tokens} output={output_tokens} \
+         cache_read={cache_read_tokens} cache_write={cache_write_tokens} session={session_id}"
+    );
+
+    roll_over_token_usage_if_needed(state);
+
+    let turn_usage = TokenUsage {
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
+        cache_creation_tokens: cache_write_tokens,
+    };
+
+    {
+        let mut usage_by_session = state
+            .session_token_usage
+            .lock()
+            .map_err(|error| error.to_string())?;
+        let entry = usage_by_session.entry(session_id.to_string()).or_default();
+        entry.add_assign(turn_usage);
+    }
+
+    if let Ok(mut sticky) = state.session_agent_map.lock() {
+        sticky
+            .entry(session_id.to_string())
+            .or_insert_with(|| token_history::agent_kind_key(&AgentKind::Cursor));
+    }
+
+    token_history::sync_today_to_history(state)?;
+    Ok(())
+}
+
+/// Parse a JSON value as u64, accepting integers, floats, and numeric strings.
+fn json_value_as_u64(value: Option<&serde_json::Value>) -> Option<u64> {
+    let value = value?;
+    if let Some(n) = value.as_u64() {
+        return Some(n);
+    }
+    if let Some(f) = value.as_f64() {
+        if f >= 0.0 && f <= u64::MAX as f64 {
+            return Some(f as u64);
+        }
+    }
+    if let Some(s) = value.as_str() {
+        return s.parse::<u64>().ok();
+    }
+    None
 }
 
 #[tauri::command]
@@ -1601,10 +1794,9 @@ pub(crate) fn register_known_session(
     cwd: &str,
     transcript_path: Option<&str>,
 ) {
-    let resolved_cwd = if matches!(agent, AgentKind::Codex) {
-        resolve_codex_session_cwd(cwd, transcript_path)
-    } else {
-        cwd.to_string()
+    let resolved_cwd = match agent {
+        AgentKind::Codex => resolve_codex_session_cwd(cwd, transcript_path),
+        _ => cwd.to_string(),
     };
 
     if is_codex_internal_session(&agent, &resolved_cwd, None) {
@@ -1689,6 +1881,22 @@ pub(crate) fn codex_session_host(
     detected
 }
 
+pub(crate) fn cursor_session_host(state: &AppState, session_id: &str) -> platform::SessionHost {
+    if let Ok(known) = state.known_sessions.lock() {
+        if let Some(entry) = known.get(session_id) {
+            if entry.host != platform::SessionHost::Unknown {
+                return entry.host;
+            }
+        }
+    }
+
+    let detected = platform::detect_cursor_session_host();
+    if detected != platform::SessionHost::Unknown {
+        store_session_host(state, session_id, detected);
+    }
+    detected
+}
+
 pub(crate) fn store_session_host(state: &AppState, session_id: &str, host: platform::SessionHost) {
     if let Ok(mut known) = state.known_sessions.lock() {
         if let Some(entry) = known.get_mut(session_id) {
@@ -1741,6 +1949,17 @@ fn session_host_for_summary(
             }
             if platform::is_codex_desktop_app_running() && !platform::frontmost_is_terminal() {
                 return platform::SessionHost::CodexDesktop;
+            }
+            platform::SessionHost::Unknown
+        }
+        AgentKind::Cursor => {
+            if let Some(entry) = known_sessions.get(session_id) {
+                if entry.host != platform::SessionHost::Unknown {
+                    return entry.host;
+                }
+            }
+            if platform::is_cursor_app_running() {
+                return platform::SessionHost::CursorIde;
             }
             platform::SessionHost::Unknown
         }
@@ -2011,6 +2230,7 @@ fn default_node_found() -> bool {
 struct HookHealthSnapshot {
     claude: HookStatus,
     codex: HookStatus,
+    cursor: HookStatus,
 }
 
 impl Default for HookStatus {
@@ -2256,6 +2476,10 @@ fn codex_hooks_path() -> Option<std::path::PathBuf> {
     dirs::home_dir().map(|home| home.join(".codex").join("hooks.json"))
 }
 
+fn cursor_hooks_path() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|home| home.join(".cursor").join("hooks.json"))
+}
+
 #[tauri::command]
 fn get_codex_hook_status(app: AppHandle) -> Result<HookStatus, String> {
     if capture::force_hook_uninstalled() {
@@ -2452,6 +2676,143 @@ fn uninstall_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
         .map_err(|error| error.to_string())?;
 
     Ok(codex_hook_status(&app))
+}
+
+#[tauri::command]
+fn get_cursor_hook_status(app: AppHandle) -> Result<HookStatus, String> {
+    if capture::force_hook_uninstalled() {
+        let script_path =
+            resolve_hook_script_path(&app, "atoll-cursor-hook.mjs").unwrap_or_default();
+        return Ok(HookStatus {
+            installed: false,
+            script_found: !script_path.is_empty() && std::path::Path::new(&script_path).exists(),
+            settings_path: cursor_hooks_path()
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            script_path,
+            node_path: String::new(),
+            node_found: resolve_node_executable().is_ok(),
+        });
+    }
+    Ok(cursor_hook_status(&app))
+}
+
+#[tauri::command]
+fn install_cursor_hooks(app: AppHandle) -> Result<HookStatus, String> {
+    let script_path = resolve_install_hook_script_path(&app, "atoll-cursor-hook.mjs")?;
+
+    if !std::path::Path::new(&script_path).exists() {
+        return Err(format!("Hook script not found at: {script_path}"));
+    }
+
+    let node_path = resolve_node_executable()?;
+
+    let hooks_path =
+        cursor_hooks_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
+
+    if let Some(parent) = hooks_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Cannot create ~/.cursor directory: {e}"))?;
+    }
+
+    let mut config: Value = if hooks_path.exists() {
+        let content =
+            std::fs::read_to_string(&hooks_path).map_err(|e| format!("Cannot read hooks: {e}"))?;
+        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()))
+    } else {
+        Value::Object(Default::default())
+    };
+
+    if config.get("version").is_none() {
+        if let Some(obj) = config.as_object_mut() {
+            obj.insert("version".to_string(), json!(1));
+        }
+    }
+
+    let hook_command = format_hook_command(
+        hook_runner_for_command(&app).as_deref(),
+        &node_path,
+        &script_path,
+    );
+
+    let config_obj = config
+        .as_object_mut()
+        .ok_or_else(|| "hooks.json is not a JSON object".to_string())?;
+    let hooks_obj = config_obj
+        .entry("hooks")
+        .or_insert_with(|| Value::Object(Default::default()));
+    upsert_cursor_hook_events(hooks_obj, &hook_command);
+
+    let formatted = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Cannot serialize hooks: {e}"))?;
+    std::fs::write(&hooks_path, formatted).map_err(|e| format!("Cannot write hooks: {e}"))?;
+
+    let written =
+        std::fs::read_to_string(&hooks_path).map_err(|e| format!("Cannot verify hooks: {e}"))?;
+    let verify: Value = serde_json::from_str(&written)
+        .map_err(|e| format!("Cannot parse hooks after write: {e}"))?;
+    if !has_atoll_cursor_hooks(&verify) {
+        return Err(
+            "Cursor hooks were not saved correctly. Check permissions on ~/.cursor/hooks.json."
+                .into(),
+        );
+    }
+
+    if let Err(error) = hook_bridge::refresh_bridge_config_file(&app) {
+        eprintln!("Atoll failed to refresh bridge.json after Cursor hook install: {error}");
+    }
+
+    let state = app.state::<AppState>();
+    let snapshot = build_snapshot(&app, &state);
+    if let Ok(mut last) = state.last_listening_online.lock() {
+        *last = Some(snapshot.online);
+    }
+    remember_hook_health(&state, &snapshot.hook_health);
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+
+    Ok(cursor_hook_status(&app))
+}
+
+#[tauri::command]
+fn uninstall_cursor_hooks(app: AppHandle) -> Result<HookStatus, String> {
+    let hooks_path =
+        cursor_hooks_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
+
+    if !hooks_path.exists() {
+        return Ok(HookStatus {
+            installed: false,
+            script_found: false,
+            settings_path: hooks_path.to_string_lossy().into(),
+            script_path: String::new(),
+            node_path: String::new(),
+            node_found: resolve_node_executable().is_ok(),
+        });
+    }
+
+    let content =
+        std::fs::read_to_string(&hooks_path).map_err(|e| format!("Cannot read hooks: {e}"))?;
+    let mut config: Value =
+        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()));
+
+    if let Some(hooks) = config.get_mut("hooks") {
+        remove_atoll_cursor_hooks(hooks);
+    }
+
+    let formatted = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Cannot serialize hooks: {e}"))?;
+    std::fs::write(&hooks_path, formatted).map_err(|e| format!("Cannot write hooks: {e}"))?;
+
+    let state = app.state::<AppState>();
+    let snapshot = build_snapshot(&app, &state);
+    if let Ok(mut last) = state.last_listening_online.lock() {
+        *last = Some(snapshot.online);
+    }
+    remember_hook_health(&state, &snapshot.hook_health);
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+
+    Ok(cursor_hook_status(&app))
 }
 
 fn normalize_hook_script_path(path: &str) -> String {
@@ -3061,6 +3422,79 @@ fn matcher_group_has_atoll_codex(matcher: &Value) -> bool {
         .unwrap_or(false)
 }
 
+fn hook_entry_has_atoll_cursor(entry: &Value) -> bool {
+    entry
+        .get("command")
+        .and_then(Value::as_str)
+        .map(|cmd| cmd.contains("atoll-cursor-hook"))
+        .unwrap_or(false)
+}
+
+fn upsert_cursor_hook_events(hooks: &mut Value, hook_command: &str) {
+    let Some(hooks_obj) = hooks.as_object_mut() else {
+        return;
+    };
+
+    for (event, timeout) in [
+        ("preToolUse", 1800),
+        ("postToolUse", 30),
+        ("stop", 30),
+        ("subagentStart", 30),
+        ("subagentStop", 30),
+    ] {
+        let mut merged: Vec<Value> = hooks_obj
+            .get(event)
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter(|entry| !hook_entry_has_atoll_cursor(entry))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+        merged.push(json!({
+            "command": hook_command,
+            "timeout": timeout
+        }));
+        hooks_obj.insert(event.to_string(), Value::Array(merged));
+    }
+}
+
+fn remove_atoll_cursor_hooks(hooks: &mut Value) {
+    let Some(hooks_obj) = hooks.as_object_mut() else {
+        return;
+    };
+
+    for entries in hooks_obj.values_mut() {
+        if let Some(arr) = entries.as_array_mut() {
+            arr.retain(|entry| !hook_entry_has_atoll_cursor(entry));
+        }
+    }
+
+    hooks_obj.retain(|_, entries| {
+        entries
+            .as_array()
+            .map(|arr| !arr.is_empty())
+            .unwrap_or(false)
+    });
+}
+
+fn has_atoll_cursor_hooks(config: &Value) -> bool {
+    let Some(hooks) = config.get("hooks").and_then(Value::as_object) else {
+        return false;
+    };
+
+    ["preToolUse", "postToolUse", "stop", "subagentStart", "subagentStop"]
+        .iter()
+        .all(|event| {
+            hooks
+                .get(*event)
+                .and_then(Value::as_array)
+                .map(|arr| arr.iter().any(hook_entry_has_atoll_cursor))
+                .unwrap_or(false)
+        })
+}
+
 #[tauri::command]
 fn open_in_terminal(cwd: String) -> Result<(), String> {
     platform::open_in_terminal(&cwd)
@@ -3172,6 +3606,9 @@ pub fn run() {
             get_codex_hook_status,
             install_codex_hooks,
             uninstall_codex_hooks,
+            get_cursor_hook_status,
+            install_cursor_hooks,
+            uninstall_cursor_hooks,
             get_session_retention,
             set_session_retention,
             get_subagent_retention,
@@ -5862,5 +6299,52 @@ mod claude_hooks_tests {
             .get("PermissionRequest")
             .and_then(|value| value.as_array());
         assert!(permission.map(|arr| arr.is_empty()).unwrap_or(true));
+    }
+}
+
+#[cfg(test)]
+mod cursor_hooks_tests {
+    use super::{
+        has_atoll_cursor_hooks, hook_entry_has_atoll_cursor, remove_atoll_cursor_hooks,
+        upsert_cursor_hook_events,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn upsert_and_detect_cursor_hooks() {
+        let mut hooks = json!({});
+        upsert_cursor_hook_events(&mut hooks, "node \"/tmp/atoll-cursor-hook.mjs\"");
+
+        let config = json!({ "version": 1, "hooks": hooks });
+        assert!(has_atoll_cursor_hooks(&config));
+        assert!(hook_entry_has_atoll_cursor(
+            &config["hooks"]["preToolUse"].as_array().unwrap()[0]
+        ));
+    }
+
+    #[test]
+    fn remove_cursor_hooks_preserves_other_entries() {
+        let mut hooks = json!({
+            "preToolUse": [
+                { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 1800 },
+                { "command": "./custom-hook.sh", "timeout": 10 }
+            ],
+            "postToolUse": [
+                { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 30 }
+            ],
+            "stop": [
+                { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 30 }
+            ],
+            "subagentStop": [
+                { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 30 }
+            ]
+        });
+
+        remove_atoll_cursor_hooks(&mut hooks);
+
+        let pre_tool_use = hooks["preToolUse"].as_array().unwrap();
+        assert_eq!(pre_tool_use.len(), 1);
+        assert_eq!(pre_tool_use[0]["command"], "./custom-hook.sh");
+        assert!(!has_atoll_cursor_hooks(&json!({ "hooks": hooks })));
     }
 }
