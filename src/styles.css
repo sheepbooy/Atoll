@@ -4109,10 +4109,28 @@ kbd {
 
 .session-subagents {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.session-subagents-chips {
+  display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
-  margin-top: 4px;
-  padding-left: 36px;
+  min-width: 0;
+  flex: 1;
+}
+
+.session-subagents-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
 }
 
 .subagent-chip {
@@ -4157,13 +4175,13 @@ kbd {
   letter-spacing: -0.01em;
 }
 
+.subagent-view-all-btn,
 .subagent-bulk-archive-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 22px;
   height: 22px;
-  margin-left: auto;
   flex-shrink: 0;
   border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
   border-radius: 6px;
@@ -4173,6 +4191,7 @@ kbd {
   transition: background 0.15s, border-color 0.15s, opacity 0.15s;
 }
 
+.subagent-view-all-btn:hover,
 .subagent-bulk-archive-btn:hover:not(:disabled) {
   background: var(--surface-hover, rgba(255, 255, 255, 0.1));
   border-color: var(--border-hover, rgba(255, 255, 255, 0.15));
@@ -4378,6 +4397,147 @@ kbd {
 .subagent-archive-btn:hover {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-primary);
+}
+
+/* ─── Subagent List View ─────────────────────────────────────── */
+
+.subagent-list-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.subagent-list-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.subagent-list-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+}
+
+.subagent-list-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.subagent-list-running-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 650;
+  background: rgba(100, 180, 255, 0.15);
+  color: rgba(100, 180, 255, 0.9);
+}
+
+.subagent-list-archive-all-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.subagent-list-archive-all-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+.subagent-list-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.subagent-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 6px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.subagent-list-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.subagent-list-item.is-completed {
+  opacity: 0.75;
+}
+
+.subagent-list-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.subagent-list-item-name {
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-list-item-name.coral { color: var(--accent-coral); }
+.subagent-list-item-name.cyan { color: var(--accent-cyan); }
+.subagent-list-item-name.lime { color: var(--accent-lime); }
+.subagent-list-item-name.neutral { color: var(--accent-violet); }
+.subagent-list-item-name.amber { color: #f0c060; }
+.subagent-list-item-name.pink { color: #f7a0c8; }
+.subagent-list-item-name.teal { color: #70d8c8; }
+.subagent-list-item-name.blue { color: #80b0f8; }
+
+.subagent-list-item-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.subagent-list-item-last-msg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-list-item-trail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  color: var(--text-muted);
 }
 
 .session-agent-pill {

@@ -143,6 +143,7 @@ type PanelView =
   | { kind: "home" }
   | { kind: "session"; sessionId: string }
   | { kind: "subagent"; sessionId: string; agentId: string }
+  | { kind: "subagentList"; sessionId: string }
   | { kind: "settings"; page: "main" | "hooks" | "tokens" };
 
 const COMPACT_ICON_SETTING_KEY = "atoll.maxCompactIcons";
@@ -1144,6 +1145,12 @@ export function App() {
           setPanelView({ kind: "home" });
         }
       }
+      return;
+    }
+    if (panelView.kind === "subagentList") {
+      if (!sessions.some((s) => s.sessionId === panelView.sessionId)) {
+        setPanelView({ kind: "home" });
+      }
     }
   }, [panelView, sessions]);
 
@@ -1268,6 +1275,10 @@ export function App() {
 
   function navigateToSubagent(sessionId: string, agentId: string) {
     setPanelView({ kind: "subagent", sessionId, agentId });
+  }
+
+  function navigateToSubagentList(sessionId: string) {
+    setPanelView({ kind: "subagentList", sessionId });
   }
 
   function navigateBack() {
@@ -1510,7 +1521,7 @@ export function App() {
     const compactLeftWidth = collapseCompactLeftWidth();
     const naturalCollapseMode = collapsePresentationMode();
     const wasSessionSubview =
-      leavingPanel === "session" || leavingPanel === "subagent";
+      leavingPanel === "session" || leavingPanel === "subagent" || leavingPanel === "subagentList";
     const collapseMode =
       wasSessionSubview && naturalCollapseMode === "dormant"
         ? "compact"
@@ -2105,7 +2116,7 @@ export function App() {
   const isSubview = isExpandedChrome && panelView.kind !== "home";
   const menuBarLogoSize = isExpanded ? 36 : isMicro ? 30 : 34;
   const subviewSession =
-    panelView.kind === "session" || panelView.kind === "subagent"
+    panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList"
       ? sessions.find((session) => session.sessionId === panelView.sessionId)
       : undefined;
   const subviewSubagent =
@@ -2215,6 +2226,19 @@ export function App() {
               setPanelView({ kind: "home" });
             }
           }}
+        />
+      );
+    }
+
+    if (panelView.kind === "subagentList") {
+      const session = sessions.find((s) => s.sessionId === panelView.sessionId);
+      if (!session) return null;
+      return (
+        <SubagentListView
+          subagents={session.activeSubagents ?? []}
+          agent={session.agent}
+          onSelectSubagent={(agentId) => navigateToSubagent(panelView.sessionId, agentId)}
+          onArchiveCompletedSubagents={() => handleArchiveCompletedSubagents(panelView.sessionId)}
         />
       );
     }
@@ -2335,6 +2359,7 @@ export function App() {
           onArchiveSession={handleArchiveSession}
           onArchiveCompletedSubagents={handleArchiveCompletedSubagents}
           onPinSession={handlePinSession}
+          onViewSubagentList={navigateToSubagentList}
         />
       );
     }
@@ -2352,7 +2377,7 @@ export function App() {
   return (
     <main className="stage">
       <section
-        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" ? "is-session-subview" : ""}`}
+        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList" ? "is-session-subview" : ""}`}
         aria-label="Atoll"
         tabIndex={0}
         onClick={handleIslandClick}
@@ -2429,6 +2454,22 @@ export function App() {
             ) : panelView.kind === "subagent" ? (
               <SessionSubviewNav
                 cwd={subviewSubagent?.agentType ?? ""}
+                agent={subviewSession?.agent}
+                sessionId={subviewSession?.sessionId}
+                sessionHost={subviewSession?.sessionHost}
+                onBack={navigateBack}
+                onOpenExternal={() => {
+                  collapseIsland(true);
+                  void openAgentApp(
+                    subviewSession?.agent ?? "other",
+                    subviewSession?.cwd ?? "",
+                    subviewSession?.sessionId,
+                  );
+                }}
+              />
+            ) : panelView.kind === "subagentList" ? (
+              <SessionSubviewNav
+                cwd="Subagents"
                 agent={subviewSession?.agent}
                 sessionId={subviewSession?.sessionId}
                 sessionHost={subviewSession?.sessionHost}
@@ -2533,7 +2574,8 @@ export function App() {
 
           {isExpandedChrome &&
           panelView.kind !== "session" &&
-          panelView.kind !== "subagent" ? (
+          panelView.kind !== "subagent" &&
+          panelView.kind !== "subagentList" ? (
           <div
             className="header-actions"
             data-no-drag
@@ -2847,6 +2889,7 @@ interface SessionListViewProps {
   onArchiveSession: (sessionId: string) => void;
   onArchiveCompletedSubagents: (sessionId: string) => void;
   onPinSession: (sessionId: string, pinned: boolean) => void;
+  onViewSubagentList: (sessionId: string) => void;
 }
 
 function partitionSubagents(subagents: SubagentSummary[], limit: number) {
@@ -2874,6 +2917,7 @@ function SessionListView({
   onArchiveSession,
   onArchiveCompletedSubagents,
   onPinSession,
+  onViewSubagentList,
 }: SessionListViewProps) {
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -2967,52 +3011,69 @@ function SessionListView({
                           const hasCompleted = session.activeSubagents.some((sub) => Boolean(sub.completedAt));
                           return (
                             <>
-                              {visible.map((sub) => {
-                                const subagentColor = getSubagentColor(sub.agentId);
-                                const subagentMood = getSubagentMood(sub.agentId, Boolean(sub.completedAt));
-                                return (
+                              <div className="session-subagents-chips">
+                                {visible.map((sub) => {
+                                  const subagentColor = getSubagentColor(sub.agentId);
+                                  const subagentMood = getSubagentMood(sub.agentId, Boolean(sub.completedAt));
+                                  return (
+                                    <button
+                                      key={sub.agentId}
+                                      className={`subagent-chip ${subagentColor.tone} ${sub.completedAt ? "is-completed" : ""}`}
+                                      type="button"
+                                      title={sub.completedAt ? `${sub.agentType} (done)` : sub.agentType}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onSelectSubagent(session.sessionId, sub.agentId);
+                                      }}
+                                    >
+                                      <AgentMascot
+                                        agent={session.agent}
+                                        size={14}
+                                        mood={subagentMood}
+                                        accent={subagentColor.accent}
+                                        accentDark={subagentColor.accentDark}
+                                      />
+                                      <span className="subagent-chip-label">{sub.agentType}</span>
+                                      {sub.completedAt ? <Check size={10} /> : null}
+                                    </button>
+                                  );
+                                })}
+                                {overflowCount > 0 ? (
+                                  <span
+                                    className="subagent-chip-overflow"
+                                    title={hidden.map((sub) => sub.agentType).join(", ")}
+                                  >
+                                    +{overflowCount}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="session-subagents-actions">
+                                {session.activeSubagents.length >= 2 ? (
                                   <button
-                                    key={sub.agentId}
-                                    className={`subagent-chip ${subagentColor.tone} ${sub.completedAt ? "is-completed" : ""}`}
                                     type="button"
-                                    title={sub.completedAt ? `${sub.agentType} (done)` : sub.agentType}
+                                    className="subagent-view-all-btn"
+                                    title="View all subagents"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      onSelectSubagent(session.sessionId, sub.agentId);
+                                      onViewSubagentList(session.sessionId);
                                     }}
                                   >
-                                    <AgentMascot
-                                      agent={session.agent}
-                                      size={14}
-                                      mood={subagentMood}
-                                      accent={subagentColor.accent}
-                                      accentDark={subagentColor.accentDark}
-                                    />
-                                    <span className="subagent-chip-label">{sub.agentType}</span>
-                                    {sub.completedAt ? <Check size={10} /> : null}
+                                    <Layers size={12} />
                                   </button>
-                                );
-                              })}
-                              {overflowCount > 0 ? (
-                                <span
-                                  className="subagent-chip-overflow"
-                                  title={hidden.map((sub) => sub.agentType).join(", ")}
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="subagent-bulk-archive-btn"
+                                  title="Archive completed subagents"
+                                  disabled={!hasCompleted}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onArchiveCompletedSubagents(session.sessionId);
+                                  }}
                                 >
-                                  ×{overflowCount}
-                                </span>
-                              ) : null}
-                              <button
-                                type="button"
-                                className="subagent-bulk-archive-btn"
-                                title="Archive completed subagents"
-                                disabled={!hasCompleted}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onArchiveCompletedSubagents(session.sessionId);
-                                }}
-                              >
-                                <Archive size={12} />
-                              </button>
+                                  <Archive size={12} />
+                                </button>
+                              </div>
                             </>
                           );
                         })()}
@@ -3880,6 +3941,101 @@ function SessionChatView({ transcriptPath, requests }: SessionChatViewProps) {
     </div>
   );
 }
+
+/* ─── Subagent List View ──────────────────────────────────────── */
+
+interface SubagentListViewProps {
+  subagents: SubagentSummary[];
+  agent: AgentKind;
+  onSelectSubagent: (agentId: string) => void;
+  onArchiveCompletedSubagents: () => void;
+}
+
+function SubagentListView({
+  subagents,
+  agent,
+  onSelectSubagent,
+  onArchiveCompletedSubagents,
+}: SubagentListViewProps) {
+  const sorted = [...subagents].sort((a, b) => {
+    const aDone = Boolean(a.completedAt);
+    const bDone = Boolean(b.completedAt);
+    if (aDone !== bDone) return aDone ? 1 : -1;
+    return b.startedAt.localeCompare(a.startedAt);
+  });
+  const hasCompleted = subagents.some((s) => Boolean(s.completedAt));
+  const runningCount = subagents.filter((s) => !s.completedAt).length;
+
+  return (
+    <div className="subagent-list-view">
+      <div className="subagent-list-header">
+        <div className="subagent-list-title-row">
+          <Layers size={14} />
+          <span className="subagent-list-title">
+            Subagents ({subagents.length})
+          </span>
+          {runningCount > 0 ? (
+            <span className="subagent-list-running-badge">{runningCount} running</span>
+          ) : null}
+        </div>
+        {hasCompleted ? (
+          <button
+            type="button"
+            className="subagent-list-archive-all-btn"
+            onClick={onArchiveCompletedSubagents}
+          >
+            <Archive size={12} />
+            <span>Archive completed</span>
+          </button>
+        ) : null}
+      </div>
+      <div className="subagent-list-body">
+        {sorted.map((sub) => {
+          const color = getSubagentColor(sub.agentId);
+          const mood = getSubagentMood(sub.agentId, Boolean(sub.completedAt));
+          return (
+            <button
+              key={sub.agentId}
+              type="button"
+              className={`subagent-list-item ${color.tone} ${sub.completedAt ? "is-completed" : ""}`}
+              onClick={() => onSelectSubagent(sub.agentId)}
+            >
+              <AgentMascot
+                agent={agent}
+                size={18}
+                mood={mood}
+                accent={color.accent}
+                accentDark={color.accentDark}
+              />
+              <div className="subagent-list-item-info">
+                <span className={`subagent-list-item-name ${color.tone}`}>{sub.agentType}</span>
+                <span className="subagent-list-item-meta">
+                  {timeAgo(sub.startedAt)}
+                  {sub.lastMessage ? (
+                    <>
+                      <span className="meta-divider">·</span>
+                      <span className="subagent-list-item-last-msg">{sub.lastMessage}</span>
+                    </>
+                  ) : null}
+                </span>
+              </div>
+              <div className="subagent-list-item-trail">
+                {sub.completedAt ? (
+                  <span className="subagent-status-badge done"><Check size={10} /> Done</span>
+                ) : (
+                  <span className="subagent-status-badge running">Running</span>
+                )}
+                <ChevronRight size={14} />
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Subagent Detail View ───────────────────────────────────── */
 
 interface SubagentDetailViewProps {
   agentId: string;
