@@ -4860,6 +4860,15 @@ mod core_tests {
         assert_eq!(past_one.usage.input_tokens, 2000);
         assert_eq!(past_one.usage.output_tokens, 800);
 
+        // Today's file value must also be preserved (not overwritten with zeros).
+        let today_record = history
+            .days
+            .iter()
+            .find(|day| day.date == today_key)
+            .expect("today");
+        assert_eq!(today_record.usage.input_tokens, 3000);
+        assert_eq!(today_record.usage.output_tokens, 1200);
+
         // UI floor: daily total must not drop below persisted baseline.
         let live_daily = TokenUsage::default();
         let protected = live_daily.component_wise_max(baseline);

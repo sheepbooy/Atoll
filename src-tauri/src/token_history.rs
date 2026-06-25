@@ -11,7 +11,7 @@ const HISTORY_VERSION: u32 = 1;
 const RETENTION_DAYS: i64 = 365;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct TokenUsageRecord {
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -52,10 +52,19 @@ impl TokenUsageRecord {
             .cache_creation_tokens
             .saturating_add(other.cache_creation_tokens);
     }
+
+    fn component_wise_max(self, other: TokenUsageRecord) -> TokenUsageRecord {
+        TokenUsageRecord {
+            input_tokens: self.input_tokens.max(other.input_tokens),
+            output_tokens: self.output_tokens.max(other.output_tokens),
+            cache_read_tokens: self.cache_read_tokens.max(other.cache_read_tokens),
+            cache_creation_tokens: self.cache_creation_tokens.max(other.cache_creation_tokens),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 struct TokenDayRecord {
     #[serde(flatten)]
     usage: TokenUsageRecord,
@@ -203,6 +212,18 @@ fn aggregate_day_record(
     record
 }
 
+fn merge_day_records(existing: &TokenDayRecord, incoming: &TokenDayRecord) -> TokenDayRecord {
+    let usage = existing.usage.component_wise_max(incoming.usage);
+
+    let mut by_agent = existing.by_agent.clone();
+    for (agent, incoming_usage) in &incoming.by_agent {
+        let entry = by_agent.entry(agent.clone()).or_default();
+        *entry = entry.component_wise_max(*incoming_usage);
+    }
+
+    TokenDayRecord { usage, by_agent }
+}
+
 fn upsert_day(
     file: &mut TokenHistoryFile,
     day_key: &str,
@@ -226,7 +247,16 @@ pub(crate) fn sync_today_to_history(state: &AppState) -> Result<(), String> {
     drop(session_usage);
 
     let mut file = load_history_file();
-    upsert_day(&mut file, &day_key, record)
+
+    // Merge with existing data: never let a post-restart empty state overwrite
+    // previously persisted values.  Use component-wise max so the file only grows
+    // until rollover resets it at midnight.
+    if let Some(existing) = file.days.get(&day_key) {
+        let merged = merge_day_records(existing, &record);
+        upsert_day(&mut file, &day_key, merged)
+    } else {
+        upsert_day(&mut file, &day_key, record)
+    }
 }
 
 pub(crate) fn flush_day_to_history(state: &AppState, day_key: &str) -> Result<(), String> {
@@ -246,7 +276,12 @@ pub(crate) fn flush_day_to_history(state: &AppState, day_key: &str) -> Result<()
     drop(session_usage);
 
     let mut file = load_history_file();
-    upsert_day(&mut file, day_key, record)
+    if let Some(existing) = file.days.get(day_key) {
+        let merged = merge_day_records(existing, &record);
+        upsert_day(&mut file, day_key, merged)
+    } else {
+        upsert_day(&mut file, day_key, record)
+    }
 }
 
 pub(crate) fn load_today_baseline() -> TokenUsage {
@@ -351,5 +386,96 @@ mod tests {
         prune_old_days(&mut days);
         assert_eq!(days.len(), 1);
         assert!(days.contains_key(&format_local_day_key(today)));
+    }
+
+    #[test]
+    fn deserialize_record_missing_cache_fields() {
+        let json = r#"{"inputTokens": 500, "outputTokens": 200}"#;
+        let record: TokenUsageRecord = serde_json::from_str(json).expect("should deserialize");
+        assert_eq!(record.input_tokens, 500);
+        assert_eq!(record.output_tokens, 200);
+        assert_eq!(record.cache_read_tokens, 0);
+        assert_eq!(record.cache_creation_tokens, 0);
+    }
+
+    #[test]
+    fn deserialize_history_file_with_legacy_day_records() {
+        let json = r#"{
+            "version": 1,
+            "timezone": "Asia/Shanghai",
+            "days": {
+                "2026-06-20": {
+                    "inputTokens": 1000,
+                    "outputTokens": 400,
+                    "byAgent": { "claude": { "inputTokens": 1000, "outputTokens": 400 } }
+                }
+            }
+        }"#;
+        let file: TokenHistoryFile = serde_json::from_str(json).expect("should deserialize");
+        let day = file.days.get("2026-06-20").expect("day exists");
+        assert_eq!(day.usage.input_tokens, 1000);
+        assert_eq!(day.usage.output_tokens, 400);
+        assert_eq!(day.usage.cache_read_tokens, 0);
+        assert_eq!(day.usage.cache_creation_tokens, 0);
+        let agent = day.by_agent.get("claude").expect("agent exists");
+        assert_eq!(agent.cache_read_tokens, 0);
+    }
+
+    #[test]
+    fn merge_day_records_takes_max() {
+        let existing = TokenDayRecord {
+            usage: TokenUsageRecord {
+                input_tokens: 5000,
+                output_tokens: 2000,
+                cache_read_tokens: 100,
+                cache_creation_tokens: 50,
+            },
+            by_agent: HashMap::from([
+                (
+                    "claude".into(),
+                    TokenUsageRecord {
+                        input_tokens: 3000,
+                        output_tokens: 1200,
+                        cache_read_tokens: 100,
+                        cache_creation_tokens: 50,
+                    },
+                ),
+                (
+                    "codex".into(),
+                    TokenUsageRecord {
+                        input_tokens: 2000,
+                        output_tokens: 800,
+                        cache_read_tokens: 0,
+                        cache_creation_tokens: 0,
+                    },
+                ),
+            ]),
+        };
+
+        // Simulate post-restart with only partial data recovered
+        let incoming = TokenDayRecord {
+            usage: TokenUsageRecord {
+                input_tokens: 3000,
+                output_tokens: 1200,
+                cache_read_tokens: 0,
+                cache_creation_tokens: 0,
+            },
+            by_agent: HashMap::from([(
+                "claude".into(),
+                TokenUsageRecord {
+                    input_tokens: 3000,
+                    output_tokens: 1200,
+                    cache_read_tokens: 0,
+                    cache_creation_tokens: 0,
+                },
+            )]),
+        };
+
+        let merged = merge_day_records(&existing, &incoming);
+        assert_eq!(merged.usage.input_tokens, 5000);
+        assert_eq!(merged.usage.output_tokens, 2000);
+        assert_eq!(merged.usage.cache_read_tokens, 100);
+        assert_eq!(merged.by_agent.get("claude").unwrap().input_tokens, 3000);
+        assert_eq!(merged.by_agent.get("codex").unwrap().input_tokens, 2000);
     }
 }
