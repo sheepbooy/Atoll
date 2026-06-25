@@ -10,8 +10,8 @@ use socket2::{Domain, Socket, Type};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
-    build_snapshot, iso_timestamp_now, is_codex_internal_session, platform, purge_tracked_session,
-    complete_subagent, refresh_session_token_usage, register_known_session,
+    build_snapshot, emit_subagent_snapshot, iso_timestamp_now, is_codex_internal_session, platform,
+    purge_tracked_session, complete_subagent, refresh_session_token_usage, register_known_session,
     register_subagent_start, resolve_codex_session_cwd,
     roll_over_token_usage_if_needed, show_main_window_for_approval, touch_session_activity,
     AgentKind, AppState, Decision, DecisionWithNote, PermissionRequest, PermissionStatus,
@@ -446,8 +446,7 @@ fn route_claude_request(
             let cwd = payload.get("cwd").and_then(Value::as_str).unwrap_or(".");
             register_known_session(&state, session_id, AgentKind::Claude, cwd, None);
             touch_session_activity(&state, session_id);
-            let snapshot = build_snapshot(&app, &state);
-            let _ = app.emit("snapshot-changed", &snapshot);
+            emit_subagent_snapshot(&app, &state);
             Ok(json!({}))
         }
         "SubagentStop" => {
@@ -509,8 +508,7 @@ fn route_codex_request(
             let cwd = payload.get("cwd").and_then(Value::as_str).unwrap_or(".");
             register_known_session(&state, session_id, AgentKind::Codex, cwd, None);
             touch_session_activity(&state, session_id);
-            let snapshot = build_snapshot(&app, &state);
-            let _ = app.emit("snapshot-changed", &snapshot);
+            emit_subagent_snapshot(&app, &state);
             Ok(json!({}))
         }
         "SubagentStop" => {

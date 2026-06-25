@@ -248,6 +248,20 @@ pub(crate) fn flush_day_to_history(state: &AppState, day_key: &str) -> Result<()
     upsert_day(&mut file, day_key, record)
 }
 
+pub(crate) fn load_today_baseline() -> TokenUsage {
+    let file = load_history_file();
+    let today_key = current_local_day_key();
+    file.days
+        .get(&today_key)
+        .map(|record| TokenUsage {
+            input_tokens: record.usage.input_tokens,
+            output_tokens: record.usage.output_tokens,
+            cache_read_tokens: record.usage.cache_read_tokens,
+            cache_creation_tokens: record.usage.cache_creation_tokens,
+        })
+        .unwrap_or_default()
+}
+
 pub fn get_token_history(days: u32) -> Result<TokenHistoryResponse, String> {
     let file = load_history_file();
     let today_key = current_local_day_key();

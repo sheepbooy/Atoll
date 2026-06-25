@@ -144,6 +144,15 @@ impl TokenUsage {
             .cache_creation_tokens
             .saturating_add(other.cache_creation_tokens);
     }
+
+    fn component_wise_max(self, other: TokenUsage) -> TokenUsage {
+        TokenUsage {
+            input_tokens: self.input_tokens.max(other.input_tokens),
+            output_tokens: self.output_tokens.max(other.output_tokens),
+            cache_read_tokens: self.cache_read_tokens.max(other.cache_read_tokens),
+            cache_creation_tokens: self.cache_creation_tokens.max(other.cache_creation_tokens),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -223,6 +232,9 @@ pub(crate) struct AppState {
     session_agent_map: Mutex<HashMap<String, String>>,
     token_usage_file_offsets: Mutex<HashMap<String, u64>>,
     token_usage_day: Mutex<String>,
+    /// Floor for daily_tokens loaded from token_history.json on startup, so the
+    /// counter never drops below what was persisted before the last restart.
+    daily_tokens_baseline: Mutex<TokenUsage>,
     known_sessions: Mutex<HashMap<String, KnownSession>>,
     pinned_sessions: Mutex<HashSet<String>>,
     /// Platform-specific focus restore target (macOS pid / Windows HWND).
@@ -234,6 +246,8 @@ pub(crate) struct AppState {
     /// Local hook bridge TCP port (0 until bound).
     bridge_port: AtomicU16,
     active_subagents: Mutex<Vec<ActiveSubagent>>,
+    /// Rate-limiter for SubagentStart/SubagentStop snapshot emissions.
+    last_subagent_snapshot_emit: Mutex<Instant>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -378,6 +392,16 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
     persist_session_hosts(state, &snapshot.sessions);
     snapshot.hook_health = hook_health;
     let _ = token_history::sync_today_to_history(state);
+
+    // Ensure daily_tokens never drops below what was persisted before restart.
+    let mut baseline = state
+        .daily_tokens_baseline
+        .lock()
+        .expect("state mutex poisoned");
+    snapshot.daily_tokens = snapshot.daily_tokens.component_wise_max(*baseline);
+    *baseline = snapshot.daily_tokens;
+    drop(baseline);
+
     snapshot
 }
 
@@ -1028,6 +1052,9 @@ fn roll_over_token_usage_if_needed(state: &AppState) {
     }
     if let Ok(mut offsets) = state.token_usage_file_offsets.lock() {
         offsets.clear();
+    }
+    if let Ok(mut baseline) = state.daily_tokens_baseline.lock() {
+        *baseline = TokenUsage::default();
     }
 }
 
@@ -1862,22 +1889,65 @@ fn mark_subagent_complete(
 }
 
 pub(crate) fn reconcile_incomplete_subagents(state: &AppState) {
+    let pending_paths: Vec<(usize, String)> = {
+        let subagents = match state.active_subagents.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+        subagents
+            .iter()
+            .enumerate()
+            .filter(|(_, sub)| sub.completed_at.is_none() && !sub.archived)
+            .filter_map(|(i, sub)| sub.agent_transcript_path.as_ref().map(|p| (i, p.clone())))
+            .collect()
+    };
+
+    if pending_paths.is_empty() {
+        return;
+    }
+
+    let results: Vec<(usize, String)> = pending_paths
+        .into_iter()
+        .filter_map(|(i, path)| {
+            transcript::extract_subagent_terminal_message(&path).map(|msg| (i, msg))
+        })
+        .collect();
+
+    if results.is_empty() {
+        return;
+    }
+
     let mut subagents = match state.active_subagents.lock() {
         Ok(guard) => guard,
         Err(_) => return,
     };
-    for sub in subagents.iter_mut() {
-        if sub.completed_at.is_some() || sub.archived {
-            continue;
+    for (i, message) in results {
+        if let Some(sub) = subagents.get_mut(i) {
+            if sub.completed_at.is_none() && !sub.archived {
+                mark_subagent_complete(sub, None, Some(message));
+            }
         }
-        let Some(path) = sub.agent_transcript_path.as_deref() else {
-            continue;
-        };
-        let Some(message) = transcript::extract_subagent_terminal_message(path) else {
-            continue;
-        };
-        mark_subagent_complete(sub, None, Some(message));
     }
+}
+
+const SUBAGENT_SNAPSHOT_MIN_INTERVAL: Duration = Duration::from_millis(300);
+
+/// Emit a snapshot for subagent lifecycle events with rate-limiting.
+/// Returns true if a snapshot was emitted, false if throttled.
+pub(crate) fn emit_subagent_snapshot(app: &AppHandle, state: &AppState) -> bool {
+    let mut last = state
+        .last_subagent_snapshot_emit
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let now = Instant::now();
+    if now.duration_since(*last) < SUBAGENT_SNAPSHOT_MIN_INTERVAL {
+        return false;
+    }
+    *last = now;
+    drop(last);
+    let snapshot = build_snapshot(app, state);
+    let _ = app.emit("snapshot-changed", &snapshot);
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -3031,6 +3101,7 @@ pub fn run() {
             session_agent_map: Mutex::new(HashMap::new()),
             token_usage_file_offsets: Mutex::new(HashMap::new()),
             token_usage_day: Mutex::new(current_local_day_key()),
+            daily_tokens_baseline: Mutex::new(token_history::load_today_baseline()),
             known_sessions: Mutex::new(HashMap::new()),
             pinned_sessions: Mutex::new(HashSet::new()),
             previous_app_pid: Mutex::new(None),
@@ -3038,6 +3109,7 @@ pub fn run() {
             last_hook_health: Mutex::new(None),
             bridge_port: AtomicU16::new(0),
             active_subagents: Mutex::new(Vec::new()),
+            last_subagent_snapshot_emit: Mutex::new(Instant::now() - Duration::from_secs(10)),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -4604,6 +4676,7 @@ mod core_tests {
             session_agent_map: Mutex::new(HashMap::new()),
             token_usage_file_offsets: Mutex::new(HashMap::new()),
             token_usage_day: Mutex::new(current_local_day_key()),
+            daily_tokens_baseline: Mutex::new(TokenUsage::default()),
             known_sessions: Mutex::new(HashMap::new()),
             pinned_sessions: Mutex::new(HashSet::new()),
             previous_app_pid: Mutex::new(None),
@@ -4611,6 +4684,7 @@ mod core_tests {
             last_hook_health: Mutex::new(None),
             bridge_port: AtomicU16::new(0),
             active_subagents: Mutex::new(Vec::new()),
+            last_subagent_snapshot_emit: Mutex::new(Instant::now() - Duration::from_secs(10)),
         }
     }
 
