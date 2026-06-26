@@ -26,6 +26,9 @@ const HOOK_BIND_RETRY_COUNT: u32 = 5;
 const HOOK_BIND_RETRY_DELAY: Duration = Duration::from_millis(500);
 const HOOK_FALLBACK_PORT_START: u16 = 47_778;
 const HOOK_FALLBACK_PORT_END: u16 = 47_827;
+/// WSL/Hyper-V often reserves ~47000–48789 on Windows; try outside that block next.
+const HOOK_SECONDARY_FALLBACK_START: u16 = 48_800;
+const HOOK_SECONDARY_FALLBACK_END: u16 = 48_850;
 const HOOK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const BRIDGE_PROBE_TIMEOUT: Duration = Duration::from_millis(200);
 const HOOK_POLL_INTERVAL: Duration = Duration::from_millis(180);
@@ -117,9 +120,20 @@ fn bind_hook_listener() -> std::io::Result<(TcpListener, u16)> {
         }
     }
 
+    for port in HOOK_SECONDARY_FALLBACK_START..=HOOK_SECONDARY_FALLBACK_END {
+        if let Ok(listener) = bind_listener_on_port(port) {
+            eprintln!(
+                "Atoll hook bridge using secondary fallback port {port} (primary range reserved, e.g. by WSL/Hyper-V)"
+            );
+            return Ok((listener, port));
+        }
+    }
+
     Err(std::io::Error::new(
         std::io::ErrorKind::AddrInUse,
-        format!("no available hook bridge port in {DEFAULT_HOOK_PORT}..{HOOK_FALLBACK_PORT_END}"),
+        format!(
+            "no available hook bridge port in {DEFAULT_HOOK_PORT}..{HOOK_FALLBACK_PORT_END} or {HOOK_SECONDARY_FALLBACK_START}..{HOOK_SECONDARY_FALLBACK_END} (WSL/Hyper-V may reserve lower ports — try `wsl --shutdown` and restart Atoll)"
+        ),
     ))
 }
 
