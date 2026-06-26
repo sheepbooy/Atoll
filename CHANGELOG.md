@@ -2,6 +2,15 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.32] - 2026-06-26
+
+### 改进
+- **Cursor Composer hooks**：注册 `beforeSubmitPrompt`、`afterAgentThought` 等 lifecycle 事件，覆盖 Agent / Ask 等模式下的会话活跃度与 thinking 阶段
+
+### 修复
+- **Cursor Ask 模式**：修复只读问答模式下 session 列表为空、token 计数器不可用的问题（依赖 `sessionStart` / `afterAgentResponse` 等 observer hooks，无需工具调用）
+- **Windows WSL**：Hook bridge 增加备用 fallback 端口，改善 WSL 环境下连接失败
+
 ## [0.1.31] - 2026-06-26
 
 ### 新增
