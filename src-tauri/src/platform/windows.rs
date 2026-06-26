@@ -78,6 +78,14 @@ pub fn apply_island_window_style(window: &WebviewWindow) {
     CURSOR_CAPTURE_ACTIVE.store(false, Ordering::Release);
 }
 
+/// Re-assert topmost on Windows. The expanded panel grows from a 28px strip to a
+/// full panel and resizes/repositions across a large area; a topmost window that
+/// lacks focus can drop behind other windows during that resize on some Windows
+/// builds, so we re-apply WS_EX_TOPMOST before each expand.
+pub fn ensure_island_on_top(window: &WebviewWindow) {
+    let _ = window.set_always_on_top(true);
+}
+
 /// Windows WebView2 does not pass clicks through transparent pixels the way macOS
 /// WebKit does. Compact/dormant islands always pass clicks through because Windows
 /// apps (browsers, etc.) extend under the top edge unlike the macOS menu bar.

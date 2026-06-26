@@ -212,7 +212,7 @@ dependencies = [
 
 [[package]]
 name = "atoll"
-version = "0.1.31"
+version = "0.1.33"
 dependencies = [
  "auto-launch",
  "base64 0.22.1",

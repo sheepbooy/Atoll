@@ -57,6 +57,16 @@ pub fn apply_island_window_style(window: &WebviewWindow) {
     windows::apply_island_window_style(window);
 }
 
+/// Re-assert the island's topmost state before expanding. macOS keeps its
+/// NSMainMenuWindowLevel persistently so this is a no-op there; Windows topmost
+/// can drift during a large unfocused resize, so it re-applies WS_EX_TOPMOST.
+pub fn ensure_island_on_top(window: &WebviewWindow) {
+    #[cfg(target_os = "windows")]
+    windows::ensure_island_on_top(window);
+    #[cfg(not(target_os = "windows"))]
+    let _ = window;
+}
+
 pub fn detect_notch_metrics(
     window: &WebviewWindow,
     monitor_x: f64,

@@ -2,6 +2,12 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.33] - 2026-06-26
+
+### 修复
+- **Windows 岛展开置顶**：修复 Windows 上岛从 micro/compact 展开为全面板时未保持在所有窗口最上方的问题。展开前重新应用 `WS_EX_TOPMOST`，避免无焦点窗口在大尺寸 resize/重定位过程中被其他窗口覆盖
+- **Cursor 活跃会话显示回归**：修复 v0.1.32 导致 Win / Mac 上 Cursor 活跃会话无法正常显示的问题。`has_atoll_cursor_hooks` 改为只要求 v0.1.31 的 5 个核心事件（`preToolUse`/`postToolUse`/`stop`/`subagentStart`/`subagentStop`）即视为已安装，新增的 Composer lifecycle hooks 作为可选增强，不再让旧版 hooks 配置被误判为未安装而触发离线/断连状态
+
 ## [0.1.32] - 2026-06-26
 
 ### 改进

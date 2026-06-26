@@ -4021,31 +4021,36 @@ fn remove_atoll_cursor_hooks(hooks: &mut Value) {
     });
 }
 
+/// Returns true when Atoll's Cursor hooks are installed.
+///
+/// Only the core Composer/Agent events that shipped with v0.1.31
+/// (`preToolUse`, `postToolUse`, `stop`, `subagentStart`, `subagentStop`) are
+/// required. The v0.1.32 lifecycle hooks (`sessionStart`, `beforeSubmitPrompt`,
+/// `afterAgentResponse`, `afterAgentThought`, `sessionEnd`) are an optional
+/// enhancement for Ask/Composer-mode session tracking: users who installed
+/// hooks with v0.1.31 only have the core five, and treating them as
+/// "not installed" regresses session display and the online indicator. Those
+/// users keep working; reinstalling from the Hooks pane adds the new events.
 fn has_atoll_cursor_hooks(config: &Value) -> bool {
     let Some(hooks) = config.get("hooks").and_then(Value::as_object) else {
         return false;
     };
 
-    [
-        "sessionStart",
-        "beforeSubmitPrompt",
-        "afterAgentResponse",
-        "afterAgentThought",
-        "sessionEnd",
+    const CORE_EVENTS: [&str; 5] = [
         "preToolUse",
         "postToolUse",
         "stop",
         "subagentStart",
         "subagentStop",
-    ]
-    .iter()
-    .all(|event| {
-            hooks
-                .get(*event)
-                .and_then(Value::as_array)
-                .map(|arr| arr.iter().any(hook_entry_has_atoll_cursor))
-                .unwrap_or(false)
-        })
+    ];
+
+    CORE_EVENTS.iter().all(|event| {
+        hooks
+            .get(*event)
+            .and_then(Value::as_array)
+            .map(|arr| arr.iter().any(hook_entry_has_atoll_cursor))
+            .unwrap_or(false)
+    })
 }
 
 #[tauri::command]
@@ -4761,6 +4766,11 @@ fn animate_island_window_mode(
 ) -> tauri::Result<()> {
     let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
     if matches!(mode, IslandWindowMode::Expanded) {
+        // Re-assert topmost before the expand. The window grows from a thin strip
+        // into a full panel and repositions across a large area; on Windows a
+        // topmost-but-unfocused window can drop behind other windows during that
+        // resize, so we refresh WS_EX_TOPMOST here to stay above all windows.
+        platform::ensure_island_on_top(window);
         platform::set_island_cursor_events_ignored(window, false);
     } else {
         #[cfg(target_os = "windows")]
@@ -7465,5 +7475,52 @@ mod cursor_hooks_tests {
         assert_eq!(pre_tool_use.len(), 1);
         assert_eq!(pre_tool_use[0]["command"], "./custom-hook.sh");
         assert!(!has_atoll_cursor_hooks(&json!({ "hooks": hooks })));
+    }
+
+    /// v0.1.31 installs only the five core events. After upgrading to v0.1.32,
+    /// those installs must still count as "installed" so the online indicator
+    /// and Cursor session display keep working until the user reinstalls.
+    #[test]
+    fn v0_1_31_core_only_cursor_hooks_count_as_installed() {
+        let hooks = json!({
+            "preToolUse": [
+                { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 1800 }
+            ],
+            "postToolUse": [
+                { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 30 }
+            ],
+            "stop": [
+                { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 30 }
+            ],
+            "subagentStart": [
+                { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 30 }
+            ],
+            "subagentStop": [
+                { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 30 }
+            ]
+        });
+
+        assert!(has_atoll_cursor_hooks(&json!({ "version": 1, "hooks": hooks })));
+    }
+
+    /// Missing any one of the five core events means hooks are incomplete.
+    #[test]
+    fn missing_core_cursor_hook_event_is_not_installed() {
+        let hooks = json!({
+            "preToolUse": [
+                { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 1800 }
+            ],
+            "postToolUse": [
+                { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 30 }
+            ],
+            "stop": [
+                { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 30 }
+            ],
+            "subagentStop": [
+                { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 30 }
+            ]
+        });
+
+        assert!(!has_atoll_cursor_hooks(&json!({ "version": 1, "hooks": hooks })));
     }
 }
