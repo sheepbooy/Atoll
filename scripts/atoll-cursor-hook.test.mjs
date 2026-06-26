@@ -60,6 +60,65 @@ try {
   await new Promise((resolve) => server.close(resolve));
 }
 
+for (const hookEventName of ["sessionStart", "afterAgentResponse", "sessionEnd", "afterAgentThought"]) {
+  const payload = {
+    session_id: "session-ask-test",
+    hook_event_name: hookEventName,
+    composer_mode: "ask",
+    workspace_roots: ["/tmp/project"],
+  };
+
+  const child = spawn(process.execPath, ["scripts/atoll-cursor-hook.mjs"], {
+    env: {
+      ...process.env,
+      ATOLL_HOOK_URL: "http://127.0.0.1:1/cursor/hook",
+    },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  child.stdin.end(JSON.stringify(payload));
+
+  const [stdout, stderr, exitCode] = await Promise.all([
+    readStream(child.stdout),
+    readStream(child.stderr),
+    new Promise((resolve) => child.on("close", resolve)),
+  ]);
+
+  assert.equal(stderr, "", hookEventName);
+  assert.equal(exitCode, 0, hookEventName);
+  assert.deepEqual(JSON.parse(stdout), {}, hookEventName);
+}
+
+{
+  const payload = {
+    conversation_id: "session-submit-test",
+    hook_event_name: "beforeSubmitPrompt",
+    composer_mode: "debug",
+    workspace_roots: ["/tmp/project"],
+    prompt: "reproduce the bug",
+  };
+
+  const child = spawn(process.execPath, ["scripts/atoll-cursor-hook.mjs"], {
+    env: {
+      ...process.env,
+      ATOLL_HOOK_URL: "http://127.0.0.1:1/cursor/hook",
+    },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  child.stdin.end(JSON.stringify(payload));
+
+  const [stdout, stderr, exitCode] = await Promise.all([
+    readStream(child.stdout),
+    readStream(child.stderr),
+    new Promise((resolve) => child.on("close", resolve)),
+  ]);
+
+  assert.equal(stderr, "");
+  assert.equal(exitCode, 0);
+  assert.deepEqual(JSON.parse(stdout), { continue: true });
+}
+
 function readStream(stream) {
   return new Promise((resolve, reject) => {
     let value = "";

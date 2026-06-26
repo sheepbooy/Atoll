@@ -1432,7 +1432,7 @@ pub(crate) fn refresh_session_token_usage(
             parse_claude_token_usage_from_transcript(transcript_path, last_offset, &today_key)?
         }
         // Cursor transcripts carry no token-usage data; tokens arrive
-        // via `ingest_cursor_stop_token_usage` from the stop hook payload.
+        // via `ingest_cursor_token_usage_from_payload` from hook payloads.
         // Always set is_full_scan=false so we never overwrite values that
         // were already injected by the stop hook.
         transcript::TranscriptFormat::Cursor => {
@@ -1476,37 +1476,38 @@ pub(crate) fn refresh_session_token_usage(
     Ok(())
 }
 
-/// Ingest token usage directly from a Cursor `stop` hook payload.
+/// Ingest token usage from a Cursor hook payload (`stop`, `afterAgentResponse`, etc.).
 ///
-/// Cursor's JSONL transcript doesn't embed usage data, but the `stop` event
-/// payload carries `input_tokens`, `output_tokens`, `cache_read_tokens`, and
-/// `cache_write_tokens` for the turn that just completed.
+/// Cursor's JSONL transcript doesn't embed usage data; hook payloads may carry
+/// `input_tokens`, `output_tokens`, `cache_read_tokens`, and `cache_write_tokens`
+/// for the turn that just completed.
 ///
 /// Fields may appear at the top level or nested under a `token_usage` object
 /// depending on Cursor version.  Cursor reports `input_tokens` as the total
 /// (cache_read + cache_write + fresh); we store the raw values and let the
 /// display layer decide whether to decompose them.
-pub(crate) fn ingest_cursor_stop_token_usage(
+pub(crate) fn ingest_cursor_token_usage_from_payload(
     state: &AppState,
     session_id: &str,
     payload: &serde_json::Value,
+    source: &str,
 ) -> Result<(), String> {
-    let source = payload
+    let token_source = payload
         .get("token_usage")
         .or_else(|| payload.get("tokenUsage"))
         .unwrap_or(payload);
 
-    let input_tokens = json_value_as_u64(source.get("input_tokens"))
-        .or_else(|| json_value_as_u64(source.get("inputTokens")))
+    let input_tokens = json_value_as_u64(token_source.get("input_tokens"))
+        .or_else(|| json_value_as_u64(token_source.get("inputTokens")))
         .unwrap_or(0);
-    let output_tokens = json_value_as_u64(source.get("output_tokens"))
-        .or_else(|| json_value_as_u64(source.get("outputTokens")))
+    let output_tokens = json_value_as_u64(token_source.get("output_tokens"))
+        .or_else(|| json_value_as_u64(token_source.get("outputTokens")))
         .unwrap_or(0);
-    let cache_read_tokens = json_value_as_u64(source.get("cache_read_tokens"))
-        .or_else(|| json_value_as_u64(source.get("cacheReadTokens")))
+    let cache_read_tokens = json_value_as_u64(token_source.get("cache_read_tokens"))
+        .or_else(|| json_value_as_u64(token_source.get("cacheReadTokens")))
         .unwrap_or(0);
-    let cache_write_tokens = json_value_as_u64(source.get("cache_write_tokens"))
-        .or_else(|| json_value_as_u64(source.get("cacheWriteTokens")))
+    let cache_write_tokens = json_value_as_u64(token_source.get("cache_write_tokens"))
+        .or_else(|| json_value_as_u64(token_source.get("cacheWriteTokens")))
         .unwrap_or(0);
 
     if input_tokens == 0 && output_tokens == 0 && cache_read_tokens == 0 && cache_write_tokens == 0
@@ -1516,13 +1517,13 @@ pub(crate) fn ingest_cursor_stop_token_usage(
             .map(|obj| obj.keys().map(String::as_str).collect())
             .unwrap_or_default();
         eprintln!(
-            "Atoll Cursor stop payload has no token fields (session={session_id}, keys={keys:?})"
+            "Atoll Cursor {source} payload has no token fields (session={session_id}, keys={keys:?})"
         );
         return Ok(());
     }
 
     eprintln!(
-        "Atoll Cursor stop tokens: input={input_tokens} output={output_tokens} \
+        "Atoll Cursor {source} tokens: input={input_tokens} output={output_tokens} \
          cache_read={cache_read_tokens} cache_write={cache_write_tokens} session={session_id}"
     );
 
@@ -1552,6 +1553,15 @@ pub(crate) fn ingest_cursor_stop_token_usage(
 
     token_history::sync_today_to_history(state)?;
     Ok(())
+}
+
+/// Ingest token usage directly from a Cursor `stop` hook payload.
+pub(crate) fn ingest_cursor_stop_token_usage(
+    state: &AppState,
+    session_id: &str,
+    payload: &serde_json::Value,
+) -> Result<(), String> {
+    ingest_cursor_token_usage_from_payload(state, session_id, payload, "stop")
 }
 
 /// Parse a JSON value as u64, accepting integers, floats, and numeric strings.
@@ -3956,7 +3966,15 @@ fn upsert_cursor_hook_events(hooks: &mut Value, hook_command: &str, hook_url: &s
         return;
     };
 
+    // Composer / Agent Chat hooks only. Tab inline-completion hooks (`beforeTabFileRead`,
+    // `afterTabFileEdit`) are intentionally excluded: Tab does not create a Composer
+    // session or emit sessionStart, so Atoll cannot attribute usage to a session.
     for (event, timeout) in [
+        ("sessionStart", 30),
+        ("beforeSubmitPrompt", 30),
+        ("afterAgentResponse", 30),
+        ("afterAgentThought", 30),
+        ("sessionEnd", 30),
         ("preToolUse", 1800),
         ("postToolUse", 30),
         ("stop", 30),
@@ -4008,9 +4026,20 @@ fn has_atoll_cursor_hooks(config: &Value) -> bool {
         return false;
     };
 
-    ["preToolUse", "postToolUse", "stop", "subagentStart", "subagentStop"]
-        .iter()
-        .all(|event| {
+    [
+        "sessionStart",
+        "beforeSubmitPrompt",
+        "afterAgentResponse",
+        "afterAgentThought",
+        "sessionEnd",
+        "preToolUse",
+        "postToolUse",
+        "stop",
+        "subagentStart",
+        "subagentStop",
+    ]
+    .iter()
+    .all(|event| {
             hooks
                 .get(*event)
                 .and_then(Value::as_array)
@@ -5660,6 +5689,176 @@ mod core_tests {
     }
 
     #[test]
+    fn cursor_composer_modes_all_register_in_snapshot() {
+        for (mode, session_id, cwd) in [
+            ("ask", "conv-mode-ask", "/tmp/ask"),
+            ("agent", "conv-mode-agent", "/tmp/agent"),
+            ("edit", "conv-mode-edit", "/tmp/edit"),
+            ("debug", "conv-mode-debug", "/tmp/debug"),
+        ] {
+            let state = test_app_state();
+            register_known_session(
+                &state,
+                session_id,
+                AgentKind::Cursor,
+                cwd,
+                None,
+            );
+            touch_session_activity(&state, session_id);
+
+            let known = state.known_sessions.lock().expect("lock");
+            let last_seen = state.session_last_seen.lock().expect("lock");
+            let token_usage = state.session_token_usage.lock().expect("lock");
+            let pinned = state.pinned_sessions.lock().expect("lock");
+            let snapshot = snapshot_from(
+                &[],
+                &last_seen,
+                DEFAULT_SESSION_RETENTION_SECS,
+                &token_usage,
+                &known,
+                &pinned,
+                true,
+            );
+
+            assert_eq!(
+                snapshot.sessions.len(),
+                1,
+                "composer_mode={mode} should produce one session"
+            );
+            assert_eq!(snapshot.sessions[0].session_id, session_id);
+            assert_eq!(snapshot.sessions[0].cwd, cwd);
+        }
+    }
+
+    #[test]
+    fn cursor_before_submit_prompt_refreshes_session_activity() {
+        let state = test_app_state();
+        let session_id = "conv-submit-prompt";
+        register_known_session(
+            &state,
+            session_id,
+            AgentKind::Cursor,
+            "/tmp/project",
+            None,
+        );
+        touch_session_activity(&state, session_id);
+
+        let activity_after = {
+            let known = state.known_sessions.lock().expect("lock");
+            known
+                .get(session_id)
+                .map(|entry| entry.last_activity.clone())
+                .expect("session")
+        };
+        assert!(!activity_after.is_empty());
+    }
+
+    #[test]
+    fn cursor_ask_session_start_appears_in_snapshot() {
+        let state = test_app_state();
+        register_known_session(
+            &state,
+            "conv-ask-1",
+            AgentKind::Cursor,
+            "/tmp/ask-project",
+            None,
+        );
+        touch_session_activity(&state, "conv-ask-1");
+
+        let known = state.known_sessions.lock().expect("lock");
+        let last_seen = state.session_last_seen.lock().expect("lock");
+        let token_usage = state.session_token_usage.lock().expect("lock");
+        let pinned = state.pinned_sessions.lock().expect("lock");
+        let snapshot = snapshot_from(
+            &[],
+            &last_seen,
+            DEFAULT_SESSION_RETENTION_SECS,
+            &token_usage,
+            &known,
+            &pinned,
+            true,
+        );
+
+        assert_eq!(snapshot.sessions.len(), 1);
+        assert_eq!(snapshot.sessions[0].session_id, "conv-ask-1");
+        assert!(matches!(snapshot.sessions[0].agent, AgentKind::Cursor));
+        assert_eq!(snapshot.sessions[0].cwd, "/tmp/ask-project");
+    }
+
+    #[test]
+    fn cursor_after_agent_response_accumulates_tokens() {
+        let history_path = std::env::temp_dir().join(format!(
+            "atoll-token-history-{}-{}.json",
+            std::process::id(),
+            "cursor-after-agent-response"
+        ));
+        let _ = std::fs::remove_file(&history_path);
+        std::env::set_var(
+            "ATOLL_TOKEN_HISTORY_PATH",
+            history_path.to_string_lossy().as_ref(),
+        );
+
+        let state = test_app_state();
+        let session_id = "conv-ask-tokens";
+        let payload = json!({
+            "conversation_id": session_id,
+            "input_tokens": 1200,
+            "output_tokens": 300
+        });
+
+        ingest_cursor_token_usage_from_payload(&state, session_id, &payload, "afterAgentResponse")
+            .expect("token ingest");
+
+        let usage = state
+            .session_token_usage
+            .lock()
+            .expect("lock")
+            .get(session_id)
+            .copied()
+            .expect("usage");
+        assert_eq!(usage.input_tokens, 1200);
+        assert_eq!(usage.output_tokens, 300);
+
+        let follow_up = json!({
+            "conversation_id": session_id,
+            "token_usage": {
+                "input_tokens": 400,
+                "output_tokens": 100
+            }
+        });
+        ingest_cursor_token_usage_from_payload(&state, session_id, &follow_up, "afterAgentResponse")
+            .expect("follow-up ingest");
+
+        let usage = state
+            .session_token_usage
+            .lock()
+            .expect("lock")
+            .get(session_id)
+            .copied()
+            .expect("usage");
+        assert_eq!(usage.input_tokens, 1600);
+        assert_eq!(usage.output_tokens, 400);
+
+        let _ = std::fs::remove_file(&history_path);
+        std::env::remove_var("ATOLL_TOKEN_HISTORY_PATH");
+    }
+
+    #[test]
+    fn cursor_token_ingest_skips_empty_payload() {
+        let state = test_app_state();
+        ingest_cursor_token_usage_from_payload(
+            &state,
+            "conv-empty",
+            &json!({ "conversation_id": "conv-empty" }),
+            "afterAgentResponse",
+        )
+        .expect("empty ingest");
+
+        let usage = state.session_token_usage.lock().expect("lock");
+        assert!(!usage.contains_key("conv-empty"));
+    }
+
+    #[test]
     fn archived_session_tokens_still_count_toward_daily_total() {
         let token_usage = HashMap::from([(
             "session-archived".into(),
@@ -7221,6 +7420,18 @@ mod cursor_hooks_tests {
 
         let config = json!({ "version": 1, "hooks": hooks });
         assert!(has_atoll_cursor_hooks(&config));
+        assert!(hook_entry_has_atoll_cursor(
+            &config["hooks"]["sessionStart"].as_array().unwrap()[0]
+        ));
+        assert!(hook_entry_has_atoll_cursor(
+            &config["hooks"]["afterAgentResponse"].as_array().unwrap()[0]
+        ));
+        assert!(hook_entry_has_atoll_cursor(
+            &config["hooks"]["beforeSubmitPrompt"].as_array().unwrap()[0]
+        ));
+        assert!(hook_entry_has_atoll_cursor(
+            &config["hooks"]["afterAgentThought"].as_array().unwrap()[0]
+        ));
         assert!(hook_entry_has_atoll_cursor(
             &config["hooks"]["preToolUse"].as_array().unwrap()[0]
         ));

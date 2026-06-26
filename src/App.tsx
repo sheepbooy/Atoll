@@ -1292,6 +1292,13 @@ export function App() {
         ...previous,
         hookHealth: merged.hookHealth,
         online: merged.online,
+        sessions: merged.sessions,
+        dailyTokens: merged.dailyTokens,
+        activeSessionTokens: merged.activeSessionTokens,
+        pendingCount: merged.pendingCount,
+        archivedCount: merged.archivedCount,
+        recent: merged.recent,
+        activeRequest: merged.activeRequest,
       }));
       return;
     }
@@ -4500,7 +4507,7 @@ function HooksView({
                       <li>Install Node.js on this machine before installing hooks.</li>
                       <li>In Cursor, open Settings → Hooks and confirm Atoll hooks are loaded.</li>
                       <li>Restart Cursor after installing hooks.</li>
-                      <li>Trigger one Shell tool permission in Agent mode to verify.</li>
+                      <li>Send a message in Agent or Ask mode to verify.</li>
                     </ul>
                   </details>
                 ) : null}

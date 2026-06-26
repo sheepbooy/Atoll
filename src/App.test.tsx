@@ -1226,4 +1226,60 @@ describe("App", () => {
     );
     expect(bridge.isAutostartEnabled).toHaveBeenCalled();
   });
+
+  it("merges session updates during closing transition", async () => {
+    const cursorSession = {
+      sessionId: "session-cursor-ask",
+      agent: "cursor" as const,
+      cwd: "/tmp/ask-project",
+      pendingCount: 0,
+      totalCount: 0,
+      lastActivity: "2026-06-10T08:00:00Z",
+      transcriptPath: null,
+      pinned: false,
+      sessionHost: "unknown" as const,
+      activeSubagents: [],
+    };
+    const baseSnapshot = {
+      online: true,
+      pendingCount: 0,
+      archivedCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      dailyTokens: emptySnapshot.dailyTokens,
+      activeSessionTokens: emptySnapshot.activeSessionTokens,
+      hookHealth: connectedHookHealth,
+    };
+
+    bridge.getSnapshot.mockResolvedValue(baseSnapshot);
+    const { container } = render(<App />);
+    const island = screen.getByLabelText("Atoll");
+
+    fireEvent.pointerEnter(island);
+    await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Collapse Atoll" })).toBeInTheDocument(),
+    );
+
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Atoll" }));
+    expect(container.querySelector(".is-closing")).not.toBeNull();
+
+    await act(async () => {
+      emitSnapshot?.({
+        ...baseSnapshot,
+        sessions: [cursorSession],
+      });
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(420);
+    });
+    vi.useRealTimers();
+
+    await waitFor(() =>
+      expect(container.querySelector(".compact-session-dot")).not.toBeNull(),
+    );
+  });
 });

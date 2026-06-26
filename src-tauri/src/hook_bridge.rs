@@ -11,7 +11,8 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
     build_snapshot, complete_subagent, emit_subagent_snapshot, get_stored_session_host,
-    ingest_cursor_stop_token_usage, is_codex_internal_session, iso_timestamp_now, platform,
+    ingest_cursor_stop_token_usage, ingest_cursor_token_usage_from_payload,
+    is_codex_internal_session, iso_timestamp_now, platform,
     payload_subagent_id, payload_subagent_parent_session_id, purge_tracked_session,
     refresh_session_token_usage, register_known_session, register_subagent_start,
     resolve_codex_session_cwd, resolve_cursor_session_for_payload, roll_over_token_usage_if_needed,
@@ -687,6 +688,49 @@ fn resolve_cursor_subagent_parent(state: &AppState, payload: &Value) -> Option<S
     resolve_cursor_session_for_payload(state, payload)
 }
 
+/// Register or refresh a Cursor session from observer hooks and optionally ingest tokens.
+fn observe_cursor_session(
+    app: &AppHandle,
+    state: &AppState,
+    payload: &Value,
+    stream: Option<&TcpStream>,
+    ingest_tokens: bool,
+    token_source: &str,
+) -> Result<(), String> {
+    let parent_session = resolve_cursor_subagent_parent(state, payload);
+    let session_id = parent_session
+        .as_deref()
+        .or_else(|| payload_session_id(payload))
+        .unwrap_or("cursor");
+    let cwd = resolve_cursor_cwd(payload);
+    let transcript_path = payload_transcript_path(payload);
+    if parent_session.is_none() {
+        register_known_session(
+            state,
+            session_id,
+            AgentKind::Cursor,
+            &cwd,
+            transcript_path,
+        );
+    }
+    if let Some(mode) = payload
+        .get("composer_mode")
+        .or_else(|| payload.get("composerMode"))
+        .and_then(Value::as_str)
+    {
+        eprintln!("Atoll Cursor {token_source}: composer_mode={mode} session={session_id}");
+    }
+    touch_session_activity(state, session_id);
+    if let Some(stream) = stream {
+        maybe_detect_and_store_cursor_host(state, session_id, Some(stream));
+    }
+    if ingest_tokens {
+        ingest_cursor_token_usage_from_payload(state, session_id, payload, token_source)?;
+    }
+    schedule_observer_snapshot_emit(app);
+    Ok(())
+}
+
 fn route_cursor_request(
     app: AppHandle,
     request: HttpRequest,
@@ -702,25 +746,41 @@ fn route_cursor_request(
         .to_string();
 
     match hook_event_name.as_str() {
+        "sessionStart" | "afterAgentResponse" | "sessionEnd" | "afterAgentThought" => {
+            let state = app.state::<AppState>();
+            let ingest_tokens = matches!(hook_event_name.as_str(), "afterAgentResponse" | "sessionEnd");
+            observe_cursor_session(
+                &app,
+                &state,
+                &payload,
+                Some(stream),
+                ingest_tokens,
+                hook_event_name.as_str(),
+            )?;
+            Ok(json!({}))
+        }
+        "beforeSubmitPrompt" => {
+            let state = app.state::<AppState>();
+            observe_cursor_session(
+                &app,
+                &state,
+                &payload,
+                Some(stream),
+                false,
+                "beforeSubmitPrompt",
+            )?;
+            Ok(json!({ "continue": true }))
+        }
         "preToolUse" => {
             let state = app.state::<AppState>();
-            let parent_session = resolve_cursor_subagent_parent(&state, &payload);
-            let session_id = parent_session
-                .as_deref()
-                .or_else(|| payload_session_id(&payload))
-                .unwrap_or("cursor");
-            let cwd = resolve_cursor_cwd(&payload);
-            let transcript_path = payload_transcript_path(&payload);
-            if parent_session.is_none() {
-                register_known_session(
-                    &state,
-                    session_id,
-                    AgentKind::Cursor,
-                    &cwd,
-                    transcript_path,
-                );
-            }
-            touch_session_activity(&state, session_id);
+            observe_cursor_session(
+                &app,
+                &state,
+                &payload,
+                Some(stream),
+                false,
+                "preToolUse",
+            )?;
             Ok(json!({ "permission": "allow" }))
         }
         "postToolUse" | "postToolUseFailure" => {

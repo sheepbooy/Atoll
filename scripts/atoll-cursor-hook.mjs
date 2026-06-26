@@ -51,6 +51,10 @@ function hookEventNameFromPayload(payload) {
 
 function fallbackResponse(hookEventName, error) {
   if (
+    hookEventName === "sessionStart" ||
+    hookEventName === "afterAgentResponse" ||
+    hookEventName === "afterAgentThought" ||
+    hookEventName === "sessionEnd" ||
     hookEventName === "postToolUse" ||
     hookEventName === "postToolUseFailure" ||
     hookEventName === "stop" ||
@@ -58,6 +62,10 @@ function fallbackResponse(hookEventName, error) {
     hookEventName === "subagentStop"
   ) {
     return "{}";
+  }
+
+  if (hookEventName === "beforeSubmitPrompt") {
+    return JSON.stringify({ continue: true });
   }
 
   if (hookEventName === "preToolUse") {

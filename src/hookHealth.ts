@@ -163,7 +163,7 @@ export const CODEX_DESKTOP_HOOK_NOTE =
   "Works with Codex CLI and Desktop. After install: trust the Atoll hook in Codex Desktop or via /hooks, restart Codex, then trigger one shell permission.";
 
 export const CURSOR_HOOK_NOTE =
-  "Works with Cursor IDE Agent mode. After install: confirm hooks in Cursor Settings, restart Cursor, then trigger one Shell tool permission.";
+  "Works with Cursor IDE Agent and Ask modes. After install: confirm hooks in Cursor Settings, restart Cursor, then send a message in Agent or Ask mode to verify.";
 
 export type HeaderLogoDisplay =
   | { kind: "atoll"; activity: AtollActivity }
