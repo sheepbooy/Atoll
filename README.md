@@ -46,10 +46,10 @@
 - **有请求时** — 自动展开，展示命令详情，一键 **Approve / Deny / Always**
 - **Plan 模式** — 在顶栏回答规划问题、预览 Markdown 计划，再决定是否开始构建
 - **Subagent** — 追踪子 agent 生命周期，会话内 chip 预览、列表视图与 transcript 详情，支持批量归档
-- **Token 热力图** — 持久化每日用量，展开态计数器可查看热力图、Agent 占比与 30 天趋势
+- **Token 热力图** — 持久化每日用量，重启后继续累计；展开态计数器可查看热力图、Agent 占比与 30 天趋势
 - **开机自启动** — Settings → General 可开启 Launch at login（macOS / Windows）
 - **应用内更新** — 启动时自动检测新版本，三点菜单一键下载安装并重启
-- **Cursor IDE** — 追踪 Cursor Agent 会话与 subagent，顶栏一键 **Open Cursor** 跳回 IDE
+- **Cursor IDE** — Hook 集成、会话与 subagent 追踪、Token 统计；Shell 权限由 Cursor 自带 UI 处理，Atoll 以 observer hooks 异步监听，不阻塞 IDE；顶栏 **Open Cursor** 一键跳回 IDE
 - **全程本地** — Hook 桥接 `127.0.0.1:47777`，数据不出本机
 
 目前支持 **Claude Code**（CLI 与 Desktop）、**Codex**（CLI 与 Desktop）和 **Cursor IDE**（macOS Apple Silicon 与 Windows x64）。
@@ -66,7 +66,7 @@
 curl -fsSL https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.sh | bash
 ```
 
-指定版本：`ATOLL_VERSION=0.1.4 curl -fsSL .../install.sh | bash`
+指定版本：`ATOLL_VERSION=0.1.31 curl -fsSL .../install.sh | bash`
 
 <details>
 <summary>其他 macOS 安装方式</summary>
@@ -107,11 +107,11 @@ irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 |
 指定版本：
 
 ```cmd
-set ATOLL_VERSION=0.1.11 && powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex"
+set ATOLL_VERSION=0.1.31 && powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex"
 ```
 
 ```powershell
-$env:ATOLL_VERSION = "0.1.11"; irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex
+$env:ATOLL_VERSION = "0.1.31"; irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex
 ```
 
 **手动下载** — 从 [Releases](https://github.com/sheepbooy/Atoll/releases) 下载 `Atoll-x64.msi` 并安装。
@@ -133,7 +133,7 @@ Atoll 通过应用内 **一键安装 Hook**，无需手动编辑配置文件。
 | --- | --- | --- |
 | **Claude Code**（CLI + Desktop） | 菜单 → Settings → Agent hooks → Install | Desktop：权限选 **Ask permissions**，安装后完全退出并重启 Claude Desktop，再在 Code 标签触发一次 Bash 权限验证 |
 | **Codex**（CLI + Desktop） | 同上 → Install Codex | Desktop/CLI：安装后在 Codex 中打开 `/hooks` 并信任 Atoll hook，完全退出并重启 Codex Desktop，再触发一次 shell 权限验证 |
-| **Cursor**（IDE Agent） | 同上 → Install Cursor | 安装后在 Cursor Settings → Hooks 确认 hook 已加载，重启 Cursor，再在 Agent 模式触发一次 Shell 工具权限验证 |
+| **Cursor**（IDE Agent） | 同上 → Install Cursor | 安装后在 Cursor Settings → Hooks 确认 hook 已加载，重启 Cursor，再在 Agent 模式触发一次 Shell 工具以验证 observer hooks；Shell 权限仍由 Cursor 自身 UI 处理 |
 
 Hook 注册 `PermissionRequest`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）、`~/.codex/hooks.json` 或 Cursor hooks 配置。安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`。
 
@@ -170,10 +170,10 @@ Hook 注册 `PermissionRequest`、`PostToolUse`、`Stop` 等事件，写入 `~/.
 
 ### Agent 形象
 
-每个 Agent 有独立的像素风 mascot；Gemini 复用 Clawd 造型并着色为绿色：
+每个 Agent 有独立的像素风 mascot，包括 Claude、Codex 与 Cursor 立方体形象；Gemini 复用 Clawd 造型并着色为绿色：
 
 <p align="center">
-  <img src="docs/assets/agent-mascots.png" alt="Claude / Codex / Gemini mascots" width="420" />
+  <img src="docs/assets/agent-mascots.png" alt="Claude / Codex / Cursor / Gemini mascots" width="420" />
 </p>
 
 ### 多 Session 与终端
