@@ -13,6 +13,7 @@ use tauri::utils::config::Color;
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalSize, State};
 
 mod capture;
+mod debug_agent;
 mod hook_bridge;
 mod local_time;
 mod platform;
@@ -460,6 +461,7 @@ fn reconcile_incomplete_subagents_if_due(state: &AppState) {
 pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapshot {
     roll_over_token_usage_if_needed(state);
     reconcile_incomplete_subagents_if_due(state);
+    backfill_cursor_session_metadata(state);
     let requests = state.requests.lock().expect("state mutex poisoned");
     let last_seen = state
         .session_last_seen
@@ -2285,6 +2287,104 @@ pub(crate) fn payload_conversation_id(payload: &Value) -> Option<&str> {
                 .and_then(Value::as_str)
                 .filter(|s| !s.is_empty())
         })
+}
+
+/// Cursor stores project folders under `~/.cursor/projects/{slug}/` where macOS
+/// absolute paths become slugs like `Users-me-code-Atoll`.
+pub(crate) fn decode_cursor_project_slug(slug: &str) -> Option<String> {
+    if slug.is_empty() || slug == "empty-window" {
+        return None;
+    }
+    if slug.starts_with("Users-") {
+        let candidate = format!("/Users/{}", slug["Users-".len()..].replace('-', "/"));
+        if std::path::Path::new(&candidate).is_dir() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+pub(crate) fn payload_cursor_lookup_id(payload: &Value) -> Option<&str> {
+    payload_conversation_id(payload).or_else(|| {
+        payload
+            .get("session_id")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                payload
+                    .get("sessionId")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+            })
+    })
+}
+
+/// Locate a Cursor composer transcript on disk and infer its workspace cwd.
+pub(crate) fn discover_cursor_agent_transcript(conversation_id: &str) -> Option<(String, String)> {
+    if conversation_id.is_empty() {
+        return None;
+    }
+    let home = dirs::home_dir()?;
+    let projects = home.join(".cursor").join("projects");
+    if !projects.is_dir() {
+        return None;
+    }
+    let relative = format!(
+        "agent-transcripts/{conversation_id}/{conversation_id}.jsonl"
+    );
+    for entry in std::fs::read_dir(&projects).ok()? {
+        let entry = entry.ok()?;
+        if !entry.file_type().ok()?.is_dir() {
+            continue;
+        }
+        let transcript = entry.path().join(&relative);
+        if !transcript.is_file() {
+            continue;
+        }
+        let workspace = decode_cursor_project_slug(&entry.file_name().to_string_lossy())
+            .unwrap_or_else(|| ".".to_string());
+        return Some((transcript.to_string_lossy().into_owned(), workspace));
+    }
+    None
+}
+
+pub(crate) fn is_unresolved_cursor_cwd(cwd: &str) -> bool {
+    cwd.is_empty() || cwd == "."
+}
+
+/// Fill missing Cursor cwd/transcript from on-disk agent transcripts.
+pub(crate) fn backfill_cursor_session_metadata(state: &AppState) {
+    let session_ids: Vec<String> = state
+        .known_sessions
+        .lock()
+        .ok()
+        .map(|known| {
+            known
+                .iter()
+                .filter(|(_, info)| matches!(info.agent, AgentKind::Cursor))
+                .filter(|(_, info)| {
+                    info.transcript_path.is_none() || is_unresolved_cursor_cwd(&info.cwd)
+                })
+                .map(|(id, _)| id.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    for session_id in session_ids {
+        let Some((path, workspace)) = discover_cursor_agent_transcript(&session_id) else {
+            continue;
+        };
+        if let Ok(mut known) = state.known_sessions.lock() {
+            if let Some(entry) = known.get_mut(&session_id) {
+                if entry.transcript_path.is_none() {
+                    entry.transcript_path = Some(path);
+                }
+                if is_unresolved_cursor_cwd(&entry.cwd) && !is_unresolved_cursor_cwd(&workspace) {
+                    entry.cwd = workspace;
+                }
+            }
+        }
+    }
 }
 
 fn sanitize_subagent_id_for_filename(agent_id: &str) -> String {
@@ -4839,6 +4939,22 @@ fn animate_island_window_mode(
         platform::set_island_window_frame(window, position, size, scale_factor, home_bounds)?;
 
         if progress >= 1.0 {
+            // #region agent log
+            #[cfg(target_os = "windows")]
+            if matches!(mode, IslandWindowMode::Expanded) {
+                crate::debug_agent::log(
+                    "H-B",
+                    "lib.rs:animate_island_window_mode",
+                    "expand animation finished",
+                    serde_json::json!({
+                        "mode": format!("{:?}", mode),
+                        "targetW": target_size.width,
+                        "targetH": target_size.height,
+                        "alwaysOnTopAtEnd": window.is_always_on_top().unwrap_or(false),
+                    }),
+                );
+            }
+            // #endregion
             break;
         }
 
@@ -5113,6 +5229,15 @@ fn snapshot_from(
                 continue;
             }
             if is_codex_internal_session(&info.agent, &info.cwd, info.transcript_path.as_deref()) {
+                continue;
+            }
+            // Cursor observer hooks often omit workspace_roots; skip ghost rows until
+            // we can resolve cwd or a transcript from ~/.cursor/projects.
+            if matches!(info.agent, AgentKind::Cursor)
+                && is_unresolved_cursor_cwd(&info.cwd)
+                && info.transcript_path.is_none()
+                && !pinned_sessions.contains(session_id)
+            {
                 continue;
             }
             // Pinned sessions always included; non-pinned filtered by retention.
@@ -5794,6 +5919,128 @@ mod core_tests {
         assert_eq!(snapshot.sessions[0].session_id, "conv-ask-1");
         assert!(matches!(snapshot.sessions[0].agent, AgentKind::Cursor));
         assert_eq!(snapshot.sessions[0].cwd, "/tmp/ask-project");
+    }
+
+    #[test]
+    fn decode_cursor_project_slug_recovers_macos_workspace_path() {
+        let home = dirs::home_dir().expect("home");
+        let home_str = home.to_string_lossy();
+        let suffix = home_str.strip_prefix("/Users/").unwrap_or(home_str.as_ref());
+        let slug = format!("Users-{}", suffix.replace('/', "-"));
+        let decoded = decode_cursor_project_slug(&slug).expect("decoded");
+        assert_eq!(decoded, home_str);
+    }
+
+    #[test]
+    fn discover_cursor_agent_transcript_finds_workspace_and_path() {
+        let Some(home) = dirs::home_dir() else {
+            return;
+        };
+        let projects = home.join(".cursor").join("projects");
+        let Ok(entries) = std::fs::read_dir(&projects) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let transcripts = entry.path().join("agent-transcripts");
+            let Ok(conv_entries) = std::fs::read_dir(&transcripts) else {
+                continue;
+            };
+            for conv in conv_entries.flatten() {
+                if !conv.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    continue;
+                }
+                let conv_id = conv.file_name().to_string_lossy().into_owned();
+                let jsonl = conv.path().join(format!("{conv_id}.jsonl"));
+                if !jsonl.is_file() {
+                    continue;
+                }
+                let (path, workspace) =
+                    discover_cursor_agent_transcript(&conv_id).expect("discovered");
+                assert_eq!(path, jsonl.to_string_lossy());
+                if let Some(expected) =
+                    decode_cursor_project_slug(&entry.file_name().to_string_lossy())
+                {
+                    assert_eq!(workspace, expected);
+                }
+                return;
+            }
+        }
+    }
+
+    #[test]
+    fn ghost_cursor_sessions_with_dot_cwd_are_hidden_from_snapshot() {
+        let state = test_app_state();
+        register_known_session(&state, "ghost-conv", AgentKind::Cursor, ".", None);
+        touch_session_activity(&state, "ghost-conv");
+
+        let known = state.known_sessions.lock().expect("lock");
+        let last_seen = state.session_last_seen.lock().expect("lock");
+        let token_usage = state.session_token_usage.lock().expect("lock");
+        let pinned = state.pinned_sessions.lock().expect("lock");
+        let snapshot = snapshot_from(
+            &[],
+            &last_seen,
+            DEFAULT_SESSION_RETENTION_SECS,
+            &token_usage,
+            &known,
+            &pinned,
+            true,
+        );
+
+        assert!(snapshot.sessions.is_empty());
+    }
+
+    #[test]
+    fn backfill_cursor_session_metadata_links_on_disk_transcript() {
+        let Some(home) = dirs::home_dir() else {
+            return;
+        };
+        let projects = home.join(".cursor").join("projects");
+        let Ok(entries) = std::fs::read_dir(&projects) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let transcripts = entry.path().join("agent-transcripts");
+            let Ok(conv_entries) = std::fs::read_dir(&transcripts) else {
+                continue;
+            };
+            for conv in conv_entries.flatten() {
+                if !conv.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    continue;
+                }
+                let conv_id = conv.file_name().to_string_lossy().into_owned();
+                let jsonl = conv.path().join(format!("{conv_id}.jsonl"));
+                if !jsonl.is_file() {
+                    continue;
+                }
+                let workspace = decode_cursor_project_slug(&entry.file_name().to_string_lossy())
+                    .unwrap_or_else(|| "/tmp/unknown".to_string());
+
+                let state = test_app_state();
+                register_known_session(
+                    &state,
+                    &conv_id,
+                    AgentKind::Cursor,
+                    &workspace,
+                    None,
+                );
+                backfill_cursor_session_metadata(&state);
+
+                let known = state.known_sessions.lock().expect("lock");
+                let session = known.get(&conv_id).expect("session");
+                assert_eq!(
+                    session.transcript_path.as_deref(),
+                    Some(jsonl.to_string_lossy().as_ref())
+                );
+                return;
+            }
+        }
     }
 
     #[test]

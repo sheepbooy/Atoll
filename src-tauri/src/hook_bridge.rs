@@ -195,6 +195,20 @@ pub(crate) fn start_server(app: AppHandle) {
                     eprintln!("Atoll hook bridge failed to write bridge.json: {error}");
                 } else {
                     eprintln!("Atoll hook bridge listening on {HOOK_BIND_HOST}:{port}");
+                    // #region agent log
+                    crate::debug_agent::log(
+                        "H-C",
+                        "hook_bridge.rs:start_hook_bridge",
+                        "hook bridge listening",
+                        json!({
+                            "port": port,
+                            "defaultPort": DEFAULT_HOOK_PORT,
+                            "cursorUrl": cursor_hook_url(port),
+                            "bridgeConfigPath": bridge_config_path()
+                                .map(|p| p.to_string_lossy().into_owned()),
+                        }),
+                    );
+                    // #endregion
                 }
                 refresh_listening_snapshot(&app);
                 listener
@@ -702,17 +716,44 @@ fn observe_cursor_session(
         .as_deref()
         .or_else(|| payload_session_id(payload))
         .unwrap_or("cursor");
-    let cwd = resolve_cursor_cwd(payload);
-    let transcript_path = payload_transcript_path(payload);
+    let mut cwd = resolve_cursor_cwd(payload);
+    let mut transcript_path = payload_transcript_path(payload).map(str::to_string);
+    if crate::is_unresolved_cursor_cwd(&cwd) || transcript_path.is_none() {
+        if let Some(lookup_id) = payload_session_id(payload) {
+            if let Some((path, workspace)) = crate::discover_cursor_agent_transcript(lookup_id) {
+                if transcript_path.is_none() {
+                    transcript_path = Some(path);
+                }
+                if crate::is_unresolved_cursor_cwd(&cwd) && !crate::is_unresolved_cursor_cwd(&workspace)
+                {
+                    cwd = workspace;
+                }
+            }
+        }
+    }
     if parent_session.is_none() {
         register_known_session(
             state,
             session_id,
             AgentKind::Cursor,
             &cwd,
-            transcript_path,
+            transcript_path.as_deref(),
         );
     }
+    // #region agent log
+    crate::debug_agent::log(
+        "H-E",
+        "hook_bridge.rs:observe_cursor_session",
+        "cursor session observed",
+        json!({
+            "sessionId": session_id,
+            "cwd": cwd,
+            "hasTranscript": transcript_path.is_some(),
+            "tokenSource": token_source,
+            "parentSession": parent_session,
+        }),
+    );
+    // #endregion
     if let Some(mode) = payload
         .get("composer_mode")
         .or_else(|| payload.get("composerMode"))
@@ -744,6 +785,21 @@ fn route_cursor_request(
         .and_then(Value::as_str)
         .unwrap_or("preToolUse")
         .to_string();
+
+    // #region agent log
+    crate::debug_agent::log(
+        "H-D",
+        "hook_bridge.rs:route_cursor_request",
+        "cursor hook received",
+        json!({
+            "event": hook_event_name,
+            "hasWorkspaceRoots": payload.get("workspace_roots").is_some(),
+            "conversationId": payload.get("conversation_id"),
+            "sessionId": payload.get("session_id"),
+            "cwd": payload.get("cwd"),
+        }),
+    );
+    // #endregion
 
     match hook_event_name.as_str() {
         "sessionStart" | "afterAgentResponse" | "sessionEnd" | "afterAgentThought" => {
@@ -1396,11 +1452,22 @@ fn resolve_cursor_cwd(payload: &Value) -> String {
             }
         }
     }
-    payload
+    let from_payload = payload
         .get("cwd")
         .and_then(Value::as_str)
         .unwrap_or(".")
-        .to_string()
+        .to_string();
+    if !crate::is_unresolved_cursor_cwd(&from_payload) {
+        return from_payload;
+    }
+    if let Some(lookup_id) = crate::payload_cursor_lookup_id(payload) {
+        if let Some((_transcript, workspace)) = crate::discover_cursor_agent_transcript(lookup_id) {
+            if !crate::is_unresolved_cursor_cwd(&workspace) {
+                return workspace;
+            }
+        }
+    }
+    from_payload
 }
 
 /// Determine SessionHost for a Claude session.

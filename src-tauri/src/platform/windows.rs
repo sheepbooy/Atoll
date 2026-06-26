@@ -83,6 +83,17 @@ pub fn apply_island_window_style(window: &WebviewWindow) {
 /// lacks focus can drop behind other windows during that resize on some Windows
 /// builds, so we re-apply WS_EX_TOPMOST before each expand.
 pub fn ensure_island_on_top(window: &WebviewWindow) {
+    // #region agent log
+    crate::debug_agent::log(
+        "H-A",
+        "platform/windows.rs:ensure_island_on_top",
+        "re-assert always_on_top before expand",
+        serde_json::json!({
+            "visible": window.is_visible().unwrap_or(false),
+            "focused": window.is_focused().unwrap_or(false),
+        }),
+    );
+    // #endregion
     let _ = window.set_always_on_top(true);
 }
 

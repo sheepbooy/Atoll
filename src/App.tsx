@@ -4707,6 +4707,9 @@ function isTextEntryActive() {
 }
 
 function sessionDisplayName(cwd: string) {
+  if (!cwd || cwd === ".") {
+    return "Cursor session";
+  }
   const parts = cwd.split(/[/\\]/).filter(Boolean);
   return parts[parts.length - 1] || cwd;
 }
