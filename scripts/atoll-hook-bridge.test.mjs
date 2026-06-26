@@ -45,6 +45,12 @@ try {
   process.env.ATOLL_HOOK_URL = "http://127.0.0.1:49999/custom";
   assert.equal(
     resolveHookUrl("claudeUrl", "http://127.0.0.1:47777/claude/pre-tool-use"),
+    "http://127.0.0.1:47778/claude/pre-tool-use",
+  );
+
+  fs.unlinkSync(configPath);
+  assert.equal(
+    resolveHookUrl("claudeUrl", "http://127.0.0.1:47777/claude/pre-tool-use"),
     "http://127.0.0.1:49999/custom",
   );
 } finally {

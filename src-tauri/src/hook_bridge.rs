@@ -211,6 +211,7 @@ pub(crate) fn start_server(app: AppHandle) {
                     // #endregion
                 }
                 refresh_listening_snapshot(&app);
+                crate::sync_cursor_hook_bridge_urls(&app, port);
                 listener
             }
             Err(error) => {

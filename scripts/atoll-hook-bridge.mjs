@@ -35,13 +35,15 @@ export function readBridgeConfig() {
 }
 
 export function resolveHookUrl(configKey, defaultUrl) {
-  if (process.env.ATOLL_HOOK_URL) {
-    return process.env.ATOLL_HOOK_URL;
-  }
-
+  // Prefer bridge.json written by the running Atoll instance. Stale ATOLL_HOOK_URL
+  // values in hooks.json (e.g. 47777) must not override a fallback port (48800).
   const config = readBridgeConfig();
   if (config?.[configKey]) {
     return config[configKey];
+  }
+
+  if (process.env.ATOLL_HOOK_URL) {
+    return process.env.ATOLL_HOOK_URL;
   }
 
   return defaultUrl;

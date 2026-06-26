@@ -2301,7 +2301,99 @@ pub(crate) fn decode_cursor_project_slug(slug: &str) -> Option<String> {
             return Some(candidate);
         }
     }
+    #[cfg(windows)]
+    if slug.len() > 2 {
+        let drive = slug.as_bytes()[0] as char;
+        if drive.is_ascii_alphabetic() && slug.as_bytes()[1] == b'-' {
+            let candidate = format!(
+                "{}:\\{}",
+                drive.to_ascii_uppercase(),
+                slug[2..].replace('-', "\\")
+            );
+            if std::path::Path::new(&candidate).is_dir() {
+                return Some(candidate);
+            }
+        }
+    }
     None
+}
+
+/// Keep Cursor hooks.json env URLs aligned with the running bridge port.
+pub(crate) fn sync_cursor_hook_bridge_urls(app: &AppHandle, port: u16) {
+    let hooks_path = match cursor_hooks_path() {
+        Some(path) => path,
+        None => return,
+    };
+    let path_str = hooks_path.to_string_lossy();
+    let Some(mut config) = read_json_file(&path_str) else {
+        return;
+    };
+    if !has_atoll_cursor_hooks(&config) {
+        return;
+    }
+    let cursor_url = hook_bridge::cursor_hook_url(port);
+    let Some(hooks_obj) = config.get_mut("hooks").and_then(Value::as_object_mut) else {
+        return;
+    };
+    let mut updated = false;
+    for entries in hooks_obj.values_mut() {
+        let Some(arr) = entries.as_array_mut() else {
+            continue;
+        };
+        for entry in arr.iter_mut() {
+            if !hook_entry_has_atoll_cursor(entry) {
+                continue;
+            }
+            let Some(obj) = entry.as_object_mut() else {
+                continue;
+            };
+            let mut env = obj
+                .get("env")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            let current = env
+                .get("ATOLL_HOOK_URL")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            if current != cursor_url {
+                env.insert(
+                    "ATOLL_HOOK_URL".to_string(),
+                    Value::String(cursor_url.clone()),
+                );
+                obj.insert("env".to_string(), Value::Object(env));
+                updated = true;
+            }
+        }
+    }
+    if !updated {
+        return;
+    }
+    let formatted = match serde_json::to_string_pretty(&config) {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!("Atoll failed to serialize Cursor hooks for URL sync: {error}");
+            return;
+        }
+    };
+    if let Err(error) = std::fs::write(&hooks_path, formatted) {
+        eprintln!("Atoll failed to write Cursor hooks for URL sync: {error}");
+        return;
+    }
+    eprintln!("Atoll synced Cursor hook URLs to {cursor_url}");
+    refresh_hook_health_cache(app, &app.state::<AppState>());
+    // #region agent log
+    crate::debug_agent::log(
+        "H-C",
+        "lib.rs:sync_cursor_hook_bridge_urls",
+        "synced cursor hook env urls",
+        json!({
+            "port": port,
+            "cursorUrl": cursor_url,
+            "hooksPath": path_str,
+        }),
+    );
+    // #endregion
 }
 
 pub(crate) fn payload_cursor_lookup_id(payload: &Value) -> Option<&str> {
@@ -4955,6 +5047,7 @@ fn animate_island_window_mode(
                 );
             }
             // #endregion
+            platform::ensure_island_on_top(window);
             break;
         }
 
