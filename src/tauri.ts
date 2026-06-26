@@ -79,6 +79,7 @@ export interface ChatMessage {
 
 export interface IslandHoverChanged {
   hovering: boolean;
+  cursorOverWindow: boolean;
   clientX?: number;
   clientY?: number;
 }

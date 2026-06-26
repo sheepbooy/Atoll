@@ -145,7 +145,7 @@ vi.mock("./appUpdate", () => ({
   isTauriUpdateRuntime: () => true,
 }));
 
-let emitIslandHover: ((state: { hovering: boolean }) => void) | null = null;
+let emitIslandHover: ((state: { hovering: boolean; cursorOverWindow: boolean }) => void) | null = null;
 let emitSnapshot: ((snapshot: import("./tauri").IslandSnapshot) => void) | null =
   null;
 
@@ -643,7 +643,7 @@ describe("App", () => {
     ).toBe(false);
 
     bridge.setIslandPresentation.mockClear();
-    emitIslandHover?.({ hovering: false });
+    emitIslandHover?.({ hovering: false, cursorOverWindow: false });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(500);
     });
@@ -673,7 +673,7 @@ describe("App", () => {
 
     const collapseButton = screen.getByRole("button", { name: "Collapse Atoll" });
     fireEvent.click(collapseButton);
-    emitIslandHover?.({ hovering: true });
+    emitIslandHover?.({ hovering: true, cursorOverWindow: true });
     await vi.advanceTimersByTimeAsync(420);
 
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
@@ -686,7 +686,7 @@ describe("App", () => {
     );
     expect(container.querySelector(".is-compact")).not.toBeNull();
 
-    emitIslandHover?.({ hovering: false });
+    emitIslandHover?.({ hovering: false, cursorOverWindow: false });
     fireEvent.pointerEnter(screen.getByLabelText("Atoll"));
     await vi.advanceTimersByTimeAsync(420);
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
@@ -986,6 +986,83 @@ describe("App", () => {
 
     expect(container.querySelector(".is-micro")).not.toBeNull();
     expect(bridge.setIslandPresentation.mock.calls[0]?.[0]).not.toBe("dormant");
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: originalUserAgent,
+    });
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+  });
+
+  it("cancels micro shrink when the cursor re-enters before hover dwell completes on Windows", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {},
+    });
+    const originalUserAgent = navigator.userAgent;
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    });
+    bridge.usesMicroIsland.mockResolvedValue(true);
+    const session = {
+      sessionId: "session-shrink-race",
+      agent: "claude" as const,
+      cwd: "/tmp/project",
+      pendingCount: 0,
+      totalCount: 1,
+      lastActivity: "2026-06-10T08:00:00Z",
+      transcriptPath: null,
+    };
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [session],
+      hookHealth: connectedHookHealth,
+    });
+    bridge.getSessionRequests.mockResolvedValue([]);
+    bridge.getSessionTranscript.mockResolvedValue([]);
+
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+    await waitFor(() => expect(emitIslandHover).not.toBeNull());
+
+    fireEvent.pointerEnter(screen.getByLabelText("Atoll"));
+    await waitFor(() =>
+      expect(container.querySelector(".is-expanded")).not.toBeNull(),
+    );
+
+    await user.click(await screen.findByRole("button", { name: /project/i }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Open Claude" })).toBeInTheDocument(),
+    );
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Open Claude" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(420);
+      });
+      expect(container.querySelector(".is-compact")).not.toBeNull();
+
+      bridge.setIslandPresentation.mockClear();
+      emitIslandHover?.({ hovering: false, cursorOverWindow: false });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250);
+      });
+      emitIslandHover?.({ hovering: false, cursorOverWindow: true });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+
+      expect(
+        bridge.setIslandPresentation.mock.calls.some((call) => call[0] === "micro"),
+      ).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
 
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,

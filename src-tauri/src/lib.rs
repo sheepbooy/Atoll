@@ -241,6 +241,7 @@ enum IslandWindowMode {
 #[serde(rename_all = "camelCase")]
 struct IslandHoverChanged {
     hovering: bool,
+    cursor_over_window: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     client_x: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -4561,6 +4562,7 @@ pub(crate) fn show_main_window_for_approval(app: &AppHandle) {
 fn start_island_hover_monitor(app: AppHandle) {
     thread::spawn(move || {
         let mut last_hovering = false;
+        let mut last_cursor_over = false;
         let mut last_client: Option<(f64, f64)> = None;
         #[cfg(target_os = "windows")]
         let mut compact_hover_since: Option<Instant> = None;
@@ -4602,31 +4604,30 @@ fn start_island_hover_monitor(app: AppHandle) {
                 None
             };
 
-            if hovering {
-                let client_changed = client != last_client;
-                if !last_hovering || client_changed {
-                    let _ = app.emit(
-                        "island-hover-changed",
-                        IslandHoverChanged {
-                            hovering: true,
-                            client_x: client.map(|(x, _)| x),
-                            client_y: client.map(|(_, y)| y),
-                        },
-                    );
-                    last_client = client;
-                }
-                last_hovering = true;
-            } else if last_hovering {
+            let cursor_over_changed = cursor_over_window != last_cursor_over;
+            let hover_changed = hovering != last_hovering;
+            let client_changed = hovering && client != last_client;
+            if cursor_over_changed || hover_changed || client_changed {
                 let _ = app.emit(
                     "island-hover-changed",
                     IslandHoverChanged {
-                        hovering: false,
-                        client_x: None,
-                        client_y: None,
+                        hovering,
+                        cursor_over_window,
+                        client_x: if hovering {
+                            client.map(|(x, _)| x)
+                        } else {
+                            None
+                        },
+                        client_y: if hovering {
+                            client.map(|(_, y)| y)
+                        } else {
+                            None
+                        },
                     },
                 );
-                last_hovering = false;
-                last_client = None;
+                last_cursor_over = cursor_over_window;
+                last_hovering = hovering;
+                last_client = if hovering { client } else { None };
             }
         }
     });

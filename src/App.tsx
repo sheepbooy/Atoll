@@ -519,6 +519,8 @@ export function App() {
   const [notchMetricsHydrated, setNotchMetricsHydrated] = useState(false);
   const initialNativePresentationSyncedRef = useRef(false);
   const hoveringRef = useRef(false);
+  const cursorOverIslandRef = useRef(false);
+  const shrinkInFlightRef = useRef(false);
   const focusedRef = useRef(false);
   const suppressHoverExpandRef = useRef(false);
   const transitionTimerRef = useRef<number | null>(null);
@@ -811,15 +813,25 @@ export function App() {
     }).then((cleanup) => {
       unsubscribe = cleanup;
     });
-    onIslandHoverChanged(({ hovering }) => {
+    onIslandHoverChanged(({ hovering, cursorOverWindow }) => {
+      cursorOverIslandRef.current = cursorOverWindow;
+      if (cursorOverWindow) {
+        clearIdleTimer();
+        if (
+          !suppressHoverExpandRef.current &&
+          (phaseRef.current === "closing" ||
+            (shrinkInFlightRef.current && phaseRef.current === "micro"))
+        ) {
+          expandIsland();
+          return;
+        }
+      }
       hoveringRef.current = hovering;
       if (hovering) {
-        if (phaseRef.current === "micro") {
-          promoteToCompact();
-        } else if (!suppressHoverExpandRef.current) {
+        if (!suppressHoverExpandRef.current) {
           expandIsland();
         }
-      } else {
+      } else if (!cursorOverWindow) {
         if (phaseRef.current !== "closing") {
           suppressHoverExpandRef.current = false;
         }
@@ -1443,10 +1455,13 @@ export function App() {
       collapsedWindowWidthRef.current,
       0,
     );
+    shrinkInFlightRef.current = true;
     try {
       await setIslandPresentation("micro", collapsedWindowWidthRef.current);
     } catch {
       setPresentationPhase("compact");
+    } finally {
+      shrinkInFlightRef.current = false;
     }
   }
 
@@ -1455,6 +1470,7 @@ export function App() {
     if (
       holdCompactAfterSubviewOpenRef.current ||
       hoveringRef.current ||
+      cursorOverIslandRef.current ||
       snapshotRef.current.pendingCount > 0 ||
       isTextEntryActive()
     ) {
@@ -1465,6 +1481,7 @@ export function App() {
       idleTimerRef.current = null;
       if (
         hoveringRef.current ||
+        cursorOverIslandRef.current ||
         phaseRef.current !== "compact" ||
         !shouldRestInMicro(usesMicroIslandRef.current)
       ) {
@@ -1699,10 +1716,8 @@ export function App() {
 
   function handlePointerEnter() {
     hoveringRef.current = true;
-    if (phaseRef.current === "micro") {
-      promoteToCompact();
-      return;
-    }
+    cursorOverIslandRef.current = true;
+    clearIdleTimer();
     if (!suppressHoverExpandRef.current) {
       expandIsland();
     }
@@ -1710,6 +1725,7 @@ export function App() {
 
   function handlePointerLeave() {
     hoveringRef.current = false;
+    cursorOverIslandRef.current = false;
     if (phaseRef.current !== "closing") {
       suppressHoverExpandRef.current = false;
     }
@@ -2276,7 +2292,12 @@ export function App() {
   // collapseIsland / expandIsland pre-mark the matching key so we do not replay
   // the same native animation right after a user-driven transition finishes.
   useEffect(() => {
-    if (phase === "opening" || phase === "closing") {
+    if (
+      phaseRef.current === "opening" ||
+      phaseRef.current === "closing" ||
+      phase === "opening" ||
+      phase === "closing"
+    ) {
       return;
     }
 
