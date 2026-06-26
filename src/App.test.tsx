@@ -760,9 +760,12 @@ describe("App", () => {
 
     fireEvent.pointerEnter(island);
     fireEvent.focus(approveButton);
+    bridge.setIslandPresentation.mockClear();
     fireEvent.click(approveButton);
 
-    await waitFor(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await vi.advanceTimersByTimeAsync(420);
       expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
         "dormant",
         undefined,
@@ -771,11 +774,10 @@ describe("App", () => {
         false,
         true,
       );
-    });
-    await waitFor(
-      () => expect(container.querySelector(".is-dormant")).not.toBeNull(),
-      { timeout: 3000 },
-    );
+      expect(container.querySelector(".is-dormant")).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not cancel opening when hover, focus, and click arrive together", async () => {
