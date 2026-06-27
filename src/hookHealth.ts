@@ -56,7 +56,10 @@ export function preferHookStatus(
   };
   if (!a) return b ?? empty;
   if (!b) return a;
-  if (isHookReady(a)) return a;
+  if (isHookReady(a)) {
+    if (isHookDrifted(b)) return b;
+    return a;
+  }
   if (isHookReady(b)) return b;
   return {
     installed: a.installed || b.installed,
@@ -88,18 +91,26 @@ export function isHookDrifted(status: HookStatus | null | undefined): boolean {
 
 /** Agent is absent while at least one other agent remains connected (uninstall or drift).
 
- * Only a *drifted* hook (installed but broken) counts as disconnected. An agent
- * that was never installed is simply absent, not disconnected — otherwise a user
- * who only uses one agent would see the other two count toward a false "dead"
- * logo. */
-export function isHookDisconnected(status: HookStatus): boolean {
+ * Drifted hooks always count as disconnected. An agent that was never configured
+ * is simply absent — only agents the user previously installed (tracked in
+ * localStorage) count as disconnected when uninstalled or broken. */
+export function isHookDisconnected(
+  status: HookStatus,
+  agentKey: HookAgentKey,
+  otherAgentReady: boolean,
+  configuredAgents: ReadonlySet<HookAgentKey>,
+): boolean {
   if (isHookReady(status)) return false;
-  return isHookDrifted(status);
+  if (isHookDrifted(status)) return true;
+  if (!otherAgentReady) return false;
+  return configuredAgents.has(agentKey);
 }
 
 export function analyzeHookHealth(
   health: HookHealthSnapshot | undefined,
+  options?: { configuredAgents?: ReadonlySet<HookAgentKey> },
 ): HookHealthAnalysis {
+  const configuredAgents = options?.configuredAgents ?? new Set<HookAgentKey>();
   const agentEntries: Array<{
     key: HookAgentKey;
     label: string;
@@ -115,9 +126,15 @@ export function analyzeHookHealth(
   );
 
   const readyAgents = agents.filter((agent) => isHookReady(agent.status));
-  const disconnectedAgents = agents.filter((agent) =>
-    isHookDisconnected(agent.status),
-  );
+  const disconnectedAgents = agents.filter((agent) => {
+    const otherAgentReady = readyAgents.some((ready) => ready.key !== agent.key);
+    return isHookDisconnected(
+      agent.status,
+      agent.key,
+      otherAgentReady,
+      configuredAgents,
+    );
+  });
   const connectedCount = readyAgents.length;
   const totalCount = agents.length;
   const anyHookInstalled = agents.some((agent) => agent.status.installed);

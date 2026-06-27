@@ -59,6 +59,12 @@ import {
   type HookAgentKey,
 } from "./hookHealth";
 import {
+  markAllHookAgentsConfigured,
+  markHookAgentConfigured,
+  readConfiguredHookAgents,
+  seedConfiguredFromHookHealth,
+} from "./hookAgentsConfigured";
+import {
   beginCollapse,
   beginExpand,
   COLLAPSE_ANIMATION_MS,
@@ -568,6 +574,9 @@ export function App() {
   const [launchAtLoginBusy, setLaunchAtLoginBusy] = useState(false);
   const [justResolved, setJustResolved] = useState(false);
   const [hookHealthHydrated, setHookHealthHydrated] = useState(false);
+  const [configuredHookAgents, setConfiguredHookAgents] = useState(() =>
+    readConfiguredHookAgents(),
+  );
   const prevPendingRef = useRef(0);
   const selectedAgentRef = useRef<AgentKind | null>(null);
   selectedAgentRef.current = selectedAgent;
@@ -575,8 +584,11 @@ export function App() {
   const activeRequest = snapshot.activeRequest;
   const sessions = snapshot.sessions;
   const hookHealthAnalysis = useMemo(
-    () => analyzeHookHealth(snapshot.hookHealth),
-    [snapshot.hookHealth],
+    () =>
+      analyzeHookHealth(snapshot.hookHealth, {
+        configuredAgents: configuredHookAgents,
+      }),
+    [snapshot.hookHealth, configuredHookAgents],
   );
   const claudeHookStatus = snapshot.hookHealth?.claude ?? null;
   const codexHookStatus = snapshot.hookHealth?.codex ?? null;
@@ -759,6 +771,11 @@ export function App() {
   collapsedWindowWidthRef.current = collapsedWindowWidth;
   const compactLeftPaneWidthRef = useRef(compactLeftPaneWidth);
   compactLeftPaneWidthRef.current = compactLeftPaneWidth;
+
+  useEffect(() => {
+    if (!hookHealthHydrated) return;
+    setConfiguredHookAgents(seedConfiguredFromHookHealth(snapshot.hookHealth));
+  }, [hookHealthHydrated, snapshot.hookHealth]);
 
   useEffect(() => {
     let unsubscribe: () => void = () => undefined;
@@ -1814,6 +1831,9 @@ export function App() {
     setHookBusy(true);
     try {
       const status = await installClaudeHooks();
+      if (status.installed) {
+        setConfiguredHookAgents(markHookAgentConfigured("claude"));
+      }
       await applyHookInstallSnapshot({ claude: status });
       if (status.installed) {
         collapseIsland(true);
@@ -1829,6 +1849,9 @@ export function App() {
     setHookBusy(true);
     try {
       const status = await installCodexHooks();
+      if (status.installed) {
+        setConfiguredHookAgents(markHookAgentConfigured("codex"));
+      }
       await applyHookInstallSnapshot({ codex: status });
       if (status.installed) {
         collapseIsland(true);
@@ -1843,6 +1866,7 @@ export function App() {
   async function handleInstallAllHooks() {
     setHookBusy(true);
     try {
+      setConfiguredHookAgents(markAllHookAgentsConfigured());
       const [claudeStatus, codexStatus, cursorStatus] = await Promise.all([
         installClaudeHooks(),
         installCodexHooks(),
@@ -1945,6 +1969,9 @@ export function App() {
     setHookBusy(true);
     try {
       const status = await installCursorHooks();
+      if (status.installed) {
+        setConfiguredHookAgents(markHookAgentConfigured("cursor"));
+      }
       await applyHookInstallSnapshot({ cursor: status });
       if (status.installed) {
         collapseIsland(true);

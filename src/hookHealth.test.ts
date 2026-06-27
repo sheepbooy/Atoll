@@ -9,6 +9,7 @@ import {
   isHookReady,
   mergeHookHealthPreferReady,
   preferHookStatus,
+  type HookAgentKey,
 } from "./hookHealth";
 import type { HookHealthSnapshot } from "./tauri";
 
@@ -90,13 +91,17 @@ describe("hookHealth", () => {
   });
 
   it("treats missing scripts as drift only when hooks were installed", () => {
+    const emptyConfigured = new Set<HookAgentKey>();
+    const configuredClaude = new Set<HookAgentKey>(["claude"]);
     expect(isHookReady(drifted)).toBe(false);
     expect(isHookDrifted(drifted)).toBe(true);
     expect(isHookDrifted(missing)).toBe(false);
     // Never-installed agents are absent, not disconnected.
-    expect(isHookDisconnected(missing)).toBe(false);
+    expect(isHookDisconnected(missing, "claude", true, emptyConfigured)).toBe(false);
+    // Configured but uninstalled agents are disconnected when others stay live.
+    expect(isHookDisconnected(missing, "claude", true, configuredClaude)).toBe(true);
     // Drifted (installed but broken) agents are disconnected.
-    expect(isHookDisconnected(drifted)).toBe(true);
+    expect(isHookDisconnected(drifted, "claude", true, emptyConfigured)).toBe(true);
   });
 
   it("treats installed hooks with a script path as ready even without scriptFound", () => {
@@ -130,7 +135,16 @@ describe("hookHealth", () => {
     expect(merged.claude).toEqual(ready);
     expect(merged.codex).toEqual(ready);
     expect(preferHookStatus(drifted, ready)).toEqual(ready);
-    expect(preferHookStatus(ready, drifted)).toEqual(ready);
+    expect(preferHookStatus(ready, drifted)).toEqual(drifted);
+  });
+
+  it("downgrades ready hook health when a later snapshot reports drift", () => {
+    const merged = mergeHookHealthPreferReady(
+      hookHealth(ready, ready, ready),
+      hookHealth(drifted, ready, ready),
+    );
+    expect(merged.claude).toEqual(drifted);
+    expect(merged.codex).toEqual(ready);
   });
 
   it("does not downgrade ready hook health to an empty startup snapshot", () => {
@@ -188,6 +202,24 @@ describe("hookHealth", () => {
       codex: ready,
       cursor: cursorDrifted,
     });
+    expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["cursor"]);
+    expect(deriveHeaderLogoDisplay(analysis, "idle")).toEqual({
+      kind: "agent",
+      agent: "cursor",
+      mood: "dead",
+    });
+  });
+
+  it("flags configured but uninstalled agents as disconnected", () => {
+    const configuredCursor = new Set<HookAgentKey>(["cursor"]);
+    const analysis = analyzeHookHealth(
+      {
+        claude: ready,
+        codex: ready,
+        cursor: missing,
+      },
+      { configuredAgents: configuredCursor },
+    );
     expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["cursor"]);
     expect(deriveHeaderLogoDisplay(analysis, "idle")).toEqual({
       kind: "agent",

@@ -3,6 +3,10 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { computeCollapsedWindowWidth } from "./compactLayout";
+import {
+  clearConfiguredHookAgentsForTests,
+  markHookAgentConfigured,
+} from "./hookAgentsConfigured";
 
 const connectedHookHealth = {
   claude: {
@@ -164,6 +168,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 describe("App", () => {
   beforeEach(() => {
     vi.useRealTimers();
+    clearConfiguredHookAgentsForTests();
     emitIslandHover = null;
     emitSnapshot = null;
     bridge.getSnapshot.mockResolvedValue({
@@ -851,6 +856,7 @@ describe("App", () => {
   });
 
   it("shows dead cursor mascot in header when cursor hook is not installed", async () => {
+    markHookAgentConfigured("cursor");
     bridge.getSnapshot.mockResolvedValue({
       online: true,
       pendingCount: 0,
@@ -877,6 +883,7 @@ describe("App", () => {
   });
 
   it("shows dead agent mascot in header when one hook is uninstalled", async () => {
+    markHookAgentConfigured("claude");
     bridge.getSnapshot.mockResolvedValue({
       online: true,
       pendingCount: 0,
@@ -903,6 +910,7 @@ describe("App", () => {
   });
 
   it("shows dead cursor mascot when offline and cursor hook is missing", async () => {
+    markHookAgentConfigured("cursor");
     bridge.getSnapshot.mockResolvedValue({
       online: false,
       pendingCount: 0,
