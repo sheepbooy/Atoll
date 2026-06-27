@@ -6,7 +6,8 @@ const defaultHookUrl = "http://127.0.0.1:47777/codex/hook";
 const hookUrl = resolveHookUrl("codexUrl", defaultHookUrl);
 
 try {
-  const payload = await readStdin();
+  const rawPayload = await readStdin();
+  const payload = (rawPayload || "").replace(/^\uFEFF/, "");
   const response = await fetch(hookUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },

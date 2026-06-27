@@ -4,10 +4,17 @@ import path from "node:path";
 
 export function bridgeConfigPath() {
   if (process.platform === "win32") {
+    // LOCALAPPDATA is the canonical location, but some hook host processes
+    // (notably Cursor's hook subprocess) spawn with a sanitized environment
+    // where LOCALAPPDATA is missing. Reconstruct the same path from the home
+    // directory (USERPROFILE), which remains available, so the hook can still
+    // find the running Atoll instance's bridge.json and hit the right port
+    // instead of falling back to the default (possibly reserved) port.
     const localAppData = process.env.LOCALAPPDATA;
     if (localAppData) {
       return path.join(localAppData, "Atoll", "bridge.json");
     }
+    return path.join(os.homedir(), "AppData", "Local", "Atoll", "bridge.json");
   }
 
   if (process.platform === "darwin") {
