@@ -337,7 +337,7 @@ describe("App", () => {
     );
   });
 
-  it("keeps island expanded after leaving a session opened from the list", async () => {
+  it("auto-collapses after leaving a session opened from the list", async () => {
     const session = {
       sessionId: "session-1",
       agent: "claude" as const,
@@ -370,8 +370,10 @@ describe("App", () => {
     );
 
     fireEvent.pointerLeave(island);
-    await new Promise((resolve) => window.setTimeout(resolve, 700));
-    expect(container.querySelector(".is-expanded")).not.toBeNull();
+    await waitFor(
+      () => expect(container.querySelector(".is-compact")).not.toBeNull(),
+      { timeout: 1500 },
+    );
   });
 
   it("collapses once after returning from a session even if tokens update mid-animation", async () => {

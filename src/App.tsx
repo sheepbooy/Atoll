@@ -1320,14 +1320,8 @@ export function App() {
     if (merged.pendingCount > 0) {
       expandIsland();
     } else {
-      const panel = panelViewRef.current;
-      const inExpandedSessionSubview =
-        phaseRef.current === "expanded" &&
-        (panel.kind === "session" ||
-          panel.kind === "subagent" ||
-          panel.kind === "subagentList");
       const collapseInFlight = frozenCollapseWidthRef.current !== null;
-      if (!inExpandedSessionSubview && !collapseInFlight) {
+      if (!collapseInFlight) {
         scheduleIdleCollapse();
       }
     }
@@ -1693,15 +1687,6 @@ export function App() {
 
   function scheduleIdleCollapse() {
     clearIdleTimer();
-    const panel = panelViewRef.current;
-    const inExpandedSessionSubview =
-      phaseRef.current === "expanded" &&
-      (panel.kind === "session" ||
-        panel.kind === "subagent" ||
-        panel.kind === "subagentList");
-    if (inExpandedSessionSubview) {
-      return;
-    }
     // Only an active text field (e.g. the reply input) should hold the island
     // open once the pointer leaves. A lingering button focus — e.g. after
     // tapping "View session" — must NOT block the idle collapse.
