@@ -149,6 +149,14 @@ export async function getSessionTranscript(transcriptPath: string): Promise<Chat
   return [];
 }
 
+export async function getSessionChat(sessionId: string): Promise<ChatMessage[]> {
+  if (isTauriRuntime) {
+    return invoke<ChatMessage[]>("get_session_chat", { sessionId });
+  }
+
+  return [];
+}
+
 export async function resolvePermissionRequest(
   id: string,
   decision: "approved" | "denied",

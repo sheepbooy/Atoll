@@ -32,6 +32,7 @@ const HOOK_SECONDARY_FALLBACK_START: u16 = 48_800;
 const HOOK_SECONDARY_FALLBACK_END: u16 = 48_850;
 const HOOK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const BRIDGE_PROBE_TIMEOUT: Duration = Duration::from_millis(200);
+const BRIDGE_ONLINE_GRACE: Duration = Duration::from_secs(3);
 const HOOK_POLL_INTERVAL: Duration = Duration::from_millis(180);
 
 pub(crate) fn bridge_config_path() -> Option<std::path::PathBuf> {
@@ -184,6 +185,32 @@ pub(crate) fn is_bridge_reachable(app: &AppHandle) -> bool {
     })
 }
 
+fn mark_bridge_reachable(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    if let Ok(mut last) = state.last_bridge_reachable.lock() {
+        *last = Some(Instant::now());
+    };
+}
+
+fn bridge_reachable_within_grace(app: &AppHandle) -> bool {
+    let state = app.state::<AppState>();
+    let Ok(last) = state.last_bridge_reachable.lock() else {
+        return false;
+    };
+    last.map(|instant| instant.elapsed() < BRIDGE_ONLINE_GRACE)
+        .unwrap_or(false)
+}
+
+/// Like [`is_bridge_reachable`], but keeps `online` true briefly after a probe failure
+/// so dev hot-reloads / bridge rebinds do not flash the logo dead.
+pub(crate) fn is_bridge_online(app: &AppHandle) -> bool {
+    if is_bridge_reachable(app) {
+        mark_bridge_reachable(app);
+        return true;
+    }
+    bridge_reachable_within_grace(app)
+}
+
 pub(crate) fn start_server(app: AppHandle) {
     thread::spawn(move || {
         let listener = match bind_hook_listener() {
@@ -195,6 +222,7 @@ pub(crate) fn start_server(app: AppHandle) {
                     eprintln!("Atoll hook bridge failed to write bridge.json: {error}");
                 } else {
                     eprintln!("Atoll hook bridge listening on {HOOK_BIND_HOST}:{port}");
+                    mark_bridge_reachable(&app);
                     // #region agent log
                     crate::debug_agent::log(
                         "H-C",
@@ -259,7 +287,7 @@ pub(crate) fn permission_request_from_codex_payload(
     let transcript_path = payload_transcript_path(&payload);
     let cwd = resolve_codex_session_cwd(
         payload.get("cwd").and_then(Value::as_str).unwrap_or("."),
-        transcript_path,
+        transcript_path.as_deref(),
     );
     if is_codex_internal_session(&AgentKind::Codex, &cwd, None) {
         return None;
@@ -271,7 +299,6 @@ pub(crate) fn permission_request_from_codex_payload(
     Some(request)
 }
 
-#[allow(dead_code)]
 pub(crate) fn permission_request_from_cursor_payload(
     id: String,
     payload: Value,
@@ -287,8 +314,11 @@ pub(crate) fn permission_request_from_cursor_payload(
 
     let resolved_cwd = resolve_cursor_cwd(&payload);
     let mut request =
-        permission_request_from_tool_payload(id, payload, requested_at, AgentKind::Cursor, false)?;
+        permission_request_from_tool_payload(id, payload.clone(), requested_at, AgentKind::Cursor, false)?;
     request.cwd = resolved_cwd;
+    request.session = crate::payload_cursor_session_id(&payload)
+        .unwrap_or("cursor")
+        .to_string();
     Some(request)
 }
 
@@ -340,10 +370,7 @@ fn permission_request_from_tool_payload(
         status: PermissionStatus::Pending,
         archived: false,
         supports_always,
-        transcript_path: payload
-            .get("transcript_path")
-            .and_then(Value::as_str)
-            .map(str::to_string),
+        transcript_path: payload_transcript_path(&payload),
         tool_input: payload.get("tool_input").and_then(|value| {
             if value.is_null() {
                 None
@@ -552,12 +579,16 @@ fn route_request(
     }
 }
 
+fn strip_utf8_bom(body: &[u8]) -> &[u8] {
+    body.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(body)
+}
+
 fn route_claude_request(
     app: AppHandle,
     request: HttpRequest,
     stream: &TcpStream,
 ) -> Result<Value, String> {
-    let payload: Value = serde_json::from_slice(&request.body)
+    let payload: Value = serde_json::from_slice(strip_utf8_bom(&request.body))
         .map_err(|error| format!("Invalid Claude hook payload: {error}"))?;
 
     let hook_event_name = payload
@@ -626,7 +657,7 @@ fn route_codex_request(
     request: HttpRequest,
     stream: &TcpStream,
 ) -> Result<Value, String> {
-    let payload: Value = serde_json::from_slice(&request.body)
+    let payload: Value = serde_json::from_slice(strip_utf8_bom(&request.body))
         .map_err(|error| format!("Invalid Codex hook payload: {error}"))?;
 
     let hook_event_name = payload
@@ -715,12 +746,20 @@ fn observe_cursor_session(
     let parent_session = resolve_cursor_subagent_parent(state, payload);
     let session_id = parent_session
         .as_deref()
-        .or_else(|| payload_session_id(payload))
+        .or_else(|| crate::payload_cursor_session_id(payload))
         .unwrap_or("cursor");
     let mut cwd = resolve_cursor_cwd(payload);
-    let mut transcript_path = payload_transcript_path(payload).map(str::to_string);
+    let mut transcript_path = payload_transcript_path(payload);
+    // Cursor on Windows may report a transcript_path with a URI prefix or GBK
+    // mojibake; even after normalization it can point at a missing file, so drop
+    // invalid paths and let on-disk discovery recover the real transcript.
+    if let Some(ref candidate) = transcript_path {
+        if !std::path::Path::new(candidate).is_file() {
+            transcript_path = None;
+        }
+    }
     if crate::is_unresolved_cursor_cwd(&cwd) || transcript_path.is_none() {
-        if let Some(lookup_id) = payload_session_id(payload) {
+        if let Some(lookup_id) = crate::payload_cursor_lookup_id(payload) {
             if let Some((path, workspace)) = crate::discover_cursor_agent_transcript(lookup_id) {
                 if transcript_path.is_none() {
                     transcript_path = Some(path);
@@ -740,6 +779,34 @@ fn observe_cursor_session(
             &cwd,
             transcript_path.as_deref(),
         );
+        if let Some(conv_id) = crate::payload_conversation_id(payload) {
+            if let Ok(mut known) = state.known_sessions.lock() {
+                if let Some(entry) = known.get_mut(session_id) {
+                    entry.conversation_id = Some(conv_id.to_string());
+                }
+            }
+        } else if session_id.len() >= crate::CURSOR_TRANSCRIPT_PREFIX_MIN_LEN {
+            if let Some((path, _workspace)) =
+                crate::discover_cursor_agent_transcript(session_id)
+            {
+                if let Ok(mut known) = state.known_sessions.lock() {
+                    if let Some(entry) = known.get_mut(session_id) {
+                        if entry.transcript_path.is_none() {
+                            entry.transcript_path = Some(path.clone());
+                        }
+                        if entry.conversation_id.is_none() {
+                            if let Some(stem) = std::path::Path::new(&path)
+                                .parent()
+                                .and_then(|p| p.file_name())
+                                .and_then(|name| name.to_str())
+                            {
+                                entry.conversation_id = Some(stem.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     // #region agent log
     crate::debug_agent::log(
@@ -778,7 +845,7 @@ fn route_cursor_request(
     request: HttpRequest,
     stream: &TcpStream,
 ) -> Result<Value, String> {
-    let payload: Value = serde_json::from_slice(&request.body)
+    let payload: Value = serde_json::from_slice(strip_utf8_bom(&request.body))
         .map_err(|error| format!("Invalid Cursor hook payload: {error}"))?;
 
     let hook_event_name = payload
@@ -838,6 +905,21 @@ fn route_cursor_request(
                 false,
                 "preToolUse",
             )?;
+            if let Some(mut request) = permission_request_from_cursor_payload(
+                uuid::Uuid::new_v4().to_string(),
+                payload,
+                crate::iso_timestamp_now(),
+            ) {
+                request.status = crate::PermissionStatus::Approved;
+                request.detail = format!("{} Auto-approved.", request.detail);
+                let session_id = request.session.clone();
+                touch_session_activity(&state, &session_id);
+                if let Ok(mut requests) = state.requests.lock() {
+                    requests.insert(0, request);
+                    crate::roll_over_token_usage_if_needed(&state);
+                }
+                crate::schedule_observer_snapshot_emit(&app);
+            }
             Ok(json!({ "permission": "allow" }))
         }
         "postToolUse" | "postToolUseFailure" => {
@@ -883,7 +965,7 @@ fn route_cursor_request(
                 .unwrap_or("cursor");
             let cwd = resolve_cursor_cwd(&payload);
             let transcript_path = payload_transcript_path(&payload);
-            register_known_session(&state, session_id, AgentKind::Cursor, &cwd, transcript_path);
+            register_known_session(&state, session_id, AgentKind::Cursor, &cwd, transcript_path.as_deref());
             touch_session_activity(&state, session_id);
             emit_subagent_snapshot(&app, &state);
             Ok(json!({}))
@@ -1178,8 +1260,8 @@ fn sync_tool_completion(
     let agent_label = agent_resolved_label(&agent);
     let completed_suffix = format!("Completed in {agent_label}.");
     let mut completed_session_id = payload_session_id(&payload).map(str::to_string);
-    let mut completed_transcript_path = payload_transcript_path(&payload).map(str::to_string);
-    let transcript_path = payload_transcript_path(&payload).map(str::to_string);
+    let mut completed_transcript_path = payload_transcript_path(&payload);
+    let transcript_path = payload_transcript_path(&payload);
     let cwd = match agent {
         AgentKind::Codex => resolve_codex_session_cwd(
             payload.get("cwd").and_then(Value::as_str).unwrap_or("."),
@@ -1310,7 +1392,7 @@ fn sync_turn_completion(
     let agent_label = agent_resolved_label(&agent);
     let completed_suffix = format!("Completed in {agent_label}.");
     let session_id = payload_session_id(&payload).map(str::to_string);
-    let transcript_path = payload_transcript_path(&payload).map(str::to_string);
+    let transcript_path = payload_transcript_path(&payload);
     let cwd = match agent {
         AgentKind::Codex => resolve_codex_session_cwd(
             payload.get("cwd").and_then(Value::as_str).unwrap_or("."),
@@ -1429,11 +1511,52 @@ fn payload_session_id(payload: &Value) -> Option<&str> {
         .or_else(|| payload.get("conversationId").and_then(Value::as_str))
 }
 
-fn payload_transcript_path(payload: &Value) -> Option<&str> {
+fn payload_transcript_path(payload: &Value) -> Option<String> {
     payload
         .get("transcript_path")
         .and_then(Value::as_str)
         .or_else(|| payload.get("transcriptPath").and_then(Value::as_str))
+        .filter(|s| !s.is_empty())
+        .map(normalize_windows_path)
+}
+
+/// Strip URI-style leading `/` from Windows paths (e.g. `/C:/Users/…` → `C:/Users/…`).
+#[cfg(windows)]
+fn normalize_windows_path(path: &str) -> String {
+    let stripped = if path.len() >= 3
+        && path.starts_with('/')
+        && path.as_bytes()[1].is_ascii_alphabetic()
+        && path.as_bytes()[2] == b':'
+    {
+        &path[1..]
+    } else {
+        path
+    };
+    try_fix_gbk_mojibake(stripped)
+}
+
+#[cfg(not(windows))]
+fn normalize_windows_path(path: &str) -> String {
+    path.to_string()
+}
+
+/// Reverse GBK mojibake: when Cursor on Windows passes UTF-8 path bytes through a
+/// pipeline that decodes them as GBK then re-encodes to UTF-8, Chinese characters
+/// get garbled. E.g. `杨帅` (UTF-8 e6 9d a8 e5 b8 85) → GBK decode → `鏉ㄥ竻` →
+/// UTF-8 re-encode → e9 8f 89 e3 84 a5 e7 ab bb. This function reverses the process.
+#[cfg(windows)]
+fn try_fix_gbk_mojibake(s: &str) -> String {
+    if s.is_ascii() {
+        return s.to_string();
+    }
+    let (gbk_bytes, _encoding_used, had_errors) = encoding_rs::GBK.encode(s);
+    if had_errors {
+        return s.to_string();
+    }
+    match std::str::from_utf8(&gbk_bytes) {
+        Ok(fixed) => fixed.to_string(),
+        Err(_) => s.to_string(),
+    }
 }
 
 /// Resolve Cursor session cwd: prefer `workspace_roots[0]` over raw `cwd`
@@ -1442,14 +1565,14 @@ fn resolve_cursor_cwd(payload: &Value) -> String {
     if let Some(roots) = payload.get("workspace_roots").and_then(Value::as_array) {
         if let Some(first) = roots.first().and_then(Value::as_str) {
             if !first.is_empty() {
-                return first.to_string();
+                return normalize_windows_path(first);
             }
         }
     }
     if let Some(roots) = payload.get("workspaceRoots").and_then(Value::as_array) {
         if let Some(first) = roots.first().and_then(Value::as_str) {
             if !first.is_empty() {
-                return first.to_string();
+                return normalize_windows_path(first);
             }
         }
     }
@@ -1458,6 +1581,7 @@ fn resolve_cursor_cwd(payload: &Value) -> String {
         .and_then(Value::as_str)
         .unwrap_or(".")
         .to_string();
+    let from_payload = normalize_windows_path(&from_payload);
     if !crate::is_unresolved_cursor_cwd(&from_payload) {
         return from_payload;
     }

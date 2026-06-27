@@ -94,6 +94,7 @@ import {
   getSnapshot,
   normalizeSnapshot,
   getSessionRequests,
+  getSessionChat,
   getSessionTranscript,
   IslandSnapshot,
   TokenUsage,
@@ -1335,6 +1336,7 @@ export function App() {
   async function navigateToSession(sessionId: string) {
     const seq = ++navigationSeqRef.current;
     setSessionRequests([]);
+    expandIsland();
     setPanelView({ kind: "session", sessionId });
     try {
       const requests = await getSessionRequests(sessionId);
@@ -1691,6 +1693,15 @@ export function App() {
 
   function scheduleIdleCollapse() {
     clearIdleTimer();
+    const panel = panelViewRef.current;
+    const inExpandedSessionSubview =
+      phaseRef.current === "expanded" &&
+      (panel.kind === "session" ||
+        panel.kind === "subagent" ||
+        panel.kind === "subagentList");
+    if (inExpandedSessionSubview) {
+      return;
+    }
     // Only an active text field (e.g. the reply input) should hold the island
     // open once the pointer leaves. A lingering button focus — e.g. after
     // tapping "View session" — must NOT block the idle collapse.
@@ -2397,8 +2408,10 @@ export function App() {
       const session = sessions.find((s) => s.sessionId === panelView.sessionId);
       return (
         <SessionChatView
+          sessionId={panelView.sessionId}
           transcriptPath={session?.transcriptPath ?? null}
           requests={sessionRequests}
+          agent={session?.agent ?? "cursor"}
         />
       );
     }
@@ -4112,30 +4125,67 @@ function SettingsSubviewNav({ onBack }: SettingsSubviewNavProps) {
 /* ─── Session Chat View ───────────────────────────────────────── */
 
 interface SessionChatViewProps {
+  sessionId: string;
   transcriptPath: string | null;
   requests: PermissionRequest[];
+  agent: AgentKind;
 }
 
-function SessionChatView({ transcriptPath, requests }: SessionChatViewProps) {
+function SessionChatView({ sessionId, transcriptPath, requests, agent }: SessionChatViewProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [loadFailed, setLoadFailed] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pollWhileActive = agent === "cursor";
 
   useEffect(() => {
     let active = true;
-    setMessages([]);
-    if (transcriptPath) {
-      getSessionTranscript(transcriptPath)
+    setLoadFailed(false);
+
+    function loadByPath(path: string) {
+      return getSessionTranscript(path)
         .then((msgs) => {
-          if (active) setMessages(msgs);
+          if (!active) return;
+          setLoadFailed(false);
+          setMessages(msgs);
         })
         .catch(() => {
-          if (active) setMessages([]);
+          if (!active) return;
+          setLoadFailed(true);
         });
     }
+
+    function loadBySession() {
+      return getSessionChat(sessionId)
+        .then((msgs) => {
+          if (!active) return;
+          setLoadFailed(false);
+          setMessages(msgs);
+        })
+        .catch(() => {
+          if (!active) return;
+          setLoadFailed(true);
+        });
+    }
+
+    function load() {
+      if (pollWhileActive) {
+        return loadBySession();
+      }
+      if (transcriptPath) {
+        return loadByPath(transcriptPath);
+      }
+      return Promise.resolve();
+    }
+
+    load();
+    const interval = pollWhileActive ? window.setInterval(load, 2000) : undefined;
     return () => {
       active = false;
+      if (interval !== undefined) {
+        window.clearInterval(interval);
+      }
     };
-  }, [transcriptPath]);
+  }, [sessionId, transcriptPath, pollWhileActive]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -4147,7 +4197,13 @@ function SessionChatView({ transcriptPath, requests }: SessionChatViewProps) {
     <div className="session-chat">
       <div className="chat-messages" ref={scrollRef}>
         {messages.length === 0 && requests.length === 0 ? (
-          <div className="chat-empty">No conversation history.</div>
+          <div className="chat-empty">
+            {loadFailed
+              ? "Transcript unavailable."
+              : pollWhileActive || transcriptPath
+                ? "Loading conversation..."
+                : "No conversation history."}
+          </div>
         ) : null}
         {messages.map((msg, i) => (
           <ChatBubble key={i} message={msg} />

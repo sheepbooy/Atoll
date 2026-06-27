@@ -264,6 +264,9 @@ struct KnownSession {
     last_activity: String,
     #[serde(default)]
     host: platform::SessionHost,
+    /// Full Cursor composer UUID when the session key is a short hook id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    conversation_id: Option<String>,
 }
 
 pub(crate) struct AppState {
@@ -296,6 +299,8 @@ pub(crate) struct AppState {
     last_hook_health: Mutex<Option<HookHealthSnapshot>>,
     /// Local hook bridge TCP port (0 until bound).
     bridge_port: AtomicU16,
+    /// Last time the hook bridge accepted a TCP probe; used for offline grace during rebind.
+    last_bridge_reachable: Mutex<Option<Instant>>,
     active_subagents: Mutex<Vec<ActiveSubagent>>,
     /// Maps Cursor subagent conversation_id → parent session_id.
     cursor_subagent_conversations: Mutex<HashMap<String, String>>,
@@ -373,7 +378,7 @@ pub(crate) fn compute_listening_online(app: &AppHandle) -> bool {
     let any_installed = claude_ready.installed || codex_ready.installed || cursor_ready.installed;
     let any_script_found =
         claude_ready.script_found || codex_ready.script_found || cursor_ready.script_found;
-    any_installed && any_script_found && hook_bridge::is_bridge_reachable(app)
+    any_installed && any_script_found && hook_bridge::is_bridge_online(app)
 }
 
 pub(crate) fn touch_hook_activity(state: &AppState) {
@@ -658,6 +663,39 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
     let codex_status = codex_hook_status(app);
     let cursor_status = cursor_hook_status(app);
 
+    // #region agent log (diagA)
+    crate::debug_agent::log(
+        "H-F",
+        "lib.rs:build_hook_health",
+        "hook health snapshot",
+        json!({
+            "online": compute_listening_online(app),
+            "bridgeReachable": hook_bridge::is_bridge_reachable(app),
+            "claude": {
+                "installed": claude_status.installed,
+                "scriptFound": claude_status.script_found,
+                "scriptPath": claude_status.script_path,
+                "nodeFound": claude_status.node_found,
+                "nodePath": claude_status.node_path,
+            },
+            "codex": {
+                "installed": codex_status.installed,
+                "scriptFound": codex_status.script_found,
+                "scriptPath": codex_status.script_path,
+                "nodeFound": codex_status.node_found,
+                "nodePath": codex_status.node_path,
+            },
+            "cursor": {
+                "installed": cursor_status.installed,
+                "scriptFound": cursor_status.script_found,
+                "scriptPath": cursor_status.script_path,
+                "nodeFound": cursor_status.node_found,
+                "nodePath": cursor_status.node_path,
+            },
+        }),
+    );
+    // #endregion
+
     HookHealthSnapshot {
         claude: claude_status,
         codex: codex_status,
@@ -703,10 +741,7 @@ fn codex_hook_status(app: &AppHandle) -> HookStatus {
             resolve_install_hook_script_path(app, "atoll-codex-hook.mjs"),
         ) {
             if let Some(configured) = configured_atoll_hook_script_path(cfg, "atoll-codex-hook") {
-                if is_dev_hook_script_path(&configured)
-                    && configured != preferred
-                    && std::path::Path::new(&preferred).is_file()
-                {
+                if should_flag_dev_hook_drift(&configured, &preferred) {
                     script_found = false;
                 }
             }
@@ -739,10 +774,7 @@ fn cursor_hook_status(app: &AppHandle) -> HookStatus {
             resolve_install_hook_script_path(app, "atoll-cursor-hook.mjs"),
         ) {
             if let Some(configured) = configured_atoll_hook_script_path(cfg, "atoll-cursor-hook") {
-                if is_dev_hook_script_path(&configured)
-                    && configured != preferred
-                    && std::path::Path::new(&preferred).is_file()
-                {
+                if should_flag_dev_hook_drift(&configured, &preferred) {
                     script_found = false;
                 }
             }
@@ -762,6 +794,45 @@ fn is_dev_hook_script_path(path: &str) -> bool {
     path.contains("/target/debug/")
         || path.contains("/target/release/")
         || path.contains("/src-tauri/target/")
+}
+
+/// Compare two hook script paths in a separator- and prefix-agnostic way.
+/// `configured` arrives from hooks.json with forward slashes (written by
+/// `normalize_hook_command_path`), while `preferred` comes from
+/// `dunce::simplified(PathBuf)`. On Windows `dunce::simplified` keeps the
+/// `\\?\` verbatim prefix for paths containing non-ASCII characters (e.g. a user
+/// home directory like `C:\Users\杨帅`), so `preferred` can look like
+/// `\\?\C:\Users\杨帅\...\atoll-codex-hook.mjs` while `configured` is
+/// `C:/Users/杨帅/...\atoll-codex-hook.mjs`. A naive `!=` (or even `Path` equality,
+/// which treats verbatim and drive prefixes as distinct components) would always
+/// report them as different and falsely flag dev-path drift, flipping
+/// `script_found` to false. Normalizing both sides by stripping the verbatim
+/// prefix and unifying separators makes the same file compare equal.
+fn dev_hook_paths_differ(configured: &str, preferred: &str) -> bool {
+    fn normalize(p: &str) -> String {
+        let stripped = p.strip_prefix(r"\\?\").unwrap_or(p);
+        stripped.replace('\\', "/")
+    }
+    normalize(configured) != normalize(preferred)
+}
+
+/// True when hooks.json still points at a stale dev build path that no longer exists,
+/// while the running app bundle exposes a valid replacement script.
+fn should_flag_dev_hook_drift(configured: &str, preferred: &str) -> bool {
+    if !is_dev_hook_script_path(configured) {
+        return false;
+    }
+    if !dev_hook_paths_differ(configured, preferred) {
+        return false;
+    }
+    if !std::path::Path::new(preferred).is_file() {
+        return false;
+    }
+    // Configured path still works for the hook host — not drift.
+    if std::path::Path::new(configured).is_file() {
+        return false;
+    }
+    true
 }
 
 fn build_hook_status(
@@ -1059,13 +1130,12 @@ struct ChatMessage {
 
 const TRANSCRIPT_MAX_MESSAGES: usize = 50;
 
-#[tauri::command]
-fn get_session_transcript(transcript_path: String) -> Result<Vec<ChatMessage>, String> {
+fn read_transcript_messages(transcript_path: &str) -> Result<Vec<ChatMessage>, String> {
     use std::fs::File;
     use std::io::{BufRead, BufReader};
 
-    let format = transcript::detect_transcript_format(&transcript_path);
-    let file = File::open(&transcript_path).map_err(|e| format!("Cannot open transcript: {e}"))?;
+    let format = transcript::detect_transcript_format(transcript_path);
+    let file = File::open(transcript_path).map_err(|e| format!("Cannot open transcript: {e}"))?;
     let reader = BufReader::new(file);
 
     let mut messages: Vec<ChatMessage> = Vec::new();
@@ -1163,6 +1233,103 @@ fn get_session_transcript(transcript_path: String) -> Result<Vec<ChatMessage>, S
 
     let start = messages.len().saturating_sub(TRANSCRIPT_MAX_MESSAGES);
     Ok(messages[start..].to_vec())
+}
+
+/// Resolve a session's transcript file, checking known state, requests, and on-disk discovery.
+pub(crate) fn resolve_session_transcript_path(
+    state: &AppState,
+    session_id: &str,
+    requests: &[PermissionRequest],
+) -> Option<String> {
+    if let Ok(known) = state.known_sessions.lock() {
+        if let Some(entry) = known.get(session_id) {
+            if let Some(path) = entry.transcript_path.clone() {
+                if std::path::Path::new(&path).is_file() {
+                    return Some(path);
+                }
+            }
+            if let Some(ref conv_id) = entry.conversation_id {
+                if let Some((path, _)) = discover_cursor_agent_transcript(conv_id) {
+                    return Some(path);
+                }
+            }
+        }
+    }
+
+    for request in requests {
+        if request.session == session_id {
+            if let Some(path) = request.transcript_path.clone() {
+                if std::path::Path::new(&path).is_file() {
+                    return Some(path);
+                }
+            }
+        }
+    }
+
+    discover_cursor_agent_transcript(session_id).map(|(path, _)| path)
+}
+
+fn resolve_session_transcript_path_from_snapshot(
+    known_sessions: &HashMap<String, KnownSession>,
+    requests: &[PermissionRequest],
+    session_id: &str,
+) -> Option<String> {
+    if let Some(entry) = known_sessions.get(session_id) {
+        if let Some(path) = entry.transcript_path.clone() {
+            return Some(path);
+        }
+        if let Some(ref conv_id) = entry.conversation_id {
+            if let Some((path, _)) = discover_cursor_agent_transcript(conv_id) {
+                return Some(path);
+            }
+        }
+    }
+
+    for request in requests {
+        if !request.archived && request.session == session_id {
+            if let Some(path) = request.transcript_path.clone() {
+                return Some(path);
+            }
+        }
+    }
+
+    discover_cursor_agent_transcript(session_id).map(|(path, _)| path)
+}
+
+fn persist_session_transcript_path(state: &AppState, session_id: &str, path: &str) {
+    if let Ok(mut known) = state.known_sessions.lock() {
+        if let Some(entry) = known.get_mut(session_id) {
+            entry.transcript_path = Some(path.to_string());
+            if entry.conversation_id.is_none() {
+                if let Some(stem) = std::path::Path::new(path)
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .and_then(|name| name.to_str())
+                {
+                    entry.conversation_id = Some(stem.to_string());
+                }
+            }
+        }
+    }
+}
+
+#[tauri::command]
+fn get_session_transcript(transcript_path: String) -> Result<Vec<ChatMessage>, String> {
+    read_transcript_messages(&transcript_path)
+}
+
+#[tauri::command]
+fn get_session_chat(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<Vec<ChatMessage>, String> {
+    backfill_cursor_session_metadata(&state);
+    let requests = state.requests.lock().expect("state mutex poisoned");
+    let path = resolve_session_transcript_path(&state, &session_id, &requests)
+        .ok_or_else(|| format!("No transcript found for session {session_id}"))?;
+    drop(requests);
+    persist_session_transcript_path(&state, &session_id, &path);
+    read_transcript_messages(&path)
 }
 
 fn extract_transcript_text(entry: &Value) -> String {
@@ -1961,6 +2128,7 @@ pub(crate) fn register_known_session(
                 transcript_path: transcript_path.map(str::to_string),
                 last_activity: iso_timestamp_now(),
                 host: platform::SessionHost::Unknown,
+                conversation_id: None,
             });
         if !resolved_cwd.is_empty() && resolved_cwd != "." {
             entry.cwd = resolved_cwd.clone();
@@ -2411,19 +2579,36 @@ pub(crate) fn payload_cursor_lookup_id(payload: &Value) -> Option<&str> {
     })
 }
 
+/// Prefer full composer UUID for Cursor session keys (matches on-disk transcript dirs).
+pub(crate) fn payload_cursor_session_id(payload: &Value) -> Option<&str> {
+    payload_cursor_lookup_id(payload)
+}
+
+pub(crate) const CURSOR_TRANSCRIPT_PREFIX_MIN_LEN: usize = 6;
+
 /// Locate a Cursor composer transcript on disk and infer its workspace cwd.
-pub(crate) fn discover_cursor_agent_transcript(conversation_id: &str) -> Option<(String, String)> {
-    if conversation_id.is_empty() {
+pub(crate) fn discover_cursor_agent_transcript(lookup_id: &str) -> Option<(String, String)> {
+    if lookup_id.is_empty() {
         return None;
     }
+    if let Some(found) = discover_cursor_agent_transcript_exact(lookup_id) {
+        return Some(found);
+    }
+    if lookup_id.len() >= CURSOR_TRANSCRIPT_PREFIX_MIN_LEN {
+        return discover_cursor_agent_transcript_by_prefix(lookup_id);
+    }
+    None
+}
+
+fn discover_cursor_agent_transcript_exact(conversation_id: &str) -> Option<(String, String)> {
     let home = dirs::home_dir()?;
     let projects = home.join(".cursor").join("projects");
     if !projects.is_dir() {
         return None;
     }
-    let relative = format!(
-        "agent-transcripts/{conversation_id}/{conversation_id}.jsonl"
-    );
+    let relative = std::path::PathBuf::from("agent-transcripts")
+        .join(conversation_id)
+        .join(format!("{conversation_id}.jsonl"));
     for entry in std::fs::read_dir(&projects).ok()? {
         let entry = entry.ok()?;
         if !entry.file_type().ok()?.is_dir() {
@@ -2440,13 +2625,55 @@ pub(crate) fn discover_cursor_agent_transcript(conversation_id: &str) -> Option<
     None
 }
 
+fn discover_cursor_agent_transcript_by_prefix(prefix: &str) -> Option<(String, String)> {
+    let home = dirs::home_dir()?;
+    let projects = home.join(".cursor").join("projects");
+    if !projects.is_dir() {
+        return None;
+    }
+
+    let mut best: Option<(String, String, usize)> = None;
+    for entry in std::fs::read_dir(&projects).ok()? {
+        let entry = entry.ok()?;
+        if !entry.file_type().ok()?.is_dir() {
+            continue;
+        }
+        let transcripts_dir = entry.path().join("agent-transcripts");
+        let Ok(conv_entries) = std::fs::read_dir(&transcripts_dir) else {
+            continue;
+        };
+        for conv in conv_entries.flatten() {
+            if !conv.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let conv_id = conv.file_name().to_string_lossy().into_owned();
+            if !conv_id.starts_with(prefix) {
+                continue;
+            }
+            let jsonl = conv.path().join(format!("{conv_id}.jsonl"));
+            if !jsonl.is_file() {
+                continue;
+            }
+            let workspace = decode_cursor_project_slug(&entry.file_name().to_string_lossy())
+                .unwrap_or_else(|| ".".to_string());
+            let path = jsonl.to_string_lossy().into_owned();
+            let score = conv_id.len();
+            if best.as_ref().map(|(_, _, len)| score > *len).unwrap_or(true) {
+                best = Some((path, workspace, score));
+            }
+        }
+    }
+
+    best.map(|(path, workspace, _)| (path, workspace))
+}
+
 pub(crate) fn is_unresolved_cursor_cwd(cwd: &str) -> bool {
     cwd.is_empty() || cwd == "."
 }
 
 /// Fill missing Cursor cwd/transcript from on-disk agent transcripts.
 pub(crate) fn backfill_cursor_session_metadata(state: &AppState) {
-    let session_ids: Vec<String> = state
+    let sessions_to_backfill: Vec<(String, Option<String>)> = state
         .known_sessions
         .lock()
         .ok()
@@ -2457,13 +2684,14 @@ pub(crate) fn backfill_cursor_session_metadata(state: &AppState) {
                 .filter(|(_, info)| {
                     info.transcript_path.is_none() || is_unresolved_cursor_cwd(&info.cwd)
                 })
-                .map(|(id, _)| id.clone())
+                .map(|(id, info)| (id.clone(), info.conversation_id.clone()))
                 .collect()
         })
         .unwrap_or_default();
 
-    for session_id in session_ids {
-        let Some((path, workspace)) = discover_cursor_agent_transcript(&session_id) else {
+    for (session_id, conversation_id) in sessions_to_backfill {
+        let lookup_id = conversation_id.as_deref().unwrap_or(session_id.as_str());
+        let Some((path, workspace)) = discover_cursor_agent_transcript(lookup_id) else {
             continue;
         };
         if let Ok(mut known) = state.known_sessions.lock() {
@@ -2473,6 +2701,17 @@ pub(crate) fn backfill_cursor_session_metadata(state: &AppState) {
                 }
                 if is_unresolved_cursor_cwd(&entry.cwd) && !is_unresolved_cursor_cwd(&workspace) {
                     entry.cwd = workspace;
+                }
+                if entry.conversation_id.is_none() {
+                    if let Some(stem) = entry
+                        .transcript_path
+                        .as_deref()
+                        .and_then(|path| std::path::Path::new(path).parent())
+                        .and_then(|p| p.file_name())
+                        .and_then(|name| name.to_str())
+                    {
+                        entry.conversation_id = Some(stem.to_string());
+                    }
                 }
             }
         }
@@ -3454,11 +3693,11 @@ fn install_cursor_hooks(app: AppHandle) -> Result<HookStatus, String> {
         }
     }
 
-    let hook_command = format_hook_command(
-        hook_runner_for_command(&app).as_deref(),
+    let hook_command = write_cursor_hook_launcher_command(
+        &app,
         &node_path,
         &script_path,
-    );
+    )?;
 
     let config_obj = config
         .as_object_mut()
@@ -3706,6 +3945,98 @@ fn format_hook_command(_runner_path: Option<&str>, node_path: &str, script_path:
     )
 }
 
+/// Cursor on Windows spawns hook commands through a shell. Write a PowerShell launcher
+/// that forwards stdin to `atoll-hook-runner.exe`. Paths live in a UTF-8 JSON config so
+/// non-ASCII usernames (e.g. Chinese profile dirs) do not break the `.ps1` file encoding.
+#[cfg(windows)]
+fn write_cursor_hook_launcher_command(
+    app: &AppHandle,
+    node_path: &str,
+    script_path: &str,
+) -> Result<String, String> {
+    let runner_path = hook_runner_for_command(app)
+        .ok_or_else(|| "Cannot locate atoll-hook-runner.exe".to_string())?;
+    let local_dir = dirs::data_local_dir()
+        .ok_or_else(|| "Cannot determine local data directory".to_string())?
+        .join("Atoll");
+    std::fs::create_dir_all(&local_dir)
+        .map_err(|error| format!("Cannot create {}: {error}", local_dir.display()))?;
+
+    let runner = normalize_hook_command_path(&runner_path);
+    let node = normalize_hook_command_path(node_path);
+    let script = normalize_hook_command_path(script_path);
+    let config_path = local_dir.join("cursor-hook-launcher.json");
+    let config = json!({
+        "runner": runner,
+        "node": node,
+        "script": script,
+    });
+    let config_json = serde_json::to_string_pretty(&config)
+        .map_err(|error| format!("Cannot serialize cursor hook launcher config: {error}"))?;
+    std::fs::write(&config_path, config_json.as_bytes())
+        .map_err(|error| format!("Cannot write {}: {error}", config_path.display()))?;
+
+    let ps1_path = local_dir.join("atoll-cursor-hook.ps1");
+    const PS1: &str = r#"$ErrorActionPreference = 'Stop'
+$configPath = Join-Path $env:LOCALAPPDATA 'Atoll\cursor-hook-launcher.json'
+try {
+  $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  $psi = New-Object System.Diagnostics.ProcessStartInfo($config.runner, ('"' + $config.node + '" "' + $config.script + '"'))
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardInput = $true
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.CreateNoWindow = $true
+  $p = [System.Diagnostics.Process]::Start($psi)
+  [Console]::OpenStandardInput().CopyTo($p.StandardInput.BaseStream)
+  $p.StandardInput.Close()
+  [Console]::Out.Write($p.StandardOutput.ReadToEnd())
+  $p.WaitForExit()
+} catch {
+  [Console]::Out.Write('{"permission":"allow"}')
+  exit 0
+}
+"#;
+    // UTF-8 BOM so Windows PowerShell reads non-ASCII paths from the JSON config reliably.
+    let mut ps1_bytes = vec![0xEF, 0xBB, 0xBF];
+    ps1_bytes.extend_from_slice(PS1.as_bytes());
+    std::fs::write(&ps1_path, ps1_bytes)
+        .map_err(|error| format!("Cannot write {}: {error}", ps1_path.display()))?;
+
+    Ok(format!(
+        "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{}\"",
+        normalize_hook_command_path(&ps1_path.to_string_lossy()).replace('"', "\\\"")
+    ))
+}
+
+#[cfg(not(windows))]
+fn write_cursor_hook_launcher_command(
+    _app: &AppHandle,
+    node_path: &str,
+    script_path: &str,
+) -> Result<String, String> {
+    Ok(format_hook_command(None, node_path, script_path))
+}
+
+/// Legacy helper kept for tests; production Cursor installs use [`write_cursor_hook_launcher_command`].
+#[cfg(windows)]
+fn format_cursor_hook_command(
+    runner_path: Option<&str>,
+    node_path: &str,
+    script_path: &str,
+) -> String {
+    format!("cmd /c {}", format_hook_command(runner_path, node_path, script_path))
+}
+
+#[cfg(not(windows))]
+fn format_cursor_hook_command(
+    runner_path: Option<&str>,
+    node_path: &str,
+    script_path: &str,
+) -> String {
+    format_hook_command(runner_path, node_path, script_path)
+}
+
 fn upsert_claude_hook_events(existing_hooks: &mut Value, atoll_hooks: &Value) {
     let Some(atoll_map) = atoll_hooks.as_object() else {
         return;
@@ -3875,8 +4206,44 @@ fn extract_first_quoted_value(input: &str) -> Option<(String, &str)> {
     Some((value, rest))
 }
 
+fn expand_windows_hook_env(command: &str) -> String {
+    let mut result = command.to_string();
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        result = result.replace("%LOCALAPPDATA%", &local);
+    }
+    if let Ok(user) = std::env::var("USERPROFILE") {
+        result = result.replace("%USERPROFILE%", &user);
+    }
+    result
+}
+
 fn extract_hook_command_parts(command: &str) -> Option<(String, String)> {
-    let trimmed = command.trim();
+    let mut trimmed = expand_windows_hook_env(command).trim().to_string();
+    if let Some(rest) = trimmed
+        .strip_prefix("cmd /c ")
+        .or_else(|| trimmed.strip_prefix("cmd /C "))
+    {
+        trimmed = rest.trim().to_string();
+    }
+
+    let normalized = normalize_hook_script_path(&trimmed);
+    if normalized.to_ascii_lowercase().ends_with("atoll-cursor-hook.ps1") {
+        return parse_cursor_launcher_script(&normalized);
+    }
+    if normalized.to_ascii_lowercase().ends_with("atoll-cursor-hook.cmd") {
+        return parse_cursor_launcher_cmd(&normalized);
+    }
+
+    if trimmed.starts_with("powershell ") {
+        if let Some(start) = trimmed.find("-File \"") {
+            let rest = &trimmed[start + 7..];
+            if let Some(end) = rest.find('"') {
+                let ps1 = normalize_hook_script_path(&expand_windows_hook_env(&rest[..end]));
+                return parse_cursor_launcher_script(&ps1);
+            }
+        }
+    }
+
     if let Some(rest) = trimmed.strip_prefix("node ") {
         let script = if rest.starts_with('"') {
             extract_first_quoted_value(rest)?.0
@@ -3886,7 +4253,7 @@ fn extract_hook_command_parts(command: &str) -> Option<(String, String)> {
         return Some(("node".to_string(), normalize_hook_script_path(&script)));
     }
 
-    let (first, rest) = extract_first_quoted_value(trimmed)?;
+    let (first, rest) = extract_first_quoted_value(trimmed.as_str())?;
     if is_hook_runner_path(&first) {
         let (node, script_rest) = extract_first_quoted_value(rest)?;
         let (script, _) = extract_first_quoted_value(script_rest)?;
@@ -3911,27 +4278,85 @@ fn is_hook_runner_path(path: &str) -> bool {
         || normalized.contains("/atoll-hook-runner-")
 }
 
+fn parse_cursor_launcher_cmd(path: &str) -> Option<(String, String)> {
+    let content = std::fs::read_to_string(path).ok()?;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.eq_ignore_ascii_case("@echo off") {
+            continue;
+        }
+        return extract_hook_command_parts(line);
+    }
+    None
+}
+
+fn parse_cursor_launcher_config(path: &str) -> Option<(String, String)> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let config: Value = serde_json::from_str(&content).ok()?;
+    let node = config.get("node").and_then(Value::as_str)?;
+    let script = config.get("script").and_then(Value::as_str)?;
+    Some((
+        normalize_hook_script_path(node),
+        normalize_hook_script_path(script),
+    ))
+}
+
+fn parse_cursor_launcher_script(path: &str) -> Option<(String, String)> {
+    let content = std::fs::read_to_string(path).ok()?;
+    if content.contains("cursor-hook-launcher.json") {
+        let config_path = std::path::Path::new(path)
+            .parent()
+            .map(|dir| dir.join("cursor-hook-launcher.json"))
+            .filter(|candidate| candidate.is_file())
+            .or_else(|| {
+                dirs::data_local_dir().map(|dir| dir.join("Atoll").join("cursor-hook-launcher.json"))
+            })?;
+        return parse_cursor_launcher_config(&config_path.to_string_lossy());
+    }
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || !line.contains("atoll-hook-runner") {
+            continue;
+        }
+        let line = line
+            .strip_prefix("$Input | & ")
+            .or_else(|| line.strip_prefix("$input | & "))
+            .unwrap_or(line);
+        return extract_hook_command_parts(line);
+    }
+    None
+}
+
 fn extract_node_script_path(command: &str) -> Option<String> {
     extract_hook_command_parts(command).map(|(_, script)| script)
 }
 
-fn configured_atoll_hook_node_path(config: &Value, marker: &str) -> Option<String> {
+fn configured_atoll_hook_command(config: &Value, marker: &str) -> Option<String> {
     let hooks = config.get("hooks")?.as_object()?;
     for matchers in hooks.values() {
         let arr = matchers.as_array()?;
         for matcher in arr {
-            let hook_arr = matcher.get("hooks")?.as_array()?;
-            for hook in hook_arr {
-                let cmd = hook.get("command")?.as_str()?;
-                if cmd.contains(marker) {
-                    if let Some((node, _)) = extract_hook_command_parts(cmd) {
-                        return Some(node);
+            if let Some(hook_arr) = matcher.get("hooks").and_then(Value::as_array) {
+                for hook in hook_arr {
+                    let cmd = hook.get("command")?.as_str()?;
+                    if cmd.contains(marker) {
+                        return Some(cmd.to_string());
                     }
+                }
+            }
+            if let Some(cmd) = matcher.get("command").and_then(Value::as_str) {
+                if cmd.contains(marker) {
+                    return Some(cmd.to_string());
                 }
             }
         }
     }
     None
+}
+
+fn configured_atoll_hook_node_path(config: &Value, marker: &str) -> Option<String> {
+    configured_atoll_hook_command(config, marker)
+        .and_then(|cmd| extract_hook_command_parts(&cmd).map(|(node, _)| node))
 }
 
 fn node_executable_ready(node_path: &str) -> bool {
@@ -3945,22 +4370,7 @@ fn node_executable_ready(node_path: &str) -> bool {
 }
 
 fn configured_atoll_hook_script_path(config: &Value, marker: &str) -> Option<String> {
-    let hooks = config.get("hooks")?.as_object()?;
-    for matchers in hooks.values() {
-        let arr = matchers.as_array()?;
-        for matcher in arr {
-            let hook_arr = matcher.get("hooks")?.as_array()?;
-            for hook in hook_arr {
-                let cmd = hook.get("command")?.as_str()?;
-                if cmd.contains(marker) {
-                    if let Some(path) = extract_node_script_path(cmd) {
-                        return Some(path);
-                    }
-                }
-            }
-        }
-    }
-    None
+    configured_atoll_hook_command(config, marker).and_then(|cmd| extract_node_script_path(&cmd))
 }
 
 fn resolve_hook_script_readiness(
@@ -4150,7 +4560,11 @@ fn hook_entry_has_atoll_cursor(entry: &Value) -> bool {
     entry
         .get("command")
         .and_then(Value::as_str)
-        .map(|cmd| cmd.contains("atoll-cursor-hook"))
+        .map(|cmd| {
+            cmd.contains("atoll-cursor-hook")
+                || cmd.contains("atoll-cursor-hook.ps1")
+                || cmd.contains("atoll-cursor-hook.cmd")
+        })
         .unwrap_or(false)
 }
 
@@ -4334,6 +4748,7 @@ pub fn run() {
             last_listening_online: Mutex::new(None),
             last_hook_health: Mutex::new(None),
             bridge_port: AtomicU16::new(0),
+            last_bridge_reachable: Mutex::new(None),
             active_subagents: Mutex::new(Vec::new()),
             cursor_subagent_conversations: Mutex::new(HashMap::new()),
             last_subagent_snapshot_emit: Mutex::new(Instant::now() - Duration::from_secs(10)),
@@ -4345,6 +4760,7 @@ pub fn run() {
             get_snapshot,
             get_session_requests,
             get_session_transcript,
+            get_session_chat,
             resolve_permission_request,
             resolve_permission_with_input,
             set_session_auto_approve,
@@ -4958,12 +5374,8 @@ fn animate_island_window_mode(
     expanded_idle: bool,
 ) -> tauri::Result<()> {
     let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
+    platform::ensure_island_on_top(window);
     if matches!(mode, IslandWindowMode::Expanded) {
-        // Re-assert topmost before the expand. The window grows from a thin strip
-        // into a full panel and repositions across a large area; on Windows a
-        // topmost-but-unfocused window can drop behind other windows during that
-        // resize, so we refresh WS_EX_TOPMOST here to stay above all windows.
-        platform::ensure_island_on_top(window);
         platform::set_island_cursor_events_ignored(window, false);
     } else {
         #[cfg(target_os = "windows")]
@@ -5220,12 +5632,29 @@ fn snapshot_from(
     let mut sessions = build_session_summaries(&visible);
 
     for session in sessions.iter_mut() {
+        if let Some(info) = known_sessions.get(&session.session_id) {
+            if session.transcript_path.is_none() && info.transcript_path.is_some() {
+                session.transcript_path = info.transcript_path.clone();
+            }
+            if session.cwd.is_empty() || session.cwd == "." {
+                if !info.cwd.is_empty() && info.cwd != "." {
+                    session.cwd = info.cwd.clone();
+                }
+            }
+        }
         session.session_host = session_host_for_summary(
             known_sessions,
             &session.session_id,
             &session.cwd,
             &session.agent,
         );
+        if matches!(session.agent, AgentKind::Cursor) && session.transcript_path.is_none() {
+            if let Some(path) =
+                resolve_session_transcript_path_from_snapshot(known_sessions, requests, &session.session_id)
+            {
+                session.transcript_path = Some(path);
+            }
+        }
     }
 
     // Mark active sessions as pinned.
@@ -5609,6 +6038,7 @@ mod core_tests {
                     transcript_path: None,
                     last_activity: iso_timestamp_now(),
                     host: platform::SessionHost::Unknown,
+                    conversation_id: None,
                 },
             ),
             (
@@ -5619,6 +6049,7 @@ mod core_tests {
                     transcript_path: None,
                     last_activity: iso_timestamp_now(),
                     host: platform::SessionHost::Unknown,
+                    conversation_id: None,
                 },
             ),
         ]);
@@ -5670,6 +6101,7 @@ mod core_tests {
                     transcript_path: None,
                     last_activity: iso_timestamp_now(),
                     host: platform::SessionHost::ClaudeCli,
+                    conversation_id: None,
                 },
             ),
             (
@@ -5680,6 +6112,7 @@ mod core_tests {
                     transcript_path: None,
                     last_activity: iso_timestamp_now(),
                     host: platform::SessionHost::ClaudeDesktop,
+                    conversation_id: None,
                 },
             ),
         ]);
@@ -5715,6 +6148,7 @@ mod core_tests {
                     transcript_path: Some("/Users/test/.claude/projects/-tmp-project/abc.jsonl".into()),
                     last_activity: iso_timestamp_now(),
                     host: platform::SessionHost::Unknown,
+                    conversation_id: None,
                 },
             ),
             (
@@ -5725,6 +6159,7 @@ mod core_tests {
                     transcript_path: Some("/Users/test/Library/Application Support/Claude-3p/local-agent-mode-sessions/xyz.jsonl".into()),
                     last_activity: iso_timestamp_now(),
                     host: platform::SessionHost::Unknown,
+                    conversation_id: None,
                 },
             ),
         ]);
@@ -5804,6 +6239,7 @@ mod core_tests {
                     transcript_path: None,
                     last_activity: iso_timestamp_now(),
                     host: platform::SessionHost::CodexCli,
+                    conversation_id: None,
                 },
             ),
             (
@@ -5814,6 +6250,7 @@ mod core_tests {
                     transcript_path: None,
                     last_activity: iso_timestamp_now(),
                     host: platform::SessionHost::CodexDesktop,
+                    conversation_id: None,
                 },
             ),
         ]);
@@ -6015,13 +6452,24 @@ mod core_tests {
     }
 
     #[test]
-    fn decode_cursor_project_slug_recovers_macos_workspace_path() {
+    fn decode_cursor_project_slug_recovers_workspace_path() {
         let home = dirs::home_dir().expect("home");
         let home_str = home.to_string_lossy();
-        let suffix = home_str.strip_prefix("/Users/").unwrap_or(home_str.as_ref());
-        let slug = format!("Users-{}", suffix.replace('/', "-"));
-        let decoded = decode_cursor_project_slug(&slug).expect("decoded");
-        assert_eq!(decoded, home_str);
+        #[cfg(not(windows))]
+        {
+            let suffix = home_str.strip_prefix("/Users/").unwrap_or(home_str.as_ref());
+            let slug = format!("Users-{}", suffix.replace('/', "-"));
+            let decoded = decode_cursor_project_slug(&slug).expect("decoded");
+            assert_eq!(decoded, *home_str);
+        }
+        #[cfg(windows)]
+        {
+            let drive = home_str.chars().next().unwrap_or('C');
+            let rest = &home_str[3..]; // skip "C:\"
+            let slug = format!("{}-{}", drive, rest.replace('\\', "-"));
+            let decoded = decode_cursor_project_slug(&slug).expect("decoded");
+            assert_eq!(decoded, *home_str);
+        }
     }
 
     #[test]
@@ -6058,6 +6506,41 @@ mod core_tests {
                 {
                     assert_eq!(workspace, expected);
                 }
+                return;
+            }
+        }
+    }
+
+    #[test]
+    fn discover_cursor_agent_transcript_matches_short_session_id_prefix() {
+        let Some(home) = dirs::home_dir() else {
+            return;
+        };
+        let projects = home.join(".cursor").join("projects");
+        let Ok(entries) = std::fs::read_dir(&projects) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let transcripts = entry.path().join("agent-transcripts");
+            let Ok(conv_entries) = std::fs::read_dir(&transcripts) else {
+                continue;
+            };
+            for conv in conv_entries.flatten() {
+                if !conv.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    continue;
+                }
+                let conv_id = conv.file_name().to_string_lossy().into_owned();
+                let jsonl = conv.path().join(format!("{conv_id}.jsonl"));
+                if !jsonl.is_file() || conv_id.len() <= CURSOR_TRANSCRIPT_PREFIX_MIN_LEN {
+                    continue;
+                }
+                let short_prefix = &conv_id[..CURSOR_TRANSCRIPT_PREFIX_MIN_LEN];
+                let (path, _workspace) =
+                    discover_cursor_agent_transcript(short_prefix).expect("prefix discover");
+                assert_eq!(path, jsonl.to_string_lossy());
                 return;
             }
         }
@@ -6131,6 +6614,53 @@ mod core_tests {
                     session.transcript_path.as_deref(),
                     Some(jsonl.to_string_lossy().as_ref())
                 );
+                return;
+            }
+        }
+    }
+
+    #[test]
+    fn resolve_session_transcript_path_recovers_from_stale_path() {
+        let Some(home) = dirs::home_dir() else {
+            return;
+        };
+        let projects = home.join(".cursor").join("projects");
+        let Ok(entries) = std::fs::read_dir(&projects) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let transcripts = entry.path().join("agent-transcripts");
+            let Ok(conv_entries) = std::fs::read_dir(&transcripts) else {
+                continue;
+            };
+            for conv in conv_entries.flatten() {
+                if !conv.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    continue;
+                }
+                let conv_id = conv.file_name().to_string_lossy().into_owned();
+                let jsonl = conv.path().join(format!("{conv_id}.jsonl"));
+                if !jsonl.is_file() {
+                    continue;
+                }
+
+                // Simulate a session whose stored transcript_path is broken, e.g.
+                // a Windows path Cursor reported with a URI prefix or GBK mojibake.
+                let state = test_app_state();
+                register_known_session(
+                    &state,
+                    &conv_id,
+                    AgentKind::Cursor,
+                    ".",
+                    Some("/atoll-nonexistent/broken-transcript.jsonl"),
+                );
+
+                // A stale on-disk path must not short-circuit resolution: the
+                // resolver should fall back to disk discovery via the full UUID.
+                let resolved = resolve_session_transcript_path(&state, &conv_id, &[]);
+                assert_eq!(resolved.as_deref(), Some(jsonl.to_string_lossy().as_ref()));
                 return;
             }
         }
@@ -6262,6 +6792,7 @@ mod core_tests {
             last_listening_online: Mutex::new(None),
             last_hook_health: Mutex::new(None),
             bridge_port: AtomicU16::new(0),
+            last_bridge_reachable: Mutex::new(None),
             active_subagents: Mutex::new(Vec::new()),
             cursor_subagent_conversations: Mutex::new(HashMap::new()),
             last_subagent_snapshot_emit: Mutex::new(Instant::now() - Duration::from_secs(10)),
@@ -6461,6 +6992,7 @@ mod core_tests {
                     transcript_path: Some("/tmp/project/transcript.jsonl".into()),
                     last_activity: iso_timestamp_now(),
                     host: platform::SessionHost::Unknown,
+                    conversation_id: None,
                 },
             );
         }
@@ -6717,6 +7249,7 @@ mod cursor_subagent_tests {
             last_listening_online: Mutex::new(None),
             last_hook_health: Mutex::new(None),
             bridge_port: AtomicU16::new(0),
+            last_bridge_reachable: Mutex::new(None),
             active_subagents: Mutex::new(Vec::new()),
             cursor_subagent_conversations: Mutex::new(HashMap::new()),
             last_subagent_snapshot_emit: Mutex::new(Instant::now() - Duration::from_secs(10)),
@@ -7447,8 +7980,12 @@ mod hook_bridge_tests {
 
 #[cfg(test)]
 mod hook_script_path_tests {
-    use super::{configured_atoll_hook_script_path, extract_node_script_path};
+    use super::{
+        configured_atoll_hook_node_path, configured_atoll_hook_script_path,
+        extract_node_script_path, should_flag_dev_hook_drift,
+    };
     use serde_json::json;
+    use std::fs;
 
     #[test]
     fn extract_node_script_path_handles_quoted_and_unquoted_commands() {
@@ -7473,6 +8010,16 @@ mod hook_script_path_tests {
     }
 
     #[test]
+    fn extract_node_script_path_handles_cmd_c_runner_commands() {
+        assert_eq!(
+            extract_node_script_path(
+                "cmd /c \"C:/Atoll/scripts/atoll-hook-runner.exe\" \"C:/Program Files/nodejs/node.exe\" \"C:/Atoll/scripts/atoll-cursor-hook.mjs\""
+            ),
+            Some("C:/Atoll/scripts/atoll-cursor-hook.mjs".into())
+        );
+    }
+
+    #[test]
     fn configured_atoll_hook_script_path_reads_hooks_json() {
         let config = json!({
             "hooks": {
@@ -7489,6 +8036,68 @@ mod hook_script_path_tests {
             configured_atoll_hook_script_path(&config, "atoll-codex-hook"),
             Some("/Applications/Atoll.app/Contents/Resources/scripts/atoll-codex-hook.mjs".into())
         );
+    }
+
+    #[test]
+    fn configured_atoll_hook_script_path_reads_cursor_flat_hooks_json() {
+        let config = json!({
+            "version": 1,
+            "hooks": {
+                "preToolUse": [{
+                    "command": "\"C:/runner/atoll-hook-runner.exe\" \"C:/Program Files/nodejs/node.exe\" \"C:/tmp/atoll-cursor-hook.mjs\"",
+                    "timeout": 1800
+                }]
+            }
+        });
+
+        assert_eq!(
+            configured_atoll_hook_script_path(&config, "atoll-cursor-hook"),
+            Some("C:/tmp/atoll-cursor-hook.mjs".into())
+        );
+    }
+
+    #[test]
+    fn configured_atoll_hook_node_path_reads_cursor_flat_hooks_json() {
+        let config = json!({
+            "hooks": {
+                "sessionStart": [{
+                    "command": "\"C:/runner/atoll-hook-runner.exe\" \"C:/Program Files/nodejs/node.exe\" \"C:/tmp/atoll-cursor-hook.mjs\""
+                }]
+            }
+        });
+
+        assert_eq!(
+            configured_atoll_hook_node_path(&config, "atoll-cursor-hook"),
+            Some("C:/Program Files/nodejs/node.exe".into())
+        );
+    }
+
+    #[test]
+    fn should_flag_dev_hook_drift_when_configured_dev_path_missing() {
+        let preferred = std::env::current_exe()
+            .expect("current exe")
+            .to_string_lossy()
+            .into_owned();
+        assert!(should_flag_dev_hook_drift(
+            "C:/Users/test/Atoll/target/debug/scripts/atoll-codex-hook.mjs",
+            &preferred,
+        ));
+    }
+
+    #[test]
+    fn should_not_flag_dev_hook_drift_when_configured_dev_path_exists() {
+        let temp_root = std::env::temp_dir().join("atoll-drift-test-target-debug");
+        let script_dir = temp_root.join("target").join("debug");
+        fs::create_dir_all(&script_dir).expect("create temp script dir");
+        let script_path = script_dir.join("atoll-codex-hook.mjs");
+        fs::write(&script_path, "export {}").expect("write temp script");
+        let configured = script_path.to_string_lossy().into_owned();
+        let preferred = std::env::current_exe()
+            .expect("current exe")
+            .to_string_lossy()
+            .into_owned();
+        assert!(!should_flag_dev_hook_drift(&configured, &preferred));
+        let _ = fs::remove_dir_all(temp_root);
     }
 }
 
@@ -7755,17 +8364,37 @@ mod claude_hooks_tests {
 #[cfg(test)]
 mod cursor_hooks_tests {
     use super::{
-        has_atoll_cursor_hooks, hook_entry_has_atoll_cursor, remove_atoll_cursor_hooks,
-        upsert_cursor_hook_events,
+        format_cursor_hook_command, has_atoll_cursor_hooks, hook_entry_has_atoll_cursor,
+        remove_atoll_cursor_hooks, upsert_cursor_hook_events,
     };
     use serde_json::json;
+
+    #[test]
+    fn format_cursor_hook_command_uses_cmd_c_on_windows() {
+        let command = format_cursor_hook_command(
+            Some(r"C:\Atoll\scripts\atoll-hook-runner.exe"),
+            r"C:\Program Files\nodejs\node.exe",
+            r"C:\Atoll\scripts\atoll-cursor-hook.mjs",
+        );
+        #[cfg(windows)]
+        assert!(
+            command.starts_with("cmd /c "),
+            "expected cmd /c prefix, got: {command}"
+        );
+        #[cfg(not(windows))]
+        assert!(!command.starts_with("cmd /c "));
+    }
 
     #[test]
     fn upsert_and_detect_cursor_hooks() {
         let mut hooks = json!({});
         upsert_cursor_hook_events(
             &mut hooks,
-            "node \"/tmp/atoll-cursor-hook.mjs\"",
+            &format_cursor_hook_command(
+                Some("/tmp/atoll-hook-runner.exe"),
+                "/opt/homebrew/bin/node",
+                "/tmp/atoll-cursor-hook.mjs",
+            ),
             "http://127.0.0.1:47777/cursor/hook",
         );
 

@@ -117,6 +117,7 @@ const bridge = vi.hoisted(() => ({
   archiveRequest: vi.fn(),
   getSessionRequests: vi.fn(),
   getSessionTranscript: vi.fn(),
+  getSessionChat: vi.fn(),
   getNotchMetrics: vi.fn(),
   getSessionRetention: vi.fn(),
   setSessionRetention: vi.fn(),
@@ -336,7 +337,7 @@ describe("App", () => {
     );
   });
 
-  it("auto-collapses after leaving a session opened from the list", async () => {
+  it("keeps island expanded after leaving a session opened from the list", async () => {
     const session = {
       sessionId: "session-1",
       agent: "claude" as const,
@@ -363,18 +364,14 @@ describe("App", () => {
     fireEvent.pointerEnter(island);
     await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
 
-    // Opening a session focuses the tapped button — this must NOT pin the
-    // island open once the pointer leaves.
     await user.click(await screen.findByRole("button", { name: /project/i }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument(),
     );
 
     fireEvent.pointerLeave(island);
-    await waitFor(
-      () => expect(container.querySelector(".is-compact")).not.toBeNull(),
-      { timeout: 2000 },
-    );
+    await new Promise((resolve) => window.setTimeout(resolve, 700));
+    expect(container.querySelector(".is-expanded")).not.toBeNull();
   });
 
   it("collapses once after returning from a session even if tokens update mid-animation", async () => {
