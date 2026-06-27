@@ -2,6 +2,11 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.34] - 2026-06-28
+
+### 修复
+- **Header dead agent logo**：修复某个 agent 的 hook 未正确安装、已卸载或 drift 后，顶栏 logo 不切换为对应 agent 死掉 mascot 的问题；通过 localStorage 记录用户曾配置的 agent，避免从未安装的其他 agent 误报断开
+
 ## [0.1.33] - 2026-06-26
 
 ### 修复
