@@ -51,15 +51,14 @@ describe("hookHealth", () => {
     expect(analysis.summary).toBe("Not connected");
   });
 
-  it("flags an uninstalled agent when another agent stays connected", () => {
+  it("does not flag an uninstalled agent as disconnected when others stay connected", () => {
     const analysis = analyzeHookHealth(hookHealth(missing, ready, ready));
 
     expect(analysis.needsFirstTimeSetup).toBe(false);
-    expect(analysis.needsReconnect).toBe(true);
+    expect(analysis.needsReconnect).toBe(false);
     expect(analysis.connectedCount).toBe(2);
-    expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["claude"]);
-    expect(analysis.summary).toBe("2 of 3 connected");
-    expect(hookAttentionTitle(analysis)).toContain("Claude Code");
+    expect(analysis.disconnectedAgents).toEqual([]);
+    expect(analysis.summary).toBe("All agents connected");
   });
 
   it("detects partial drift when one installed agent loses its shim", () => {
@@ -94,8 +93,10 @@ describe("hookHealth", () => {
     expect(isHookReady(drifted)).toBe(false);
     expect(isHookDrifted(drifted)).toBe(true);
     expect(isHookDrifted(missing)).toBe(false);
-    expect(isHookDisconnected(missing, true)).toBe(true);
-    expect(isHookDisconnected(missing, false)).toBe(false);
+    // Never-installed agents are absent, not disconnected.
+    expect(isHookDisconnected(missing)).toBe(false);
+    // Drifted (installed but broken) agents are disconnected.
+    expect(isHookDisconnected(drifted)).toBe(true);
   });
 
   it("treats installed hooks with a script path as ready even without scriptFound", () => {
@@ -158,12 +159,11 @@ describe("hookHealth", () => {
     });
   });
 
-  it("derives dead agent logo when one agent is uninstalled", () => {
+  it("derives normal atoll logo when one agent is uninstalled but others are connected", () => {
     const analysis = analyzeHookHealth(hookHealth(missing, ready, ready));
     expect(deriveHeaderLogoDisplay(analysis, "coding")).toEqual({
-      kind: "agent",
-      agent: "claude",
-      mood: "dead",
+      kind: "atoll",
+      activity: "coding",
     });
   });
 
@@ -196,19 +196,18 @@ describe("hookHealth", () => {
     });
   });
 
-  it("flags uninstalled cursor when other agents stay connected", () => {
+  it("does not flag uninstalled cursor as disconnected when other agents stay connected", () => {
     const analysis = analyzeHookHealth({
       claude: ready,
       codex: ready,
       cursor: missing,
     });
-    expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["cursor"]);
-    expect(analysis.needsReconnect).toBe(true);
-    expect(analysis.summary).toBe("2 of 3 connected");
+    expect(analysis.disconnectedAgents).toEqual([]);
+    expect(analysis.needsReconnect).toBe(false);
+    expect(analysis.summary).toBe("All agents connected");
     expect(deriveHeaderLogoDisplay(analysis, "idle")).toEqual({
-      kind: "agent",
-      agent: "cursor",
-      mood: "dead",
+      kind: "atoll",
+      activity: "idle",
     });
   });
 

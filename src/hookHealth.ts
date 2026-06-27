@@ -34,7 +34,9 @@ export function hookStatusIssue(status: HookStatus | null | undefined): string |
   }
   if (
     status.scriptPath.includes("/target/debug/") ||
-    status.scriptPath.includes("/target/release/")
+    status.scriptPath.includes("/target/release/") ||
+    status.scriptPath.includes("\\target\\debug\\") ||
+    status.scriptPath.includes("\\target\\release\\")
   ) {
     return "Hook points to a dev build path. Reinstall hooks from Atoll.app, then trust again in Codex.";
   }
@@ -84,14 +86,15 @@ export function isHookDrifted(status: HookStatus | null | undefined): boolean {
   return Boolean(status?.installed && !isHookReady(status));
 }
 
-/** Agent is absent while at least one other agent remains connected (uninstall or drift). */
-export function isHookDisconnected(
-  status: HookStatus,
-  otherAgentReady: boolean,
-): boolean {
+/** Agent is absent while at least one other agent remains connected (uninstall or drift).
+
+ * Only a *drifted* hook (installed but broken) counts as disconnected. An agent
+ * that was never installed is simply absent, not disconnected — otherwise a user
+ * who only uses one agent would see the other two count toward a false "dead"
+ * logo. */
+export function isHookDisconnected(status: HookStatus): boolean {
   if (isHookReady(status)) return false;
-  if (isHookDrifted(status)) return true;
-  return otherAgentReady;
+  return isHookDrifted(status);
 }
 
 export function analyzeHookHealth(
@@ -112,10 +115,9 @@ export function analyzeHookHealth(
   );
 
   const readyAgents = agents.filter((agent) => isHookReady(agent.status));
-  const disconnectedAgents = agents.filter((agent) => {
-    const otherAgentReady = readyAgents.some((ready) => ready.key !== agent.key);
-    return isHookDisconnected(agent.status, otherAgentReady);
-  });
+  const disconnectedAgents = agents.filter((agent) =>
+    isHookDisconnected(agent.status),
+  );
   const connectedCount = readyAgents.length;
   const totalCount = agents.length;
   const anyHookInstalled = agents.some((agent) => agent.status.installed);
@@ -183,7 +185,11 @@ export function deriveHeaderLogoDisplay(
   if (analysis.disconnectedAgents.length === 0) {
     return { kind: "atoll", activity };
   }
-  if (analysis.disconnectedAgents.length >= 2) {
+  // Only show a fully "dead" Atoll logo when no agent is connected at all. With
+  // at least one connected agent the app is alive, so surface the single broken
+  // agent instead of nuking the whole logo. This stops single-agent users from
+  // seeing a false "dead" state just because other agents aren't installed.
+  if (analysis.connectedCount === 0 && analysis.disconnectedAgents.length >= 2) {
     return { kind: "atoll", activity: "dead" };
   }
   return {
