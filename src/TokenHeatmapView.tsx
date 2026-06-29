@@ -81,10 +81,16 @@ export function TokenHeatmapView({ todayTokens }: TokenHeatmapViewProps) {
       day.date === todayKey
         ? {
             ...day,
-            inputTokens: todayTokens.inputTokens,
-            outputTokens: todayTokens.outputTokens,
-            cacheReadTokens: todayTokens.cacheReadTokens,
-            cacheCreationTokens: todayTokens.cacheCreationTokens,
+            inputTokens: Math.max(day.inputTokens, todayTokens.inputTokens),
+            outputTokens: Math.max(day.outputTokens, todayTokens.outputTokens),
+            cacheReadTokens: Math.max(
+              day.cacheReadTokens ?? 0,
+              todayTokens.cacheReadTokens ?? 0,
+            ),
+            cacheCreationTokens: Math.max(
+              day.cacheCreationTokens ?? 0,
+              todayTokens.cacheCreationTokens ?? 0,
+            ),
           }
         : day,
     );

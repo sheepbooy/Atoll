@@ -72,7 +72,8 @@ struct TokenDayRecord {
     by_agent: HashMap<String, TokenUsageRecord>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 struct TokenHistoryFile {
     version: u32,
     timezone: String,
@@ -118,19 +119,25 @@ fn load_history_file() -> TokenHistoryFile {
         };
     };
 
-    let Ok(content) = std::fs::read_to_string(&path) else {
-        return TokenHistoryFile {
-            version: HISTORY_VERSION,
-            timezone: system_timezone_name(),
-            days: HashMap::new(),
-        };
-    };
-
-    serde_json::from_str(&content).unwrap_or_else(|_| TokenHistoryFile {
-        version: HISTORY_VERSION,
-        timezone: system_timezone_name(),
-        days: HashMap::new(),
+    load_history_file_at(&path).unwrap_or_else(|| {
+        let backup = path.with_extension("json.bak");
+        load_history_file_at(&backup).unwrap_or_else(|| {
+            eprintln!(
+                "Atoll: failed to load token history from {} (and backup); starting fresh",
+                path.display()
+            );
+            TokenHistoryFile {
+                version: HISTORY_VERSION,
+                timezone: system_timezone_name(),
+                days: HashMap::new(),
+            }
+        })
     })
+}
+
+fn load_history_file_at(path: &std::path::Path) -> Option<TokenHistoryFile> {
+    let content = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
 }
 
 fn save_history_file(file: &TokenHistoryFile) -> Result<(), String> {
@@ -141,7 +148,14 @@ fn save_history_file(file: &TokenHistoryFile) -> Result<(), String> {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
     let formatted = serde_json::to_string_pretty(file).map_err(|error| error.to_string())?;
-    std::fs::write(path, formatted).map_err(|error| error.to_string())
+    let temp_path = path.with_extension("json.tmp");
+    std::fs::write(&temp_path, &formatted).map_err(|error| error.to_string())?;
+    // Keep a backup so a crash mid-rename does not leave us with no recoverable file.
+    let backup_path = path.with_extension("json.bak");
+    if path.exists() {
+        let _ = std::fs::copy(&path, &backup_path);
+    }
+    std::fs::rename(&temp_path, &path).map_err(|error| error.to_string())
 }
 
 fn prune_old_days(days: &mut HashMap<String, TokenDayRecord>) {
@@ -229,12 +243,19 @@ fn upsert_day(
     file: &mut TokenHistoryFile,
     day_key: &str,
     record: TokenDayRecord,
-) -> Result<(), String> {
+) -> Result<TokenDayRecord, String> {
     file.version = HISTORY_VERSION;
     file.timezone = system_timezone_name();
-    file.days.insert(day_key.to_string(), record);
+    file.days.insert(day_key.to_string(), record.clone());
     prune_old_days(&mut file.days);
-    save_history_file(file)
+    save_history_file(file)?;
+    Ok(record)
+}
+
+fn update_daily_baseline(state: &AppState, usage: TokenUsageRecord) {
+    if let Ok(mut baseline) = state.daily_tokens_baseline.lock() {
+        *baseline = (*baseline).component_wise_max(TokenUsage::from(usage));
+    }
 }
 
 pub(crate) fn sync_today_to_history(state: &AppState) -> Result<(), String> {
@@ -260,12 +281,14 @@ pub(crate) fn sync_today_to_history(state: &AppState) -> Result<(), String> {
     // Merge with existing data: never let a post-restart empty state overwrite
     // previously persisted values.  Use component-wise max so the file only grows
     // until rollover resets it at midnight.
-    if let Some(existing) = file.days.get(&day_key) {
+    let saved = if let Some(existing) = file.days.get(&day_key) {
         let merged = merge_day_records(existing, &record);
-        upsert_day(&mut file, &day_key, merged)
+        upsert_day(&mut file, &day_key, merged)?
     } else {
-        upsert_day(&mut file, &day_key, record)
-    }
+        upsert_day(&mut file, &day_key, record)?
+    };
+    update_daily_baseline(state, saved.usage);
+    Ok(())
 }
 
 pub(crate) fn flush_day_to_history(state: &AppState, day_key: &str) -> Result<(), String> {
@@ -287,10 +310,11 @@ pub(crate) fn flush_day_to_history(state: &AppState, day_key: &str) -> Result<()
     let mut file = load_history_file();
     if let Some(existing) = file.days.get(day_key) {
         let merged = merge_day_records(existing, &record);
-        upsert_day(&mut file, day_key, merged)
+        upsert_day(&mut file, day_key, merged)?;
     } else {
-        upsert_day(&mut file, day_key, record)
+        upsert_day(&mut file, day_key, record)?;
     }
+    Ok(())
 }
 
 pub(crate) fn load_today_baseline() -> TokenUsage {
@@ -486,5 +510,137 @@ mod tests {
         assert_eq!(merged.usage.cache_read_tokens, 100);
         assert_eq!(merged.by_agent.get("claude").unwrap().input_tokens, 3000);
         assert_eq!(merged.by_agent.get("codex").unwrap().input_tokens, 2000);
+    }
+
+    fn temp_history_paths(test_name: &str) -> (PathBuf, PathBuf, PathBuf) {
+        let pid = std::process::id();
+        let history_path = std::env::temp_dir().join(format!(
+            "atoll-token-history-{pid}-{test_name}.json"
+        ));
+        let backup_path = history_path.with_extension("json.bak");
+        let temp_path = history_path.with_extension("json.tmp");
+        (history_path, backup_path, temp_path)
+    }
+
+    fn cleanup_history_paths(history_path: &PathBuf) {
+        let _ = std::fs::remove_file(history_path);
+        let _ = std::fs::remove_file(history_path.with_extension("json.bak"));
+        let _ = std::fs::remove_file(history_path.with_extension("json.tmp"));
+        std::env::remove_var("ATOLL_TOKEN_HISTORY_PATH");
+    }
+
+    fn sample_day_record(input: u64, output: u64) -> TokenDayRecord {
+        TokenDayRecord {
+            usage: TokenUsageRecord {
+                input_tokens: input,
+                output_tokens: output,
+                cache_read_tokens: 0,
+                cache_creation_tokens: 0,
+            },
+            by_agent: HashMap::new(),
+        }
+    }
+
+    fn history_path_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    #[test]
+    fn save_history_file_creates_backup_before_overwriting_main() {
+        let _guard = history_path_test_lock();
+        let (history_path, backup_path, temp_path) =
+            temp_history_paths("backup-on-save");
+        cleanup_history_paths(&history_path);
+
+        std::env::set_var(
+            "ATOLL_TOKEN_HISTORY_PATH",
+            history_path.to_string_lossy().as_ref(),
+        );
+
+        let day_key = current_local_day_key();
+        let initial = TokenHistoryFile {
+            version: HISTORY_VERSION,
+            timezone: "UTC".to_string(),
+            days: HashMap::from([(day_key.clone(), sample_day_record(1000, 400))]),
+        };
+        save_history_file(&initial).expect("initial save");
+        assert!(
+            !backup_path.exists(),
+            "first save should not create a backup when no prior main file existed"
+        );
+
+        let updated = TokenHistoryFile {
+            version: HISTORY_VERSION,
+            timezone: "UTC".to_string(),
+            days: HashMap::from([(day_key.clone(), sample_day_record(5000, 2000))]),
+        };
+        save_history_file(&updated).expect("updated save");
+
+        assert!(backup_path.exists(), "second save should snapshot the prior main file");
+        assert!(
+            !temp_path.exists(),
+            "temp file should be renamed away after a successful save"
+        );
+
+        let backup = load_history_file_at(&backup_path).expect("backup should parse");
+        assert_eq!(backup.days.get(&day_key).unwrap().usage.input_tokens, 1000);
+        assert_eq!(backup.days.get(&day_key).unwrap().usage.output_tokens, 400);
+
+        let main = load_history_file_at(&history_path).expect("main should parse");
+        assert_eq!(main.days.get(&day_key).unwrap().usage.input_tokens, 5000);
+        assert_eq!(main.days.get(&day_key).unwrap().usage.output_tokens, 2000);
+
+        cleanup_history_paths(&history_path);
+    }
+
+    #[test]
+    fn load_history_file_recovers_from_backup_when_main_is_corrupt() {
+        let _guard = history_path_test_lock();
+        let (history_path, backup_path, _) = temp_history_paths("backup-recover");
+        cleanup_history_paths(&history_path);
+
+        std::env::set_var(
+            "ATOLL_TOKEN_HISTORY_PATH",
+            history_path.to_string_lossy().as_ref(),
+        );
+
+        let day_key = current_local_day_key();
+        let initial = TokenHistoryFile {
+            version: HISTORY_VERSION,
+            timezone: "UTC".to_string(),
+            days: HashMap::from([(day_key.clone(), sample_day_record(3200, 900))]),
+        };
+        save_history_file(&initial).expect("initial save");
+
+        let updated = TokenHistoryFile {
+            version: HISTORY_VERSION,
+            timezone: "UTC".to_string(),
+            days: HashMap::from([(day_key.clone(), sample_day_record(8800, 2100))]),
+        };
+        save_history_file(&updated).expect("updated save");
+
+        // Simulate crash mid-write: main file is truncated/invalid JSON but backup remains.
+        std::fs::write(&history_path, "{ not valid json").expect("corrupt main");
+
+        let recovered = load_history_file();
+        assert_eq!(
+            recovered.days.get(&day_key).unwrap().usage.input_tokens,
+            3200,
+            "should load the pre-update snapshot from .bak"
+        );
+        assert_eq!(recovered.days.get(&day_key).unwrap().usage.output_tokens, 900);
+
+        let history = get_token_history(7).expect("history query after recovery");
+        let today = history
+            .days
+            .iter()
+            .find(|day| day.date == day_key)
+            .expect("today in history response");
+        assert_eq!(today.usage.input_tokens, 3200);
+        assert_eq!(today.usage.output_tokens, 900);
+
+        cleanup_history_paths(&history_path);
+        let _ = backup_path;
     }
 }

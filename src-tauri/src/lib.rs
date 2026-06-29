@@ -1627,7 +1627,9 @@ pub(crate) fn refresh_session_token_usage(
         .map_err(|error| error.to_string())?;
     let usage_entry = usage_by_session.entry(session_id.to_string()).or_default();
     if is_full_scan {
-        *usage_entry = parsed_usage;
+        // Transcript may be truncated or rotated; never regress a session total
+        // that was already accumulated from hooks or a prior scan.
+        *usage_entry = usage_entry.component_wise_max(parsed_usage);
     } else {
         usage_entry.add_assign(parsed_usage);
     }
@@ -6965,6 +6967,54 @@ mod core_tests {
 
         let _ = std::fs::remove_file(&history_path);
         std::env::remove_var("ATOLL_TOKEN_HISTORY_PATH");
+    }
+
+    #[test]
+    fn full_scan_does_not_regress_session_token_usage() {
+        let state = test_app_state();
+        let session_id = "session-rescan";
+        let dir = std::env::temp_dir().join(format!(
+            "atoll-token-rescan-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let transcript_path = dir.join("transcript.jsonl");
+        // Empty transcript simulates rotation/truncation after hooks already counted usage.
+        std::fs::write(&transcript_path, "").expect("write transcript");
+        let transcript = transcript_path.to_string_lossy().into_owned();
+
+        {
+            let mut usage = state.session_token_usage.lock().expect("lock");
+            usage.insert(
+                session_id.into(),
+                TokenUsage {
+                    input_tokens: 8000,
+                    output_tokens: 2000,
+                    cache_read_tokens: 0,
+                    cache_creation_tokens: 0,
+                },
+            );
+        }
+
+        refresh_session_token_usage(
+            &state,
+            session_id,
+            Some(transcript.as_str()),
+            Some(&AgentKind::Claude),
+        )
+        .expect("refresh");
+
+        let usage = state
+            .session_token_usage
+            .lock()
+            .expect("lock")
+            .get(session_id)
+            .copied()
+            .expect("usage");
+        assert_eq!(usage.input_tokens, 8000);
+        assert_eq!(usage.output_tokens, 2000);
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
