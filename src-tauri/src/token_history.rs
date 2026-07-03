@@ -203,6 +203,33 @@ pub(crate) fn build_agent_by_session(state: &AppState) -> HashMap<String, String
     map
 }
 
+fn sum_by_agent_usage(by_agent: &HashMap<String, TokenUsageRecord>) -> TokenUsageRecord {
+    let mut total = TokenUsageRecord::default();
+    for usage in by_agent.values() {
+        total.add_assign(*usage);
+    }
+    total
+}
+
+/// Legacy bug: `usage` was inflated by floor+rescan double-count while `byAgent`
+/// stayed accurate. Detect and repair on load/sync so restarts do not inherit bad floors.
+fn repair_inflated_day_usage(record: &mut TokenDayRecord) {
+    let agent_sum = sum_by_agent_usage(&record.by_agent);
+    if agent_sum.input_tokens == 0 && agent_sum.output_tokens == 0 {
+        return;
+    }
+
+    let usage_inflated = record.usage.input_tokens
+        > agent_sum.input_tokens.saturating_mul(8)
+        || record.usage.output_tokens > agent_sum.output_tokens.saturating_mul(8);
+    if usage_inflated {
+        record.usage = record.usage.component_wise_max(agent_sum);
+        if record.usage.input_tokens > agent_sum.input_tokens.saturating_mul(8) {
+            record.usage = agent_sum;
+        }
+    }
+}
+
 fn aggregate_day_record(
     session_usage: &HashMap<String, TokenUsage>,
     agent_by_session: &HashMap<String, String>,
@@ -266,14 +293,20 @@ pub(crate) fn sync_today_to_history(state: &AppState) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     let agent_by_session = build_agent_by_session(state);
     let mut record = aggregate_day_record(&session_usage, &agent_by_session);
-    let persisted_floor = *state
-        .daily_tokens_baseline
+    let startup_floor = *state
+        .startup_daily_floor
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let absolute_sessions = state
+        .absolute_token_sessions
         .lock()
         .map_err(|error| error.to_string())?;
     record.usage = TokenUsageRecord::from(crate::effective_daily_tokens(
         &session_usage,
-        persisted_floor,
+        startup_floor,
+        &absolute_sessions,
     ));
+    repair_inflated_day_usage(&mut record);
     drop(session_usage);
 
     let mut file = load_history_file();
@@ -282,7 +315,8 @@ pub(crate) fn sync_today_to_history(state: &AppState) -> Result<(), String> {
     // previously persisted values.  Use component-wise max so the file only grows
     // until rollover resets it at midnight.
     let saved = if let Some(existing) = file.days.get(&day_key) {
-        let merged = merge_day_records(existing, &record);
+        let mut merged = merge_day_records(existing, &record);
+        repair_inflated_day_usage(&mut merged);
         upsert_day(&mut file, &day_key, merged)?
     } else {
         upsert_day(&mut file, &day_key, record)?
@@ -322,11 +356,15 @@ pub(crate) fn load_today_baseline() -> TokenUsage {
     let today_key = current_local_day_key();
     file.days
         .get(&today_key)
-        .map(|record| TokenUsage {
-            input_tokens: record.usage.input_tokens,
-            output_tokens: record.usage.output_tokens,
-            cache_read_tokens: record.usage.cache_read_tokens,
-            cache_creation_tokens: record.usage.cache_creation_tokens,
+        .map(|record| {
+            let mut repaired = record.clone();
+            repair_inflated_day_usage(&mut repaired);
+            TokenUsage {
+                input_tokens: repaired.usage.input_tokens,
+                output_tokens: repaired.usage.output_tokens,
+                cache_read_tokens: repaired.usage.cache_read_tokens,
+                cache_creation_tokens: repaired.usage.cache_creation_tokens,
+            }
         })
         .unwrap_or_default()
 }
@@ -343,10 +381,12 @@ pub fn get_token_history(days: u32) -> Result<TokenHistoryResponse, String> {
         let date = today - Duration::days(offset);
         let date_key = format_local_day_key(date);
         if let Some(record) = file.days.get(&date_key) {
+            let mut repaired = record.clone();
+            repair_inflated_day_usage(&mut repaired);
             result.push(TokenHistoryDay {
                 date: date_key,
-                usage: record.usage,
-                by_agent: record.by_agent.clone(),
+                usage: repaired.usage,
+                by_agent: repaired.by_agent.clone(),
             });
         } else {
             result.push(TokenHistoryDay {
@@ -452,6 +492,42 @@ mod tests {
         assert_eq!(day.usage.cache_creation_tokens, 0);
         let agent = day.by_agent.get("claude").expect("agent exists");
         assert_eq!(agent.cache_read_tokens, 0);
+    }
+
+    #[test]
+    fn repair_inflated_usage_when_by_agent_is_sane() {
+        let mut record = TokenDayRecord {
+            usage: TokenUsageRecord {
+                input_tokens: 6_519_812_307,
+                output_tokens: 19_870_089,
+                cache_read_tokens: 6_192_733_248,
+                cache_creation_tokens: 0,
+            },
+            by_agent: HashMap::from([
+                (
+                    "cursor".into(),
+                    TokenUsageRecord {
+                        input_tokens: 2_908_577,
+                        output_tokens: 12_138,
+                        cache_read_tokens: 2_787_936,
+                        cache_creation_tokens: 0,
+                    },
+                ),
+                (
+                    "claude".into(),
+                    TokenUsageRecord {
+                        input_tokens: 8_000,
+                        output_tokens: 2_000,
+                        cache_read_tokens: 0,
+                        cache_creation_tokens: 0,
+                    },
+                ),
+            ]),
+        };
+
+        repair_inflated_day_usage(&mut record);
+        assert_eq!(record.usage.input_tokens, 2_934_981);
+        assert_eq!(record.usage.output_tokens, 14_369);
     }
 
     #[test]

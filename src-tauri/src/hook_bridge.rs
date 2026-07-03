@@ -11,7 +11,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
     build_snapshot, complete_subagent, emit_subagent_snapshot, get_stored_session_host,
-    ingest_cursor_stop_token_usage, ingest_cursor_token_usage_from_payload,
+    ingest_cursor_token_usage_from_payload,
     is_codex_internal_session, iso_timestamp_now, platform,
     payload_subagent_id, payload_subagent_parent_session_id, purge_tracked_session,
     refresh_session_token_usage, register_known_session, register_subagent_start,
@@ -1471,19 +1471,17 @@ fn sync_turn_completion(
             if matches!(agent, AgentKind::Cursor) {
                 maybe_detect_and_store_cursor_host(&state, session_id, stream);
             }
-            if matches!(agent, AgentKind::Cursor) {
-                if let Err(error) =
-                    ingest_cursor_stop_token_usage(&state, session_id, &payload)
-                {
-                    eprintln!("Atoll Cursor token usage ingest failed: {error}");
+            // Cursor tokens are ingested from afterAgentResponse/sessionEnd; stop
+            // would double-count the same turn when both hooks fire.
+            if !matches!(agent, AgentKind::Cursor) {
+                if let Err(error) = refresh_session_token_usage(
+                    &state,
+                    session_id,
+                    transcript_path.as_deref(),
+                    Some(&agent),
+                ) {
+                    eprintln!("Atoll token usage refresh failed: {error}");
                 }
-            } else if let Err(error) = refresh_session_token_usage(
-                &state,
-                session_id,
-                transcript_path.as_deref(),
-                Some(&agent),
-            ) {
-                eprintln!("Atoll token usage refresh failed: {error}");
             }
         }
     }

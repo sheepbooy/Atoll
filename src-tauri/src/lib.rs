@@ -159,50 +159,39 @@ impl TokenUsage {
             cache_creation_tokens: self.cache_creation_tokens.max(other.cache_creation_tokens),
         }
     }
-
-    fn token_total(self) -> u64 {
-        self.input_tokens
-            .saturating_add(self.output_tokens)
-            .saturating_add(self.cache_read_tokens)
-            .saturating_add(self.cache_creation_tokens)
-    }
-
-    fn is_zero(self) -> bool {
-        self.input_tokens == 0
-            && self.output_tokens == 0
-            && self.cache_read_tokens == 0
-            && self.cache_creation_tokens == 0
-    }
-
-    /// Merge in-memory session totals with the persisted daily floor.
-    ///
-    /// After restart `session_token_usage` is empty while the floor still holds
-    /// today's persisted total. New hook events only populate the in-memory map,
-    /// so we add those increments on top of the floor until transcript-based
-    /// refresh rebuilds a full session sum that dominates the floor.
-    fn combine_with_persisted_floor(self, floor: TokenUsage) -> TokenUsage {
-        if self.is_zero() {
-            return floor;
-        }
-        if self.token_total() >= floor.token_total() {
-            self
-        } else {
-            let mut combined = floor;
-            combined.add_assign(self);
-            combined
-        }
-    }
 }
 
+/// Merge live session totals with the startup floor without double-counting.
+///
+/// Before any transcript full-scan, in-memory session values are incremental
+/// (hooks since process start) and are added to `startup_floor`. After a
+/// full-scan, that session's value is absolute for today; we take
+/// `max(startup_floor, sum(absolute sessions)) + sum(incremental sessions)`.
 pub(crate) fn effective_daily_tokens(
     session_token_usage: &HashMap<String, TokenUsage>,
-    persisted_floor: TokenUsage,
+    startup_floor: TokenUsage,
+    absolute_sessions: &HashSet<String>,
 ) -> TokenUsage {
-    let mut session_sum = TokenUsage::default();
-    for usage in session_token_usage.values() {
-        session_sum.add_assign(*usage);
+    let mut absolute_sum = TokenUsage::default();
+    let mut incremental_sum = TokenUsage::default();
+
+    for (session_id, usage) in session_token_usage {
+        if absolute_sessions.contains(session_id) {
+            absolute_sum.add_assign(*usage);
+        } else {
+            incremental_sum.add_assign(*usage);
+        }
     }
-    session_sum.combine_with_persisted_floor(persisted_floor)
+
+    if absolute_sessions.is_empty() {
+        let mut total = startup_floor;
+        total.add_assign(incremental_sum);
+        return total;
+    }
+
+    let mut total = startup_floor.component_wise_max(absolute_sum);
+    total.add_assign(incremental_sum);
+    total
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -287,8 +276,12 @@ pub(crate) struct AppState {
     session_agent_map: Mutex<HashMap<String, String>>,
     token_usage_file_offsets: Mutex<HashMap<String, u64>>,
     token_usage_day: Mutex<String>,
-    /// Floor for daily_tokens loaded from token_history.json on startup, so the
-    /// counter never drops below what was persisted before the last restart.
+    /// Today's persisted total loaded at process start (and after midnight rollover).
+    /// Hook increments add on top until transcript full-scans produce absolute totals.
+    startup_daily_floor: Mutex<TokenUsage>,
+    /// Sessions whose in-memory totals came from a transcript full-scan (absolute).
+    absolute_token_sessions: Mutex<HashSet<String>>,
+    /// High-water mark synced to token_history.json; never regresses within a day.
     daily_tokens_baseline: Mutex<TokenUsage>,
     known_sessions: Mutex<HashMap<String, KnownSession>>,
     pinned_sessions: Mutex<HashSet<String>>,
@@ -496,11 +489,20 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
     );
     drop(pinned);
     drop(known_sessions);
-    let persisted_floor = *state
-        .daily_tokens_baseline
-        .lock()
-        .expect("state mutex poisoned");
-    snapshot.daily_tokens = effective_daily_tokens(&token_usage, persisted_floor);
+    // Scope token aggregation locks: sync_today_to_history below re-acquires
+    // absolute_token_sessions; holding the guard here deadlocks the main thread.
+    {
+        let startup_floor = *state
+            .startup_daily_floor
+            .lock()
+            .expect("state mutex poisoned");
+        let absolute_sessions = state
+            .absolute_token_sessions
+            .lock()
+            .expect("state mutex poisoned");
+        snapshot.daily_tokens =
+            effective_daily_tokens(&token_usage, startup_floor, &absolute_sessions);
+    }
     drop(token_usage);
     drop(last_seen);
     drop(requests);
@@ -1493,6 +1495,12 @@ fn roll_over_token_usage_if_needed(state: &AppState) {
     if let Ok(mut baseline) = state.daily_tokens_baseline.lock() {
         *baseline = TokenUsage::default();
     }
+    if let Ok(mut startup_floor) = state.startup_daily_floor.lock() {
+        *startup_floor = TokenUsage::default();
+    }
+    if let Ok(mut absolute_sessions) = state.absolute_token_sessions.lock() {
+        absolute_sessions.clear();
+    }
 }
 
 fn token_usage_from_transcript_entry(entry: &Value, local_today_key: &str) -> TokenUsage {
@@ -1677,6 +1685,9 @@ pub(crate) fn refresh_session_token_usage(
         // Transcript may be truncated or rotated; never regress a session total
         // that was already accumulated from hooks or a prior scan.
         *usage_entry = usage_entry.component_wise_max(parsed_usage);
+        if let Ok(mut absolute_sessions) = state.absolute_token_sessions.lock() {
+            absolute_sessions.insert(session_id.to_string());
+        }
     } else {
         usage_entry.add_assign(parsed_usage);
     }
@@ -1761,7 +1772,12 @@ pub(crate) fn ingest_cursor_token_usage_from_payload(
             .lock()
             .map_err(|error| error.to_string())?;
         let entry = usage_by_session.entry(session_id.to_string()).or_default();
-        entry.add_assign(turn_usage);
+        // sessionEnd may report cumulative session totals; per-turn hooks add.
+        if source == "sessionEnd" {
+            *entry = entry.component_wise_max(turn_usage);
+        } else {
+            entry.add_assign(turn_usage);
+        }
     }
 
     if let Ok(mut sticky) = state.session_agent_map.lock() {
@@ -1772,15 +1788,6 @@ pub(crate) fn ingest_cursor_token_usage_from_payload(
 
     token_history::sync_today_to_history(state)?;
     Ok(())
-}
-
-/// Ingest token usage directly from a Cursor `stop` hook payload.
-pub(crate) fn ingest_cursor_stop_token_usage(
-    state: &AppState,
-    session_id: &str,
-    payload: &serde_json::Value,
-) -> Result<(), String> {
-    ingest_cursor_token_usage_from_payload(state, session_id, payload, "stop")
 }
 
 /// Parse a JSON value as u64, accepting integers, floats, and numeric strings.
@@ -5088,6 +5095,8 @@ pub fn run() {
             session_agent_map: Mutex::new(HashMap::new()),
             token_usage_file_offsets: Mutex::new(HashMap::new()),
             token_usage_day: Mutex::new(current_local_day_key()),
+            startup_daily_floor: Mutex::new(token_history::load_today_baseline()),
+            absolute_token_sessions: Mutex::new(HashSet::new()),
             daily_tokens_baseline: Mutex::new(token_history::load_today_baseline()),
             known_sessions: Mutex::new(HashMap::new()),
             pinned_sessions: Mutex::new(HashSet::new()),
@@ -7150,6 +7159,8 @@ mod core_tests {
             session_agent_map: Mutex::new(HashMap::new()),
             token_usage_file_offsets: Mutex::new(HashMap::new()),
             token_usage_day: Mutex::new(current_local_day_key()),
+            startup_daily_floor: Mutex::new(TokenUsage::default()),
+            absolute_token_sessions: Mutex::new(HashSet::new()),
             daily_tokens_baseline: Mutex::new(TokenUsage::default()),
             known_sessions: Mutex::new(HashMap::new()),
             pinned_sessions: Mutex::new(HashSet::new()),
@@ -7165,6 +7176,73 @@ mod core_tests {
             last_subagent_reconcile: Mutex::new(Instant::now() - Duration::from_secs(10)),
             last_hook_activity: Mutex::new(Instant::now()),
         }
+    }
+
+    #[test]
+    fn effective_daily_tokens_avoids_restart_transcript_double_count() {
+        let startup_floor = TokenUsage {
+            input_tokens: 3_000_000,
+            output_tokens: 1_200_000,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+        };
+        let session_usage = HashMap::from([(
+            "session-rescan".into(),
+            TokenUsage {
+                input_tokens: 2_000_000,
+                output_tokens: 800_000,
+                cache_read_tokens: 0,
+                cache_creation_tokens: 0,
+            },
+        )]);
+        let absolute_sessions = HashSet::from(["session-rescan".into()]);
+
+        let daily = effective_daily_tokens(&session_usage, startup_floor, &absolute_sessions);
+        assert_eq!(daily.input_tokens, 3_000_000);
+        assert_eq!(daily.output_tokens, 1_200_000);
+
+        let hook_only = HashMap::from([(
+            "session-new".into(),
+            TokenUsage {
+                input_tokens: 500,
+                output_tokens: 100,
+                cache_read_tokens: 0,
+                cache_creation_tokens: 0,
+            },
+        )]);
+        let daily = effective_daily_tokens(&hook_only, startup_floor, &HashSet::new());
+        assert_eq!(daily.input_tokens, 3_000_500);
+        assert_eq!(daily.output_tokens, 1_200_100);
+    }
+
+    #[test]
+    fn cursor_session_end_uses_max_for_cumulative_totals() {
+        let state = test_app_state();
+        let session_id = "conv-session-end";
+        ingest_cursor_token_usage_from_payload(
+            &state,
+            session_id,
+            &json!({ "input_tokens": 1200, "output_tokens": 300 }),
+            "afterAgentResponse",
+        )
+        .expect("turn ingest");
+        ingest_cursor_token_usage_from_payload(
+            &state,
+            session_id,
+            &json!({ "input_tokens": 1500, "output_tokens": 400 }),
+            "sessionEnd",
+        )
+        .expect("session end ingest");
+
+        let usage = state
+            .session_token_usage
+            .lock()
+            .expect("lock")
+            .get(session_id)
+            .copied()
+            .expect("usage");
+        assert_eq!(usage.input_tokens, 1500);
+        assert_eq!(usage.output_tokens, 400);
     }
 
     #[test]
@@ -7285,6 +7363,7 @@ mod core_tests {
 
         let state = test_app_state();
         *state.daily_tokens_baseline.lock().expect("lock") = baseline;
+        *state.startup_daily_floor.lock().expect("lock") = baseline;
 
         // First snapshot sync with no active sessions (upgrade/restart edge case).
         token_history::sync_today_to_history(&state).expect("sync");
@@ -7315,16 +7394,21 @@ mod core_tests {
         assert_eq!(today_record.usage.output_tokens, 1200);
 
         // UI floor: daily total must not drop below persisted baseline.
-        let live_daily = TokenUsage::default();
-        let protected = live_daily.combine_with_persisted_floor(baseline);
-        assert_eq!(protected.input_tokens, 3000);
-        assert_eq!(protected.output_tokens, 1200);
+        let live_daily = effective_daily_tokens(&HashMap::new(), baseline, &HashSet::new());
+        assert_eq!(live_daily.input_tokens, 3000);
+        assert_eq!(live_daily.output_tokens, 1200);
 
-        // Post-restart increments must add on top of the persisted floor.
-        let mut post_restart = TokenUsage::default();
-        post_restart.input_tokens = 500;
-        post_restart.output_tokens = 100;
-        let combined = post_restart.combine_with_persisted_floor(baseline);
+        // Post-restart hook increments must add on top of the startup floor.
+        let post_restart = HashMap::from([(
+            "session-new".into(),
+            TokenUsage {
+                input_tokens: 500,
+                output_tokens: 100,
+                cache_read_tokens: 0,
+                cache_creation_tokens: 0,
+            },
+        )]);
+        let combined = effective_daily_tokens(&post_restart, baseline, &HashSet::new());
         assert_eq!(combined.input_tokens, 3500);
         assert_eq!(combined.output_tokens, 1300);
 
@@ -7655,6 +7739,8 @@ mod cursor_subagent_tests {
             session_agent_map: Mutex::new(HashMap::new()),
             token_usage_file_offsets: Mutex::new(HashMap::new()),
             token_usage_day: Mutex::new(current_local_day_key()),
+            startup_daily_floor: Mutex::new(TokenUsage::default()),
+            absolute_token_sessions: Mutex::new(HashSet::new()),
             daily_tokens_baseline: Mutex::new(TokenUsage::default()),
             known_sessions: Mutex::new(HashMap::new()),
             pinned_sessions: Mutex::new(HashSet::new()),
