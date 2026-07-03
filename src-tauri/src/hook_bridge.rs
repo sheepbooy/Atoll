@@ -666,6 +666,17 @@ fn route_codex_request(
         .unwrap_or("PermissionRequest")
         .to_string();
 
+    crate::debug_agent::log(
+        "H-C",
+        "hook_bridge.rs:route_codex_request",
+        "codex hook received",
+        json!({
+            "event": hook_event_name,
+            "sessionId": payload.get("session_id"),
+            "cwd": payload.get("cwd"),
+        }),
+    );
+
     match hook_event_name.as_str() {
         "PermissionRequest" => submit_blocking_permission_request(
             app,

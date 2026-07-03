@@ -15,6 +15,7 @@ use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalS
 mod capture;
 mod debug_agent;
 mod hook_bridge;
+mod hook_trust;
 mod local_time;
 mod platform;
 mod token_history;
@@ -633,6 +634,7 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
                 script_path: claude_script_path,
                 node_path: String::new(),
                 node_found: resolve_node_executable().is_ok(),
+                needs_retrust: false,
             },
             codex: HookStatus {
                 installed: false,
@@ -644,6 +646,7 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
                 script_path: codex_script_path,
                 node_path: String::new(),
                 node_found: resolve_node_executable().is_ok(),
+                needs_retrust: false,
             },
             cursor: HookStatus {
                 installed: false,
@@ -655,6 +658,7 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
                 script_path: cursor_script_path,
                 node_path: String::new(),
                 node_found: resolve_node_executable().is_ok(),
+                needs_retrust: false,
             },
         };
     }
@@ -721,6 +725,7 @@ fn claude_hook_status(app: &AppHandle) -> HookStatus {
         script_path,
         settings.as_ref(),
         "atoll-claude-hook",
+        "claude",
     )
 }
 
@@ -733,19 +738,33 @@ fn codex_hook_status(app: &AppHandle) -> HookStatus {
         .as_ref()
         .map(|hooks| has_atoll_codex_hooks(hooks))
         .unwrap_or(false);
-    let (script_path, mut script_found) =
+    let (mut script_path, mut script_found) =
         resolve_hook_script_readiness(app, "atoll-codex-hook.mjs", config.as_ref());
     if installed {
+        #[cfg(windows)]
+        maybe_repair_hook_launcher_config(app, "atoll-codex-hook.mjs", "codex-hook-launcher.json");
         if let (Some(cfg), Ok(preferred)) = (
             config.as_ref(),
             resolve_install_hook_script_path(app, "atoll-codex-hook.mjs"),
         ) {
             if let Some(configured) = configured_atoll_hook_script_path(cfg, "atoll-codex-hook") {
-                if should_flag_dev_hook_drift(&configured, &preferred) {
+                if should_flag_dev_hook_drift(&configured, &preferred)
+                    && deployed_hook_script_path("atoll-codex-hook.mjs").is_none()
+                {
                     script_found = false;
                 }
             }
         }
+    }
+    script_path = canonical_hook_script_path(
+        app,
+        "atoll-codex-hook.mjs",
+        config.as_ref(),
+        "atoll-codex-hook",
+        &script_path,
+    );
+    if !script_path.is_empty() && std::path::Path::new(&script_path).is_file() {
+        script_found = true;
     }
     build_hook_status(
         installed,
@@ -754,6 +773,7 @@ fn codex_hook_status(app: &AppHandle) -> HookStatus {
         script_path,
         config.as_ref(),
         "atoll-codex-hook",
+        "codex",
     )
 }
 
@@ -766,19 +786,33 @@ fn cursor_hook_status(app: &AppHandle) -> HookStatus {
         .as_ref()
         .map(|hooks| has_atoll_cursor_hooks(hooks))
         .unwrap_or(false);
-    let (script_path, mut script_found) =
+    let (mut script_path, mut script_found) =
         resolve_hook_script_readiness(app, "atoll-cursor-hook.mjs", config.as_ref());
     if installed {
+        #[cfg(windows)]
+        maybe_repair_hook_launcher_config(app, "atoll-cursor-hook.mjs", "cursor-hook-launcher.json");
         if let (Some(cfg), Ok(preferred)) = (
             config.as_ref(),
             resolve_install_hook_script_path(app, "atoll-cursor-hook.mjs"),
         ) {
             if let Some(configured) = configured_atoll_hook_script_path(cfg, "atoll-cursor-hook") {
-                if should_flag_dev_hook_drift(&configured, &preferred) {
+                if should_flag_dev_hook_drift(&configured, &preferred)
+                    && deployed_hook_script_path("atoll-cursor-hook.mjs").is_none()
+                {
                     script_found = false;
                 }
             }
         }
+    }
+    script_path = canonical_hook_script_path(
+        app,
+        "atoll-cursor-hook.mjs",
+        config.as_ref(),
+        "atoll-cursor-hook",
+        &script_path,
+    );
+    if !script_path.is_empty() && std::path::Path::new(&script_path).is_file() {
+        script_found = true;
     }
     build_hook_status(
         installed,
@@ -787,6 +821,7 @@ fn cursor_hook_status(app: &AppHandle) -> HookStatus {
         script_path,
         config.as_ref(),
         "atoll-cursor-hook",
+        "cursor",
     )
 }
 
@@ -842,11 +877,22 @@ fn build_hook_status(
     script_path: String,
     config: Option<&Value>,
     marker: &str,
+    agent_key: &str,
 ) -> HookStatus {
     let node_path = config
         .and_then(|cfg| configured_atoll_hook_node_path(cfg, marker))
         .unwrap_or_default();
     let node_found = node_executable_ready(&node_path);
+    // Only meaningful once installed — an agent that was never hooked up has
+    // nothing to have drifted away from.
+    let configured_script = config
+        .and_then(|cfg| configured_atoll_hook_script_path(cfg, marker));
+    let needs_retrust = installed
+        && hook_trust::needs_retrust(
+            agent_key,
+            &script_path,
+            configured_script.as_deref(),
+        );
     HookStatus {
         installed,
         script_found,
@@ -854,6 +900,7 @@ fn build_hook_status(
         script_path,
         node_path,
         node_found,
+        needs_retrust,
     }
 }
 
@@ -3185,6 +3232,11 @@ struct HookStatus {
     node_path: String,
     #[serde(default = "default_node_found")]
     node_found: bool,
+    /// True when Atoll's hook script content changed since the host CLI last
+    /// trusted it (e.g. an Atoll update overwrote the script in place). The
+    /// host may be silently ignoring the hook until the user re-trusts it.
+    #[serde(default)]
+    needs_retrust: bool,
 }
 
 fn default_node_found() -> bool {
@@ -3208,6 +3260,7 @@ impl Default for HookStatus {
             script_path: String::new(),
             node_path: String::new(),
             node_found: true,
+            needs_retrust: false,
         }
     }
 }
@@ -3226,6 +3279,7 @@ fn get_claude_hook_status(app: AppHandle) -> Result<HookStatus, String> {
             script_path,
             node_path: String::new(),
             node_found: resolve_node_executable().is_ok(),
+            needs_retrust: false,
         });
     }
     Ok(claude_hook_status(&app))
@@ -3375,6 +3429,7 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
     if let Err(error) = hook_bridge::refresh_bridge_config_file(&app) {
         eprintln!("Atoll failed to refresh bridge.json after Claude hook install: {error}");
     }
+    hook_trust::record_hook_installed("claude", &script_path);
 
     let state = app.state::<AppState>();
     let snapshot = build_snapshot(&app, &state);
@@ -3394,6 +3449,7 @@ fn uninstall_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
         claude_settings_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
 
     if !settings_path.exists() {
+        hook_trust::clear_hook_installed("claude");
         return Ok(HookStatus {
             installed: false,
             script_found: false,
@@ -3401,6 +3457,7 @@ fn uninstall_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
             script_path: String::new(),
             node_path: String::new(),
             node_found: resolve_node_executable().is_ok(),
+            needs_retrust: false,
         });
     }
 
@@ -3421,6 +3478,7 @@ fn uninstall_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
     let formatted = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("Cannot serialize settings: {e}"))?;
     std::fs::write(&settings_path, formatted).map_err(|e| format!("Cannot write settings: {e}"))?;
+    hook_trust::clear_hook_installed("claude");
 
     let state = app.state::<AppState>();
     let snapshot = build_snapshot(&app, &state);
@@ -3460,14 +3518,187 @@ fn get_codex_hook_status(app: AppHandle) -> Result<HookStatus, String> {
             script_path,
             node_path: String::new(),
             node_found: resolve_node_executable().is_ok(),
+            needs_retrust: false,
         });
     }
     Ok(codex_hook_status(&app))
 }
 
+/// Stable hook install dir so hooks.json does not point at `target/debug/scripts`,
+/// which disappears during rebuilds and makes Codex hooks exit with code 1.
+fn atoll_local_hooks_dir() -> Option<std::path::PathBuf> {
+    dirs::data_local_dir().map(|dir| dir.join("Atoll").join("hooks"))
+}
+
+fn deployed_hook_script_path(script_name: &str) -> Option<String> {
+    let path = atoll_local_hooks_dir()?.join(script_name);
+    if path.is_file() {
+        Some(normalize_hook_script_path(&path.to_string_lossy()))
+    } else {
+        None
+    }
+}
+
+fn canonical_hook_script_path(
+    app: &AppHandle,
+    script_name: &str,
+    config: Option<&Value>,
+    marker: &str,
+    fallback_path: &str,
+) -> String {
+    if let Some(deployed) = deployed_hook_script_path(script_name) {
+        return deployed;
+    }
+    if let Some(configured) = config.and_then(|cfg| configured_atoll_hook_script_path(cfg, marker))
+    {
+        if std::path::Path::new(&configured).is_file() {
+            return configured;
+        }
+    }
+    if !fallback_path.is_empty() && std::path::Path::new(fallback_path).is_file() {
+        return fallback_path.to_string();
+    }
+    resolve_hook_script_path(app, script_name).unwrap_or_default()
+}
+
+#[cfg(windows)]
+fn maybe_repair_hook_launcher_config(app: &AppHandle, script_name: &str, config_filename: &str) {
+    let Some(local_dir) = dirs::data_local_dir().map(|dir| dir.join("Atoll")) else {
+        return;
+    };
+    let config_path = local_dir.join(config_filename);
+    let Ok(content) = std::fs::read_to_string(&config_path) else {
+        return;
+    };
+    let Ok(mut config) = serde_json::from_str::<Value>(&content) else {
+        return;
+    };
+    let current_script = config
+        .get("script")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let needs_repair = current_script.is_empty()
+        || is_dev_hook_script_path(current_script)
+        || !std::path::Path::new(current_script).is_file();
+    if !needs_repair {
+        return;
+    }
+    let Some(stable_script) = deployed_hook_script_path(script_name) else {
+        return;
+    };
+    let runner = atoll_local_hooks_dir()
+        .map(|dir| dir.join("atoll-hook-runner.exe"))
+        .filter(|path| path.is_file())
+        .map(|path| normalize_hook_command_path(&path.to_string_lossy()))
+        .or_else(|| hook_runner_for_command(app));
+    let node = config
+        .get("node")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| resolve_node_executable().ok());
+    let (Some(runner), Some(node)) = (runner, node) else {
+        return;
+    };
+    config["script"] = json!(normalize_hook_command_path(&stable_script));
+    config["runner"] = json!(runner);
+    config["node"] = json!(normalize_hook_command_path(&node));
+    if let Ok(formatted) = serde_json::to_string_pretty(&config) {
+        let _ = std::fs::write(&config_path, formatted);
+    }
+}
+
+#[cfg(not(windows))]
+fn maybe_repair_hook_launcher_config(_app: &AppHandle, _script_name: &str, _config_filename: &str) {}
+
+#[cfg(windows)]
+fn is_windows_file_locked_error(error: &std::io::Error) -> bool {
+    matches!(error.raw_os_error(), Some(32))
+}
+
+#[cfg(not(windows))]
+fn is_windows_file_locked_error(_error: &std::io::Error) -> bool {
+    false
+}
+
+/// Copy hook assets into the stable deploy dir. If Windows reports that the
+/// destination is locked (ERROR_SHARING_VIOLATION / os error 32) because Codex,
+/// Cursor, or a live hook invocation still has the runner open, keep the existing
+/// file so install can finish updating hooks.json and launcher config.
+fn copy_deployed_hook_file(
+    source: &std::path::Path,
+    dest: &std::path::Path,
+    label: &str,
+) -> Result<(), String> {
+    match std::fs::copy(source, dest) {
+        Ok(_) => Ok(()),
+        Err(error) => {
+            if dest.is_file() && is_windows_file_locked_error(&error) {
+                eprintln!(
+                    "Atoll kept existing {label} at {} because the file is in use ({error})",
+                    dest.display()
+                );
+                Ok(())
+            } else {
+                Err(format!(
+                    "Cannot copy {label} to {}: {error}",
+                    dest.display()
+                ))
+            }
+        }
+    }
+}
+
+fn materialize_hook_deployment(
+    app: &AppHandle,
+    script_name: &str,
+    source_script_path: &str,
+) -> Result<String, String> {
+    let source = std::path::Path::new(source_script_path);
+    if !source.is_file() {
+        return Err(format!("Hook script not found at: {source_script_path}"));
+    }
+
+    let hooks_dir = atoll_local_hooks_dir()
+        .ok_or_else(|| "Cannot determine local data directory".to_string())?;
+    std::fs::create_dir_all(&hooks_dir)
+        .map_err(|error| format!("Cannot create {}: {error}", hooks_dir.display()))?;
+
+    let dest_script = hooks_dir.join(script_name);
+    copy_deployed_hook_file(source, &dest_script, "hook script")?;
+
+    if let Some(source_dir) = source.parent() {
+        let bridge_name = "atoll-hook-bridge.mjs";
+        let source_bridge = source_dir.join(bridge_name);
+        if source_bridge.is_file() {
+            let dest_bridge = hooks_dir.join(bridge_name);
+            copy_deployed_hook_file(&source_bridge, &dest_bridge, "hook bridge module")?;
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        let dest_runner = hooks_dir.join("atoll-hook-runner.exe");
+        if let Some(runner_path) = hook_runner_for_command(app) {
+            let runner_source = std::path::Path::new(&runner_path);
+            if runner_source.is_file() {
+                copy_deployed_hook_file(runner_source, &dest_runner, "hook runner")?;
+            }
+        }
+        if !dest_runner.is_file() {
+            return Err(
+                "Cannot locate atoll-hook-runner.exe. Rebuild Atoll, then try installing hooks again."
+                    .into(),
+            );
+        }
+    }
+
+    Ok(normalize_hook_script_path(&dest_script.to_string_lossy()))
+}
+
 #[tauri::command]
 fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let script_path = resolve_install_hook_script_path(&app, "atoll-codex-hook.mjs")?;
+    let source_script_path = resolve_install_hook_script_path(&app, "atoll-codex-hook.mjs")?;
+    let script_path = materialize_hook_deployment(&app, "atoll-codex-hook.mjs", &source_script_path)?;
 
     if !std::path::Path::new(&script_path).exists() {
         return Err(format!("Hook script not found at: {script_path}"));
@@ -3491,11 +3722,10 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
         Value::Object(Default::default())
     };
 
-    let hook_command = format_hook_command(
-        hook_runner_for_command(&app).as_deref(),
-        &node_path,
-        &script_path,
-    );
+    #[cfg(windows)]
+    let hook_command = write_codex_hook_launcher_command(&app, &node_path, &script_path)?;
+    #[cfg(not(windows))]
+    let hook_command = format_hook_command(None, &node_path, &script_path);
     let atoll_hooks = serde_json::json!({
         "PermissionRequest": [
             {
@@ -3590,6 +3820,7 @@ fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
     if let Err(error) = hook_bridge::refresh_bridge_config_file(&app) {
         eprintln!("Atoll failed to refresh bridge.json after Codex hook install: {error}");
     }
+    hook_trust::on_codex_hooks_installed(&script_path);
 
     let state = app.state::<AppState>();
     let snapshot = build_snapshot(&app, &state);
@@ -3609,6 +3840,7 @@ fn uninstall_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
         codex_hooks_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
 
     if !hooks_path.exists() {
+        hook_trust::clear_hook_installed("codex");
         return Ok(HookStatus {
             installed: false,
             script_found: false,
@@ -3616,6 +3848,7 @@ fn uninstall_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
             script_path: String::new(),
             node_path: String::new(),
             node_found: resolve_node_executable().is_ok(),
+            needs_retrust: false,
         });
     }
 
@@ -3631,6 +3864,7 @@ fn uninstall_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
     let formatted = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Cannot serialize hooks: {e}"))?;
     std::fs::write(&hooks_path, formatted).map_err(|e| format!("Cannot write hooks: {e}"))?;
+    hook_trust::clear_hook_installed("codex");
 
     let state = app.state::<AppState>();
     let snapshot = build_snapshot(&app, &state);
@@ -3658,6 +3892,7 @@ fn get_cursor_hook_status(app: AppHandle) -> Result<HookStatus, String> {
             script_path,
             node_path: String::new(),
             node_found: resolve_node_executable().is_ok(),
+            needs_retrust: false,
         });
     }
     Ok(cursor_hook_status(&app))
@@ -3665,7 +3900,9 @@ fn get_cursor_hook_status(app: AppHandle) -> Result<HookStatus, String> {
 
 #[tauri::command]
 fn install_cursor_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let script_path = resolve_install_hook_script_path(&app, "atoll-cursor-hook.mjs")?;
+    let source_script_path = resolve_install_hook_script_path(&app, "atoll-cursor-hook.mjs")?;
+    let script_path =
+        materialize_hook_deployment(&app, "atoll-cursor-hook.mjs", &source_script_path)?;
 
     if !std::path::Path::new(&script_path).exists() {
         return Err(format!("Hook script not found at: {script_path}"));
@@ -3727,6 +3964,7 @@ fn install_cursor_hooks(app: AppHandle) -> Result<HookStatus, String> {
     if let Err(error) = hook_bridge::refresh_bridge_config_file(&app) {
         eprintln!("Atoll failed to refresh bridge.json after Cursor hook install: {error}");
     }
+    hook_trust::record_hook_installed("cursor", &script_path);
 
     let state = app.state::<AppState>();
     refresh_hook_health_cache(&app, &state);
@@ -3747,6 +3985,7 @@ fn uninstall_cursor_hooks(app: AppHandle) -> Result<HookStatus, String> {
         cursor_hooks_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
 
     if !hooks_path.exists() {
+        hook_trust::clear_hook_installed("cursor");
         return Ok(HookStatus {
             installed: false,
             script_found: false,
@@ -3754,6 +3993,7 @@ fn uninstall_cursor_hooks(app: AppHandle) -> Result<HookStatus, String> {
             script_path: String::new(),
             node_path: String::new(),
             node_found: resolve_node_executable().is_ok(),
+            needs_retrust: false,
         });
     }
 
@@ -3769,6 +4009,7 @@ fn uninstall_cursor_hooks(app: AppHandle) -> Result<HookStatus, String> {
     let formatted = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Cannot serialize hooks: {e}"))?;
     std::fs::write(&hooks_path, formatted).map_err(|e| format!("Cannot write hooks: {e}"))?;
+    hook_trust::clear_hook_installed("cursor");
 
     let state = app.state::<AppState>();
     let snapshot = build_snapshot(&app, &state);
@@ -3947,16 +4188,25 @@ fn format_hook_command(_runner_path: Option<&str>, node_path: &str, script_path:
     )
 }
 
-/// Cursor on Windows spawns hook commands through a shell. Write a PowerShell launcher
-/// that forwards stdin to `atoll-hook-runner.exe`. Paths live in a UTF-8 JSON config so
-/// non-ASCII usernames (e.g. Chinese profile dirs) do not break the `.ps1` file encoding.
+/// Windows hook hosts (Cursor, Codex) often spawn hook commands through `cmd /c`.
+/// A single quoted string like `"runner.exe" "node.exe" "script.mjs"` fails on paths
+/// with spaces or non-ASCII profile dirs. Write a PowerShell launcher that forwards
+/// stdin to `atoll-hook-runner.exe`; paths live in a UTF-8 JSON config file.
 #[cfg(windows)]
-fn write_cursor_hook_launcher_command(
+fn write_windows_hook_launcher_command(
     app: &AppHandle,
     node_path: &str,
     script_path: &str,
+    config_filename: &str,
+    ps1_filename: &str,
+    fallback_stdout: &str,
 ) -> Result<String, String> {
-    let runner_path = hook_runner_for_command(app)
+    let stable_runner = atoll_local_hooks_dir()
+        .map(|dir| dir.join("atoll-hook-runner.exe"))
+        .filter(|path| path.is_file())
+        .map(|path| path.to_string_lossy().into_owned());
+    let runner_path = stable_runner
+        .or_else(|| hook_runner_for_command(app))
         .ok_or_else(|| "Cannot locate atoll-hook-runner.exe".to_string())?;
     let local_dir = dirs::data_local_dir()
         .ok_or_else(|| "Cannot determine local data directory".to_string())?
@@ -3967,21 +4217,22 @@ fn write_cursor_hook_launcher_command(
     let runner = normalize_hook_command_path(&runner_path);
     let node = normalize_hook_command_path(node_path);
     let script = normalize_hook_command_path(script_path);
-    let config_path = local_dir.join("cursor-hook-launcher.json");
+    let config_path = local_dir.join(config_filename);
     let config = json!({
         "runner": runner,
         "node": node,
         "script": script,
     });
     let config_json = serde_json::to_string_pretty(&config)
-        .map_err(|error| format!("Cannot serialize cursor hook launcher config: {error}"))?;
+        .map_err(|error| format!("Cannot serialize hook launcher config: {error}"))?;
     std::fs::write(&config_path, config_json.as_bytes())
         .map_err(|error| format!("Cannot write {}: {error}", config_path.display()))?;
 
-    let ps1_path = local_dir.join("atoll-cursor-hook.ps1");
-    const PS1: &str = r#"$ErrorActionPreference = 'Stop'
-$configPath = Join-Path $env:LOCALAPPDATA 'Atoll\cursor-hook-launcher.json'
-try {
+    let ps1_path = local_dir.join(ps1_filename);
+    let ps1_body = format!(
+        r#"$ErrorActionPreference = 'Stop'
+$configPath = Join-Path $env:LOCALAPPDATA 'Atoll\{config_filename}'
+try {{
   $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
   $psi = New-Object System.Diagnostics.ProcessStartInfo($config.runner, ('"' + $config.node + '" "' + $config.script + '"'))
   $psi.UseShellExecute = $false
@@ -3993,15 +4244,17 @@ try {
   [Console]::OpenStandardInput().CopyTo($p.StandardInput.BaseStream)
   $p.StandardInput.Close()
   [Console]::Out.Write($p.StandardOutput.ReadToEnd())
-  $p.WaitForExit()
-} catch {
-  [Console]::Out.Write('{"permission":"allow"}')
+  $p.WaitForExit() | Out-Null
+  exit $p.ExitCode
+}} catch {{
+  [Console]::Out.Write('{fallback_stdout}')
   exit 0
-}
-"#;
+}}
+"#
+    );
     // UTF-8 BOM so Windows PowerShell reads non-ASCII paths from the JSON config reliably.
     let mut ps1_bytes = vec![0xEF, 0xBB, 0xBF];
-    ps1_bytes.extend_from_slice(PS1.as_bytes());
+    ps1_bytes.extend_from_slice(ps1_body.as_bytes());
     std::fs::write(&ps1_path, ps1_bytes)
         .map_err(|error| format!("Cannot write {}: {error}", ps1_path.display()))?;
 
@@ -4009,6 +4262,47 @@ try {
         "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{}\"",
         normalize_hook_command_path(&ps1_path.to_string_lossy()).replace('"', "\\\"")
     ))
+}
+
+#[cfg(windows)]
+fn write_cursor_hook_launcher_command(
+    app: &AppHandle,
+    node_path: &str,
+    script_path: &str,
+) -> Result<String, String> {
+    write_windows_hook_launcher_command(
+        app,
+        node_path,
+        script_path,
+        "cursor-hook-launcher.json",
+        "atoll-cursor-hook.ps1",
+        r#"{"permission":"allow"}"#,
+    )
+}
+
+#[cfg(windows)]
+fn write_codex_hook_launcher_command(
+    app: &AppHandle,
+    node_path: &str,
+    script_path: &str,
+) -> Result<String, String> {
+    write_windows_hook_launcher_command(
+        app,
+        node_path,
+        script_path,
+        "codex-hook-launcher.json",
+        "atoll-codex-hook.ps1",
+        "{}",
+    )
+}
+
+#[cfg(not(windows))]
+fn write_codex_hook_launcher_command(
+    _app: &AppHandle,
+    node_path: &str,
+    script_path: &str,
+) -> Result<String, String> {
+    Ok(format_hook_command(None, node_path, script_path))
 }
 
 #[cfg(not(windows))]
@@ -4229,8 +4523,10 @@ fn extract_hook_command_parts(command: &str) -> Option<(String, String)> {
     }
 
     let normalized = normalize_hook_script_path(&trimmed);
-    if normalized.to_ascii_lowercase().ends_with("atoll-cursor-hook.ps1") {
-        return parse_cursor_launcher_script(&normalized);
+    if normalized.to_ascii_lowercase().ends_with("atoll-cursor-hook.ps1")
+        || normalized.to_ascii_lowercase().ends_with("atoll-codex-hook.ps1")
+    {
+        return parse_hook_launcher_script(&normalized);
     }
     if normalized.to_ascii_lowercase().ends_with("atoll-cursor-hook.cmd") {
         return parse_cursor_launcher_cmd(&normalized);
@@ -4241,7 +4537,7 @@ fn extract_hook_command_parts(command: &str) -> Option<(String, String)> {
             let rest = &trimmed[start + 7..];
             if let Some(end) = rest.find('"') {
                 let ps1 = normalize_hook_script_path(&expand_windows_hook_env(&rest[..end]));
-                return parse_cursor_launcher_script(&ps1);
+                return parse_hook_launcher_script(&ps1);
             }
         }
     }
@@ -4292,7 +4588,7 @@ fn parse_cursor_launcher_cmd(path: &str) -> Option<(String, String)> {
     None
 }
 
-fn parse_cursor_launcher_config(path: &str) -> Option<(String, String)> {
+fn parse_hook_launcher_config(path: &str) -> Option<(String, String)> {
     let content = std::fs::read_to_string(path).ok()?;
     let config: Value = serde_json::from_str(&content).ok()?;
     let node = config.get("node").and_then(Value::as_str)?;
@@ -4303,17 +4599,22 @@ fn parse_cursor_launcher_config(path: &str) -> Option<(String, String)> {
     ))
 }
 
-fn parse_cursor_launcher_script(path: &str) -> Option<(String, String)> {
+fn parse_hook_launcher_script(path: &str) -> Option<(String, String)> {
     let content = std::fs::read_to_string(path).ok()?;
-    if content.contains("cursor-hook-launcher.json") {
-        let config_path = std::path::Path::new(path)
-            .parent()
-            .map(|dir| dir.join("cursor-hook-launcher.json"))
-            .filter(|candidate| candidate.is_file())
-            .or_else(|| {
-                dirs::data_local_dir().map(|dir| dir.join("Atoll").join("cursor-hook-launcher.json"))
-            })?;
-        return parse_cursor_launcher_config(&config_path.to_string_lossy());
+    for (marker, filename) in [
+        ("cursor-hook-launcher.json", "cursor-hook-launcher.json"),
+        ("codex-hook-launcher.json", "codex-hook-launcher.json"),
+    ] {
+        if content.contains(marker) {
+            let config_path = std::path::Path::new(path)
+                .parent()
+                .map(|dir| dir.join(filename))
+                .filter(|candidate| candidate.is_file())
+                .or_else(|| {
+                    dirs::data_local_dir().map(|dir| dir.join("Atoll").join(filename))
+                })?;
+            return parse_hook_launcher_config(&config_path.to_string_lossy());
+        }
     }
     for line in content.lines() {
         let line = line.trim();
@@ -4403,6 +4704,10 @@ fn resolve_hook_script_readiness(
 fn resolve_hook_script_path(app: &AppHandle, script_name: &str) -> Option<String> {
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
 
+    if let Some(hooks_dir) = atoll_local_hooks_dir() {
+        candidates.push(hooks_dir.join(script_name));
+    }
+
     if let Ok(resource_dir) = app.path().resource_dir() {
         candidates.push(resource_dir.join("scripts").join(script_name));
     }
@@ -4415,14 +4720,30 @@ fn resolve_hook_script_path(app: &AppHandle, script_name: &str) -> Option<String
         for ancestor in exe.ancestors().skip(1) {
             candidates.push(ancestor.join("Resources").join("scripts").join(script_name));
             candidates.push(ancestor.join("scripts").join(script_name));
+            if ancestor
+                .file_name()
+                .is_some_and(|name| name == "src-tauri")
+            {
+                if let Some(repo_root) = ancestor.parent() {
+                    candidates.push(repo_root.join("scripts").join(script_name));
+                }
+            }
             if ancestor.join("src-tauri").exists() {
                 candidates.push(ancestor.join("scripts").join(script_name));
+                candidates.push(
+                    ancestor
+                        .join("src-tauri")
+                        .join("target")
+                        .join("debug")
+                        .join("scripts")
+                        .join(script_name),
+                );
             }
         }
     }
 
     for candidate in candidates {
-        if candidate.exists() {
+        if candidate.is_file() {
             return Some(normalize_hook_script_path(&candidate.to_string_lossy()));
         }
     }
@@ -4434,12 +4755,17 @@ fn resolve_hook_script_path(app: &AppHandle, script_name: &str) -> Option<String
 fn resolve_hook_runner_path(app: &AppHandle) -> Option<String> {
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
 
+    if let Some(hooks_dir) = atoll_local_hooks_dir() {
+        candidates.push(hooks_dir.join("atoll-hook-runner.exe"));
+    }
+
     if let Ok(resource_dir) = app.path().resource_dir() {
         candidates.push(resource_dir.join("scripts").join("atoll-hook-runner.exe"));
     }
 
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
+            candidates.push(exe_dir.join("atoll-hook-runner.exe"));
             candidates.push(
                 exe_dir
                     .join("resources")
@@ -4449,6 +4775,23 @@ fn resolve_hook_runner_path(app: &AppHandle) -> Option<String> {
             candidates.push(exe_dir.join("scripts").join("atoll-hook-runner.exe"));
         }
         for ancestor in exe.ancestors().skip(1) {
+            if ancestor
+                .file_name()
+                .is_some_and(|name| name == "src-tauri")
+            {
+                candidates.push(
+                    ancestor
+                        .join("target")
+                        .join("debug")
+                        .join("atoll-hook-runner.exe"),
+                );
+                candidates.push(
+                    ancestor
+                        .join("target")
+                        .join("release")
+                        .join("atoll-hook-runner.exe"),
+                );
+            }
             if ancestor.join("src-tauri").exists() {
                 candidates.push(
                     ancestor
@@ -4458,12 +4801,14 @@ fn resolve_hook_runner_path(app: &AppHandle) -> Option<String> {
                 );
                 candidates.push(
                     ancestor
+                        .join("src-tauri")
                         .join("target")
                         .join("debug")
                         .join("atoll-hook-runner.exe"),
                 );
                 candidates.push(
                     ancestor
+                        .join("src-tauri")
                         .join("target")
                         .join("release")
                         .join("atoll-hook-runner.exe"),
@@ -5035,6 +5380,23 @@ fn start_auto_archive_timer(app: AppHandle) {
         }
         sync_hook_health_snapshot(&app, &state);
         sync_listening_online_snapshot(&app, &state);
+        #[cfg(target_os = "windows")]
+        maybe_reassert_island_on_top(&app);
+    });
+}
+
+#[cfg(target_os = "windows")]
+fn maybe_reassert_island_on_top(app: &AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    if !window.is_visible().unwrap_or(false) {
+        return;
+    }
+    let window_for_thread = window.clone();
+    let window_for_closure = window.clone();
+    let _ = window_for_thread.run_on_main_thread(move || {
+        platform::ensure_island_on_top(&window_for_closure);
     });
 }
 
@@ -5362,6 +5724,7 @@ fn apply_island_window_mode(
     };
 
     platform::set_island_window_frame_now(window, position, window_size, scale_factor, home)?;
+    platform::ensure_island_on_top(window);
     Ok(Some(home))
 }
 
@@ -8195,6 +8558,40 @@ mod codex_hooks_tests {
                 }]
             }]
         })
+    }
+
+    #[test]
+    fn has_atoll_codex_hooks_recognizes_powershell_launcher_command() {
+        let config = json!({
+            "hooks": {
+                "PermissionRequest": [{
+                    "matcher": "*",
+                    "hooks": [{
+                        "command": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"C:/Users/test/AppData/Local/Atoll/atoll-codex-hook.ps1\""
+                    }]
+                }],
+                "PostToolUse": [{
+                    "matcher": "*",
+                    "hooks": [{
+                        "command": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"C:/Users/test/AppData/Local/Atoll/atoll-codex-hook.ps1\""
+                    }]
+                }],
+                "Stop": [{
+                    "matcher": "*",
+                    "hooks": [{
+                        "command": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"C:/Users/test/AppData/Local/Atoll/atoll-codex-hook.ps1\""
+                    }]
+                }],
+                "SubagentStop": [{
+                    "matcher": "*",
+                    "hooks": [{
+                        "command": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"C:/Users/test/AppData/Local/Atoll/atoll-codex-hook.ps1\""
+                    }]
+                }]
+            }
+        });
+
+        assert!(has_atoll_codex_hooks(&config));
     }
 
     #[test]

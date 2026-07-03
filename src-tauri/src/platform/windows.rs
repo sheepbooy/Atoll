@@ -23,7 +23,8 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
+    GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow, SetWindowPos,
+    HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
 };
 
 use super::SessionHost;
@@ -78,22 +79,24 @@ pub fn apply_island_window_style(window: &WebviewWindow) {
     CURSOR_CAPTURE_ACTIVE.store(false, Ordering::Release);
 }
 
-/// Re-assert topmost on Windows. The expanded panel grows from a 28px strip to a
-/// full panel and resizes/repositions across a large area; a topmost window that
-/// lacks focus can drop behind other windows during that resize on some Windows
-/// builds, so we re-apply WS_EX_TOPMOST before each expand.
+/// Re-assert topmost on Windows without moving or resizing the window. Full-screen
+/// and other topmost apps (Codex Desktop, Cursor, etc.) can demote the island even
+/// while `is_always_on_top()` still reads true, which makes it look like it vanished.
 pub fn ensure_island_on_top(window: &WebviewWindow) {
-    // #region agent log
-    crate::debug_agent::log(
-        "H-A",
-        "platform/windows.rs:ensure_island_on_top",
-        "re-assert always_on_top before expand",
-        serde_json::json!({
-            "visible": window.is_visible().unwrap_or(false),
-            "focused": window.is_focused().unwrap_or(false),
-        }),
-    );
-    // #endregion
+    if let Some(hwnd) = window_hwnd(window) {
+        unsafe {
+            let _ = SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
+        }
+        return;
+    }
     let _ = window.set_always_on_top(true);
 }
 

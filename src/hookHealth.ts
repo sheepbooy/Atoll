@@ -19,6 +19,10 @@ export interface HookHealthAnalysis {
   needsReconnect: boolean;
   summary: string;
   disconnectedAgents: Array<{ key: HookAgentKey; label: string; status: HookStatus }>;
+  /** Ready agents whose hook script changed since they were last trusted — the
+   * plumbing still works locally, but the agent app itself may be silently
+   * ignoring the hook until the user re-confirms trust for it. */
+  retrustAgents: Array<{ key: HookAgentKey; label: string; status: HookStatus }>;
 }
 
 export function isHookReady(status: HookStatus | null | undefined): boolean {
@@ -135,13 +139,18 @@ export function analyzeHookHealth(
       configuredAgents,
     );
   });
+  const retrustAgents = readyAgents.filter((agent) => agent.status.needsRetrust);
   const connectedCount = readyAgents.length;
   const totalCount = agents.length;
   const anyHookInstalled = agents.some((agent) => agent.status.installed);
+  const needsReconnect =
+    connectedCount > 0 && (disconnectedAgents.length > 0 || retrustAgents.length > 0);
 
   let summary = "Not connected";
-  if (connectedCount > 0 && disconnectedAgents.length === 0) {
+  if (connectedCount > 0 && disconnectedAgents.length === 0 && retrustAgents.length === 0) {
     summary = "All agents connected";
+  } else if (connectedCount > 0 && disconnectedAgents.length === 0) {
+    summary = `${connectedCount} of ${totalCount} connected — re-trust needed`;
   } else if (connectedCount > 0) {
     summary = `${connectedCount} of ${totalCount} connected`;
   }
@@ -150,11 +159,12 @@ export function analyzeHookHealth(
     connectedCount,
     totalCount,
     anyConnected: connectedCount > 0,
-    allConnected: connectedCount > 0 && disconnectedAgents.length === 0,
+    allConnected: connectedCount > 0 && disconnectedAgents.length === 0 && retrustAgents.length === 0,
     needsFirstTimeSetup: connectedCount === 0 && !anyHookInstalled,
-    needsReconnect: connectedCount > 0 && disconnectedAgents.length > 0,
+    needsReconnect,
     summary,
     disconnectedAgents,
+    retrustAgents,
   };
 }
 
@@ -169,8 +179,16 @@ export function hookAttentionTitle(
     return "Agent hooks are not installed";
   }
   if (analysis.needsReconnect) {
-    const names = analysis.disconnectedAgents.map((agent) => agent.label).join(", ");
-    return `${names} hook${analysis.disconnectedAgents.length > 1 ? "s" : ""} missing or outdated — reconnect in Agent hooks`;
+    const disconnectedNames = analysis.disconnectedAgents.map((agent) => agent.label);
+    const retrustNames = analysis.retrustAgents.map((agent) => agent.label);
+    if (disconnectedNames.length > 0 && retrustNames.length === 0) {
+      return `${disconnectedNames.join(", ")} hook${disconnectedNames.length > 1 ? "s" : ""} missing or outdated — reconnect in Agent hooks`;
+    }
+    if (disconnectedNames.length === 0 && retrustNames.length > 0) {
+      return `${retrustNames.join(", ")} hook${retrustNames.length > 1 ? "s" : ""} updated by Atoll — re-trust in Agent hooks`;
+    }
+    const allNames = [...disconnectedNames, ...retrustNames].join(", ");
+    return `${allNames} hooks need attention — check Agent hooks`;
   }
   return "All agent hooks connected";
 }
@@ -183,6 +201,21 @@ export const CODEX_DESKTOP_HOOK_NOTE =
 
 export const CURSOR_HOOK_NOTE =
   "Works with Cursor IDE Agent and Ask modes. After install: confirm hooks in Cursor Settings, restart Cursor, then send a message in Agent or Ask mode to verify.";
+
+/** Guidance shown when an agent's hook script changed after Atoll updated, so
+ * the agent's previously cached trust decision is stale. */
+export function hookRetrustNote(agentKey: HookAgentKey): string {
+  switch (agentKey) {
+    case "codex":
+      return "Codex may still be using an older cached copy of the Atoll hook script. Click Reinstall hooks in Atoll, or open /hooks in Codex and re-approve the Atoll hook, then restart Codex.";
+    case "claude":
+      return "Atoll updated the Claude hook script since it was last approved. Reopen Claude Code / Claude Desktop permissions and re-allow the Atoll hook, then restart Claude.";
+    case "cursor":
+      return "Atoll updated the Cursor hook script since it was last loaded. Reopen Cursor Settings → Hooks to reload it, then restart Cursor.";
+    default:
+      return "Atoll updated this hook script since it was last trusted. Re-confirm it in the agent app, then restart.";
+  }
+}
 
 export type HeaderLogoDisplay =
   | { kind: "atoll"; activity: AtollActivity }

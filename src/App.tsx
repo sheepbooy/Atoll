@@ -52,6 +52,7 @@ import {
   CURSOR_HOOK_NOTE,
   deriveHeaderLogoDisplay,
   hookAttentionTitle,
+  hookRetrustNote,
   hookStatusIssue,
   isHookReady,
   mergeHookHealthPreferReady,
@@ -560,6 +561,7 @@ export function App() {
   const [sessionRequests, setSessionRequests] = useState<PermissionRequest[]>([]);
   const navigationSeqRef = useRef(0);
   const [hookBusy, setHookBusy] = useState(false);
+  const [hookInstallError, setHookInstallError] = useState<string | null>(null);
   const [hooksBackTarget, setHooksBackTarget] = useState<"home" | "settings-main">("home");
   const [tokensBackTarget, setTokensBackTarget] = useState<"home" | "settings-main">("home");
   const [selectedAgent, setSelectedAgent] = useState<AgentKind | null>(null);
@@ -1829,6 +1831,7 @@ export function App() {
 
   async function handleInstallClaudeHooks() {
     setHookBusy(true);
+    setHookInstallError(null);
     try {
       const status = await installClaudeHooks();
       if (status.installed) {
@@ -1838,8 +1841,8 @@ export function App() {
       if (status.installed) {
         collapseIsland(true);
       }
-    } catch {
-      // keep previous status
+    } catch (error) {
+      setHookInstallError(formatHookInstallError("Claude Code", error));
     } finally {
       setHookBusy(false);
     }
@@ -1847,6 +1850,7 @@ export function App() {
 
   async function handleInstallCodexHooks() {
     setHookBusy(true);
+    setHookInstallError(null);
     try {
       const status = await installCodexHooks();
       if (status.installed) {
@@ -1854,10 +1858,12 @@ export function App() {
       }
       await applyHookInstallSnapshot({ codex: status });
       if (status.installed) {
-        collapseIsland(true);
+        setHookInstallError(null);
+      } else {
+        setHookInstallError("Codex hooks were not saved. Check permissions on ~/.codex/hooks.json.");
       }
-    } catch {
-      // keep previous status
+    } catch (error) {
+      setHookInstallError(formatHookInstallError("Codex", error));
     } finally {
       setHookBusy(false);
     }
@@ -1865,6 +1871,7 @@ export function App() {
 
   async function handleInstallAllHooks() {
     setHookBusy(true);
+    setHookInstallError(null);
     try {
       setConfiguredHookAgents(markAllHookAgentsConfigured());
       const [claudeStatus, codexStatus, cursorStatus] = await Promise.all([
@@ -1880,8 +1887,16 @@ export function App() {
       if (claudeStatus.installed || codexStatus.installed || cursorStatus.installed) {
         collapseIsland(true);
       }
-    } catch {
-      // keep previous status
+      const failures = [
+        !claudeStatus.installed ? "Claude Code" : null,
+        !codexStatus.installed ? "Codex" : null,
+        !cursorStatus.installed ? "Cursor" : null,
+      ].filter(Boolean);
+      if (failures.length > 0) {
+        setHookInstallError(`Could not install hooks for: ${failures.join(", ")}.`);
+      }
+    } catch (error) {
+      setHookInstallError(formatHookInstallError("Agent hooks", error));
     } finally {
       setHookBusy(false);
     }
@@ -1967,6 +1982,7 @@ export function App() {
 
   async function handleInstallCursorHooks() {
     setHookBusy(true);
+    setHookInstallError(null);
     try {
       const status = await installCursorHooks();
       if (status.installed) {
@@ -1974,10 +1990,12 @@ export function App() {
       }
       await applyHookInstallSnapshot({ cursor: status });
       if (status.installed) {
-        collapseIsland(true);
+        setHookInstallError(null);
+      } else {
+        setHookInstallError("Cursor hooks were not saved. Check permissions on ~/.cursor/hooks.json.");
       }
-    } catch {
-      // keep previous status
+    } catch (error) {
+      setHookInstallError(formatHookInstallError("Cursor", error));
     } finally {
       setHookBusy(false);
     }
@@ -2434,6 +2452,7 @@ export function App() {
           <HooksView
             agents={hookMenuAgents}
             hookBusy={hookBusy}
+            hookInstallError={hookInstallError}
             onInstallAll={handleInstallAllHooks}
             onUninstallAll={handleUninstallHooks}
           />
@@ -2547,6 +2566,7 @@ export function App() {
         needsHookSetup={hooksNeedSetup}
         needsReconnect={hookHealthAnalysis.needsReconnect}
         disconnectedAgents={hookHealthAnalysis.disconnectedAgents}
+        retrustAgents={hookHealthAnalysis.retrustAgents}
         onOpenHooks={handleOpenHooks}
       />
     );
@@ -4452,8 +4472,19 @@ interface HookMenuAgent {
 interface HooksViewProps {
   agents: HookMenuAgent[];
   hookBusy: boolean;
+  hookInstallError: string | null;
   onInstallAll: () => void;
   onUninstallAll: () => void;
+}
+
+function formatHookInstallError(agentLabel: string, error: unknown): string {
+  const message =
+    typeof error === "string"
+      ? error
+      : error instanceof Error
+        ? error.message
+        : "Unknown error";
+  return `${agentLabel} hook install failed: ${message}`;
 }
 
 function TokensSubviewNav({
@@ -4501,6 +4532,7 @@ function HooksSubviewNav({
 function HooksView({
   agents,
   hookBusy,
+  hookInstallError,
   onInstallAll,
   onUninstallAll,
 }: HooksViewProps) {
@@ -4514,6 +4546,9 @@ function HooksView({
       <div className="settings-body">
         <div className="settings-section">
           <span className="settings-section-label">Agents</span>
+          {hookInstallError ? (
+            <span className="settings-card-desc settings-hook-warning">{hookInstallError}</span>
+          ) : null}
           {missingCount > 0 || installedCount > 1 ? (
             <div className="settings-hook-bulk">
               {missingCount > 0 ? (
@@ -4546,6 +4581,7 @@ function HooksView({
             const installed = Boolean(agent.status?.installed);
             const scriptMissing = agent.status && !agent.status.scriptFound;
             const ready = isHookReady(agent.status);
+            const needsRetrust = ready && Boolean(agent.status?.needsRetrust);
             const statusIssue = hookStatusIssue(agent.status);
             return (
               <div key={agent.key} className="settings-card settings-hook-card">
@@ -4553,10 +4589,22 @@ function HooksView({
                   <span className="settings-card-title">{agent.label}</span>
                   <span
                     className={`settings-hook-badge${
-                      ready ? " is-installed" : installed ? " is-warning" : " is-missing"
+                      ready
+                        ? needsRetrust
+                          ? " is-warning"
+                          : " is-installed"
+                        : installed
+                          ? " is-warning"
+                          : " is-missing"
                     }`}
                   >
-                    {ready ? "Connected" : installed ? "Shim missing" : "Not installed"}
+                    {ready
+                      ? needsRetrust
+                        ? "Needs re-trust"
+                        : "Connected"
+                      : installed
+                        ? "Shim missing"
+                        : "Not installed"}
                   </span>
                 </div>
                 {agent.status?.settingsPath ? (
@@ -4600,6 +4648,11 @@ function HooksView({
                     </ul>
                   </details>
                 ) : null}
+                {needsRetrust ? (
+                  <span className="settings-card-desc settings-hook-warning">
+                    {hookRetrustNote(agent.key as HookAgentKey)}
+                  </span>
+                ) : null}
                 {statusIssue ? (
                   <span className="settings-card-desc settings-hook-warning">
                     {statusIssue}
@@ -4627,7 +4680,7 @@ function HooksView({
                       type="button"
                       className="settings-hook-button"
                       onClick={agent.onInstall}
-                      disabled={hookBusy || Boolean(scriptMissing)}
+                      disabled={hookBusy}
                       data-no-drag
                     >
                       <Download size={13} />
@@ -4689,6 +4742,7 @@ interface IdleViewProps {
   needsHookSetup: boolean;
   needsReconnect: boolean;
   disconnectedAgents: Array<{ key: HookAgentKey; label: string; status: HookStatus }>;
+  retrustAgents: Array<{ key: HookAgentKey; label: string; status: HookStatus }>;
   onOpenHooks: () => void;
 }
 
@@ -4696,9 +4750,23 @@ function IdleView({
   needsHookSetup,
   needsReconnect,
   disconnectedAgents,
+  retrustAgents,
   onOpenHooks,
 }: IdleViewProps) {
   if (!needsHookSetup) {
+    const hasDisconnected = disconnectedAgents.length > 0;
+    const hasRetrust = retrustAgents.length > 0;
+    const reconnectTitle =
+      hasDisconnected && hasRetrust
+        ? `${[...disconnectedAgents, ...retrustAgents].map((agent) => agent.label).join(", ")} need attention`
+        : hasDisconnected
+          ? `${disconnectedAgents.map((agent) => agent.label).join(", ")} disconnected`
+          : `${retrustAgents.map((agent) => agent.label).join(", ")} needs re-trust`;
+    const reconnectDetail = hasDisconnected
+      ? "Hooks were removed or changed outside Atoll. Reconnect to restore approvals."
+      : hasRetrust
+        ? "Atoll updated the hook script. Re-confirm trust in the agent app to restore approvals."
+        : "";
     return (
       <div className={`idle-view${needsReconnect ? " idle-view--alert" : ""}`}>
         <div className="idle-stack">
@@ -4708,12 +4776,8 @@ function IdleView({
                 <TriangleAlert size={14} />
               </div>
               <div className="idle-reconnect-copy">
-                <strong>
-                  {disconnectedAgents.map((agent) => agent.label).join(", ")} disconnected
-                </strong>
-                <span>
-                  Hooks were removed or changed outside Atoll. Reconnect to restore approvals.
-                </span>
+                <strong>{reconnectTitle}</strong>
+                <span>{reconnectDetail}</span>
               </div>
               <button
                 type="button"

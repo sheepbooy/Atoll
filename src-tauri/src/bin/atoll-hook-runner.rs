@@ -120,9 +120,9 @@ fn main() {
         Err(_) => 1,
     };
 
+    let _ = stdin_thread.join();
     let _ = stdout_thread.join();
     let _ = stderr_thread.join();
-    let _ = stdin_thread.join();
 
     std::process::exit(code);
 }

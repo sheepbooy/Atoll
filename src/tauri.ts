@@ -297,6 +297,10 @@ export interface HookStatus {
   scriptPath: string;
   nodePath?: string;
   nodeFound?: boolean;
+  /** Hook script content changed since this agent last trusted it (e.g. an Atoll
+   * update overwrote the script in place). The agent may be silently ignoring the
+   * hook until the user re-confirms trust for it. */
+  needsRetrust?: boolean;
 }
 
 export interface HookHealthSnapshot {
@@ -313,6 +317,7 @@ export const EMPTY_HOOK_HEALTH: HookHealthSnapshot = {
     scriptPath: "",
     nodePath: "",
     nodeFound: true,
+    needsRetrust: false,
   },
   codex: {
     installed: false,
@@ -321,6 +326,7 @@ export const EMPTY_HOOK_HEALTH: HookHealthSnapshot = {
     scriptPath: "",
     nodePath: "",
     nodeFound: true,
+    needsRetrust: false,
   },
   cursor: {
     installed: false,
@@ -329,6 +335,7 @@ export const EMPTY_HOOK_HEALTH: HookHealthSnapshot = {
     scriptPath: "",
     nodePath: "",
     nodeFound: true,
+    needsRetrust: false,
   },
 };
 
@@ -362,6 +369,7 @@ export function normalizeHookStatus(raw: unknown): HookStatus {
     scriptPath: readString(record, "scriptPath", "script_path"),
     nodePath: readString(record, "nodePath", "node_path"),
     nodeFound: nodeFoundRaw === undefined ? true : Boolean(nodeFoundRaw),
+    needsRetrust: readBool(record, "needsRetrust", "needs_retrust"),
   };
 }
 

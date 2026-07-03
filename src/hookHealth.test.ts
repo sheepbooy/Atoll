@@ -3,6 +3,7 @@ import {
   analyzeHookHealth,
   deriveHeaderLogoDisplay,
   hookAttentionTitle,
+  hookRetrustNote,
   hookStatusIssue,
   isHookDisconnected,
   isHookDrifted,
@@ -249,6 +250,46 @@ describe("hookHealth", () => {
       kind: "atoll",
       activity: "dead",
     });
+  });
+
+  it("flags a ready agent that needs re-trust without treating it as disconnected", () => {
+    const codexNeedsRetrust = { ...ready, needsRetrust: true };
+    const analysis = analyzeHookHealth(hookHealth(ready, codexNeedsRetrust, ready));
+
+    expect(analysis.connectedCount).toBe(3);
+    expect(analysis.disconnectedAgents).toEqual([]);
+    expect(analysis.retrustAgents.map((agent) => agent.key)).toEqual(["codex"]);
+    expect(analysis.needsReconnect).toBe(true);
+    expect(analysis.allConnected).toBe(false);
+    expect(analysis.summary).toContain("re-trust needed");
+    expect(hookAttentionTitle(analysis)).toContain("Codex");
+    expect(hookAttentionTitle(analysis)).toContain("re-trust");
+  });
+
+  it("does not treat a needs-retrust agent as dead in the header logo", () => {
+    const codexNeedsRetrust = { ...ready, needsRetrust: true };
+    const analysis = analyzeHookHealth(hookHealth(ready, codexNeedsRetrust, ready));
+    expect(deriveHeaderLogoDisplay(analysis, "idle")).toEqual({
+      kind: "atoll",
+      activity: "idle",
+    });
+  });
+
+  it("combines disconnected and retrust agents in the attention title", () => {
+    const cursorNeedsRetrust = { ...ready, needsRetrust: true };
+    const analysis = analyzeHookHealth(hookHealth(drifted, ready, cursorNeedsRetrust));
+    expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["claude"]);
+    expect(analysis.retrustAgents.map((agent) => agent.key)).toEqual(["cursor"]);
+    const title = hookAttentionTitle(analysis);
+    expect(title).toContain("Claude Code");
+    expect(title).toContain("Cursor");
+  });
+
+  it("provides agent-specific re-trust guidance", () => {
+    expect(hookRetrustNote("codex")).toContain("/hooks");
+    expect(hookRetrustNote("codex")).toContain("cached");
+    expect(hookRetrustNote("claude")).toContain("Claude");
+    expect(hookRetrustNote("cursor")).toContain("Cursor");
   });
 
   it("derives idle atoll logo before hook health is known", () => {
