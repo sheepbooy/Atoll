@@ -2283,6 +2283,11 @@ export function App() {
     isMicro && !isPresentationTransition && sessions.length > 0;
   const showCompactTokenCounter = sessions.length > 0;
   const showExpandedTokenCounter = true;
+  const showCollapsedActivityStrip =
+    !isDormant &&
+    !isExpanded &&
+    !isPresentationTransition &&
+    (sessions.length > 0 || snapshot.pendingCount > 0);
   const showCompactNotchSpacer =
     collapsedMode === "compact" && !isExpanded && notchMetrics.hasNotch;
   const compactLeftSessions = sessions.slice(0, compactHeaderLayout.leftIconCount);
@@ -2641,9 +2646,7 @@ export function App() {
                 </span>
               </span>
             </span>
-            {(!isDormant || isMicro) &&
-            !isExpanded &&
-            !isPresentationTransition ? (
+            {showCollapsedActivityStrip ? (
               <>
                 <span
                   className={`listener-dot ${snapshot.online ? "online" : ""}`}
@@ -4187,6 +4190,7 @@ function SessionChatView({ sessionId, transcriptPath, requests, agent }: Session
 
   useEffect(() => {
     let active = true;
+    let loading = false;
     setLoadFailed(false);
 
     function loadByPath(path: string) {
@@ -4216,17 +4220,26 @@ function SessionChatView({ sessionId, transcriptPath, requests, agent }: Session
     }
 
     function load() {
-      if (pollWhileActive) {
-        return loadBySession();
+      if (loading) {
+        return Promise.resolve();
       }
-      if (transcriptPath) {
-        return loadByPath(transcriptPath);
-      }
-      return Promise.resolve();
+      loading = true;
+      const request = transcriptPath
+        ? loadByPath(transcriptPath)
+        : pollWhileActive
+          ? loadBySession()
+          : Promise.resolve();
+      return request.finally(() => {
+        loading = false;
+      });
     }
 
-    load();
-    const interval = pollWhileActive ? window.setInterval(load, 2000) : undefined;
+    function loadAndIgnore() {
+      void load();
+    }
+
+    loadAndIgnore();
+    const interval = pollWhileActive ? window.setInterval(loadAndIgnore, 2000) : undefined;
     return () => {
       active = false;
       if (interval !== undefined) {
@@ -4236,9 +4249,10 @@ function SessionChatView({ sessionId, transcriptPath, requests, agent }: Session
   }, [sessionId, transcriptPath, pollWhileActive]);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (!scrollRef.current) {
+      return;
     }
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
   return (

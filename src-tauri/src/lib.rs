@@ -862,12 +862,19 @@ fn cursor_hook_status(app: &AppHandle) -> HookStatus {
     let hooks_path = cursor_hooks_path()
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let config = read_json_file(&hooks_path);
+    let mut config = read_json_file(&hooks_path);
     let installed = config
         .as_ref()
         .map(|hooks| has_atoll_cursor_hooks(hooks))
         .unwrap_or(false);
     if installed {
+        if let Some(repaired) = maybe_upgrade_cursor_lifecycle_hooks(
+            &hooks_path,
+            config.as_ref(),
+            &hook_bridge::cursor_hook_url_for_app(app),
+        ) {
+            config = Some(repaired);
+        }
         refresh_deployed_hook_assets_if_needed(app, "atoll-cursor-hook.mjs");
     }
     let (mut script_path, mut script_found) =
@@ -985,6 +992,13 @@ fn build_hook_status(
         node_found,
         needs_retrust,
     }
+}
+
+pub(crate) fn cursor_after_agent_response_hook_installed() -> bool {
+    cursor_hooks_path()
+        .and_then(|path| read_json_file(&path.to_string_lossy()))
+        .map(|config| cursor_hooks_have_events(&config, &["afterAgentResponse"]))
+        .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -1545,7 +1559,6 @@ fn get_session_chat(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<Vec<ChatMessage>, String> {
-    backfill_cursor_session_metadata(&state);
     let requests = lock_state(&state.requests);
     let path = resolve_session_transcript_path(&state, &session_id, &requests)
         .ok_or_else(|| format!("No transcript found for session {session_id}"))?;
@@ -1898,20 +1911,59 @@ pub(crate) fn ingest_cursor_token_usage_from_payload(
     let token_source = payload
         .get("token_usage")
         .or_else(|| payload.get("tokenUsage"))
+        .or_else(|| payload.get("usage"))
+        .or_else(|| payload.get("token_usage_delta"))
+        .or_else(|| payload.get("tokenUsageDelta"))
+        .or_else(|| payload.get("total_token_usage"))
+        .or_else(|| payload.get("totalTokenUsage"))
+        .or_else(|| payload.get("response").and_then(|v| v.get("usage")))
+        .or_else(|| payload.get("message").and_then(|v| v.get("usage")))
         .unwrap_or(payload);
 
-    let input_tokens = json_value_as_u64(token_source.get("input_tokens"))
-        .or_else(|| json_value_as_u64(token_source.get("inputTokens")))
-        .unwrap_or(0);
-    let output_tokens = json_value_as_u64(token_source.get("output_tokens"))
-        .or_else(|| json_value_as_u64(token_source.get("outputTokens")))
-        .unwrap_or(0);
-    let cache_read_tokens = json_value_as_u64(token_source.get("cache_read_tokens"))
-        .or_else(|| json_value_as_u64(token_source.get("cacheReadTokens")))
-        .unwrap_or(0);
-    let cache_write_tokens = json_value_as_u64(token_source.get("cache_write_tokens"))
-        .or_else(|| json_value_as_u64(token_source.get("cacheWriteTokens")))
-        .unwrap_or(0);
+    let input_tokens = first_json_u64(
+        token_source,
+        &[
+            "input_tokens",
+            "inputTokens",
+            "prompt_tokens",
+            "promptTokens",
+            "total_input_tokens",
+            "totalInputTokens",
+        ],
+    );
+    let output_tokens = first_json_u64(
+        token_source,
+        &[
+            "output_tokens",
+            "outputTokens",
+            "completion_tokens",
+            "completionTokens",
+            "total_output_tokens",
+            "totalOutputTokens",
+        ],
+    );
+    let cache_read_tokens = first_json_u64(
+        token_source,
+        &[
+            "cache_read_tokens",
+            "cacheReadTokens",
+            "cache_read_input_tokens",
+            "cacheReadInputTokens",
+            "cached_input_tokens",
+            "cachedInputTokens",
+        ],
+    );
+    let cache_write_tokens = first_json_u64(
+        token_source,
+        &[
+            "cache_write_tokens",
+            "cacheWriteTokens",
+            "cache_creation_tokens",
+            "cacheCreationTokens",
+            "cache_creation_input_tokens",
+            "cacheCreationInputTokens",
+        ],
+    );
 
     if input_tokens == 0 && output_tokens == 0 && cache_read_tokens == 0 && cache_write_tokens == 0
     {
@@ -1961,6 +2013,12 @@ pub(crate) fn ingest_cursor_token_usage_from_payload(
 
     token_history::sync_today_to_history(state)?;
     Ok(())
+}
+
+fn first_json_u64(source: &serde_json::Value, keys: &[&str]) -> u64 {
+    keys.iter()
+        .find_map(|key| json_value_as_u64(source.get(*key)))
+        .unwrap_or(0)
 }
 
 /// Parse a JSON value as u64, accepting integers, floats, and numeric strings.
@@ -5135,6 +5193,35 @@ fn hook_entry_has_atoll_cursor(entry: &Value) -> bool {
         .unwrap_or(false)
 }
 
+const CURSOR_HOOK_EVENTS: [(&str, u64); 10] = [
+    ("sessionStart", 30),
+    ("beforeSubmitPrompt", 30),
+    ("afterAgentResponse", 30),
+    ("afterAgentThought", 30),
+    ("sessionEnd", 30),
+    ("preToolUse", 1800),
+    ("postToolUse", 30),
+    ("stop", 30),
+    ("subagentStart", 30),
+    ("subagentStop", 30),
+];
+
+const CURSOR_CORE_HOOK_EVENTS: [&str; 5] = [
+    "preToolUse",
+    "postToolUse",
+    "stop",
+    "subagentStart",
+    "subagentStop",
+];
+
+const CURSOR_LIFECYCLE_HOOK_EVENTS: [&str; 5] = [
+    "sessionStart",
+    "beforeSubmitPrompt",
+    "afterAgentResponse",
+    "afterAgentThought",
+    "sessionEnd",
+];
+
 fn upsert_cursor_hook_events(hooks: &mut Value, hook_command: &str, hook_url: &str) {
     let Some(hooks_obj) = hooks.as_object_mut() else {
         return;
@@ -5143,18 +5230,7 @@ fn upsert_cursor_hook_events(hooks: &mut Value, hook_command: &str, hook_url: &s
     // Composer / Agent Chat hooks only. Tab inline-completion hooks (`beforeTabFileRead`,
     // `afterTabFileEdit`) are intentionally excluded: Tab does not create a Composer
     // session or emit sessionStart, so Atoll cannot attribute usage to a session.
-    for (event, timeout) in [
-        ("sessionStart", 30),
-        ("beforeSubmitPrompt", 30),
-        ("afterAgentResponse", 30),
-        ("afterAgentThought", 30),
-        ("sessionEnd", 30),
-        ("preToolUse", 1800),
-        ("postToolUse", 30),
-        ("stop", 30),
-        ("subagentStart", 30),
-        ("subagentStop", 30),
-    ] {
+    for (event, timeout) in CURSOR_HOOK_EVENTS {
         let mut merged: Vec<Value> = hooks_obj
             .get(event)
             .and_then(Value::as_array)
@@ -5195,6 +5271,54 @@ fn remove_atoll_cursor_hooks(hooks: &mut Value) {
     });
 }
 
+fn cursor_hooks_have_events(config: &Value, events: &[&str]) -> bool {
+    let Some(hooks) = config.get("hooks").and_then(Value::as_object) else {
+        return false;
+    };
+
+    events.iter().all(|event| {
+        hooks
+            .get(*event)
+            .and_then(Value::as_array)
+            .map(|arr| arr.iter().any(hook_entry_has_atoll_cursor))
+            .unwrap_or(false)
+    })
+}
+
+fn cursor_hooks_need_lifecycle_upgrade(config: &Value) -> bool {
+    has_atoll_cursor_hooks(config)
+        && !cursor_hooks_have_events(config, &CURSOR_LIFECYCLE_HOOK_EVENTS)
+}
+
+fn maybe_upgrade_cursor_lifecycle_hooks(
+    hooks_path: &str,
+    config: Option<&Value>,
+    hook_url: &str,
+) -> Option<Value> {
+    let config = config?;
+    if !cursor_hooks_need_lifecycle_upgrade(config) {
+        return None;
+    }
+    let hook_command = configured_atoll_hook_command(config, "atoll-cursor-hook")?;
+    let mut repaired = config.clone();
+    if repaired.get("version").is_none() {
+        if let Some(obj) = repaired.as_object_mut() {
+            obj.insert("version".to_string(), json!(1));
+        }
+    }
+    let hooks_obj = repaired
+        .as_object_mut()?
+        .entry("hooks")
+        .or_insert_with(|| Value::Object(Default::default()));
+    upsert_cursor_hook_events(hooks_obj, &hook_command, hook_url);
+    let formatted = serde_json::to_string_pretty(&repaired).ok()?;
+    if std::fs::write(hooks_path, formatted).is_err() {
+        return None;
+    }
+    eprintln!("Atoll upgraded Cursor hooks with Composer lifecycle events");
+    Some(repaired)
+}
+
 /// Returns true when Atoll's Cursor hooks are installed.
 ///
 /// Only the core Composer/Agent events that shipped with v0.1.31
@@ -5206,25 +5330,7 @@ fn remove_atoll_cursor_hooks(hooks: &mut Value) {
 /// "not installed" regresses session display and the online indicator. Those
 /// users keep working; reinstalling from the Hooks pane adds the new events.
 fn has_atoll_cursor_hooks(config: &Value) -> bool {
-    let Some(hooks) = config.get("hooks").and_then(Value::as_object) else {
-        return false;
-    };
-
-    const CORE_EVENTS: [&str; 5] = [
-        "preToolUse",
-        "postToolUse",
-        "stop",
-        "subagentStart",
-        "subagentStop",
-    ];
-
-    CORE_EVENTS.iter().all(|event| {
-        hooks
-            .get(*event)
-            .and_then(Value::as_array)
-            .map(|arr| arr.iter().any(hook_entry_has_atoll_cursor))
-            .unwrap_or(false)
-    })
+    cursor_hooks_have_events(config, &CURSOR_CORE_HOOK_EVENTS)
 }
 
 #[tauri::command]
@@ -7392,6 +7498,53 @@ mod core_tests {
     }
 
     #[test]
+    fn cursor_token_ingest_accepts_usage_aliases() {
+        let _env_guard = TOKEN_HISTORY_ENV_LOCK
+            .lock()
+            .expect("token history env lock");
+        let history_path = std::env::temp_dir().join(format!(
+            "atoll-token-history-{}-{}.json",
+            std::process::id(),
+            "cursor-usage-aliases"
+        ));
+        let _ = std::fs::remove_file(&history_path);
+        std::env::set_var(
+            "ATOLL_TOKEN_HISTORY_PATH",
+            history_path.to_string_lossy().as_ref(),
+        );
+
+        let state = test_app_state();
+        let session_id = "conv-usage-aliases";
+        let payload = json!({
+            "conversation_id": session_id,
+            "usage": {
+                "prompt_tokens": "1200",
+                "completion_tokens": 300.0,
+                "cache_read_input_tokens": 40,
+                "cache_creation_input_tokens": 12
+            }
+        });
+
+        ingest_cursor_token_usage_from_payload(&state, session_id, &payload, "afterAgentResponse")
+            .expect("token ingest");
+
+        let usage = state
+            .session_token_usage
+            .lock()
+            .expect("lock")
+            .get(session_id)
+            .copied()
+            .expect("usage");
+        assert_eq!(usage.input_tokens, 1200);
+        assert_eq!(usage.output_tokens, 300);
+        assert_eq!(usage.cache_read_tokens, 40);
+        assert_eq!(usage.cache_creation_tokens, 12);
+
+        let _ = std::fs::remove_file(&history_path);
+        std::env::remove_var("ATOLL_TOKEN_HISTORY_PATH");
+    }
+
+    #[test]
     fn cursor_token_ingest_skips_empty_payload() {
         let state = test_app_state();
         ingest_cursor_token_usage_from_payload(
@@ -9301,8 +9454,8 @@ mod claude_hooks_tests {
 #[cfg(test)]
 mod cursor_hooks_tests {
     use super::{
-        format_cursor_hook_command, has_atoll_cursor_hooks, hook_entry_has_atoll_cursor,
-        remove_atoll_cursor_hooks, upsert_cursor_hook_events,
+        cursor_hooks_need_lifecycle_upgrade, format_cursor_hook_command, has_atoll_cursor_hooks,
+        hook_entry_has_atoll_cursor, remove_atoll_cursor_hooks, upsert_cursor_hook_events,
     };
     use serde_json::json;
 
@@ -9337,6 +9490,7 @@ mod cursor_hooks_tests {
 
         let config = json!({ "version": 1, "hooks": hooks });
         assert!(has_atoll_cursor_hooks(&config));
+        assert!(!cursor_hooks_need_lifecycle_upgrade(&config));
         assert!(hook_entry_has_atoll_cursor(
             &config["hooks"]["sessionStart"].as_array().unwrap()[0]
         ));
@@ -9407,9 +9561,9 @@ mod cursor_hooks_tests {
             ]
         });
 
-        assert!(has_atoll_cursor_hooks(
-            &json!({ "version": 1, "hooks": hooks })
-        ));
+        let config = json!({ "version": 1, "hooks": hooks });
+        assert!(has_atoll_cursor_hooks(&config));
+        assert!(cursor_hooks_need_lifecycle_upgrade(&config));
     }
 
     /// Missing any one of the five core events means hooks are incomplete.

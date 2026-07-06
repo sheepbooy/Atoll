@@ -441,6 +441,46 @@ describe("App", () => {
     );
   });
 
+  it("loads Cursor session detail from a known transcript path without resolving by session", async () => {
+    const session = {
+      sessionId: "cursor-session-1",
+      agent: "cursor" as const,
+      cwd: "/tmp/cursor-project",
+      pendingCount: 0,
+      totalCount: 1,
+      lastActivity: "2026-06-10T08:00:00Z",
+      transcriptPath: "/tmp/cursor-project/transcript.jsonl",
+      pinned: false,
+      sessionHost: "cursorIde" as const,
+      activeSubagents: [],
+    };
+    bridge.getSnapshot.mockResolvedValue({
+      ...emptySnapshot,
+      online: true,
+      sessions: [session],
+      hookHealth: connectedHookHealth,
+    });
+    bridge.getSessionRequests.mockResolvedValue([]);
+    bridge.getSessionTranscript.mockResolvedValue([
+      { role: "user", content: "hello cursor" },
+    ]);
+    bridge.getSessionChat.mockClear();
+    bridge.getSessionTranscript.mockClear();
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+
+    await waitForExpandedPanel(container);
+    await user.click(await screen.findByRole("button", { name: /cursor-project/i }));
+
+    await waitFor(() =>
+      expect(bridge.getSessionTranscript).toHaveBeenCalledWith(
+        "/tmp/cursor-project/transcript.jsonl",
+      ),
+    );
+    expect(bridge.getSessionChat).not.toHaveBeenCalled();
+    expect(screen.getByText("hello cursor")).toBeInTheDocument();
+  });
+
   it("opens the subagent list with counts, archive action, and detail navigation", async () => {
     const subagents = [
       makeSubagent(1, { agentType: "worker-alpha" }),
@@ -1134,6 +1174,69 @@ describe("App", () => {
 
     expect(container.querySelector(".is-micro")).not.toBeNull();
     expect(bridge.setIslandPresentation.mock.calls[0]?.[0]).not.toBe("dormant");
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: originalUserAgent,
+    });
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+  });
+
+  it("hides the Windows micro listener dot after the last active session disappears", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {},
+    });
+    const originalUserAgent = navigator.userAgent;
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    });
+    bridge.usesMicroIsland.mockResolvedValue(true);
+    const activeTokens = {
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    };
+    const session = {
+      sessionId: "cursor-auto-archive",
+      agent: "cursor" as const,
+      cwd: "/tmp/cursor-project",
+      pendingCount: 0,
+      totalCount: 0,
+      lastActivity: "2026-06-10T08:00:00Z",
+      transcriptPath: null,
+      pinned: false,
+      sessionHost: "cursorIde" as const,
+      activeSubagents: [],
+    };
+    const baseSnapshot = {
+      ...emptySnapshot,
+      online: true,
+      sessions: [session],
+      dailyTokens: activeTokens,
+      activeSessionTokens: activeTokens,
+      hookHealth: connectedHookHealth,
+    };
+    bridge.getSnapshot.mockResolvedValue(baseSnapshot);
+
+    const { container } = render(<App />);
+    await waitFor(() =>
+      expect(container.querySelector(".listener-dot.online")).not.toBeNull(),
+    );
+
+    await act(async () => {
+      emitSnapshot?.({
+        ...baseSnapshot,
+        sessions: [],
+        activeSessionTokens: emptySnapshot.activeSessionTokens,
+      });
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector(".listener-dot")).toBeNull(),
+    );
 
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,

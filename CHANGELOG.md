@@ -2,6 +2,19 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.37] - 2026-07-06
+
+### 修复
+- **Subagent 列表卡死**：进一步修复 subagent 列表展开/刷新时的 UI 冻结；后端 snapshot 增量合并 subagent 数据，前端减少全量重渲染
+- **Hook 稳定性**：加固 hook bridge 与 runner 部署校验，限制 transcript 路径信任范围，启动时自动刷新过期的 hook 脚本与 bridge 模块
+- **Cursor 会话详情**：已知 transcript 路径时直接加载 transcript，避免误走 session 解析；并发加载去重，减少重复请求
+- **Cursor Token 计数**：扩展 token 字段别名解析；未安装 `afterAgentResponse` hook 时从 `stop` 回退采集用量
+- **Cursor Hook 升级**：启动时自动补齐缺失的 lifecycle hooks（如 `afterAgentResponse`）
+- **Windows micro 岛**：最后一个活跃会话消失后隐藏 listener dot，避免无会话时仍显示在线指示
+
+### 改进
+- **Release CI**：Release workflow 增加测试步骤，修复 `Fix-Atoll.command` shebang 与 release notes 截断问题
+
 ## [0.1.36] - 2026-07-06
 
 ### 修复

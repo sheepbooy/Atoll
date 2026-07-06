@@ -1002,6 +1002,10 @@ fn route_cursor_request(
             } else {
                 payload
             };
+            if !crate::cursor_after_agent_response_hook_installed() {
+                let state = app.state::<AppState>();
+                observe_cursor_session(&app, &state, &payload, Some(stream), true, "stop")?;
+            }
             sync_turn_completion(app, payload, AgentKind::Cursor, true, Some(stream))?;
             Ok(json!({}))
         }
