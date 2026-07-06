@@ -151,6 +151,13 @@ pub(crate) struct TokenUsage {
 }
 
 impl TokenUsage {
+    fn is_zero(&self) -> bool {
+        self.input_tokens == 0
+            && self.output_tokens == 0
+            && self.cache_read_tokens == 0
+            && self.cache_creation_tokens == 0
+    }
+
     fn add_assign(&mut self, other: TokenUsage) {
         self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
         self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
@@ -317,6 +324,8 @@ pub(crate) struct AppState {
     active_subagents: Mutex<Vec<ActiveSubagent>>,
     /// Maps Cursor subagent conversation_id → parent session_id.
     cursor_subagent_conversations: Mutex<HashMap<String, String>>,
+    /// Cursor sessions that already produced token usage from lifecycle hooks.
+    cursor_lifecycle_token_sessions: Mutex<HashSet<String>>,
     /// Rate-limiter for SubagentStart/SubagentStop snapshot emissions.
     last_subagent_snapshot_emit: Mutex<Instant>,
     /// Debounce generation for Cursor observer snapshot emits.
@@ -868,7 +877,8 @@ fn cursor_hook_status(app: &AppHandle) -> HookStatus {
         .map(|hooks| has_atoll_cursor_hooks(hooks))
         .unwrap_or(false);
     if installed {
-        if let Some(repaired) = maybe_upgrade_cursor_lifecycle_hooks(
+        if let Some(repaired) = maybe_repair_cursor_hook_events(
+            app,
             &hooks_path,
             config.as_ref(),
             &hook_bridge::cursor_hook_url_for_app(app),
@@ -992,13 +1002,6 @@ fn build_hook_status(
         node_found,
         needs_retrust,
     }
-}
-
-pub(crate) fn cursor_after_agent_response_hook_installed() -> bool {
-    cursor_hooks_path()
-        .and_then(|path| read_json_file(&path.to_string_lossy()))
-        .map(|config| cursor_hooks_have_events(&config, &["afterAgentResponse"]))
-        .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -1908,65 +1911,9 @@ pub(crate) fn ingest_cursor_token_usage_from_payload(
     payload: &serde_json::Value,
     source: &str,
 ) -> Result<(), String> {
-    let token_source = payload
-        .get("token_usage")
-        .or_else(|| payload.get("tokenUsage"))
-        .or_else(|| payload.get("usage"))
-        .or_else(|| payload.get("token_usage_delta"))
-        .or_else(|| payload.get("tokenUsageDelta"))
-        .or_else(|| payload.get("total_token_usage"))
-        .or_else(|| payload.get("totalTokenUsage"))
-        .or_else(|| payload.get("response").and_then(|v| v.get("usage")))
-        .or_else(|| payload.get("message").and_then(|v| v.get("usage")))
-        .unwrap_or(payload);
+    let parsed_usage = parse_cursor_token_usage_from_payload(payload);
 
-    let input_tokens = first_json_u64(
-        token_source,
-        &[
-            "input_tokens",
-            "inputTokens",
-            "prompt_tokens",
-            "promptTokens",
-            "total_input_tokens",
-            "totalInputTokens",
-        ],
-    );
-    let output_tokens = first_json_u64(
-        token_source,
-        &[
-            "output_tokens",
-            "outputTokens",
-            "completion_tokens",
-            "completionTokens",
-            "total_output_tokens",
-            "totalOutputTokens",
-        ],
-    );
-    let cache_read_tokens = first_json_u64(
-        token_source,
-        &[
-            "cache_read_tokens",
-            "cacheReadTokens",
-            "cache_read_input_tokens",
-            "cacheReadInputTokens",
-            "cached_input_tokens",
-            "cachedInputTokens",
-        ],
-    );
-    let cache_write_tokens = first_json_u64(
-        token_source,
-        &[
-            "cache_write_tokens",
-            "cacheWriteTokens",
-            "cache_creation_tokens",
-            "cacheCreationTokens",
-            "cache_creation_input_tokens",
-            "cacheCreationInputTokens",
-        ],
-    );
-
-    if input_tokens == 0 && output_tokens == 0 && cache_read_tokens == 0 && cache_write_tokens == 0
-    {
+    if parsed_usage.is_zero() {
         let keys: Vec<&str> = payload
             .as_object()
             .map(|obj| obj.keys().map(String::as_str).collect())
@@ -1978,18 +1925,15 @@ pub(crate) fn ingest_cursor_token_usage_from_payload(
     }
 
     eprintln!(
-        "Atoll Cursor {source} tokens: input={input_tokens} output={output_tokens} \
-         cache_read={cache_read_tokens} cache_write={cache_write_tokens} session={session_id}"
+        "Atoll Cursor {source} tokens: input={} output={} cache_read={} \
+         cache_write={} session={session_id}",
+        parsed_usage.input_tokens,
+        parsed_usage.output_tokens,
+        parsed_usage.cache_read_tokens,
+        parsed_usage.cache_creation_tokens
     );
 
     roll_over_token_usage_if_needed(state);
-
-    let turn_usage = TokenUsage {
-        input_tokens,
-        output_tokens,
-        cache_read_tokens,
-        cache_creation_tokens: cache_write_tokens,
-    };
 
     {
         let mut usage_by_session = state
@@ -1999,9 +1943,9 @@ pub(crate) fn ingest_cursor_token_usage_from_payload(
         let entry = usage_by_session.entry(session_id.to_string()).or_default();
         // sessionEnd may report cumulative session totals; per-turn hooks add.
         if source == "sessionEnd" {
-            *entry = entry.component_wise_max(turn_usage);
+            *entry = entry.component_wise_max(parsed_usage);
         } else {
-            entry.add_assign(turn_usage);
+            entry.add_assign(parsed_usage);
         }
     }
 
@@ -2013,6 +1957,88 @@ pub(crate) fn ingest_cursor_token_usage_from_payload(
 
     token_history::sync_today_to_history(state)?;
     Ok(())
+}
+
+fn cursor_token_source(payload: &serde_json::Value) -> &serde_json::Value {
+    payload
+        .get("token_usage")
+        .or_else(|| payload.get("tokenUsage"))
+        .or_else(|| payload.get("usage"))
+        .or_else(|| payload.get("token_usage_delta"))
+        .or_else(|| payload.get("tokenUsageDelta"))
+        .or_else(|| payload.get("total_token_usage"))
+        .or_else(|| payload.get("totalTokenUsage"))
+        .or_else(|| payload.get("response").and_then(|value| value.get("usage")))
+        .or_else(|| payload.get("message").and_then(|value| value.get("usage")))
+        .unwrap_or(payload)
+}
+
+fn parse_cursor_token_usage_from_payload(payload: &serde_json::Value) -> TokenUsage {
+    let token_source = cursor_token_source(payload);
+    TokenUsage {
+        input_tokens: first_json_u64(
+            token_source,
+            &[
+                "input_tokens",
+                "inputTokens",
+                "prompt_tokens",
+                "promptTokens",
+                "total_input_tokens",
+                "totalInputTokens",
+            ],
+        ),
+        output_tokens: first_json_u64(
+            token_source,
+            &[
+                "output_tokens",
+                "outputTokens",
+                "completion_tokens",
+                "completionTokens",
+                "total_output_tokens",
+                "totalOutputTokens",
+            ],
+        ),
+        cache_read_tokens: first_json_u64(
+            token_source,
+            &[
+                "cache_read_tokens",
+                "cacheReadTokens",
+                "cache_read_input_tokens",
+                "cacheReadInputTokens",
+                "cached_input_tokens",
+                "cachedInputTokens",
+            ],
+        ),
+        cache_creation_tokens: first_json_u64(
+            token_source,
+            &[
+                "cache_write_tokens",
+                "cacheWriteTokens",
+                "cache_creation_tokens",
+                "cacheCreationTokens",
+                "cache_creation_input_tokens",
+                "cacheCreationInputTokens",
+            ],
+        ),
+    }
+}
+
+pub(crate) fn cursor_payload_has_token_usage(payload: &serde_json::Value) -> bool {
+    !parse_cursor_token_usage_from_payload(payload).is_zero()
+}
+
+pub(crate) fn remember_cursor_lifecycle_token_session(state: &AppState, session_id: &str) {
+    if let Ok(mut sessions) = state.cursor_lifecycle_token_sessions.lock() {
+        sessions.insert(session_id.to_string());
+    }
+}
+
+pub(crate) fn cursor_lifecycle_token_seen(state: &AppState, session_id: &str) -> bool {
+    state
+        .cursor_lifecycle_token_sessions
+        .lock()
+        .map(|sessions| sessions.contains(session_id))
+        .unwrap_or(false)
 }
 
 fn first_json_u64(source: &serde_json::Value, keys: &[&str]) -> u64 {
@@ -5290,16 +5316,70 @@ fn cursor_hooks_need_lifecycle_upgrade(config: &Value) -> bool {
         && !cursor_hooks_have_events(config, &CURSOR_LIFECYCLE_HOOK_EVENTS)
 }
 
-fn maybe_upgrade_cursor_lifecycle_hooks(
-    hooks_path: &str,
-    config: Option<&Value>,
+fn cursor_hook_command_needs_repair(
+    command: &str,
+    preferred_script_path: Option<&str>,
+    require_powershell_launcher: bool,
+) -> bool {
+    let lower = command.to_ascii_lowercase();
+    if require_powershell_launcher
+        && !(lower.starts_with("powershell ")
+            && lower.contains("atoll-cursor-hook.ps1")
+            && lower.contains("-file "))
+    {
+        return true;
+    }
+
+    let Some((_node, script)) = extract_hook_command_parts(command) else {
+        return true;
+    };
+
+    if let Some(preferred) = preferred_script_path {
+        if should_flag_dev_hook_drift(&script, preferred) {
+            return true;
+        }
+    }
+
+    !std::path::Path::new(&script).is_file()
+}
+
+fn cursor_hooks_need_command_repair(
+    config: &Value,
+    preferred_script_path: Option<&str>,
+    require_powershell_launcher: bool,
+) -> bool {
+    let Some(hooks) = config.get("hooks").and_then(Value::as_object) else {
+        return false;
+    };
+
+    hooks.values().any(|entries| {
+        entries
+            .as_array()
+            .map(|arr| {
+                arr.iter().any(|entry| {
+                    entry
+                        .get("command")
+                        .and_then(Value::as_str)
+                        .filter(|command| {
+                            hook_entry_has_atoll_cursor(entry)
+                                && cursor_hook_command_needs_repair(
+                                    command,
+                                    preferred_script_path,
+                                    require_powershell_launcher,
+                                )
+                        })
+                        .is_some()
+                })
+            })
+            .unwrap_or(false)
+    })
+}
+
+fn repair_cursor_hook_events_with_command(
+    config: &Value,
+    hook_command: &str,
     hook_url: &str,
 ) -> Option<Value> {
-    let config = config?;
-    if !cursor_hooks_need_lifecycle_upgrade(config) {
-        return None;
-    }
-    let hook_command = configured_atoll_hook_command(config, "atoll-cursor-hook")?;
     let mut repaired = config.clone();
     if repaired.get("version").is_none() {
         if let Some(obj) = repaired.as_object_mut() {
@@ -5310,12 +5390,49 @@ fn maybe_upgrade_cursor_lifecycle_hooks(
         .as_object_mut()?
         .entry("hooks")
         .or_insert_with(|| Value::Object(Default::default()));
-    upsert_cursor_hook_events(hooks_obj, &hook_command, hook_url);
+    upsert_cursor_hook_events(hooks_obj, hook_command, hook_url);
+    Some(repaired)
+}
+
+fn preferred_cursor_hook_command(
+    app: &AppHandle,
+    source_script_path: &str,
+) -> Result<(String, String), String> {
+    let script_path =
+        materialize_hook_deployment(app, "atoll-cursor-hook.mjs", source_script_path)?;
+    let node_path = resolve_node_executable()?;
+    let hook_command = write_cursor_hook_launcher_command(app, &node_path, &script_path)?;
+    Ok((hook_command, script_path))
+}
+
+fn maybe_repair_cursor_hook_events(
+    app: &AppHandle,
+    hooks_path: &str,
+    config: Option<&Value>,
+    hook_url: &str,
+) -> Option<Value> {
+    let config = config?;
+    if !has_atoll_cursor_hooks(config) {
+        return None;
+    }
+
+    let source_script_path = resolve_install_hook_script_path(app, "atoll-cursor-hook.mjs").ok()?;
+    let preferred_script_path = deployed_hook_script_path("atoll-cursor-hook.mjs")
+        .unwrap_or_else(|| source_script_path.clone());
+    let needs_repair = cursor_hooks_need_lifecycle_upgrade(config)
+        || cursor_hooks_need_command_repair(config, Some(&preferred_script_path), cfg!(windows));
+    if !needs_repair {
+        return None;
+    }
+
+    let (hook_command, _script_path) =
+        preferred_cursor_hook_command(app, &source_script_path).ok()?;
+    let repaired = repair_cursor_hook_events_with_command(config, &hook_command, hook_url)?;
     let formatted = serde_json::to_string_pretty(&repaired).ok()?;
     if std::fs::write(hooks_path, formatted).is_err() {
         return None;
     }
-    eprintln!("Atoll upgraded Cursor hooks with Composer lifecycle events");
+    eprintln!("Atoll repaired Cursor hooks with current launcher command");
     Some(repaired)
 }
 
@@ -5328,7 +5445,7 @@ fn maybe_upgrade_cursor_lifecycle_hooks(
 /// enhancement for Ask/Composer-mode session tracking: users who installed
 /// hooks with v0.1.31 only have the core five, and treating them as
 /// "not installed" regresses session display and the online indicator. Those
-/// users keep working; reinstalling from the Hooks pane adds the new events.
+/// users keep working; hook status repair can add the new events in place.
 fn has_atoll_cursor_hooks(config: &Value) -> bool {
     cursor_hooks_have_events(config, &CURSOR_CORE_HOOK_EVENTS)
 }
@@ -5427,6 +5544,7 @@ pub fn run() {
             last_bridge_reachable: Mutex::new(None),
             active_subagents: Mutex::new(Vec::new()),
             cursor_subagent_conversations: Mutex::new(HashMap::new()),
+            cursor_lifecycle_token_sessions: Mutex::new(HashSet::new()),
             last_subagent_snapshot_emit: Mutex::new(Instant::now() - Duration::from_secs(10)),
             snapshot_debounce_generation: AtomicU64::new(0),
             last_subagent_reconcile: Mutex::new(Instant::now() - Duration::from_secs(10)),
@@ -7545,6 +7663,37 @@ mod core_tests {
     }
 
     #[test]
+    fn cursor_stop_token_fallback_uses_runtime_lifecycle_signal() {
+        let state = test_app_state();
+        let session_id = "conv-runtime-token-signal";
+        let token_payload = json!({
+            "conversation_id": session_id,
+            "usage": {
+                "prompt_tokens": 120,
+                "completion_tokens": 30
+            }
+        });
+        let empty_payload = json!({
+            "conversation_id": session_id
+        });
+
+        assert!(cursor_payload_has_token_usage(&token_payload));
+        assert!(!cursor_payload_has_token_usage(&empty_payload));
+        assert!(crate::hook_bridge::cursor_stop_should_ingest_tokens(
+            &state,
+            &token_payload
+        ));
+
+        remember_cursor_lifecycle_token_session(&state, session_id);
+
+        assert!(cursor_lifecycle_token_seen(&state, session_id));
+        assert!(!crate::hook_bridge::cursor_stop_should_ingest_tokens(
+            &state,
+            &token_payload
+        ));
+    }
+
+    #[test]
     fn cursor_token_ingest_skips_empty_payload() {
         let state = test_app_state();
         ingest_cursor_token_usage_from_payload(
@@ -7618,6 +7767,7 @@ mod core_tests {
             last_bridge_reachable: Mutex::new(None),
             active_subagents: Mutex::new(Vec::new()),
             cursor_subagent_conversations: Mutex::new(HashMap::new()),
+            cursor_lifecycle_token_sessions: Mutex::new(HashSet::new()),
             last_subagent_snapshot_emit: Mutex::new(Instant::now() - Duration::from_secs(10)),
             snapshot_debounce_generation: AtomicU64::new(0),
             last_subagent_reconcile: Mutex::new(Instant::now() - Duration::from_secs(10)),
@@ -8239,6 +8389,7 @@ mod cursor_subagent_tests {
             last_bridge_reachable: Mutex::new(None),
             active_subagents: Mutex::new(Vec::new()),
             cursor_subagent_conversations: Mutex::new(HashMap::new()),
+            cursor_lifecycle_token_sessions: Mutex::new(HashSet::new()),
             last_subagent_snapshot_emit: Mutex::new(Instant::now() - Duration::from_secs(10)),
             snapshot_debounce_generation: AtomicU64::new(0),
             last_subagent_reconcile: Mutex::new(Instant::now() - Duration::from_secs(10)),
@@ -9454,8 +9605,10 @@ mod claude_hooks_tests {
 #[cfg(test)]
 mod cursor_hooks_tests {
     use super::{
+        cursor_hook_command_needs_repair, cursor_hooks_need_command_repair,
         cursor_hooks_need_lifecycle_upgrade, format_cursor_hook_command, has_atoll_cursor_hooks,
-        hook_entry_has_atoll_cursor, remove_atoll_cursor_hooks, upsert_cursor_hook_events,
+        hook_entry_has_atoll_cursor, remove_atoll_cursor_hooks,
+        repair_cursor_hook_events_with_command, upsert_cursor_hook_events, CURSOR_HOOK_EVENTS,
     };
     use serde_json::json;
 
@@ -9564,6 +9717,105 @@ mod cursor_hooks_tests {
         let config = json!({ "version": 1, "hooks": hooks });
         assert!(has_atoll_cursor_hooks(&config));
         assert!(cursor_hooks_need_lifecycle_upgrade(&config));
+    }
+
+    #[test]
+    fn cursor_hook_repair_replaces_legacy_atoll_commands_and_preserves_custom_entries() {
+        let preferred =
+            "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"C:/Users/test/AppData/Local/Atoll/atoll-cursor-hook.ps1\"";
+        let config = json!({
+            "version": 1,
+            "hooks": {
+                "preToolUse": [
+                    {
+                        "command": "cmd /c \"C:/old/atoll-hook-runner.exe\" \"C:/Program Files/nodejs/node.exe\" \"C:/old/atoll-cursor-hook.mjs\"",
+                        "timeout": 1800
+                    },
+                    {
+                        "command": "./user-cursor-hook.sh",
+                        "timeout": 5
+                    }
+                ],
+                "postToolUse": [
+                    {
+                        "command": "cmd /c \"C:/old/atoll-hook-runner.exe\" \"C:/Program Files/nodejs/node.exe\" \"C:/old/atoll-cursor-hook.mjs\"",
+                        "timeout": 30
+                    }
+                ],
+                "stop": [
+                    {
+                        "command": "cmd /c \"C:/old/atoll-hook-runner.exe\" \"C:/Program Files/nodejs/node.exe\" \"C:/old/atoll-cursor-hook.mjs\"",
+                        "timeout": 30
+                    }
+                ],
+                "subagentStart": [
+                    {
+                        "command": "cmd /c \"C:/old/atoll-hook-runner.exe\" \"C:/Program Files/nodejs/node.exe\" \"C:/old/atoll-cursor-hook.mjs\"",
+                        "timeout": 30
+                    }
+                ],
+                "subagentStop": [
+                    {
+                        "command": "cmd /c \"C:/old/atoll-hook-runner.exe\" \"C:/Program Files/nodejs/node.exe\" \"C:/old/atoll-cursor-hook.mjs\"",
+                        "timeout": 30
+                    }
+                ]
+            }
+        });
+
+        let repaired = repair_cursor_hook_events_with_command(
+            &config,
+            preferred,
+            "http://127.0.0.1:47777/cursor/hook",
+        )
+        .expect("repaired hooks");
+
+        for (event, timeout) in CURSOR_HOOK_EVENTS {
+            let entries = repaired["hooks"][event].as_array().expect("event entries");
+            let atoll_entries: Vec<_> = entries
+                .iter()
+                .filter(|entry| hook_entry_has_atoll_cursor(entry))
+                .collect();
+            assert_eq!(atoll_entries.len(), 1, "event {event}");
+            assert_eq!(atoll_entries[0]["command"], preferred);
+            assert_eq!(atoll_entries[0]["timeout"], json!(timeout));
+            assert_eq!(
+                atoll_entries[0]["env"]["ATOLL_HOOK_URL"],
+                "http://127.0.0.1:47777/cursor/hook"
+            );
+        }
+
+        let pre_tool_entries = repaired["hooks"]["preToolUse"].as_array().unwrap();
+        assert!(pre_tool_entries
+            .iter()
+            .any(|entry| entry["command"] == "./user-cursor-hook.sh"));
+    }
+
+    #[test]
+    fn cursor_hook_command_repair_detects_windows_legacy_command() {
+        let legacy =
+            "cmd /c \"C:/old/atoll-hook-runner.exe\" \"C:/Program Files/nodejs/node.exe\" \"C:/old/atoll-cursor-hook.mjs\"";
+        assert!(cursor_hook_command_needs_repair(
+            legacy,
+            Some("C:/Users/test/AppData/Local/Atoll/hooks/atoll-cursor-hook.mjs"),
+            true,
+        ));
+
+        let config = json!({
+            "version": 1,
+            "hooks": {
+                "preToolUse": [{ "command": legacy, "timeout": 1800 }],
+                "postToolUse": [{ "command": legacy, "timeout": 30 }],
+                "stop": [{ "command": legacy, "timeout": 30 }],
+                "subagentStart": [{ "command": legacy, "timeout": 30 }],
+                "subagentStop": [{ "command": legacy, "timeout": 30 }]
+            }
+        });
+        assert!(cursor_hooks_need_command_repair(
+            &config,
+            Some("C:/Users/test/AppData/Local/Atoll/hooks/atoll-cursor-hook.mjs"),
+            true,
+        ));
     }
 
     /// Missing any one of the five core events means hooks are incomplete.

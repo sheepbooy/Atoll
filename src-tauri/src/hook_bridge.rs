@@ -10,11 +10,13 @@ use socket2::{Domain, Socket, Type};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
-    build_snapshot, complete_subagent, emit_subagent_snapshot, get_stored_session_host,
-    ingest_cursor_token_usage_from_payload, is_codex_internal_session, iso_timestamp_now,
-    payload_subagent_id, payload_subagent_parent_session_id, platform, purge_tracked_session,
+    build_snapshot, complete_subagent, cursor_lifecycle_token_seen, cursor_payload_has_token_usage,
+    emit_subagent_snapshot, get_stored_session_host, ingest_cursor_token_usage_from_payload,
+    is_codex_internal_session, iso_timestamp_now, payload_subagent_id,
+    payload_subagent_parent_session_id, platform, purge_tracked_session,
     refresh_session_token_usage, register_known_session, register_subagent_start,
-    resolve_codex_session_cwd, resolve_cursor_session_for_payload, roll_over_token_usage_if_needed,
+    remember_cursor_lifecycle_token_session, resolve_codex_session_cwd,
+    resolve_cursor_session_for_payload, roll_over_token_usage_if_needed,
     schedule_observer_snapshot_emit, show_main_window_for_approval, touch_hook_activity,
     touch_session_activity, AgentKind, AppState, Decision, DecisionWithNote, PermissionRequest,
     PermissionStatus,
@@ -787,6 +789,17 @@ fn resolve_cursor_subagent_parent(state: &AppState, payload: &Value) -> Option<S
     resolve_cursor_session_for_payload(state, payload)
 }
 
+fn cursor_observer_session_id(state: &AppState, payload: &Value) -> String {
+    resolve_cursor_subagent_parent(state, payload)
+        .or_else(|| crate::payload_cursor_session_id(payload).map(str::to_string))
+        .unwrap_or_else(|| "cursor".to_string())
+}
+
+pub(crate) fn cursor_stop_should_ingest_tokens(state: &AppState, payload: &Value) -> bool {
+    let session_id = cursor_observer_session_id(state, payload);
+    !cursor_lifecycle_token_seen(state, &session_id)
+}
+
 /// Register or refresh a Cursor session from observer hooks and optionally ingest tokens.
 fn observe_cursor_session(
     app: &AppHandle,
@@ -797,10 +810,7 @@ fn observe_cursor_session(
     token_source: &str,
 ) -> Result<(), String> {
     let parent_session = resolve_cursor_subagent_parent(state, payload);
-    let session_id = parent_session
-        .as_deref()
-        .or_else(|| crate::payload_cursor_session_id(payload))
-        .unwrap_or("cursor");
+    let session_id = cursor_observer_session_id(state, payload);
     let mut cwd = resolve_cursor_cwd(payload);
     let mut transcript_path = payload_transcript_path(payload);
     // Cursor on Windows may report a transcript_path with a URI prefix or GBK
@@ -828,21 +838,21 @@ fn observe_cursor_session(
     if parent_session.is_none() {
         register_known_session(
             state,
-            session_id,
+            &session_id,
             AgentKind::Cursor,
             &cwd,
             transcript_path.as_deref(),
         );
         if let Some(conv_id) = crate::payload_conversation_id(payload) {
             if let Ok(mut known) = state.known_sessions.lock() {
-                if let Some(entry) = known.get_mut(session_id) {
+                if let Some(entry) = known.get_mut(&session_id) {
                     entry.conversation_id = Some(conv_id.to_string());
                 }
             }
         } else if session_id.len() >= crate::CURSOR_TRANSCRIPT_PREFIX_MIN_LEN {
-            if let Some((path, _workspace)) = crate::discover_cursor_agent_transcript(session_id) {
+            if let Some((path, _workspace)) = crate::discover_cursor_agent_transcript(&session_id) {
                 if let Ok(mut known) = state.known_sessions.lock() {
-                    if let Some(entry) = known.get_mut(session_id) {
+                    if let Some(entry) = known.get_mut(&session_id) {
                         if entry.transcript_path.is_none() {
                             entry.transcript_path = Some(path.clone());
                         }
@@ -881,12 +891,16 @@ fn observe_cursor_session(
     {
         eprintln!("Atoll Cursor {token_source}: composer_mode={mode} session={session_id}");
     }
-    touch_session_activity(state, session_id);
+    touch_session_activity(state, &session_id);
     if let Some(stream) = stream {
-        maybe_detect_and_store_cursor_host(state, session_id, Some(stream));
+        maybe_detect_and_store_cursor_host(state, &session_id, Some(stream));
     }
     if ingest_tokens {
-        ingest_cursor_token_usage_from_payload(state, session_id, payload, token_source)?;
+        let has_tokens = cursor_payload_has_token_usage(payload);
+        ingest_cursor_token_usage_from_payload(state, &session_id, payload, token_source)?;
+        if has_tokens && matches!(token_source, "afterAgentResponse" | "sessionEnd") {
+            remember_cursor_lifecycle_token_session(state, &session_id);
+        }
     }
     schedule_observer_snapshot_emit(app);
     Ok(())
@@ -1002,10 +1016,9 @@ fn route_cursor_request(
             } else {
                 payload
             };
-            if !crate::cursor_after_agent_response_hook_installed() {
-                let state = app.state::<AppState>();
-                observe_cursor_session(&app, &state, &payload, Some(stream), true, "stop")?;
-            }
+            let state = app.state::<AppState>();
+            let ingest_tokens = cursor_stop_should_ingest_tokens(&state, &payload);
+            observe_cursor_session(&app, &state, &payload, Some(stream), ingest_tokens, "stop")?;
             sync_turn_completion(app, payload, AgentKind::Cursor, true, Some(stream))?;
             Ok(json!({}))
         }
