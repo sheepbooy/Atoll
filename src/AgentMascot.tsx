@@ -20,6 +20,7 @@ interface AgentMascotProps {
   className?: string;
   accent?: string;
   accentDark?: string;
+  animated?: boolean;
 }
 
 export function AgentMascot({
@@ -29,6 +30,7 @@ export function AgentMascot({
   className,
   accent,
   accentDark,
+  animated = true,
 }: AgentMascotProps) {
   if (agent === "codex") {
     return (
@@ -38,6 +40,7 @@ export function AgentMascot({
         className={className}
         accent={accent}
         accentDark={accentDark}
+        animated={animated}
       />
     );
   }
@@ -50,6 +53,7 @@ export function AgentMascot({
         className={className}
         accent={accent}
         accentDark={accentDark}
+        animated={animated}
       />
     );
   }
@@ -61,6 +65,7 @@ export function AgentMascot({
       className={className}
       accent={accent}
       accentDark={accentDark}
+      animated={animated}
     />
   );
 }

@@ -515,43 +515,72 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
         .unwrap_or_default()
         .as_secs();
     let active_subagents = state.active_subagents.lock().expect("state mutex poisoned");
-    for session in snapshot.sessions.iter_mut() {
-        session.active_subagents = active_subagents
-            .iter()
-            .filter(|subagent| {
-                if subagent.session_id != session.session_id {
-                    return false;
-                }
-                if subagent.archived {
-                    return false;
-                }
-                if subagent_retention > 0 {
-                    if let Some(ref completed) = subagent.completed_at {
-                        let completed_ts = parse_iso_timestamp_secs(completed);
-                        if now_secs.saturating_sub(completed_ts) >= subagent_retention {
-                            return false;
-                        }
-                    }
-                }
-                true
-            })
-            .map(|subagent| SubagentSummary {
-                agent_id: subagent.agent_id.clone(),
-                agent_type: subagent.agent_type.clone(),
-                started_at: subagent.started_at.clone(),
-                agent_transcript_path: subagent.agent_transcript_path.clone(),
-                completed_at: subagent.completed_at.clone(),
-                archived: subagent.archived,
-                last_message: subagent.last_message.clone(),
-            })
-            .collect();
-    }
+    assign_active_subagents_to_sessions(
+        &mut snapshot.sessions,
+        &active_subagents,
+        subagent_retention,
+        now_secs,
+    );
     drop(active_subagents);
     persist_session_hosts(state, &snapshot.sessions);
     snapshot.hook_health = hook_health;
     let _ = token_history::sync_today_to_history(state);
 
     snapshot
+}
+
+fn active_subagent_visible(
+    subagent: &ActiveSubagent,
+    subagent_retention: u64,
+    now_secs: u64,
+) -> bool {
+    if subagent.archived {
+        return false;
+    }
+    if subagent_retention > 0 {
+        if let Some(ref completed) = subagent.completed_at {
+            let completed_ts = parse_iso_timestamp_secs(completed);
+            if now_secs.saturating_sub(completed_ts) >= subagent_retention {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn subagent_summary_from_active(subagent: &ActiveSubagent) -> SubagentSummary {
+    SubagentSummary {
+        agent_id: subagent.agent_id.clone(),
+        agent_type: subagent.agent_type.clone(),
+        started_at: subagent.started_at.clone(),
+        agent_transcript_path: subagent.agent_transcript_path.clone(),
+        completed_at: subagent.completed_at.clone(),
+        archived: subagent.archived,
+        last_message: subagent.last_message.clone(),
+    }
+}
+
+fn assign_active_subagents_to_sessions(
+    sessions: &mut [SessionSummary],
+    active_subagents: &[ActiveSubagent],
+    subagent_retention: u64,
+    now_secs: u64,
+) {
+    let mut subagents_by_session: HashMap<String, Vec<SubagentSummary>> = HashMap::new();
+    for subagent in active_subagents.iter() {
+        if !active_subagent_visible(subagent, subagent_retention, now_secs) {
+            continue;
+        }
+        subagents_by_session
+            .entry(subagent.session_id.clone())
+            .or_default()
+            .push(subagent_summary_from_active(subagent));
+    }
+    for session in sessions.iter_mut() {
+        session.active_subagents = subagents_by_session
+            .remove(&session.session_id)
+            .unwrap_or_default();
+    }
 }
 
 fn persist_session_hosts(state: &AppState, sessions: &[SessionSummary]) {
@@ -8057,6 +8086,83 @@ mod cursor_subagent_tests {
         let sanitized = sanitize_subagent_id_for_filename(agent_id);
         assert!(!sanitized.contains('\n'));
         assert!(sanitized.contains("call_abc"));
+    }
+
+    fn test_session_summary(session_id: &str) -> SessionSummary {
+        SessionSummary {
+            session_id: session_id.to_string(),
+            agent: AgentKind::Cursor,
+            cwd: "/tmp/project".into(),
+            pending_count: 0,
+            total_count: 0,
+            last_activity: "2026-06-10T08:10:00Z".into(),
+            transcript_path: None,
+            pinned: false,
+            session_host: platform::SessionHost::Unknown,
+            active_subagents: Vec::new(),
+        }
+    }
+
+    fn test_active_subagent(
+        agent_id: &str,
+        session_id: &str,
+        completed_at: Option<String>,
+        archived: bool,
+    ) -> ActiveSubagent {
+        ActiveSubagent {
+            agent_id: agent_id.to_string(),
+            session_id: session_id.to_string(),
+            agent_kind: AgentKind::Cursor,
+            agent_type: agent_id.to_string(),
+            started_at: "2026-06-10T08:00:00Z".into(),
+            agent_transcript_path: None,
+            completed_at,
+            archived,
+            last_message: None,
+            conversation_id: None,
+        }
+    }
+
+    #[test]
+    fn snapshot_subagent_assignment_groups_by_session_without_changing_filters_or_order() {
+        let now = parse_iso_timestamp_secs("2026-06-10T08:10:00Z");
+        let recent_completed = Some(format_unix_timestamp(now - 30));
+        let old_completed = Some(format_unix_timestamp(now - 120));
+        let active_subagents = vec![
+            test_active_subagent("a-running", "session-a", None, false),
+            test_active_subagent("b-running", "session-b", None, false),
+            test_active_subagent("a-old", "session-a", old_completed.clone(), false),
+            test_active_subagent("a-archived", "session-a", None, true),
+            test_active_subagent("a-recent", "session-a", recent_completed, false),
+            test_active_subagent("orphan", "missing-session", None, false),
+        ];
+        let mut sessions = vec![
+            test_session_summary("session-a"),
+            test_session_summary("session-b"),
+        ];
+
+        assign_active_subagents_to_sessions(&mut sessions, &active_subagents, 60, now);
+
+        let session_a_ids: Vec<&str> = sessions[0]
+            .active_subagents
+            .iter()
+            .map(|sub| sub.agent_id.as_str())
+            .collect();
+        let session_b_ids: Vec<&str> = sessions[1]
+            .active_subagents
+            .iter()
+            .map(|sub| sub.agent_id.as_str())
+            .collect();
+        assert_eq!(session_a_ids, vec!["a-running", "a-recent"]);
+        assert_eq!(session_b_ids, vec!["b-running"]);
+
+        assign_active_subagents_to_sessions(&mut sessions, &active_subagents, 0, now);
+        let session_a_ids: Vec<&str> = sessions[0]
+            .active_subagents
+            .iter()
+            .map(|sub| sub.agent_id.as_str())
+            .collect();
+        assert_eq!(session_a_ids, vec!["a-running", "a-old", "a-recent"]);
     }
 }
 

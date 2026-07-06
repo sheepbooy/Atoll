@@ -7,6 +7,7 @@ import {
   clearConfiguredHookAgentsForTests,
   markHookAgentConfigured,
 } from "./hookAgentsConfigured";
+import type { SessionSummary, SubagentSummary } from "./tauri";
 
 const connectedHookHealth = {
   claude: {
@@ -92,6 +93,46 @@ const request = {
   status: "pending" as const,
 };
 
+function makeSubagent(
+  index: number,
+  overrides: Partial<SubagentSummary> = {},
+): SubagentSummary {
+  const startedAt = new Date(
+    Date.UTC(2026, 5, 10, 8, 0, 0) + index * 60_000,
+  ).toISOString();
+  const agentId = overrides.agentId ?? `subagent-${String(index).padStart(3, "0")}`;
+  return {
+    agentId,
+    agentType:
+      overrides.agentType ?? `worker-${String(index).padStart(3, "0")}`,
+    startedAt,
+    agentTranscriptPath: null,
+    completedAt: null,
+    archived: false,
+    lastMessage: null,
+    ...overrides,
+  };
+}
+
+function makeSession(
+  activeSubagents: SubagentSummary[],
+  overrides: Partial<SessionSummary> = {},
+): SessionSummary {
+  return {
+    sessionId: "session-subagents",
+    agent: "claude",
+    cwd: "/tmp/subagent-project",
+    pendingCount: 0,
+    totalCount: 0,
+    lastActivity: "2026-06-10T08:00:00Z",
+    transcriptPath: null,
+    pinned: false,
+    sessionHost: "unknown",
+    activeSubagents,
+    ...overrides,
+  };
+}
+
 const bridge = vi.hoisted(() => ({
   getSnapshot: vi.fn(),
   onSnapshotChanged: vi.fn(),
@@ -119,6 +160,8 @@ const bridge = vi.hoisted(() => ({
   setSessionAutoApprove: vi.fn(),
   archiveAllResolved: vi.fn(),
   archiveRequest: vi.fn(),
+  archiveSubagent: vi.fn(),
+  archiveCompletedSubagents: vi.fn(),
   getSessionRequests: vi.fn(),
   getSessionTranscript: vi.fn(),
   getSessionChat: vi.fn(),
@@ -223,6 +266,7 @@ describe("App", () => {
       scriptPath: "",
     });
     bridge.getSessionRetention.mockResolvedValue(300);
+    bridge.getSessionChat.mockResolvedValue([]);
     bridge.openAgentApp.mockResolvedValue(undefined);
     bridge.getNotchMetrics.mockResolvedValue({
       hasNotch: false,
@@ -259,6 +303,22 @@ describe("App", () => {
     });
     bridge.setSessionAutoApprove.mockResolvedValue(undefined);
     bridge.archiveAllResolved.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    bridge.archiveSubagent.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    bridge.archiveCompletedSubagents.mockResolvedValue({
       online: true,
       pendingCount: 0,
       activeRequest: null,
@@ -379,6 +439,85 @@ describe("App", () => {
       () => expect(container.querySelector(".is-compact")).not.toBeNull(),
       { timeout: 1500 },
     );
+  });
+
+  it("opens the subagent list with counts, archive action, and detail navigation", async () => {
+    const subagents = [
+      makeSubagent(1, { agentType: "worker-alpha" }),
+      makeSubagent(2, {
+        agentType: "worker-beta",
+        completedAt: "2026-06-10T08:04:00Z",
+        lastMessage: "done",
+      }),
+      makeSubagent(3, { agentType: "worker-gamma" }),
+    ];
+    const session = makeSession(subagents);
+    const snapshot = {
+      ...emptySnapshot,
+      online: true,
+      sessions: [session],
+      hookHealth: connectedHookHealth,
+    };
+    bridge.getSnapshot.mockResolvedValue(snapshot);
+    bridge.archiveCompletedSubagents.mockResolvedValue(snapshot);
+    bridge.getSessionTranscript.mockResolvedValue([]);
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+
+    await waitForExpandedPanel(container);
+    await user.click(screen.getByTitle("View all subagents"));
+
+    expect(screen.getByText("Subagents (3)")).toBeInTheDocument();
+    expect(screen.getByText("2 running")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Archive completed/i }));
+    expect(bridge.archiveCompletedSubagents).toHaveBeenCalledWith(
+      "session-subagents",
+    );
+
+    await user.click(screen.getByRole("button", { name: /worker-alpha/i }));
+    expect(
+      screen.getByRole("heading", { name: "worker-alpha" }),
+    ).toBeInTheDocument();
+  });
+
+  it("virtualizes large subagent lists while preserving scroll navigation", async () => {
+    const subagents = Array.from({ length: 80 }, (_, index) =>
+      makeSubagent(index),
+    );
+    const session = makeSession(subagents);
+    bridge.getSnapshot.mockResolvedValue({
+      ...emptySnapshot,
+      online: true,
+      sessions: [session],
+      hookHealth: connectedHookHealth,
+    });
+    bridge.getSessionTranscript.mockResolvedValue([]);
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+
+    await waitForExpandedPanel(container);
+    await user.click(screen.getByTitle("View all subagents"));
+
+    expect(screen.getByText("Subagents (80)")).toBeInTheDocument();
+    expect(
+      container.querySelectorAll(".subagent-list-item").length,
+    ).toBeLessThan(80);
+    expect(screen.queryByText("worker-000")).not.toBeInTheDocument();
+
+    const listBody = container.querySelector(".subagent-list-body");
+    expect(listBody).not.toBeNull();
+    fireEvent.scroll(listBody!, {
+      target: { scrollTop: 80 * 52 },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText("worker-000")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: /worker-000/i }));
+    expect(
+      screen.getByRole("heading", { name: "worker-000" }),
+    ).toBeInTheDocument();
   });
 
   it("collapses once after returning from a session even if tokens update mid-animation", async () => {

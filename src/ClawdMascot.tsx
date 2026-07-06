@@ -25,6 +25,7 @@ interface ClawdMascotProps {
   className?: string;
   accent?: string;
   accentDark?: string;
+  animated?: boolean;
 }
 
 export function ClawdMascot({
@@ -33,10 +34,12 @@ export function ClawdMascot({
   className,
   accent,
   accentDark,
+  animated = true,
 }: ClawdMascotProps) {
   const [blinking, setBlinking] = useState(false);
 
   useEffect(() => {
+    if (!animated) return;
     if (mood === "sleeping" || mood === "dead") return;
     let timer: number;
     const loop = () => {
@@ -46,7 +49,7 @@ export function ClawdMascot({
     };
     timer = window.setTimeout(loop, 2500 + Math.random() * 2500);
     return () => window.clearTimeout(timer);
-  }, [mood]);
+  }, [animated, mood]);
 
   const isDead = mood === "dead";
   const isSick = mood === "worried";
@@ -61,7 +64,7 @@ export function ClawdMascot({
 
   return (
     <span
-      className={`clawd is-${mood}${className ? ` ${className}` : ""}`}
+      className={`clawd is-${mood}${animated ? "" : " is-static"}${className ? ` ${className}` : ""}`}
       style={wrapperStyle}
       aria-hidden="true"
     >

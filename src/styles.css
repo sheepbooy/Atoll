@@ -2199,6 +2199,16 @@ kbd {
 .cursor-mascot-sweat { animation: clawd-sweat-fall 1.3s ease-in-out infinite; }
 .cursor-mascot-bang { animation: clawd-bang-pop 0.7s ease-in-out infinite; }
 
+.clawd.is-static,
+.clawd.is-static *,
+.codex.is-static,
+.codex.is-static *,
+.cursor-mascot.is-static,
+.cursor-mascot.is-static * {
+  animation: none !important;
+  will-change: auto;
+}
+
 .agent-slot .clawd,
 .agent-slot .codex,
 .agent-slot .cursor-mascot {
@@ -4626,11 +4636,27 @@ kbd {
   padding: 4px 0;
 }
 
+.subagent-list-body.is-virtualized {
+  position: relative;
+}
+
+.subagent-list-virtual-spacer {
+  position: relative;
+  min-height: 100%;
+}
+
+.subagent-list-virtual-window {
+  position: absolute;
+  inset: 0 0 auto;
+  will-change: transform;
+}
+
 .subagent-list-item {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
+  min-height: 52px;
   padding: 8px 6px;
   border: none;
   border-radius: 8px;
@@ -4641,6 +4667,7 @@ kbd {
   cursor: pointer;
   text-align: left;
   transition: background 0.15s;
+  box-sizing: border-box;
 }
 
 .subagent-list-item:hover {
@@ -6292,4 +6319,3 @@ kbd {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: rgba(232, 234, 237, 0.28);
 }
-

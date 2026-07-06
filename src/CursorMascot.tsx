@@ -248,6 +248,7 @@ interface CursorMascotProps {
   className?: string;
   accent?: string;
   accentDark?: string;
+  animated?: boolean;
 }
 
 function CubeFace({
@@ -433,10 +434,12 @@ export function CursorMascot({
   className,
   accent,
   accentDark,
+  animated = true,
 }: CursorMascotProps) {
   const [blinking, setBlinking] = useState(false);
 
   useEffect(() => {
+    if (!animated) return;
     if (mood === "sleeping" || mood === "dead") return;
     let timer: number;
     const loop = () => {
@@ -446,7 +449,7 @@ export function CursorMascot({
     };
     timer = window.setTimeout(loop, 2500 + Math.random() * 2500);
     return () => window.clearTimeout(timer);
-  }, [mood]);
+  }, [animated, mood]);
 
   const isDead = mood === "dead";
   const isSick = mood === "worried";
@@ -477,7 +480,7 @@ export function CursorMascot({
 
   return (
     <span
-      className={`cursor-mascot is-${mood}${className ? ` ${className}` : ""}`}
+      className={`cursor-mascot is-${mood}${animated ? "" : " is-static"}${className ? ` ${className}` : ""}`}
       style={wrapperStyle}
       aria-hidden="true"
     >

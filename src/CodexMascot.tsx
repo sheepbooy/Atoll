@@ -152,6 +152,7 @@ interface CodexMascotProps {
   className?: string;
   accent?: string;
   accentDark?: string;
+  animated?: boolean;
 }
 
 function ScreenPrompt({
@@ -217,6 +218,7 @@ export function CodexMascot({
   className,
   accent,
   accentDark,
+  animated = true,
 }: CodexMascotProps) {
   const isDead = mood === "dead";
   const isSick = mood === "worried";
@@ -266,7 +268,7 @@ export function CodexMascot({
 
   return (
     <span
-      className={`codex is-${mood}${className ? ` ${className}` : ""}`}
+      className={`codex is-${mood}${animated ? "" : " is-static"}${className ? ` ${className}` : ""}`}
       style={wrapperStyle}
       aria-hidden="true"
     >
