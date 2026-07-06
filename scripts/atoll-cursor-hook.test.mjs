@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import http from "node:http";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { spawn } from "node:child_process";
 
 const payload = {
@@ -26,6 +29,7 @@ const server = http.createServer((request, response) => {
   request.on("end", () => {
     assert.equal(request.method, "POST");
     assert.equal(request.url, "/cursor/hook");
+    assert.equal(request.headers["x-atoll-hook-token"], "env-token");
     assert.deepEqual(JSON.parse(body), payload);
 
     response.writeHead(200, { "content-type": "application/json" });
@@ -37,10 +41,14 @@ await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 
 try {
   const { port } = server.address();
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "atoll-cursor-url-test-"));
   const child = spawn(process.execPath, ["scripts/atoll-cursor-hook.mjs"], {
     env: {
       ...process.env,
+      HOME: tempHome,
+      LOCALAPPDATA: tempHome,
       ATOLL_HOOK_URL: `http://127.0.0.1:${port}/cursor/hook`,
+      ATOLL_HOOK_TOKEN: "env-token",
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -56,6 +64,7 @@ try {
   assert.equal(stderr, "");
   assert.equal(exitCode, 0);
   assert.deepEqual(JSON.parse(stdout), expectedResponse);
+  fs.rmSync(tempHome, { recursive: true, force: true });
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }

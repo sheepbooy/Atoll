@@ -202,7 +202,20 @@ const demoCursorHookMissing: HookStatus = {
   nodeFound: true,
 };
 
+function refreshRequestTimestamp(request: PermissionRequest): PermissionRequest {
+  return { ...request, requestedAt: new Date().toISOString() };
+}
+
+function refreshSessionActivity<T extends { lastActivity: string }>(session: T): T {
+  return { ...session, lastActivity: new Date().toISOString() };
+}
+
 export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {
+  const pending = refreshRequestTimestamp(pendingRequest);
+  const planQuestion = refreshRequestTimestamp(planQuestionRequest);
+  const planApproval = refreshRequestTimestamp(planApprovalRequest);
+  const demoSessions = sessions.map(refreshSessionActivity);
+  const demoPlanSessions = planSessions.map(refreshSessionActivity);
   const base: IslandSnapshot = {
     online: true,
     pendingCount: 0,
@@ -234,9 +247,9 @@ export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {
       return {
         ...base,
         pendingCount: 1,
-        activeRequest: pendingRequest,
-        recent: [pendingRequest],
-        sessions,
+        activeRequest: pending,
+        recent: [pending],
+        sessions: demoSessions,
       };
     case "compact":
     case "gif":
@@ -244,25 +257,25 @@ export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {
       return {
         ...base,
         pendingCount: 1,
-        activeRequest: pendingRequest,
-        recent: [pendingRequest],
-        sessions,
+        activeRequest: pending,
+        recent: [pending],
+        sessions: demoSessions,
       };
     case "plan-question":
       return {
         ...base,
         pendingCount: 1,
-        activeRequest: planQuestionRequest,
-        recent: [planQuestionRequest],
-        sessions: planSessions,
+        activeRequest: planQuestion,
+        recent: [planQuestion],
+        sessions: demoPlanSessions,
       };
     case "plan-approval":
       return {
         ...base,
         pendingCount: 1,
-        activeRequest: planApprovalRequest,
-        recent: [planApprovalRequest],
-        sessions: planSessions,
+        activeRequest: planApproval,
+        recent: [planApproval],
+        sessions: demoPlanSessions,
       };
     case "idle":
     default:

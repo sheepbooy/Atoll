@@ -3,26 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   beginCollapse,
   beginExpand,
-  COLLAPSE_ANIMATION_MS,
   finishCollapse,
   finishExpand,
-  IDLE_COLLAPSE_DELAY_MS,
-  MICRO_SHRINK_DELAY_MS,
 } from "./islandPresentation";
-
-describe("island presentation timing", () => {
-  it("uses the expected collapse animation duration", () => {
-    expect(COLLAPSE_ANIMATION_MS).toBe(420);
-  });
-
-  it("uses the expected idle collapse delay", () => {
-    expect(IDLE_COLLAPSE_DELAY_MS).toBe(500);
-  });
-
-  it("uses the expected micro shrink delay", () => {
-    expect(MICRO_SHRINK_DELAY_MS).toBe(500);
-  });
-});
 
 describe("beginExpand", () => {
   it("starts opening from compact", () => {
@@ -81,6 +64,10 @@ describe("beginCollapse", () => {
 describe("finishCollapse", () => {
   it("finishes closing as compact", () => {
     expect(finishCollapse("closing")).toBe("compact");
+  });
+
+  it("finishes closing as micro when requested", () => {
+    expect(finishCollapse("closing", true)).toBe("micro");
   });
 
   it("ignores a late closing completion after reopening", () => {

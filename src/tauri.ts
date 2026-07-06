@@ -1,6 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getDemoCodexHookStatus, getDemoHookStatus, getDemoMode, getDemoSnapshot } from "./demoSnapshot";
+import {
+  getDemoCodexHookStatus,
+  getDemoCursorHookStatus,
+  getDemoHookStatus,
+  getDemoMode,
+  getDemoSnapshot,
+} from "./demoSnapshot";
 
 export type PermissionStatus = "pending" | "approved" | "denied";
 export type AgentKind = "claude" | "codex" | "cursor" | "gemini" | "other";
@@ -84,7 +90,18 @@ export interface IslandHoverChanged {
   clientY?: number;
 }
 
-const isTauriRuntime = "__TAURI_INTERNALS__" in window;
+function isTauriRuntime(): boolean {
+  return "__TAURI_INTERNALS__" in window;
+}
+
+function isAllowedExternalUrl(url: string): boolean {
+  try {
+    const protocol = new URL(url, window.location.href).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 /** Matches `uses_micro_island` in src-tauri (Windows-only micro island). */
 export function isWindowsTauriRuntime(): boolean {
@@ -101,7 +118,7 @@ export function usesMicroIslandSync(): boolean {
 let localRequests: PermissionRequest[] = [];
 
 export async function getSnapshot(): Promise<IslandSnapshot> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeSnapshot(await invoke<IslandSnapshot>("get_snapshot"));
   }
 
@@ -115,7 +132,7 @@ export async function getSnapshot(): Promise<IslandSnapshot> {
     pendingCount: localRequests.filter((request) => request.status === "pending").length,
     archivedCount: localRequests.filter((request) => request.archived).length,
     activeRequest: localRequests.find((request) => request.status === "pending") ?? null,
-    recent: localRequests,
+    recent: [...localRequests],
     sessions: [],
     dailyTokens: {
       inputTokens: 0,
@@ -134,7 +151,7 @@ export async function getSnapshot(): Promise<IslandSnapshot> {
 }
 
 export async function getSessionRequests(sessionId: string): Promise<PermissionRequest[]> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return invoke<PermissionRequest[]>("get_session_requests", { sessionId });
   }
 
@@ -142,7 +159,7 @@ export async function getSessionRequests(sessionId: string): Promise<PermissionR
 }
 
 export async function getSessionTranscript(transcriptPath: string): Promise<ChatMessage[]> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return invoke<ChatMessage[]>("get_session_transcript", { transcriptPath });
   }
 
@@ -150,7 +167,7 @@ export async function getSessionTranscript(transcriptPath: string): Promise<Chat
 }
 
 export async function getSessionChat(sessionId: string): Promise<ChatMessage[]> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return invoke<ChatMessage[]>("get_session_chat", { sessionId });
   }
 
@@ -162,7 +179,7 @@ export async function resolvePermissionRequest(
   decision: "approved" | "denied",
   note = "",
 ): Promise<IslandSnapshot> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeSnapshot(
       await invoke<IslandSnapshot>("resolve_permission_request", { id, decision, note }),
     );
@@ -181,7 +198,7 @@ export async function resolvePermissionWithInput(
   note: string,
   updatedInput?: unknown,
 ): Promise<IslandSnapshot> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeSnapshot(
       await invoke<IslandSnapshot>("resolve_permission_with_input", {
         id,
@@ -200,7 +217,7 @@ export async function resolvePermissionWithInput(
 }
 
 export async function setSessionAutoApprove(session: string, enabled: boolean) {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return;
   }
 
@@ -208,7 +225,7 @@ export async function setSessionAutoApprove(session: string, enabled: boolean) {
 }
 
 export async function archiveRequest(id: string): Promise<IslandSnapshot> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeSnapshot(await invoke<IslandSnapshot>("archive_request", { id }));
   }
 
@@ -219,7 +236,7 @@ export async function archiveRequest(id: string): Promise<IslandSnapshot> {
 }
 
 export async function archiveAllResolved(): Promise<IslandSnapshot> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeSnapshot(await invoke<IslandSnapshot>("archive_all_resolved"));
   }
 
@@ -230,7 +247,7 @@ export async function archiveAllResolved(): Promise<IslandSnapshot> {
 }
 
 export async function archiveSession(sessionId: string): Promise<IslandSnapshot> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeSnapshot(await invoke<IslandSnapshot>("archive_session", { sessionId }));
   }
 
@@ -239,14 +256,14 @@ export async function archiveSession(sessionId: string): Promise<IslandSnapshot>
 }
 
 export async function archiveSubagent(agentId: string): Promise<IslandSnapshot> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeSnapshot(await invoke<IslandSnapshot>("archive_subagent", { agentId }));
   }
   return getSnapshot();
 }
 
 export async function archiveCompletedSubagents(sessionId: string): Promise<IslandSnapshot> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeSnapshot(
       await invoke<IslandSnapshot>("archive_completed_subagents", { sessionId }),
     );
@@ -255,21 +272,21 @@ export async function archiveCompletedSubagents(sessionId: string): Promise<Isla
 }
 
 export async function getSubagentRetention(): Promise<number> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return invoke<number>("get_subagent_retention");
   }
   return 600;
 }
 
 export async function setSubagentRetention(minutes: number): Promise<number> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return invoke<number>("set_subagent_retention", { minutes });
   }
   return minutes * 60;
 }
 
 export async function pinSession(sessionId: string, pinned: boolean): Promise<IslandSnapshot> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeSnapshot(await invoke<IslandSnapshot>("pin_session", { sessionId, pinned }));
   }
 
@@ -395,7 +412,7 @@ export function normalizeSnapshot(raw: IslandSnapshot): IslandSnapshot {
 }
 
 export async function getClaudeHookStatus(): Promise<HookStatus> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeHookStatus(await invoke<HookStatus>("get_claude_hook_status"));
   }
 
@@ -408,7 +425,7 @@ export async function getClaudeHookStatus(): Promise<HookStatus> {
 }
 
 export async function installClaudeHooks(): Promise<HookStatus> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeHookStatus(await invoke<HookStatus>("install_claude_hooks"));
   }
 
@@ -416,7 +433,7 @@ export async function installClaudeHooks(): Promise<HookStatus> {
 }
 
 export async function uninstallClaudeHooks(): Promise<HookStatus> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeHookStatus(await invoke<HookStatus>("uninstall_claude_hooks"));
   }
 
@@ -424,7 +441,7 @@ export async function uninstallClaudeHooks(): Promise<HookStatus> {
 }
 
 export async function getCodexHookStatus(): Promise<HookStatus> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeHookStatus(await invoke<HookStatus>("get_codex_hook_status"));
   }
 
@@ -437,7 +454,7 @@ export async function getCodexHookStatus(): Promise<HookStatus> {
 }
 
 export async function installCodexHooks(): Promise<HookStatus> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeHookStatus(await invoke<HookStatus>("install_codex_hooks"));
   }
 
@@ -445,7 +462,7 @@ export async function installCodexHooks(): Promise<HookStatus> {
 }
 
 export async function uninstallCodexHooks(): Promise<HookStatus> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeHookStatus(await invoke<HookStatus>("uninstall_codex_hooks"));
   }
 
@@ -453,15 +470,20 @@ export async function uninstallCodexHooks(): Promise<HookStatus> {
 }
 
 export async function getCursorHookStatus(): Promise<HookStatus> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeHookStatus(await invoke<HookStatus>("get_cursor_hook_status"));
+  }
+
+  const demoMode = getDemoMode();
+  if (demoMode) {
+    return getDemoCursorHookStatus(demoMode);
   }
 
   return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
 }
 
 export async function installCursorHooks(): Promise<HookStatus> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeHookStatus(await invoke<HookStatus>("install_cursor_hooks"));
   }
 
@@ -469,7 +491,7 @@ export async function installCursorHooks(): Promise<HookStatus> {
 }
 
 export async function uninstallCursorHooks(): Promise<HookStatus> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return normalizeHookStatus(await invoke<HookStatus>("uninstall_cursor_hooks"));
   }
 
@@ -477,7 +499,7 @@ export async function uninstallCursorHooks(): Promise<HookStatus> {
 }
 
 export async function quitAtoll() {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return;
   }
 
@@ -489,7 +511,7 @@ export async function deactivateAtoll(
   session?: string,
   cwd?: string,
 ) {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return;
   }
 
@@ -505,7 +527,7 @@ export async function openAgentApp(
   cwd: string,
   session?: string,
 ): Promise<void> {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return;
   }
 
@@ -520,7 +542,7 @@ export async function setIslandPresentation(
   animate = true,
   snap = false,
 ) {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return;
   }
 
@@ -535,7 +557,7 @@ export async function setIslandPresentation(
 }
 
 export async function usesMicroIsland(): Promise<boolean> {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return false;
   }
 
@@ -547,7 +569,7 @@ export async function setCompactLayout(
   compactWidth: number,
   compactLeftWidth: number,
 ) {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return;
   }
 
@@ -568,7 +590,7 @@ export interface NotchMetrics {
 }
 
 export async function getNotchMetrics(): Promise<NotchMetrics> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return invoke<NotchMetrics>("get_notch_metrics");
   }
 
@@ -580,21 +602,21 @@ export async function getNotchMetrics(): Promise<NotchMetrics> {
 }
 
 export async function getSessionRetention(): Promise<number> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return invoke<number>("get_session_retention");
   }
   return 900;
 }
 
 export async function setSessionRetention(minutes: number): Promise<number> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return invoke<number>("set_session_retention", { minutes });
   }
   return minutes * 60;
 }
 
 export async function getTokenHistory(days: number): Promise<TokenHistoryResponse> {
-  if (isTauriRuntime) {
+  if (isTauriRuntime()) {
     return invoke<TokenHistoryResponse>("get_token_history", { days });
   }
 
@@ -619,7 +641,7 @@ export async function getTokenHistory(days: number): Promise<TokenHistoryRespons
 }
 
 export async function openInTerminal(cwd: string): Promise<void> {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return;
   }
 
@@ -627,7 +649,7 @@ export async function openInTerminal(cwd: string): Promise<void> {
 }
 
 export async function focusClaudeApp(): Promise<void> {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return;
   }
 
@@ -635,7 +657,11 @@ export async function focusClaudeApp(): Promise<void> {
 }
 
 export async function openUrl(url: string): Promise<void> {
-  if (!isTauriRuntime) {
+  if (!isAllowedExternalUrl(url)) {
+    return;
+  }
+
+  if (!isTauriRuntime()) {
     window.open(url, "_blank");
     return;
   }
@@ -644,7 +670,7 @@ export async function openUrl(url: string): Promise<void> {
 }
 
 export async function onSnapshotChanged(callback: (snapshot: IslandSnapshot) => void) {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return () => undefined;
   }
 
@@ -654,7 +680,7 @@ export async function onSnapshotChanged(callback: (snapshot: IslandSnapshot) => 
 }
 
 export async function onIslandHoverChanged(callback: (state: IslandHoverChanged) => void) {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return () => undefined;
   }
 
@@ -662,7 +688,7 @@ export async function onIslandHoverChanged(callback: (state: IslandHoverChanged)
 }
 
 export async function onIslandOpenRequested(callback: () => void) {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return () => undefined;
   }
 
@@ -670,7 +696,7 @@ export async function onIslandOpenRequested(callback: () => void) {
 }
 
 export async function onCaptureCollapseRequested(callback: () => void) {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return () => undefined;
   }
 
@@ -678,7 +704,7 @@ export async function onCaptureCollapseRequested(callback: () => void) {
 }
 
 export async function onCaptureOpenHooksRequested(callback: () => void) {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return () => undefined;
   }
 
@@ -686,7 +712,7 @@ export async function onCaptureOpenHooksRequested(callback: () => void) {
 }
 
 export async function onCaptureScreenshotRequested(callback: () => void | Promise<void>) {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return () => undefined;
   }
 
@@ -694,7 +720,7 @@ export async function onCaptureScreenshotRequested(callback: () => void | Promis
 }
 
 export async function captureProvideScreenshot(pngBase64: string) {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return;
   }
 
@@ -702,7 +728,7 @@ export async function captureProvideScreenshot(pngBase64: string) {
 }
 
 export async function isAutostartEnabled(): Promise<boolean> {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return false;
   }
 
@@ -710,7 +736,7 @@ export async function isAutostartEnabled(): Promise<boolean> {
 }
 
 export async function enableAutostart(): Promise<void> {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return;
   }
 
@@ -718,7 +744,7 @@ export async function enableAutostart(): Promise<void> {
 }
 
 export async function disableAutostart(): Promise<void> {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return;
   }
 

@@ -5,11 +5,14 @@ import {
   COMPACT_HEADER_GAP,
   COMPACT_MAX_WINDOW_WIDTH,
   COMPACT_METRICS_GAP,
+  COMPACT_NOTCH_INNER_GAP,
+  COMPACT_SIDE_MIN,
   compactMetricsSessionTokenGap,
   computeCollapsedWindowWidth,
   computeCompactHeaderLayout,
   computeCompactLeftPaneWidth,
   computeCompactLeftWidth,
+  computeCompactSideColumnBudget,
   computeMaxCompactIconLimit,
   type CompactHeaderLayout,
 } from "./compactLayout";
@@ -90,6 +93,15 @@ describe("compactLayout", () => {
         overflowCount: 0,
       }),
     ).toBe(34 + 10 + 8 + 4 * 24 + 3 * 4 + 6);
+  });
+
+  it("computes side column budgets for notched and plain displays", () => {
+    expect(computeCompactSideColumnBudget(NOTCH_14)).toBe(
+      (COMPACT_MAX_WINDOW_WIDTH - NOTCH_14.width - COMPACT_NOTCH_INNER_GAP * 2) / 2,
+    );
+    expect(computeCompactSideColumnBudget(NO_NOTCH)).toBe(
+      COMPACT_MAX_WINDOW_WIDTH - COMPACT_HEADER_GAP - COMPACT_SIDE_MIN,
+    );
   });
 
   it("keeps all icons on the left when the bar is wide enough", () => {

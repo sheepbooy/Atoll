@@ -8,6 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { PixelDigitDisplay } from "./PixelDigitDisplay";
+import { manageAsyncUnlisten } from "./asyncUnlisten";
 import {
   buildDigitReelStrip,
   buildStaticTokenOdometerCells,
@@ -261,28 +262,26 @@ export function TokenCounter({
   displayTextRef.current = displayText;
 
   useEffect(() => {
-    let unsubscribe = () => {};
+    const unsubscribe = manageAsyncUnlisten(
+      onIslandHoverChanged(({ hovering, clientX, clientY }) => {
+        const wrap = wrapRef.current;
+        if (!wrap) return;
 
-    onIslandHoverChanged(({ hovering, clientX, clientY }) => {
-      const wrap = wrapRef.current;
-      if (!wrap) return;
-
-      if (!hovering || clientX == null || clientY == null) {
-        if (!hovering && !pointerHoverRef.current) {
-          setTooltipVisible(false);
+        if (!hovering || clientX == null || clientY == null) {
+          if (!hovering && !pointerHoverRef.current) {
+            setTooltipVisible(false);
+          }
+          return;
         }
-        return;
-      }
 
-      const inside = isPointInsideRect(
-        clientX,
-        clientY,
-        wrap.getBoundingClientRect(),
-      );
-      setTooltipVisible(inside || pointerHoverRef.current);
-    }).then((cleanup) => {
-      unsubscribe = cleanup;
-    });
+        const inside = isPointInsideRect(
+          clientX,
+          clientY,
+          wrap.getBoundingClientRect(),
+        );
+        setTooltipVisible(inside || pointerHoverRef.current);
+      }),
+    );
 
     return () => {
       unsubscribe();

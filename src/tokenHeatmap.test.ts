@@ -3,6 +3,7 @@ import {
   aggregateByAgent,
   buildHeatmapGrid,
   buildTrendSeries,
+  formatHeatmapDate,
   heatmapLevel,
   localDayKey,
   summarizeHeatmap,
@@ -73,6 +74,12 @@ describe("tokenHeatmap", () => {
 
   it("returns empty slices when no agent data", () => {
     expect(aggregateByAgent([{ byAgent: {} }])).toEqual([]);
+  });
+
+  it("formats valid heatmap dates and preserves invalid input", () => {
+    expect(formatHeatmapDate("2026-07-06")).toBe("Mon, Jul 6, 2026");
+    expect(formatHeatmapDate("not-a-date")).toBe("not-a-date");
+    expect(formatHeatmapDate("2026-02-31")).toBe("2026-02-31");
   });
 
   it("builds a 30-point trend series ending today", () => {

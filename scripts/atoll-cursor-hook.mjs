@@ -3,10 +3,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { resolveHookUrl } from "./atoll-hook-bridge.mjs";
+import { hookAuthHeaders, resolveHookConfig } from "./atoll-hook-bridge.mjs";
 
 const defaultHookUrl = "http://127.0.0.1:47777/cursor/hook";
-const hookUrl = resolveHookUrl("cursorUrl", defaultHookUrl);
+const hookConfig = resolveHookConfig("cursorUrl", defaultHookUrl);
+const hookUrl = hookConfig.url;
 
 try {
   const rawPayload = await readStdin();
@@ -16,7 +17,7 @@ try {
   try {
     response = await fetch(hookUrl, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...hookAuthHeaders(hookConfig.token) },
       body: payload || "{}",
     });
   } catch (fetchError) {

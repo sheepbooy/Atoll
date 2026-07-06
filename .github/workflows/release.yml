@@ -55,6 +55,9 @@ jobs:
       - name: Install npm deps
         run: npm ci
 
+      - name: Run tests
+        run: npm test -- --run
+
       - name: Build Tauri app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -133,6 +136,9 @@ jobs:
       - name: Install npm deps
         run: npm ci
 
+      - name: Run tests
+        run: npm test -- --run
+
       - name: Build Tauri app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -202,17 +208,17 @@ jobs:
           chmod +x release/install.sh
 
           cat > release/Fix-Atoll.command <<'EOF'
-          #!/bin/bash
-          set -e
-          APP_PATH="/Applications/Atoll.app"
-          if [ ! -d "$APP_PATH" ]; then
-            osascript -e 'display dialog "请先把 Atoll 拖到「应用程序」文件夹，再运行本脚本。" with title "Atoll 安装修复" buttons {"好"} default button 1' >/dev/null
-            exit 1
-          fi
-          echo "正在修复 Atoll（需要输入开机密码）..."
-          sudo xattr -cr "$APP_PATH"
-          osascript -e 'display dialog "完成！现在可以打开 Atoll 了。" with title "Atoll 安装修复" buttons {"好"} default button 1' >/dev/null
-          EOF
+#!/bin/bash
+set -e
+APP_PATH="/Applications/Atoll.app"
+if [ ! -d "$APP_PATH" ]; then
+  osascript -e 'display dialog "请先把 Atoll 拖到「应用程序」文件夹，再运行本脚本。" with title "Atoll 安装修复" buttons {"好"} default button 1' >/dev/null
+  exit 1
+fi
+echo "正在修复 Atoll（需要输入开机密码）..."
+sudo xattr -cr "$APP_PATH"
+osascript -e 'display dialog "完成！现在可以打开 Atoll 了。" with title "Atoll 安装修复" buttons {"好"} default button 1' >/dev/null
+EOF
           chmod +x release/Fix-Atoll.command
 
       - name: Generate latest.json for updater

@@ -105,17 +105,19 @@ describe("hookHealth", () => {
     expect(isHookDisconnected(drifted, "claude", true, emptyConfigured)).toBe(true);
   });
 
-  it("treats installed hooks with a script path as ready even without scriptFound", () => {
+  it("treats installed hooks without a found script as drifted", () => {
     const pathOnly = {
       installed: true,
       scriptFound: false,
       settingsPath: "/tmp/settings.json",
       scriptPath: "/Applications/Atoll.app/Contents/Resources/scripts/atoll-claude-hook.mjs",
     };
-    expect(isHookReady(pathOnly)).toBe(true);
+    expect(isHookReady(pathOnly)).toBe(false);
+    expect(isHookDrifted(pathOnly)).toBe(true);
     const analysis = analyzeHookHealth(hookHealth(pathOnly, ready, ready));
     expect(analysis.needsFirstTimeSetup).toBe(false);
-    expect(analysis.allConnected).toBe(true);
+    expect(analysis.allConnected).toBe(false);
+    expect(analysis.needsReconnect).toBe(true);
   });
 
   it("does not treat first-time setup when hooks are installed but not ready", () => {

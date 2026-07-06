@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use std::sync::mpsc::SyncSender;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -34,8 +35,18 @@ const MIN_COMPACT_WINDOW_WIDTH: f64 = 72.0;
 const DORMANT_WINDOW_HEIGHT: f64 = 36.0;
 // Extra width beyond the notch on each side so edges are visible.
 const DORMANT_NOTCH_PADDING: f64 = 30.0;
+const MAX_ACTIVE_SUBAGENTS: usize = 512;
 const WINDOW_ANIMATION_DURATION: Duration = Duration::from_millis(420);
 const WINDOW_ANIMATION_FRAME: Duration = Duration::from_micros(16_667);
+
+pub(crate) fn lock_state<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+#[cfg(test)]
+pub(crate) static TOKEN_HISTORY_ENV_LOCK: Mutex<()> = Mutex::new(());
 // Fallback notch width (logical pt) used when the auxiliary menu-bar areas
 // can't be read but a notch height is reported.
 pub(crate) const FALLBACK_NOTCH_WIDTH: f64 = 200.0;
@@ -259,6 +270,12 @@ struct KnownSession {
     conversation_id: Option<String>,
 }
 
+/// Shared application state.
+///
+/// Lock ordering for code that must hold more than one mutex at a time:
+/// requests -> known_sessions -> pinned_sessions -> session/token maps ->
+/// hook_waiters -> active_subagents -> UI/window metrics. Prefer cloning the
+/// minimum data and dropping each guard before acquiring the next lock.
 pub(crate) struct AppState {
     requests: Mutex<Vec<PermissionRequest>>,
     hook_waiters: Mutex<HashMap<String, SyncSender<DecisionWithNote>>>,
@@ -293,6 +310,8 @@ pub(crate) struct AppState {
     last_hook_health: Mutex<Option<HookHealthSnapshot>>,
     /// Local hook bridge TCP port (0 until bound).
     bridge_port: AtomicU16,
+    /// Per-process bearer token shared with local hook runners through bridge.json.
+    bridge_auth_token: Mutex<String>,
     /// Last time the hook bridge accepted a TCP probe; used for offline grace during rebind.
     last_bridge_reachable: Mutex<Option<Instant>>,
     active_subagents: Mutex<Vec<ActiveSubagent>>,
@@ -340,8 +359,8 @@ fn get_snapshot(app: AppHandle, state: State<'_, AppState>) -> IslandSnapshot {
     roll_over_token_usage_if_needed(&state);
     refresh_hook_health_cache(&app, &state);
     let tracked_sessions = {
-        let requests = state.requests.lock().expect("state mutex poisoned");
-        let known_sessions = state.known_sessions.lock().expect("state mutex poisoned");
+        let requests = lock_state(&state.requests);
+        let known_sessions = lock_state(&state.known_sessions);
         collect_session_transcript_paths(&requests, &known_sessions)
     };
     for (session_id, transcript_path, agent) in tracked_sessions {
@@ -381,10 +400,7 @@ pub(crate) fn touch_hook_activity(state: &AppState) {
     }
 }
 
-pub(crate) fn get_stored_session_host(
-    state: &AppState,
-    session_id: &str,
-) -> platform::SessionHost {
+pub(crate) fn get_stored_session_host(state: &AppState, session_id: &str) -> platform::SessionHost {
     state
         .known_sessions
         .lock()
@@ -403,11 +419,7 @@ pub(crate) fn schedule_observer_snapshot_emit(app: &AppHandle) {
     thread::spawn(move || {
         thread::sleep(OBSERVER_SNAPSHOT_DEBOUNCE);
         let state = app.state::<AppState>();
-        if state
-            .snapshot_debounce_generation
-            .load(Ordering::SeqCst)
-            != generation
-        {
+        if state.snapshot_debounce_generation.load(Ordering::SeqCst) != generation {
             return;
         }
         let snapshot = build_snapshot(&app, &state);
@@ -458,24 +470,16 @@ fn reconcile_incomplete_subagents_if_due(state: &AppState) {
 }
 
 pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapshot {
+    prune_active_subagents(state);
     roll_over_token_usage_if_needed(state);
     reconcile_incomplete_subagents_if_due(state);
     backfill_cursor_session_metadata(state);
-    let requests = state.requests.lock().expect("state mutex poisoned");
-    let last_seen = state
-        .session_last_seen
-        .lock()
-        .expect("state mutex poisoned");
-    let retention = *state
-        .session_retention_secs
-        .lock()
-        .expect("state mutex poisoned");
-    let token_usage = state
-        .session_token_usage
-        .lock()
-        .expect("state mutex poisoned");
-    let known_sessions = state.known_sessions.lock().expect("state mutex poisoned");
-    let pinned = state.pinned_sessions.lock().expect("state mutex poisoned");
+    let requests = lock_state(&state.requests);
+    let last_seen = lock_state(&state.session_last_seen);
+    let retention = *lock_state(&state.session_retention_secs);
+    let token_usage = lock_state(&state.session_token_usage);
+    let known_sessions = lock_state(&state.known_sessions);
+    let pinned = lock_state(&state.pinned_sessions);
     let online = compute_listening_online(app);
     let hook_health = cached_hook_health(app, state);
     let mut snapshot = snapshot_from(
@@ -506,15 +510,12 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
     drop(token_usage);
     drop(last_seen);
     drop(requests);
-    let subagent_retention = *state
-        .subagent_retention_secs
-        .lock()
-        .expect("state mutex poisoned");
+    let subagent_retention = *lock_state(&state.subagent_retention_secs);
     let now_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let active_subagents = state.active_subagents.lock().expect("state mutex poisoned");
+    let active_subagents = lock_state(&state.active_subagents);
     assign_active_subagents_to_sessions(
         &mut snapshot.sessions,
         &active_subagents,
@@ -546,6 +547,52 @@ fn active_subagent_visible(
         }
     }
     true
+}
+
+fn prune_active_subagents(state: &AppState) {
+    let subagent_retention = *lock_state(&state.subagent_retention_secs);
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let mut removed_conversations = Vec::new();
+
+    {
+        let mut subagents = lock_state(&state.active_subagents);
+        subagents.retain(|subagent| {
+            let keep = active_subagent_visible(subagent, subagent_retention, now_secs)
+                || subagent.completed_at.is_none();
+            if !keep {
+                if let Some(conversation_id) = subagent.conversation_id.clone() {
+                    removed_conversations.push(conversation_id);
+                }
+            }
+            keep
+        });
+
+        let mut overflow = subagents.len().saturating_sub(MAX_ACTIVE_SUBAGENTS);
+        if overflow > 0 {
+            subagents.retain(|subagent| {
+                let removable = subagent.archived || subagent.completed_at.is_some();
+                if overflow > 0 && removable {
+                    overflow -= 1;
+                    if let Some(conversation_id) = subagent.conversation_id.clone() {
+                        removed_conversations.push(conversation_id);
+                    }
+                    return false;
+                }
+                true
+            });
+        }
+    }
+
+    if !removed_conversations.is_empty() {
+        if let Ok(mut map) = state.cursor_subagent_conversations.lock() {
+            for conversation_id in removed_conversations {
+                map.remove(&conversation_id);
+            }
+        }
+    }
 }
 
 fn subagent_summary_from_active(subagent: &ActiveSubagent) -> SubagentSummary {
@@ -769,6 +816,9 @@ fn codex_hook_status(app: &AppHandle) -> HookStatus {
         .as_ref()
         .map(|hooks| has_atoll_codex_hooks(hooks))
         .unwrap_or(false);
+    if installed {
+        refresh_deployed_hook_assets_if_needed(app, "atoll-codex-hook.mjs");
+    }
     let (mut script_path, mut script_found) =
         resolve_hook_script_readiness(app, "atoll-codex-hook.mjs", config.as_ref());
     if installed {
@@ -817,11 +867,18 @@ fn cursor_hook_status(app: &AppHandle) -> HookStatus {
         .as_ref()
         .map(|hooks| has_atoll_cursor_hooks(hooks))
         .unwrap_or(false);
+    if installed {
+        refresh_deployed_hook_assets_if_needed(app, "atoll-cursor-hook.mjs");
+    }
     let (mut script_path, mut script_found) =
         resolve_hook_script_readiness(app, "atoll-cursor-hook.mjs", config.as_ref());
     if installed {
         #[cfg(windows)]
-        maybe_repair_hook_launcher_config(app, "atoll-cursor-hook.mjs", "cursor-hook-launcher.json");
+        maybe_repair_hook_launcher_config(
+            app,
+            "atoll-cursor-hook.mjs",
+            "cursor-hook-launcher.json",
+        );
         if let (Some(cfg), Ok(preferred)) = (
             config.as_ref(),
             resolve_install_hook_script_path(app, "atoll-cursor-hook.mjs"),
@@ -916,14 +973,9 @@ fn build_hook_status(
     let node_found = node_executable_ready(&node_path);
     // Only meaningful once installed — an agent that was never hooked up has
     // nothing to have drifted away from.
-    let configured_script = config
-        .and_then(|cfg| configured_atoll_hook_script_path(cfg, marker));
+    let configured_script = config.and_then(|cfg| configured_atoll_hook_script_path(cfg, marker));
     let needs_retrust = installed
-        && hook_trust::needs_retrust(
-            agent_key,
-            &script_path,
-            configured_script.as_deref(),
-        );
+        && hook_trust::needs_retrust(agent_key, &script_path, configured_script.as_deref());
     HookStatus {
         installed,
         script_found,
@@ -1146,7 +1198,7 @@ async fn set_island_presentation(
 
 #[tauri::command]
 fn get_notch_metrics(state: State<'_, AppState>) -> NotchMetrics {
-    *state.notch_metrics.lock().expect("state mutex poisoned")
+    *lock_state(&state.notch_metrics)
 }
 
 #[tauri::command]
@@ -1187,7 +1239,7 @@ fn archive_request(
 
 #[tauri::command]
 fn get_session_requests(state: State<'_, AppState>, session_id: String) -> Vec<PermissionRequest> {
-    let requests = state.requests.lock().expect("state mutex poisoned");
+    let requests = lock_state(&state.requests);
     requests
         .iter()
         .filter(|r| !r.archived && r.session == session_id)
@@ -1207,6 +1259,94 @@ struct ChatMessage {
 }
 
 const TRANSCRIPT_MAX_MESSAGES: usize = 50;
+const TRANSCRIPT_EXTENSIONS: &[&str] = &["jsonl", "json"];
+
+fn has_parent_dir_component(path: &Path) -> bool {
+    path.components()
+        .any(|component| matches!(component, Component::ParentDir))
+}
+
+fn has_transcript_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| {
+            TRANSCRIPT_EXTENSIONS
+                .iter()
+                .any(|allowed| ext.eq_ignore_ascii_case(allowed))
+        })
+        .unwrap_or(false)
+}
+
+fn canonicalize_requested_transcript_path(transcript_path: &str) -> Result<PathBuf, String> {
+    let path = Path::new(transcript_path);
+    if !path.is_absolute() {
+        return Err("Transcript path must be absolute".into());
+    }
+    if has_parent_dir_component(path) {
+        return Err("Transcript path cannot contain parent directory components".into());
+    }
+    if !has_transcript_extension(path) {
+        return Err("Transcript path must point to a transcript file".into());
+    }
+
+    let canonical = dunce::canonicalize(path)
+        .map_err(|error| format!("Cannot resolve transcript path: {error}"))?;
+    if !canonical.is_file() {
+        return Err("Transcript path must point to a file".into());
+    }
+    if !has_transcript_extension(&canonical) {
+        return Err("Transcript path must point to a transcript file".into());
+    }
+    Ok(canonical)
+}
+
+fn collect_trusted_transcript_path_strings(state: &AppState) -> Vec<String> {
+    let mut paths = Vec::new();
+
+    if let Ok(requests) = state.requests.lock() {
+        paths.extend(
+            requests
+                .iter()
+                .filter_map(|request| request.transcript_path.clone()),
+        );
+    }
+
+    if let Ok(known_sessions) = state.known_sessions.lock() {
+        paths.extend(
+            known_sessions
+                .values()
+                .filter_map(|session| session.transcript_path.clone()),
+        );
+    }
+
+    if let Ok(active_subagents) = state.active_subagents.lock() {
+        paths.extend(
+            active_subagents
+                .iter()
+                .filter_map(|subagent| subagent.agent_transcript_path.clone()),
+        );
+    }
+
+    paths
+}
+
+fn trusted_transcript_paths(state: &AppState) -> HashSet<PathBuf> {
+    collect_trusted_transcript_path_strings(state)
+        .into_iter()
+        .filter_map(|path| canonicalize_requested_transcript_path(&path).ok())
+        .collect()
+}
+
+fn validate_trusted_transcript_path(
+    state: &AppState,
+    transcript_path: &str,
+) -> Result<PathBuf, String> {
+    let canonical = canonicalize_requested_transcript_path(transcript_path)?;
+    if trusted_transcript_paths(state).contains(&canonical) {
+        return Ok(canonical);
+    }
+    Err("Transcript path is not associated with a known session".into())
+}
 
 fn read_transcript_messages(transcript_path: &str) -> Result<Vec<ChatMessage>, String> {
     use std::fs::File;
@@ -1392,8 +1532,12 @@ fn persist_session_transcript_path(state: &AppState, session_id: &str, path: &st
 }
 
 #[tauri::command]
-fn get_session_transcript(transcript_path: String) -> Result<Vec<ChatMessage>, String> {
-    read_transcript_messages(&transcript_path)
+fn get_session_transcript(
+    state: State<'_, AppState>,
+    transcript_path: String,
+) -> Result<Vec<ChatMessage>, String> {
+    let canonical = validate_trusted_transcript_path(&state, &transcript_path)?;
+    read_transcript_messages(&canonical.to_string_lossy())
 }
 
 #[tauri::command]
@@ -1402,7 +1546,7 @@ fn get_session_chat(
     session_id: String,
 ) -> Result<Vec<ChatMessage>, String> {
     backfill_cursor_session_metadata(&state);
-    let requests = state.requests.lock().expect("state mutex poisoned");
+    let requests = lock_state(&state.requests);
     let path = resolve_session_transcript_path(&state, &session_id, &requests)
         .ok_or_else(|| format!("No transcript found for session {session_id}"))?;
     drop(requests);
@@ -2027,20 +2171,14 @@ fn persist_retention_minutes(minutes: u64) {
 
 #[tauri::command]
 fn get_session_retention(state: State<'_, AppState>) -> u64 {
-    *state
-        .session_retention_secs
-        .lock()
-        .expect("state mutex poisoned")
+    *lock_state(&state.session_retention_secs)
 }
 
 #[tauri::command]
 fn set_session_retention(state: State<'_, AppState>, minutes: u64) -> u64 {
     let clamped_minutes = minutes.clamp(1, 60);
     let secs = clamped_minutes * 60;
-    let mut retention = state
-        .session_retention_secs
-        .lock()
-        .expect("state mutex poisoned");
+    let mut retention = lock_state(&state.session_retention_secs);
     *retention = secs;
     persist_retention_minutes(clamped_minutes);
     secs
@@ -2048,20 +2186,14 @@ fn set_session_retention(state: State<'_, AppState>, minutes: u64) -> u64 {
 
 #[tauri::command]
 fn get_subagent_retention(state: State<'_, AppState>) -> u64 {
-    *state
-        .subagent_retention_secs
-        .lock()
-        .expect("state mutex poisoned")
+    *lock_state(&state.subagent_retention_secs)
 }
 
 #[tauri::command]
 fn set_subagent_retention(state: State<'_, AppState>, minutes: u64) -> u64 {
     let clamped_minutes = minutes.clamp(1, 60);
     let secs = clamped_minutes * 60;
-    let mut retention = state
-        .subagent_retention_secs
-        .lock()
-        .expect("state mutex poisoned");
+    let mut retention = lock_state(&state.subagent_retention_secs);
     *retention = secs;
     persist_settings(None, Some(clamped_minutes));
     secs
@@ -2743,7 +2875,11 @@ fn discover_cursor_agent_transcript_by_prefix(prefix: &str) -> Option<(String, S
                 .unwrap_or_else(|| ".".to_string());
             let path = jsonl.to_string_lossy().into_owned();
             let score = conv_id.len();
-            if best.as_ref().map(|(_, _, len)| score > *len).unwrap_or(true) {
+            if best
+                .as_ref()
+                .map(|(_, _, len)| score > *len)
+                .unwrap_or(true)
+            {
                 best = Some((path, workspace, score));
             }
         }
@@ -2921,15 +3057,11 @@ fn derive_subagent_transcript_path(
 }
 
 fn known_session_transcript_path(state: &AppState, session_id: &str) -> Option<String> {
-    state
-        .known_sessions
-        .lock()
-        .ok()
-        .and_then(|known| {
-            known
-                .get(session_id)
-                .and_then(|entry| entry.transcript_path.clone())
-        })
+    state.known_sessions.lock().ok().and_then(|known| {
+        known
+            .get(session_id)
+            .and_then(|entry| entry.transcript_path.clone())
+    })
 }
 
 fn refresh_subagent_transcript_path(state: &AppState, sub: &mut ActiveSubagent) {
@@ -2989,9 +3121,10 @@ pub(crate) fn resolve_cursor_session_for_payload(
 ) -> Option<String> {
     if let Some(agent_id) = payload_subagent_id(payload) {
         if let Ok(subagents) = state.active_subagents.lock() {
-            if let Some(sub) = subagents.iter().find(|s| {
-                s.agent_id == agent_id && !s.archived && s.completed_at.is_none()
-            }) {
+            if let Some(sub) = subagents
+                .iter()
+                .find(|s| s.agent_id == agent_id && !s.archived && s.completed_at.is_none())
+            {
                 return Some(sub.session_id.clone());
             }
         }
@@ -3006,9 +3139,9 @@ pub(crate) fn resolve_cursor_session_for_payload(
     }
 
     let subagents = state.active_subagents.lock().ok()?;
-    let is_known_parent = subagents.iter().any(|s| {
-        s.session_id == conv_id && s.completed_at.is_none() && !s.archived
-    });
+    let is_known_parent = subagents
+        .iter()
+        .any(|s| s.session_id == conv_id && s.completed_at.is_none() && !s.archived);
     if is_known_parent {
         return None;
     }
@@ -3451,8 +3584,8 @@ fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
         .map_err(|e| format!("Cannot serialize settings: {e}"))?;
     std::fs::write(&settings_path, formatted).map_err(|e| format!("Cannot write settings: {e}"))?;
 
-    let written =
-        std::fs::read_to_string(&settings_path).map_err(|e| format!("Cannot verify settings: {e}"))?;
+    let written = std::fs::read_to_string(&settings_path)
+        .map_err(|e| format!("Cannot verify settings: {e}"))?;
     let verify: Value = serde_json::from_str(&written)
         .map_err(|e| format!("Cannot parse settings after write: {e}"))?;
     if !has_atoll_claude_hooks(&verify) {
@@ -3575,6 +3708,56 @@ fn deployed_hook_script_path(script_name: &str) -> Option<String> {
     }
 }
 
+fn files_equal(left: &std::path::Path, right: &std::path::Path) -> bool {
+    match (std::fs::read(left), std::fs::read(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
+fn deployed_hook_assets_current(
+    source_script: &std::path::Path,
+    deployed_script: &std::path::Path,
+) -> bool {
+    if !files_equal(source_script, deployed_script) {
+        return false;
+    }
+
+    let Some(source_dir) = source_script.parent() else {
+        return true;
+    };
+    let Some(deployed_dir) = deployed_script.parent() else {
+        return true;
+    };
+    let source_bridge = source_dir.join("atoll-hook-bridge.mjs");
+    if !source_bridge.is_file() {
+        return true;
+    }
+    files_equal(&source_bridge, &deployed_dir.join("atoll-hook-bridge.mjs"))
+}
+
+fn refresh_deployed_hook_assets_if_needed(app: &AppHandle, script_name: &str) {
+    let Some(deployed_script_path) = deployed_hook_script_path(script_name) else {
+        return;
+    };
+    let Ok(source_script_path) = resolve_install_hook_script_path(app, script_name) else {
+        return;
+    };
+    if source_script_path == deployed_script_path {
+        return;
+    }
+
+    let source = std::path::Path::new(&source_script_path);
+    let deployed = std::path::Path::new(&deployed_script_path);
+    if deployed_hook_assets_current(source, deployed) {
+        return;
+    }
+
+    if let Err(error) = materialize_hook_deployment(app, script_name, &source_script_path) {
+        eprintln!("Atoll failed to refresh deployed {script_name}: {error}");
+    }
+}
+
 fn canonical_hook_script_path(
     app: &AppHandle,
     script_name: &str,
@@ -3609,10 +3792,7 @@ fn maybe_repair_hook_launcher_config(app: &AppHandle, script_name: &str, config_
     let Ok(mut config) = serde_json::from_str::<Value>(&content) else {
         return;
     };
-    let current_script = config
-        .get("script")
-        .and_then(Value::as_str)
-        .unwrap_or("");
+    let current_script = config.get("script").and_then(Value::as_str).unwrap_or("");
     let needs_repair = current_script.is_empty()
         || is_dev_hook_script_path(current_script)
         || !std::path::Path::new(current_script).is_file();
@@ -3644,7 +3824,8 @@ fn maybe_repair_hook_launcher_config(app: &AppHandle, script_name: &str, config_
 }
 
 #[cfg(not(windows))]
-fn maybe_repair_hook_launcher_config(_app: &AppHandle, _script_name: &str, _config_filename: &str) {}
+fn maybe_repair_hook_launcher_config(_app: &AppHandle, _script_name: &str, _config_filename: &str) {
+}
 
 #[cfg(windows)]
 fn is_windows_file_locked_error(error: &std::io::Error) -> bool {
@@ -3734,7 +3915,8 @@ fn materialize_hook_deployment(
 #[tauri::command]
 fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
     let source_script_path = resolve_install_hook_script_path(&app, "atoll-codex-hook.mjs")?;
-    let script_path = materialize_hook_deployment(&app, "atoll-codex-hook.mjs", &source_script_path)?;
+    let script_path =
+        materialize_hook_deployment(&app, "atoll-codex-hook.mjs", &source_script_path)?;
 
     if !std::path::Path::new(&script_path).exists() {
         return Err(format!("Hook script not found at: {script_path}"));
@@ -3968,11 +4150,7 @@ fn install_cursor_hooks(app: AppHandle) -> Result<HookStatus, String> {
         }
     }
 
-    let hook_command = write_cursor_hook_launcher_command(
-        &app,
-        &node_path,
-        &script_path,
-    )?;
+    let hook_command = write_cursor_hook_launcher_command(&app, &node_path, &script_path)?;
 
     let config_obj = config
         .as_object_mut()
@@ -3980,7 +4158,11 @@ fn install_cursor_hooks(app: AppHandle) -> Result<HookStatus, String> {
     let hooks_obj = config_obj
         .entry("hooks")
         .or_insert_with(|| Value::Object(Default::default()));
-    upsert_cursor_hook_events(hooks_obj, &hook_command, &hook_bridge::cursor_hook_url_for_app(&app));
+    upsert_cursor_hook_events(
+        hooks_obj,
+        &hook_command,
+        &hook_bridge::cursor_hook_url_for_app(&app),
+    );
 
     let formatted = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Cannot serialize hooks: {e}"))?;
@@ -4357,7 +4539,10 @@ fn format_cursor_hook_command(
     node_path: &str,
     script_path: &str,
 ) -> String {
-    format!("cmd /c {}", format_hook_command(runner_path, node_path, script_path))
+    format!(
+        "cmd /c {}",
+        format_hook_command(runner_path, node_path, script_path)
+    )
 }
 
 #[cfg(not(windows))]
@@ -4559,12 +4744,19 @@ fn extract_hook_command_parts(command: &str) -> Option<(String, String)> {
     }
 
     let normalized = normalize_hook_script_path(&trimmed);
-    if normalized.to_ascii_lowercase().ends_with("atoll-cursor-hook.ps1")
-        || normalized.to_ascii_lowercase().ends_with("atoll-codex-hook.ps1")
+    if normalized
+        .to_ascii_lowercase()
+        .ends_with("atoll-cursor-hook.ps1")
+        || normalized
+            .to_ascii_lowercase()
+            .ends_with("atoll-codex-hook.ps1")
     {
         return parse_hook_launcher_script(&normalized);
     }
-    if normalized.to_ascii_lowercase().ends_with("atoll-cursor-hook.cmd") {
+    if normalized
+        .to_ascii_lowercase()
+        .ends_with("atoll-cursor-hook.cmd")
+    {
         return parse_cursor_launcher_cmd(&normalized);
     }
 
@@ -4646,9 +4838,7 @@ fn parse_hook_launcher_script(path: &str) -> Option<(String, String)> {
                 .parent()
                 .map(|dir| dir.join(filename))
                 .filter(|candidate| candidate.is_file())
-                .or_else(|| {
-                    dirs::data_local_dir().map(|dir| dir.join("Atoll").join(filename))
-                })?;
+                .or_else(|| dirs::data_local_dir().map(|dir| dir.join("Atoll").join(filename)))?;
             return parse_hook_launcher_config(&config_path.to_string_lossy());
         }
     }
@@ -4756,10 +4946,7 @@ fn resolve_hook_script_path(app: &AppHandle, script_name: &str) -> Option<String
         for ancestor in exe.ancestors().skip(1) {
             candidates.push(ancestor.join("Resources").join("scripts").join(script_name));
             candidates.push(ancestor.join("scripts").join(script_name));
-            if ancestor
-                .file_name()
-                .is_some_and(|name| name == "src-tauri")
-            {
+            if ancestor.file_name().is_some_and(|name| name == "src-tauri") {
                 if let Some(repo_root) = ancestor.parent() {
                     candidates.push(repo_root.join("scripts").join(script_name));
                 }
@@ -4811,10 +4998,7 @@ fn resolve_hook_runner_path(app: &AppHandle) -> Option<String> {
             candidates.push(exe_dir.join("scripts").join("atoll-hook-runner.exe"));
         }
         for ancestor in exe.ancestors().skip(1) {
-            if ancestor
-                .file_name()
-                .is_some_and(|name| name == "src-tauri")
-            {
+            if ancestor.file_name().is_some_and(|name| name == "src-tauri") {
                 candidates.push(
                     ancestor
                         .join("target")
@@ -5133,6 +5317,7 @@ pub fn run() {
             last_listening_online: Mutex::new(None),
             last_hook_health: Mutex::new(None),
             bridge_port: AtomicU16::new(0),
+            bridge_auth_token: Mutex::new(uuid::Uuid::new_v4().to_string()),
             last_bridge_reachable: Mutex::new(None),
             active_subagents: Mutex::new(Vec::new()),
             cursor_subagent_conversations: Mutex::new(HashMap::new()),
@@ -5200,15 +5385,9 @@ pub fn run() {
             {
                 let state = app.state::<AppState>();
                 let retention = load_persisted_retention_secs();
-                *state
-                    .session_retention_secs
-                    .lock()
-                    .expect("state mutex poisoned") = retention;
+                *lock_state(&state.session_retention_secs) = retention;
                 let sub_retention = load_persisted_subagent_retention_secs();
-                *state
-                    .subagent_retention_secs
-                    .lock()
-                    .expect("state mutex poisoned") = sub_retention;
+                *lock_state(&state.subagent_retention_secs) = sub_retention;
             }
             start_auto_archive_timer(app.handle().clone());
             start_token_refresh_timer(app.handle().clone());
@@ -6052,9 +6231,11 @@ fn snapshot_from(
             &session.agent,
         );
         if matches!(session.agent, AgentKind::Cursor) && session.transcript_path.is_none() {
-            if let Some(path) =
-                resolve_session_transcript_path_from_snapshot(known_sessions, requests, &session.session_id)
-            {
+            if let Some(path) = resolve_session_transcript_path_from_snapshot(
+                known_sessions,
+                requests,
+                &session.session_id,
+            ) {
                 session.transcript_path = Some(path);
             }
         }
@@ -6704,6 +6885,97 @@ mod core_tests {
     }
 
     #[test]
+    fn transcript_path_validation_only_allows_known_transcripts() {
+        let state = test_app_state();
+        let dir = std::env::temp_dir().join(format!(
+            "atoll-transcript-validation-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let transcript_path = dir.join("session.jsonl");
+        let unknown_path = dir.join("unknown.jsonl");
+        let note_path = dir.join("note.txt");
+        std::fs::write(&transcript_path, "{}\n").expect("write transcript");
+        std::fs::write(&unknown_path, "{}\n").expect("write unknown");
+        std::fs::write(&note_path, "not a transcript").expect("write txt");
+
+        {
+            let mut known = state.known_sessions.lock().expect("lock");
+            known.insert(
+                "session-1".into(),
+                KnownSession {
+                    agent: AgentKind::Claude,
+                    cwd: "/tmp/project".into(),
+                    transcript_path: Some(transcript_path.to_string_lossy().into_owned()),
+                    last_activity: iso_timestamp_now(),
+                    host: platform::SessionHost::Unknown,
+                    conversation_id: None,
+                },
+            );
+        }
+
+        assert_eq!(
+            validate_trusted_transcript_path(&state, &transcript_path.to_string_lossy(),)
+                .expect("valid known transcript"),
+            dunce::canonicalize(&transcript_path).expect("canonical transcript"),
+        );
+        assert!(
+            validate_trusted_transcript_path(&state, &unknown_path.to_string_lossy(),).is_err()
+        );
+        assert!(validate_trusted_transcript_path(&state, &note_path.to_string_lossy(),).is_err());
+        assert!(validate_trusted_transcript_path(
+            &state,
+            &dir.join("nested")
+                .join("..")
+                .join("session.jsonl")
+                .to_string_lossy(),
+        )
+        .is_err());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn deployed_hook_assets_current_checks_script_and_bridge_module() {
+        let dir = std::env::temp_dir().join(format!(
+            "atoll-hook-assets-current-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let source_dir = dir.join("source");
+        let deployed_dir = dir.join("deployed");
+        std::fs::create_dir_all(&source_dir).expect("source dir");
+        std::fs::create_dir_all(&deployed_dir).expect("deployed dir");
+        let source_script = source_dir.join("atoll-codex-hook.mjs");
+        let deployed_script = deployed_dir.join("atoll-codex-hook.mjs");
+        let source_bridge = source_dir.join("atoll-hook-bridge.mjs");
+        let deployed_bridge = deployed_dir.join("atoll-hook-bridge.mjs");
+
+        std::fs::write(&source_script, "new script").expect("source script");
+        std::fs::write(&deployed_script, "old script").expect("deployed script");
+        std::fs::write(&source_bridge, "new bridge").expect("source bridge");
+        std::fs::write(&deployed_bridge, "old bridge").expect("deployed bridge");
+
+        assert!(!deployed_hook_assets_current(
+            &source_script,
+            &deployed_script
+        ));
+
+        std::fs::write(&deployed_script, "new script").expect("deployed script update");
+        assert!(!deployed_hook_assets_current(
+            &source_script,
+            &deployed_script
+        ));
+
+        std::fs::write(&deployed_bridge, "new bridge").expect("deployed bridge update");
+        assert!(deployed_hook_assets_current(
+            &source_script,
+            &deployed_script
+        ));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn active_session_tokens_only_sum_visible_sessions() {
         let requests = vec![PermissionRequest {
             id: "req-active".into(),
@@ -6766,13 +7038,7 @@ mod core_tests {
             ("debug", "conv-mode-debug", "/tmp/debug"),
         ] {
             let state = test_app_state();
-            register_known_session(
-                &state,
-                session_id,
-                AgentKind::Cursor,
-                cwd,
-                None,
-            );
+            register_known_session(&state, session_id, AgentKind::Cursor, cwd, None);
             touch_session_activity(&state, session_id);
 
             let known = state.known_sessions.lock().expect("lock");
@@ -6803,13 +7069,7 @@ mod core_tests {
     fn cursor_before_submit_prompt_refreshes_session_activity() {
         let state = test_app_state();
         let session_id = "conv-submit-prompt";
-        register_known_session(
-            &state,
-            session_id,
-            AgentKind::Cursor,
-            "/tmp/project",
-            None,
-        );
+        register_known_session(&state, session_id, AgentKind::Cursor, "/tmp/project", None);
         touch_session_activity(&state, session_id);
 
         let activity_after = {
@@ -6860,7 +7120,9 @@ mod core_tests {
         let home_str = home.to_string_lossy();
         #[cfg(not(windows))]
         {
-            let suffix = home_str.strip_prefix("/Users/").unwrap_or(home_str.as_ref());
+            let suffix = home_str
+                .strip_prefix("/Users/")
+                .unwrap_or(home_str.as_ref());
             let slug = format!("Users-{}", suffix.replace('/', "-"));
             let decoded = decode_cursor_project_slug(&slug).expect("decoded");
             assert_eq!(decoded, *home_str);
@@ -7002,13 +7264,7 @@ mod core_tests {
                     .unwrap_or_else(|| "/tmp/unknown".to_string());
 
                 let state = test_app_state();
-                register_known_session(
-                    &state,
-                    &conv_id,
-                    AgentKind::Cursor,
-                    &workspace,
-                    None,
-                );
+                register_known_session(&state, &conv_id, AgentKind::Cursor, &workspace, None);
                 backfill_cursor_session_metadata(&state);
 
                 let known = state.known_sessions.lock().expect("lock");
@@ -7071,6 +7327,9 @@ mod core_tests {
 
     #[test]
     fn cursor_after_agent_response_accumulates_tokens() {
+        let _env_guard = TOKEN_HISTORY_ENV_LOCK
+            .lock()
+            .expect("token history env lock");
         let history_path = std::env::temp_dir().join(format!(
             "atoll-token-history-{}-{}.json",
             std::process::id(),
@@ -7110,8 +7369,13 @@ mod core_tests {
                 "output_tokens": 100
             }
         });
-        ingest_cursor_token_usage_from_payload(&state, session_id, &follow_up, "afterAgentResponse")
-            .expect("follow-up ingest");
+        ingest_cursor_token_usage_from_payload(
+            &state,
+            session_id,
+            &follow_up,
+            "afterAgentResponse",
+        )
+        .expect("follow-up ingest");
 
         let usage = state
             .session_token_usage
@@ -7197,6 +7461,7 @@ mod core_tests {
             last_listening_online: Mutex::new(None),
             last_hook_health: Mutex::new(None),
             bridge_port: AtomicU16::new(0),
+            bridge_auth_token: Mutex::new(uuid::Uuid::new_v4().to_string()),
             last_bridge_reachable: Mutex::new(None),
             active_subagents: Mutex::new(Vec::new()),
             cursor_subagent_conversations: Mutex::new(HashMap::new()),
@@ -7246,6 +7511,22 @@ mod core_tests {
 
     #[test]
     fn cursor_session_end_uses_max_for_cumulative_totals() {
+        let _env_guard = TOKEN_HISTORY_ENV_LOCK
+            .lock()
+            .expect("token history env lock");
+        let history_path = std::env::temp_dir().join(format!(
+            "atoll-token-history-{}-{}.json",
+            std::process::id(),
+            "cursor-session-end"
+        ));
+        let _ = std::fs::remove_file(&history_path);
+        let _ = std::fs::remove_file(history_path.with_extension("json.bak"));
+        let _ = std::fs::remove_file(history_path.with_extension("json.tmp"));
+        std::env::set_var(
+            "ATOLL_TOKEN_HISTORY_PATH",
+            history_path.to_string_lossy().as_ref(),
+        );
+
         let state = test_app_state();
         let session_id = "conv-session-end";
         ingest_cursor_token_usage_from_payload(
@@ -7272,12 +7553,20 @@ mod core_tests {
             .expect("usage");
         assert_eq!(usage.input_tokens, 1500);
         assert_eq!(usage.output_tokens, 400);
+
+        let _ = std::fs::remove_file(&history_path);
+        let _ = std::fs::remove_file(history_path.with_extension("json.bak"));
+        let _ = std::fs::remove_file(history_path.with_extension("json.tmp"));
+        std::env::remove_var("ATOLL_TOKEN_HISTORY_PATH");
     }
 
     #[test]
     fn rollover_flushes_previous_local_day_before_clearing_usage() {
         use chrono::{Duration, Local};
 
+        let _env_guard = TOKEN_HISTORY_ENV_LOCK
+            .lock()
+            .expect("token history env lock");
         let history_path = std::env::temp_dir().join(format!(
             "atoll-token-history-{}-{}.json",
             std::process::id(),
@@ -7333,6 +7622,9 @@ mod core_tests {
     fn restart_preserves_historical_days_when_sessions_are_empty() {
         use chrono::{Duration, Local};
 
+        let _env_guard = TOKEN_HISTORY_ENV_LOCK
+            .lock()
+            .expect("token history env lock");
         let history_path = std::env::temp_dir().join(format!(
             "atoll-token-history-{}-{}.json",
             std::process::id(),
@@ -7447,12 +7739,23 @@ mod core_tests {
 
     #[test]
     fn full_scan_does_not_regress_session_token_usage() {
+        let _env_guard = TOKEN_HISTORY_ENV_LOCK
+            .lock()
+            .expect("token history env lock");
+        let history_path = std::env::temp_dir().join(format!(
+            "atoll-token-history-{}-{}.json",
+            std::process::id(),
+            "full-scan-regression"
+        ));
+        let _ = std::fs::remove_file(&history_path);
+        std::env::set_var(
+            "ATOLL_TOKEN_HISTORY_PATH",
+            history_path.to_string_lossy().as_ref(),
+        );
+
         let state = test_app_state();
         let session_id = "session-rescan";
-        let dir = std::env::temp_dir().join(format!(
-            "atoll-token-rescan-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("atoll-token-rescan-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let transcript_path = dir.join("transcript.jsonl");
         // Empty transcript simulates rotation/truncation after hooks already counted usage.
@@ -7491,6 +7794,8 @@ mod core_tests {
         assert_eq!(usage.output_tokens, 2000);
 
         let _ = std::fs::remove_dir_all(dir);
+        let _ = std::fs::remove_file(&history_path);
+        std::env::remove_var("ATOLL_TOKEN_HISTORY_PATH");
     }
 
     #[test]
@@ -7777,6 +8082,7 @@ mod cursor_subagent_tests {
             last_listening_online: Mutex::new(None),
             last_hook_health: Mutex::new(None),
             bridge_port: AtomicU16::new(0),
+            bridge_auth_token: Mutex::new(uuid::Uuid::new_v4().to_string()),
             last_bridge_reachable: Mutex::new(None),
             active_subagents: Mutex::new(Vec::new()),
             cursor_subagent_conversations: Mutex::new(HashMap::new()),
@@ -7865,7 +8171,10 @@ mod cursor_subagent_tests {
             subagents[0].agent_transcript_path.as_deref(),
             Some("/tmp/subagents/agent-sub-abc.jsonl")
         );
-        assert_eq!(subagents[0].last_message.as_deref(), Some("Found auth module"));
+        assert_eq!(
+            subagents[0].last_message.as_deref(),
+            Some("Found auth module")
+        );
     }
 
     #[test]
@@ -7890,11 +8199,11 @@ mod cursor_subagent_tests {
         );
         assert_eq!(parent.as_deref(), Some("conv-parent"));
 
-        let map = state
-            .cursor_subagent_conversations
-            .lock()
-            .expect("lock");
-        assert_eq!(map.get("conv-subagent-new").map(String::as_str), Some("conv-parent"));
+        let map = state.cursor_subagent_conversations.lock().expect("lock");
+        assert_eq!(
+            map.get("conv-subagent-new").map(String::as_str),
+            Some("conv-parent")
+        );
 
         let subagents = state.active_subagents.lock().expect("lock");
         assert_eq!(
@@ -7907,10 +8216,8 @@ mod cursor_subagent_tests {
     fn derive_subagent_transcript_path_uses_parent_directory() {
         let parent_uuid = "819943d1-a823-47ce-bef3-97ca63fa0f34";
         let sub_uuid = "60bcad01-8db6-4e9f-91b3-d3e55f2b504c";
-        let dir = std::env::temp_dir().join(format!(
-            "atoll-subagent-derive-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("atoll-subagent-derive-{}", std::process::id()));
         let parent_dir = dir.join(parent_uuid);
         let subagents_dir = parent_dir.join("subagents");
         let _ = std::fs::remove_dir_all(&dir);
@@ -7921,13 +8228,9 @@ mod cursor_subagent_tests {
         std::fs::write(&sub_path, "{}").expect("write subagent transcript");
         let main_str = main.to_string_lossy().into_owned();
 
-        let resolved = derive_subagent_transcript_path(
-            Some(&main_str),
-            "call_tool_id",
-            Some(sub_uuid),
-            None,
-        )
-        .expect("resolved path");
+        let resolved =
+            derive_subagent_transcript_path(Some(&main_str), "call_tool_id", Some(sub_uuid), None)
+                .expect("resolved path");
 
         assert_eq!(resolved, sub_path.to_string_lossy().into_owned());
         assert!(
@@ -7943,10 +8246,7 @@ mod cursor_subagent_tests {
         let state = test_app_state();
         let parent_uuid = "conv-parent";
         let sub_uuid = "conv-subagent-new";
-        let dir = std::env::temp_dir().join(format!(
-            "atoll-subagent-bind-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("atoll-subagent-bind-{}", std::process::id()));
         let parent_dir = dir.join(parent_uuid);
         let subagents_dir = parent_dir.join("subagents");
         let _ = std::fs::remove_dir_all(&dir);
@@ -7998,10 +8298,8 @@ mod cursor_subagent_tests {
         let state = test_app_state();
         let parent_uuid = "conv-parent";
         let sub_uuid = "conv-subagent-new";
-        let dir = std::env::temp_dir().join(format!(
-            "atoll-subagent-complete-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("atoll-subagent-complete-{}", std::process::id()));
         let parent_dir = dir.join(parent_uuid);
         let subagents_dir = parent_dir.join("subagents");
         let _ = std::fs::remove_dir_all(&dir);
@@ -9109,7 +9407,9 @@ mod cursor_hooks_tests {
             ]
         });
 
-        assert!(has_atoll_cursor_hooks(&json!({ "version": 1, "hooks": hooks })));
+        assert!(has_atoll_cursor_hooks(
+            &json!({ "version": 1, "hooks": hooks })
+        ));
     }
 
     /// Missing any one of the five core events means hooks are incomplete.
@@ -9130,6 +9430,8 @@ mod cursor_hooks_tests {
             ]
         });
 
-        assert!(!has_atoll_cursor_hooks(&json!({ "version": 1, "hooks": hooks })));
+        assert!(!has_atoll_cursor_hooks(
+            &json!({ "version": 1, "hooks": hooks })
+        ));
     }
 }

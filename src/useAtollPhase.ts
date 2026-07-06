@@ -11,33 +11,42 @@ function initialPhase(targetAct: AtollActivity): AtollPhase {
 export function useAtollPhase(targetAct: AtollActivity) {
   const [renderAct, setRenderAct] = useState<AtollActivity>(targetAct);
   const [phase, setPhase] = useState<AtollPhase>(() => initialPhase(targetAct));
-  const timersRef = useRef<number[]>([]);
+  const enterTimerRef = useRef<number | null>(null);
+  const transitionTimerRef = useRef<number | null>(null);
   const prevTargetRef = useRef(targetAct);
   const renderActRef = useRef(renderAct);
   renderActRef.current = renderAct;
 
-  const clearTimers = () => {
-    timersRef.current.forEach((id) => window.clearTimeout(id));
-    timersRef.current = [];
+  const clearEnterTimer = () => {
+    if (enterTimerRef.current !== null) {
+      window.clearTimeout(enterTimerRef.current);
+      enterTimerRef.current = null;
+    }
   };
 
-  const schedule = (fn: () => void, ms: number) => {
-    const id = window.setTimeout(fn, ms);
-    timersRef.current.push(id);
+  const clearTransitionTimer = () => {
+    if (transitionTimerRef.current !== null) {
+      window.clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = null;
+    }
   };
 
   useEffect(() => {
     if (phase !== "enter") return;
-    schedule(() => setPhase("loop"), ATOLL_ENTER_MS);
-    return clearTimers;
-  }, [phase, renderAct]);
+    clearEnterTimer();
+    enterTimerRef.current = window.setTimeout(() => {
+      enterTimerRef.current = null;
+      setPhase("loop");
+    }, ATOLL_ENTER_MS);
+    return clearEnterTimer;
+  }, [phase]);
 
   useEffect(() => {
     const prev = prevTargetRef.current;
     prevTargetRef.current = targetAct;
     if (prev === targetAct) return;
 
-    clearTimers();
+    clearTransitionTimer();
 
     if (targetAct === "idle") {
       if (renderActRef.current === "idle") {
@@ -45,7 +54,8 @@ export function useAtollPhase(targetAct: AtollActivity) {
         return;
       }
       setPhase("exit");
-      schedule(() => {
+      transitionTimerRef.current = window.setTimeout(() => {
+        transitionTimerRef.current = null;
         setRenderAct("idle");
         setPhase("loop");
       }, ATOLL_EXIT_MS);
@@ -54,7 +64,8 @@ export function useAtollPhase(targetAct: AtollActivity) {
 
     if (renderActRef.current !== "idle" && renderActRef.current !== targetAct) {
       setPhase("exit");
-      schedule(() => {
+      transitionTimerRef.current = window.setTimeout(() => {
+        transitionTimerRef.current = null;
         setRenderAct(targetAct);
         setPhase("enter");
       }, ATOLL_EXIT_MS);
@@ -65,7 +76,13 @@ export function useAtollPhase(targetAct: AtollActivity) {
     setPhase("enter");
   }, [targetAct]);
 
-  useEffect(() => clearTimers, []);
+  useEffect(
+    () => () => {
+      clearEnterTimer();
+      clearTransitionTimer();
+    },
+    [],
+  );
 
   return { renderAct, phase };
 }

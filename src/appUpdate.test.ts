@@ -81,6 +81,44 @@ describe("appUpdate", () => {
     expect(progress).toEqual([0, 0.5, 1, 1]);
   });
 
+  it("refuses to install without a pending checked update", async () => {
+    const { installAppUpdate } = await import("./appUpdate");
+
+    await expect(installAppUpdate()).rejects.toThrow("No pending update");
+    expect(checkMock).not.toHaveBeenCalled();
+    expect(relaunchMock).not.toHaveBeenCalled();
+  });
+
+  it("clears pending updates", async () => {
+    const downloadAndInstall = vi.fn();
+    checkMock.mockResolvedValue({
+      version: "0.2.0",
+      downloadAndInstall,
+    });
+
+    const { checkAppUpdate, clearPendingUpdate, installAppUpdate } = await import("./appUpdate");
+    await checkAppUpdate();
+    clearPendingUpdate();
+
+    await expect(installAppUpdate()).rejects.toThrow("No pending update");
+    expect(downloadAndInstall).not.toHaveBeenCalled();
+  });
+
+  it("detects Tauri runtime after module import", async () => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+    const { isTauriUpdateRuntime, checkAppUpdate } = await import("./appUpdate");
+
+    expect(isTauriUpdateRuntime()).toBe(false);
+
+    vi.stubGlobal("__TAURI_INTERNALS__", {});
+    checkMock.mockResolvedValue(null);
+
+    expect(isTauriUpdateRuntime()).toBe(true);
+    await expect(checkAppUpdate()).resolves.toEqual({ status: "idle" });
+    expect(checkMock).toHaveBeenCalledOnce();
+  });
+
   it("returns idle outside Tauri runtime", async () => {
     vi.unstubAllGlobals();
     vi.resetModules();

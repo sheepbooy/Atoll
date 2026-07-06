@@ -6,13 +6,14 @@ export function formatCompactTokenCount(
   const abs = Math.abs(value);
   const hintAbs = Math.abs(formatHint);
   const sign = value < 0 ? "-" : "";
+  const fullNumber = () => value.toLocaleString("en-US");
 
   if (compact === 0) {
-    return value.toLocaleString();
+    return fullNumber();
   }
 
   if (hintAbs < 1_000) {
-    return value.toLocaleString();
+    return fullNumber();
   }
 
   if (hintAbs >= 1_000_000_000) {
@@ -27,13 +28,13 @@ export function formatCompactTokenCount(
 
   if (hintAbs >= 1_000) {
     if (compact === 1 && hintAbs < 100_000) {
-      return value.toLocaleString();
+      return fullNumber();
     }
     const fractionDigits = compact >= 2 ? 0 : 1;
     return `${sign}${(abs / 1_000).toFixed(fractionDigits)}K`;
   }
 
-  return value.toLocaleString();
+  return fullNumber();
 }
 
 /** Session pressure for collapsed slot display. */

@@ -10,9 +10,7 @@ import {
 
 describe("subagentIdentity", () => {
   it("derives stable palette indices from keys", () => {
-    expect(paletteIndex("session-a", SESSION_PALETTE.length)).toBe(
-      paletteIndex("session-a", SESSION_PALETTE.length),
-    );
+    expect(paletteIndex("session-a", SESSION_PALETTE.length)).toBe(2);
     expect(paletteIndex("session-a", SESSION_PALETTE.length)).not.toBe(
       paletteIndex("session-b", SESSION_PALETTE.length),
     );
@@ -20,9 +18,13 @@ describe("subagentIdentity", () => {
 
   it("assigns stable color and mood per subagent id", () => {
     const agentId = "subagent-123";
-    expect(getSubagentColor(agentId)).toEqual(getSubagentColor(agentId));
-    expect(getSubagentMood(agentId, false)).toEqual(getSubagentMood(agentId, false));
-    expect(getSubagentMood(agentId, true)).toEqual(getSubagentMood(agentId, true));
+    expect(getSubagentColor(agentId)).toEqual({
+      tone: "lime",
+      accent: "#b2e578",
+      accentDark: "#7aa44d",
+    });
+    expect(getSubagentMood(agentId, false)).toBe("alert");
+    expect(getSubagentMood(agentId, true)).toBe("calm");
   });
 
   it("varies color and mood across different subagent ids", () => {
@@ -35,7 +37,7 @@ describe("subagentIdentity", () => {
   });
 
   it("keeps session color hashing compatible", () => {
-    expect(getSessionColor("session-xyz").tone).toBeTruthy();
+    expect(getSessionColor("session-xyz").tone).toBe("lime");
     expect(stringHash("")).toBe(0);
   });
 });

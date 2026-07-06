@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
-    build_snapshot, iso_timestamp_now, touch_session_activity, AgentKind, AppState,
+    build_snapshot, iso_timestamp_now, lock_state, touch_session_activity, AgentKind, AppState,
     PermissionRequest, PermissionStatus, TokenUsage,
 };
 
@@ -62,7 +62,7 @@ pub fn seed_approval_demo(app: &AppHandle, state: &AppState) {
     ];
 
     {
-        let mut requests = state.requests.lock().expect("state mutex poisoned");
+        let mut requests = lock_state(&state.requests);
         requests.clear();
         requests.push(pending.clone());
         for (id, session, agent, command, cwd) in history {
@@ -85,16 +85,13 @@ pub fn seed_approval_demo(app: &AppHandle, state: &AppState) {
     }
 
     {
-        let mut pinned = state.pinned_sessions.lock().expect("state mutex poisoned");
+        let mut pinned = lock_state(&state.pinned_sessions);
         pinned.clear();
         pinned.insert("session-atoll".into());
     }
 
     {
-        let mut tokens = state
-            .session_token_usage
-            .lock()
-            .expect("state mutex poisoned");
+        let mut tokens = lock_state(&state.session_token_usage);
         tokens.clear();
         tokens.insert(
             "session-atoll".into(),
@@ -166,13 +163,13 @@ pub fn seed_plan_question_demo(app: &AppHandle, state: &AppState) {
     };
 
     {
-        let mut requests = state.requests.lock().expect("state mutex poisoned");
+        let mut requests = lock_state(&state.requests);
         requests.clear();
         requests.push(pending.clone());
     }
 
     {
-        let mut pinned = state.pinned_sessions.lock().expect("state mutex poisoned");
+        let mut pinned = lock_state(&state.pinned_sessions);
         pinned.clear();
         pinned.insert("session-atoll".into());
     }
@@ -204,13 +201,13 @@ pub fn seed_plan_approval_demo(app: &AppHandle, state: &AppState) {
     };
 
     {
-        let mut requests = state.requests.lock().expect("state mutex poisoned");
+        let mut requests = lock_state(&state.requests);
         requests.clear();
         requests.push(pending.clone());
     }
 
     {
-        let mut pinned = state.pinned_sessions.lock().expect("state mutex poisoned");
+        let mut pinned = lock_state(&state.pinned_sessions);
         pinned.clear();
         pinned.insert("session-atoll".into());
     }
@@ -224,11 +221,11 @@ pub fn seed_plan_approval_demo(app: &AppHandle, state: &AppState) {
 pub fn seed_idle_demo(app: &AppHandle, state: &AppState) {
     FORCE_HOOK_UNINSTALLED.store(true, std::sync::atomic::Ordering::SeqCst);
     {
-        let mut requests = state.requests.lock().expect("state mutex poisoned");
+        let mut requests = lock_state(&state.requests);
         requests.clear();
     }
     {
-        let mut pinned = state.pinned_sessions.lock().expect("state mutex poisoned");
+        let mut pinned = lock_state(&state.pinned_sessions);
         pinned.clear();
     }
     let snapshot = build_snapshot(app, state);

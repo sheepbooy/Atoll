@@ -28,7 +28,7 @@ export interface HookHealthAnalysis {
 export function isHookReady(status: HookStatus | null | undefined): boolean {
   if (!status?.installed) return false;
   if (status.nodeFound === false) return false;
-  return Boolean(status.scriptFound || status.scriptPath);
+  return status.scriptFound === true;
 }
 
 export function hookStatusIssue(status: HookStatus | null | undefined): string | null {

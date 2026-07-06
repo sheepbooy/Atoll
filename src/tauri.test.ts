@@ -26,6 +26,8 @@ describe("Tauri bridge", () => {
 
   afterEach(() => {
     setTauriRuntime(false);
+    window.history.pushState({}, "", "/");
+    vi.restoreAllMocks();
   });
 
   it("starts with an empty browser fallback snapshot", async () => {
@@ -62,6 +64,33 @@ describe("Tauri bridge", () => {
 
     expect(invoke).toHaveBeenCalledOnce();
     expect(invoke).toHaveBeenCalledWith("quit_atoll");
+  });
+
+  it("detects Tauri runtime after module import", async () => {
+    const { quitAtoll } = await import("./tauri");
+
+    setTauriRuntime(true);
+    await quitAtoll();
+
+    expect(invoke).toHaveBeenCalledWith("quit_atoll");
+  });
+
+  it("returns a copy of browser fallback recent requests", async () => {
+    const { getSnapshot } = await import("./tauri");
+    const snapshot = await getSnapshot();
+
+    snapshot.recent.push({
+      id: "mutated",
+      agent: "claude",
+      session: "local",
+      command: "Bash: test",
+      detail: "",
+      cwd: "/tmp",
+      requestedAt: new Date().toISOString(),
+      status: "pending",
+    });
+
+    await expect(getSnapshot()).resolves.toMatchObject({ recent: [] });
   });
 
   it("normalizes snake_case hook health from IPC payloads", async () => {
@@ -150,5 +179,30 @@ describe("Tauri bridge", () => {
     expect(invoke).toHaveBeenNthCalledWith(1, "is_autostart_enabled");
     expect(invoke).toHaveBeenNthCalledWith(2, "set_autostart_enabled", { enabled: true });
     expect(invoke).toHaveBeenNthCalledWith(3, "set_autostart_enabled", { enabled: false });
+  });
+
+  it("uses Cursor hook status fallback in demo mode", async () => {
+    window.history.pushState({}, "", "/?demo=approval");
+    const { getCursorHookStatus } = await import("./tauri");
+
+    await expect(getCursorHookStatus()).resolves.toMatchObject({
+      installed: true,
+      scriptFound: true,
+      settingsPath: "~/.cursor/hooks.json",
+    });
+  });
+
+  it("only opens http and https URLs", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    const { openUrl } = await import("./tauri");
+
+    await openUrl("https://example.com");
+    await openUrl("http://example.com");
+    await openUrl("file:///tmp/secret");
+    await openUrl("javascript:alert(1)");
+
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(open).toHaveBeenNthCalledWith(1, "https://example.com", "_blank");
+    expect(open).toHaveBeenNthCalledWith(2, "http://example.com", "_blank");
   });
 });

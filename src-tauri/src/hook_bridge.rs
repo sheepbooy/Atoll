@@ -11,9 +11,8 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
     build_snapshot, complete_subagent, emit_subagent_snapshot, get_stored_session_host,
-    ingest_cursor_token_usage_from_payload,
-    is_codex_internal_session, iso_timestamp_now, platform,
-    payload_subagent_id, payload_subagent_parent_session_id, purge_tracked_session,
+    ingest_cursor_token_usage_from_payload, is_codex_internal_session, iso_timestamp_now,
+    payload_subagent_id, payload_subagent_parent_session_id, platform, purge_tracked_session,
     refresh_session_token_usage, register_known_session, register_subagent_start,
     resolve_codex_session_cwd, resolve_cursor_session_for_payload, roll_over_token_usage_if_needed,
     schedule_observer_snapshot_emit, show_main_window_for_approval, touch_hook_activity,
@@ -34,6 +33,8 @@ const HOOK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const BRIDGE_PROBE_TIMEOUT: Duration = Duration::from_millis(200);
 const BRIDGE_ONLINE_GRACE: Duration = Duration::from_secs(3);
 const HOOK_POLL_INTERVAL: Duration = Duration::from_millis(180);
+const HOOK_AUTH_HEADER: &str = "x-atoll-hook-token";
+const MAX_HOOK_WAITERS: usize = 512;
 
 pub(crate) fn bridge_config_path() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "macos")]
@@ -46,7 +47,7 @@ pub(crate) fn bridge_config_path() -> Option<std::path::PathBuf> {
     }
 }
 
-pub(crate) fn write_bridge_config(port: u16) -> std::io::Result<()> {
+pub(crate) fn write_bridge_config(port: u16, token: &str) -> std::io::Result<()> {
     let path = bridge_config_path()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "bridge config path"))?;
     if let Some(parent) = path.parent() {
@@ -58,6 +59,7 @@ pub(crate) fn write_bridge_config(port: u16) -> std::io::Result<()> {
         "claudeUrl": format!("http://{HOOK_BIND_HOST}:{port}/claude/pre-tool-use"),
         "codexUrl": format!("http://{HOOK_BIND_HOST}:{port}/codex/hook"),
         "cursorUrl": format!("http://{HOOK_BIND_HOST}:{port}/cursor/hook"),
+        "token": token,
     });
     std::fs::write(path, serde_json::to_string_pretty(&config)?)
 }
@@ -76,11 +78,17 @@ pub(crate) fn cursor_hook_url_for_app(app: &AppHandle) -> String {
 }
 
 pub(crate) fn refresh_bridge_config_file(app: &AppHandle) -> std::io::Result<()> {
-    let port = app.state::<AppState>().bridge_port.load(Ordering::SeqCst);
+    let state = app.state::<AppState>();
+    let port = state.bridge_port.load(Ordering::SeqCst);
     if port == 0 {
         return Ok(());
     }
-    write_bridge_config(port)
+    let token = state
+        .bridge_auth_token
+        .lock()
+        .map(|token| token.clone())
+        .unwrap_or_default();
+    write_bridge_config(port, &token)
 }
 
 fn bind_listener_on_port(port: u16) -> std::io::Result<TcpListener> {
@@ -218,7 +226,13 @@ pub(crate) fn start_server(app: AppHandle) {
                 app.state::<AppState>()
                     .bridge_port
                     .store(port, Ordering::SeqCst);
-                if let Err(error) = write_bridge_config(port) {
+                let token = app
+                    .state::<AppState>()
+                    .bridge_auth_token
+                    .lock()
+                    .map(|token| token.clone())
+                    .unwrap_or_default();
+                if let Err(error) = write_bridge_config(port, &token) {
                     eprintln!("Atoll hook bridge failed to write bridge.json: {error}");
                 } else {
                     eprintln!("Atoll hook bridge listening on {HOOK_BIND_HOST}:{port}");
@@ -313,8 +327,13 @@ pub(crate) fn permission_request_from_cursor_payload(
     }
 
     let resolved_cwd = resolve_cursor_cwd(&payload);
-    let mut request =
-        permission_request_from_tool_payload(id, payload.clone(), requested_at, AgentKind::Cursor, false)?;
+    let mut request = permission_request_from_tool_payload(
+        id,
+        payload.clone(),
+        requested_at,
+        AgentKind::Cursor,
+        false,
+    )?;
     request.cwd = resolved_cwd;
     request.session = crate::payload_cursor_session_id(&payload)
         .unwrap_or("cursor")
@@ -482,11 +501,7 @@ pub(crate) fn cursor_permission_hook_response(
 fn cursor_hook_defer_response(hook_event_name: &str, reason: &str) -> Value {
     if matches!(
         hook_event_name,
-        "postToolUse"
-            | "postToolUseFailure"
-            | "stop"
-            | "subagentStart"
-            | "subagentStop"
+        "postToolUse" | "postToolUseFailure" | "stop" | "subagentStart" | "subagentStop"
     ) {
         return json!({});
     }
@@ -572,11 +587,38 @@ fn route_request(
     }
 
     match request.path.as_str() {
-        "/claude/pre-tool-use" => route_claude_request(app, request, stream),
-        "/codex/hook" => route_codex_request(app, request, stream),
-        "/cursor/hook" => route_cursor_request(app, request, stream),
+        "/claude/pre-tool-use" => {
+            require_hook_auth(&app, &request)?;
+            route_claude_request(app, request, stream)
+        }
+        "/codex/hook" => {
+            require_hook_auth(&app, &request)?;
+            route_codex_request(app, request, stream)
+        }
+        "/cursor/hook" => {
+            require_hook_auth(&app, &request)?;
+            route_cursor_request(app, request, stream)
+        }
         _ => Err("Unsupported Atoll hook endpoint".into()),
     }
+}
+
+fn require_hook_auth(app: &AppHandle, request: &HttpRequest) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let token = state
+        .bridge_auth_token
+        .lock()
+        .map(|token| token.clone())
+        .map_err(|_| "Atoll hook bridge auth unavailable".to_string())?;
+    if hook_auth_matches(&token, request) {
+        return Ok(());
+    }
+    Err("Unauthorized Atoll hook request".into())
+}
+
+fn hook_auth_matches(expected_token: &str, request: &HttpRequest) -> bool {
+    let provided = request.headers.get(HOOK_AUTH_HEADER);
+    !expected_token.is_empty() && provided.map(String::as_str) == Some(expected_token)
 }
 
 fn strip_utf8_bom(body: &[u8]) -> &[u8] {
@@ -775,7 +817,8 @@ fn observe_cursor_session(
                 if transcript_path.is_none() {
                     transcript_path = Some(path);
                 }
-                if crate::is_unresolved_cursor_cwd(&cwd) && !crate::is_unresolved_cursor_cwd(&workspace)
+                if crate::is_unresolved_cursor_cwd(&cwd)
+                    && !crate::is_unresolved_cursor_cwd(&workspace)
                 {
                     cwd = workspace;
                 }
@@ -797,9 +840,7 @@ fn observe_cursor_session(
                 }
             }
         } else if session_id.len() >= crate::CURSOR_TRANSCRIPT_PREFIX_MIN_LEN {
-            if let Some((path, _workspace)) =
-                crate::discover_cursor_agent_transcript(session_id)
-            {
+            if let Some((path, _workspace)) = crate::discover_cursor_agent_transcript(session_id) {
                 if let Ok(mut known) = state.known_sessions.lock() {
                     if let Some(entry) = known.get_mut(session_id) {
                         if entry.transcript_path.is_none() {
@@ -883,7 +924,10 @@ fn route_cursor_request(
     match hook_event_name.as_str() {
         "sessionStart" | "afterAgentResponse" | "sessionEnd" | "afterAgentThought" => {
             let state = app.state::<AppState>();
-            let ingest_tokens = matches!(hook_event_name.as_str(), "afterAgentResponse" | "sessionEnd");
+            let ingest_tokens = matches!(
+                hook_event_name.as_str(),
+                "afterAgentResponse" | "sessionEnd"
+            );
             observe_cursor_session(
                 &app,
                 &state,
@@ -908,14 +952,7 @@ fn route_cursor_request(
         }
         "preToolUse" => {
             let state = app.state::<AppState>();
-            observe_cursor_session(
-                &app,
-                &state,
-                &payload,
-                Some(stream),
-                false,
-                "preToolUse",
-            )?;
+            observe_cursor_session(&app, &state, &payload, Some(stream), false, "preToolUse")?;
             if let Some(mut request) = permission_request_from_cursor_payload(
                 uuid::Uuid::new_v4().to_string(),
                 payload,
@@ -976,16 +1013,21 @@ fn route_cursor_request(
                 .unwrap_or("cursor");
             let cwd = resolve_cursor_cwd(&payload);
             let transcript_path = payload_transcript_path(&payload);
-            register_known_session(&state, session_id, AgentKind::Cursor, &cwd, transcript_path.as_deref());
+            register_known_session(
+                &state,
+                session_id,
+                AgentKind::Cursor,
+                &cwd,
+                transcript_path.as_deref(),
+            );
             touch_session_activity(&state, session_id);
             emit_subagent_snapshot(&app, &state);
             Ok(json!({}))
         }
         "subagentStop" => {
             let state = app.state::<AppState>();
-            let parent_session = resolve_cursor_subagent_parent(&state, &payload).or_else(|| {
-                payload_subagent_parent_session_id(&payload).map(str::to_string)
-            });
+            let parent_session = resolve_cursor_subagent_parent(&state, &payload)
+                .or_else(|| payload_subagent_parent_session_id(&payload).map(str::to_string));
             complete_subagent(&state, &payload);
             drop(state);
             let payload = if let Some(parent_id) = parent_session {
@@ -1052,6 +1094,9 @@ fn submit_blocking_permission_request(
             .hook_waiters
             .lock()
             .map_err(|error| error.to_string())?;
+        if waiters.len() >= MAX_HOOK_WAITERS {
+            return Err("Too many pending Atoll hook requests".into());
+        }
         waiters.insert(request_id.clone(), sender);
     }
 
@@ -2107,6 +2152,7 @@ fn fallback_hook_response(hook_event_name: &str, reason: &str) -> Value {
 struct HttpRequest {
     method: String,
     path: String,
+    headers: std::collections::HashMap<String, String>,
     body: Vec<u8>,
 }
 
@@ -2128,6 +2174,7 @@ fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, String> {
         .to_string();
 
     let mut content_length = 0usize;
+    let mut headers = std::collections::HashMap::new();
     loop {
         let mut header = String::new();
         reader
@@ -2139,12 +2186,15 @@ fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, String> {
         }
 
         if let Some((name, value)) = trimmed.split_once(':') {
-            if name.eq_ignore_ascii_case("content-length") {
+            let name = name.trim().to_ascii_lowercase();
+            let value = value.trim().to_string();
+            if name == "content-length" {
                 content_length = value
                     .trim()
                     .parse::<usize>()
                     .map_err(|error| format!("Invalid content-length: {error}"))?;
             }
+            headers.insert(name, value);
         }
     }
 
@@ -2153,7 +2203,12 @@ fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, String> {
         .read_exact(&mut body)
         .map_err(|error| format!("Failed to read hook request body: {error}"))?;
 
-    Ok(HttpRequest { method, path, body })
+    Ok(HttpRequest {
+        method,
+        path,
+        headers,
+        body,
+    })
 }
 
 fn write_json_response(stream: &mut TcpStream, body: Value) -> std::io::Result<()> {
@@ -2219,11 +2274,13 @@ mod bridge_bind_tests {
         let config_path = temp.join("bridge.json");
 
         let port = 47_778_u16;
+        let token = "test-token";
         let config = json!({
             "port": port,
             "claudeUrl": format!("http://{HOOK_BIND_HOST}:{port}/claude/pre-tool-use"),
             "codexUrl": format!("http://{HOOK_BIND_HOST}:{port}/codex/hook"),
             "cursorUrl": format!("http://{HOOK_BIND_HOST}:{port}/cursor/hook"),
+            "token": token,
         });
         std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())
             .expect("write config");
@@ -2249,8 +2306,33 @@ mod bridge_bind_tests {
             .and_then(Value::as_str)
             .unwrap()
             .contains("/cursor/hook"));
+        assert_eq!(parsed.get("token").and_then(Value::as_str), Some(token));
 
         let _ = std::fs::remove_dir_all(temp);
+    }
+
+    #[test]
+    fn hook_auth_requires_matching_token_header() {
+        let mut headers = std::collections::HashMap::new();
+        headers.insert(HOOK_AUTH_HEADER.to_string(), "secret-token".to_string());
+        let request = HttpRequest {
+            method: "POST".into(),
+            path: "/codex/hook".into(),
+            headers,
+            body: Vec::new(),
+        };
+
+        assert!(hook_auth_matches("secret-token", &request));
+        assert!(!hook_auth_matches("other-token", &request));
+        assert!(!hook_auth_matches("", &request));
+
+        let request_without_header = HttpRequest {
+            method: "POST".into(),
+            path: "/codex/hook".into(),
+            headers: std::collections::HashMap::new(),
+            body: Vec::new(),
+        };
+        assert!(!hook_auth_matches("secret-token", &request_without_header));
     }
 }
 
@@ -2280,13 +2362,19 @@ mod payload_tests {
     #[test]
     fn cursor_permission_response_allow() {
         let response = cursor_permission_hook_response(Decision::Approved, "", None);
-        assert_eq!(response.get("permission").and_then(Value::as_str), Some("allow"));
+        assert_eq!(
+            response.get("permission").and_then(Value::as_str),
+            Some("allow")
+        );
     }
 
     #[test]
     fn cursor_permission_response_deny() {
         let response = cursor_permission_hook_response(Decision::Denied, "blocked", None);
-        assert_eq!(response.get("permission").and_then(Value::as_str), Some("deny"));
+        assert_eq!(
+            response.get("permission").and_then(Value::as_str),
+            Some("deny")
+        );
     }
 
     #[test]

@@ -1,6 +1,7 @@
 import {
   CSSProperties,
   FocusEvent,
+  KeyboardEvent as ReactKeyboardEvent,
   memo,
   MouseEvent,
   PointerEvent as ReactPointerEvent,
@@ -107,6 +108,7 @@ import { TokenCounter } from "./TokenCounter";
 import { TokenHeatmapView } from "./TokenHeatmapView";
 import { formatCompactTokenCount } from "./tokenCounterFormat";
 import { getDemoMode, isGifCaptureMode, shouldAutoExpandDemo } from "./demoSnapshot";
+import { manageAsyncUnlisten } from "./asyncUnlisten";
 import { toPng } from "html-to-image";
 
 import {
@@ -792,13 +794,6 @@ export function App() {
   }, [hookHealthHydrated, snapshot.hookHealth]);
 
   useEffect(() => {
-    let unsubscribe: () => void = () => undefined;
-    let unsubscribeHover: () => void = () => undefined;
-    let unsubscribeOpen: () => void = () => undefined;
-    let unsubscribeCapture: () => void = () => undefined;
-    let unsubscribeCaptureHooks: () => void = () => undefined;
-    let unsubscribeScreenshot: () => void = () => undefined;
-
     const loadSnapshot = () => {
       const seq = snapshotLoadSeqRef.current;
       getSnapshot()
@@ -839,117 +834,117 @@ export function App() {
         setNotchMetricsHydrated(true);
       });
     setSessionRetention(readRetentionMinutes()).catch(() => undefined);
-    onSnapshotChanged((nextSnapshot) => {
-      applySnapshot(nextSnapshot, { mergeHookHealth: true });
-      setHookHealthHydrated(true);
-    }).then((cleanup) => {
-      unsubscribe = cleanup;
-    });
-    onIslandHoverChanged(({ hovering, cursorOverWindow }) => {
-      cursorOverIslandRef.current = cursorOverWindow;
-      if (cursorOverWindow) {
-        clearIdleTimer();
-        if (
-          !suppressHoverExpandRef.current &&
-          (phaseRef.current === "closing" ||
-            (shrinkInFlightRef.current && phaseRef.current === "micro"))
-        ) {
-          expandIsland();
-          return;
+    const unsubscribe = manageAsyncUnlisten(
+      onSnapshotChanged((nextSnapshot) => {
+        applySnapshot(nextSnapshot, { mergeHookHealth: true });
+        setHookHealthHydrated(true);
+      }),
+    );
+    const unsubscribeHover = manageAsyncUnlisten(
+      onIslandHoverChanged(({ hovering, cursorOverWindow }) => {
+        cursorOverIslandRef.current = cursorOverWindow;
+        if (cursorOverWindow) {
+          clearIdleTimer();
+          if (
+            !suppressHoverExpandRef.current &&
+            (phaseRef.current === "closing" ||
+              (shrinkInFlightRef.current && phaseRef.current === "micro"))
+          ) {
+            expandIsland();
+            return;
+          }
         }
-      }
-      hoveringRef.current = hovering;
-      if (hovering) {
-        if (!suppressHoverExpandRef.current) {
-          expandIsland();
+        hoveringRef.current = hovering;
+        if (hovering) {
+          if (!suppressHoverExpandRef.current) {
+            expandIsland();
+          }
+        } else if (!cursorOverWindow) {
+          if (phaseRef.current !== "closing") {
+            suppressHoverExpandRef.current = false;
+          }
+          if (
+            phaseRef.current === "compact" &&
+            shouldRestInMicro(usesMicroIslandRef.current)
+          ) {
+            scheduleShrinkToMicro();
+          } else {
+            scheduleIdleCollapse();
+          }
         }
-      } else if (!cursorOverWindow) {
-        if (phaseRef.current !== "closing") {
-          suppressHoverExpandRef.current = false;
+      }),
+    );
+    const unsubscribeOpen = manageAsyncUnlisten(
+      onIslandOpenRequested(() => {
+        suppressHoverExpandRef.current = false;
+        expandIsland();
+        scheduleIdleCollapse();
+      }),
+    );
+    const unsubscribeCapture = manageAsyncUnlisten(
+      onCaptureCollapseRequested(() => {
+        collapseIsland(true);
+      }),
+    );
+    const unsubscribeCaptureHooks = manageAsyncUnlisten(
+      onCaptureOpenHooksRequested(() => {
+        getSnapshot()
+          .then(applySnapshot)
+          .catch(() => undefined)
+          .finally(() => {
+            openHooksPage("home");
+            suppressHoverExpandRef.current = false;
+            expandIsland();
+          });
+      }),
+    );
+    const unsubscribeScreenshot = manageAsyncUnlisten(
+      onCaptureScreenshotRequested(async () => {
+        const stage = document.querySelector<HTMLElement>(".stage");
+        if (!stage) return;
+
+        const phase = phaseRef.current;
+        if (phase === "compact" && collapsedModeRef.current !== "dormant") {
+          await setIslandPresentation(
+            "compact",
+            collapsedWindowWidthRef.current,
+            undefined,
+            compactLeftPaneWidthRef.current,
+            false,
+            true,
+          );
+        } else if (phase === "expanded") {
+          const idleExpanded =
+            snapshotRef.current.pendingCount === 0 &&
+            snapshotRef.current.sessions.length === 0;
+          await setIslandPresentation(
+            "expanded",
+            collapsedWindowWidthRef.current,
+            idleExpanded,
+            compactLeftPaneWidthRef.current,
+            false,
+            true,
+          );
         }
-        if (
-          phaseRef.current === "compact" &&
-          shouldRestInMicro(usesMicroIslandRef.current)
-        ) {
-          scheduleShrinkToMicro();
-        } else {
-          scheduleIdleCollapse();
-        }
-      }
-    }).then((cleanup) => {
-      unsubscribeHover = cleanup;
-    });
-    onIslandOpenRequested(() => {
-      suppressHoverExpandRef.current = false;
-      expandIsland();
-      scheduleIdleCollapse();
-    }).then((cleanup) => {
-      unsubscribeOpen = cleanup;
-    });
-    onCaptureCollapseRequested(() => {
-      collapseIsland(true);
-    }).then((cleanup) => {
-      unsubscribeCapture = cleanup;
-    });
-    onCaptureOpenHooksRequested(() => {
-      getSnapshot()
-        .then(applySnapshot)
-        .catch(() => undefined)
-        .finally(() => {
-          openHooksPage("home");
-          suppressHoverExpandRef.current = false;
-          expandIsland();
+
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
         });
-    }).then((cleanup) => {
-      unsubscribeCaptureHooks = cleanup;
-    });
-    onCaptureScreenshotRequested(async () => {
-      const stage = document.querySelector<HTMLElement>(".stage");
-      if (!stage) return;
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 120));
 
-      const phase = phaseRef.current;
-      if (phase === "compact" && collapsedModeRef.current !== "dormant") {
-        await setIslandPresentation(
-          "compact",
-          collapsedWindowWidthRef.current,
-          undefined,
-          compactLeftPaneWidthRef.current,
-          false,
-          true,
-        );
-      } else if (phase === "expanded") {
-        const idleExpanded =
-          snapshotRef.current.pendingCount === 0 &&
-          snapshotRef.current.sessions.length === 0;
-        await setIslandPresentation(
-          "expanded",
-          collapsedWindowWidthRef.current,
-          idleExpanded,
-          compactLeftPaneWidthRef.current,
-          false,
-          true,
-        );
-      }
-
-      await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      });
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 120));
-
-      try {
-        const dataUrl = await toPng(stage, {
-          pixelRatio: window.devicePixelRatio || 2,
-          backgroundColor: "#0a0b0d",
-          cacheBust: true,
-        });
-        const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
-        await captureProvideScreenshot(base64);
-      } catch (error) {
-        console.error("[Atoll] capture screenshot failed", error);
-      }
-    }).then((cleanup) => {
-      unsubscribeScreenshot = cleanup;
-    });
+        try {
+          const dataUrl = await toPng(stage, {
+            pixelRatio: window.devicePixelRatio || 2,
+            backgroundColor: "#0a0b0d",
+            cacheBust: true,
+          });
+          const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+          await captureProvideScreenshot(base64);
+        } catch (error) {
+          console.error("[Atoll] capture screenshot failed", error);
+        }
+      }),
+    );
 
     return () => {
       snapshotLoadSeqRef.current += 1;
@@ -3138,19 +3133,17 @@ function SessionListView({
       return;
     }
 
-    let unsubscribe = () => {};
-
-    onIslandHoverChanged(({ hovering, clientX, clientY }) => {
-      if (!hovering || clientX == null || clientY == null) {
-        if (!hovering) {
-          setHoveredSessionId(null);
+    const unsubscribe = manageAsyncUnlisten(
+      onIslandHoverChanged(({ hovering, clientX, clientY }) => {
+        if (!hovering || clientX == null || clientY == null) {
+          if (!hovering) {
+            setHoveredSessionId(null);
+          }
+          return;
         }
-        return;
-      }
-      setHoveredSessionId(sessionIdAtClientPoint(clientX, clientY, listRef.current));
-    }).then((cleanup) => {
-      unsubscribe = cleanup;
-    });
+        setHoveredSessionId(sessionIdAtClientPoint(clientX, clientY, listRef.current));
+      }),
+    );
 
     return () => {
       unsubscribe();
@@ -3160,6 +3153,15 @@ function SessionListView({
   function handleListPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
     const item = (event.target as HTMLElement).closest<HTMLElement>("[data-session-id]");
     setHoveredSessionId(item?.dataset.sessionId ?? null);
+  }
+
+  function handleSessionMainKeyDown(
+    event: ReactKeyboardEvent<HTMLDivElement>,
+    sessionId: string,
+  ) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    onSelectSession(sessionId);
   }
 
   return (
@@ -3183,10 +3185,12 @@ function SessionListView({
               data-session-id={session.sessionId}
               className={`session-item ${session.pinned ? "is-pinned" : ""} ${isHovered ? "is-hovered" : ""}`}
             >
-              <button
+              <div
                 className="session-item-main"
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelectSession(session.sessionId)}
+                onKeyDown={(event) => handleSessionMainKeyDown(event, session.sessionId)}
               >
                 <div className="session-item-left">
                   <span className="session-clawd">
@@ -3297,7 +3301,7 @@ function SessionListView({
                   ) : null}
                   <ChevronRight size={14} />
                 </div>
-              </button>
+              </div>
               <div className="session-item-actions">
                 <button
                   type="button"

@@ -30,7 +30,23 @@ PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 NOTES_FILE="scripts/release-notes/${TAG}.md"
 if [[ -f "$NOTES_FILE" ]]; then
-  NOTES=$(head -c 500 "$NOTES_FILE" | tr '\n' ' ')
+  NOTES=$(
+    awk '
+      {
+        gsub(/[[:space:]]+/, " ");
+        text = text (text == "" ? "" : " ") $0;
+      }
+      END {
+        limit = 500;
+        if (length(text) > limit) {
+          text = substr(text, 1, limit);
+          sub(/[[:space:]][^[:space:]]*$/, "", text);
+          text = text "...";
+        }
+        print text;
+      }
+    ' "$NOTES_FILE"
+  )
 else
   NOTES="See https://github.com/${REPO}/releases/tag/${TAG}"
 fi

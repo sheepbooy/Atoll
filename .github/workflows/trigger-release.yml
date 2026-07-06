@@ -1,7 +1,7 @@
 name: Trigger Release
 
 # 在 GitHub Actions 页面手动输入版本号，自动 bump + 打 tag。
-# 注意：GITHUB_TOKEN 推送的 tag 不会触发 Release workflow；发版请用 scripts/release.sh。
+# 需要配置 RELEASE_PAT secret；GITHUB_TOKEN 推送的 tag 不会触发 Release workflow。
 on:
   workflow_dispatch:
     inputs:
@@ -18,10 +18,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Validate release token
+        run: |
+          if [ -z "${{ secrets.RELEASE_PAT }}" ]; then
+            echo "RELEASE_PAT secret is required so the pushed tag can trigger Release."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
 
       - name: Normalize version
         id: version

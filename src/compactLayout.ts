@@ -26,8 +26,6 @@ export const COMPACT_METRICS_GAP = 10;
 export const MIN_MAX_COMPACT_ICONS = 1;
 export const ABSOLUTE_MAX_COMPACT_ICONS = 8;
 
-const WORST_CASE_TOKEN_LABEL = "999.9B";
-
 export interface CompactHeaderLayout {
   leftIconCount: number;
   rightIconCount: number;

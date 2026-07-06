@@ -8,8 +8,16 @@ export function tokenTotal(usage: Pick<TokenUsage, "inputTokens" | "outputTokens
 
 export function formatHeatmapDate(dateKey: string): string {
   const [year, month, day] = dateKey.split("-").map(Number);
+  if (!year || !month || !day) return dateKey;
   const date = new Date(year, month - 1, day);
-  return date.toLocaleDateString(undefined, {
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return dateKey;
+  }
+  return date.toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -185,7 +193,6 @@ export function buildTrendSeries(
   days: Array<{ date: string; inputTokens: number; outputTokens: number }>,
   n = 30,
 ): TrendPoint[] {
-  const todayKey = localDayKey(new Date());
   const today = new Date();
   const result: TrendPoint[] = [];
 

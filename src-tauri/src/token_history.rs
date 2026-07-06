@@ -219,8 +219,7 @@ fn repair_inflated_day_usage(record: &mut TokenDayRecord) {
         return;
     }
 
-    let usage_inflated = record.usage.input_tokens
-        > agent_sum.input_tokens.saturating_mul(8)
+    let usage_inflated = record.usage.input_tokens > agent_sum.input_tokens.saturating_mul(8)
         || record.usage.output_tokens > agent_sum.output_tokens.saturating_mul(8);
     if usage_inflated {
         record.usage = record.usage.component_wise_max(agent_sum);
@@ -524,10 +523,10 @@ mod tests {
                 ),
             ]),
         };
+        let expected = sum_by_agent_usage(&record.by_agent);
 
         repair_inflated_day_usage(&mut record);
-        assert_eq!(record.usage.input_tokens, 2_934_981);
-        assert_eq!(record.usage.output_tokens, 14_369);
+        assert_eq!(record.usage, expected);
     }
 
     #[test]
@@ -590,9 +589,8 @@ mod tests {
 
     fn temp_history_paths(test_name: &str) -> (PathBuf, PathBuf, PathBuf) {
         let pid = std::process::id();
-        let history_path = std::env::temp_dir().join(format!(
-            "atoll-token-history-{pid}-{test_name}.json"
-        ));
+        let history_path =
+            std::env::temp_dir().join(format!("atoll-token-history-{pid}-{test_name}.json"));
         let backup_path = history_path.with_extension("json.bak");
         let temp_path = history_path.with_extension("json.tmp");
         (history_path, backup_path, temp_path)
@@ -618,15 +616,15 @@ mod tests {
     }
 
     fn history_path_test_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        crate::TOKEN_HISTORY_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     #[test]
     fn save_history_file_creates_backup_before_overwriting_main() {
         let _guard = history_path_test_lock();
-        let (history_path, backup_path, temp_path) =
-            temp_history_paths("backup-on-save");
+        let (history_path, backup_path, temp_path) = temp_history_paths("backup-on-save");
         cleanup_history_paths(&history_path);
 
         std::env::set_var(
@@ -653,7 +651,10 @@ mod tests {
         };
         save_history_file(&updated).expect("updated save");
 
-        assert!(backup_path.exists(), "second save should snapshot the prior main file");
+        assert!(
+            backup_path.exists(),
+            "second save should snapshot the prior main file"
+        );
         assert!(
             !temp_path.exists(),
             "temp file should be renamed away after a successful save"
@@ -705,7 +706,10 @@ mod tests {
             3200,
             "should load the pre-update snapshot from .bak"
         );
-        assert_eq!(recovered.days.get(&day_key).unwrap().usage.output_tokens, 900);
+        assert_eq!(
+            recovered.days.get(&day_key).unwrap().usage.output_tokens,
+            900
+        );
 
         let history = get_token_history(7).expect("history query after recovery");
         let today = history

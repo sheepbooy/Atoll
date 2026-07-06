@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   buildDigitReelStrip,
+  buildStaticTokenOdometerCells,
   buildTokenOdometerCells,
+  estimateTokenDisplayWidth,
   formatCompactTokenCount,
+  stepAnimatedTokenValue,
   tokenCompactLevel,
   tokenDisplayCompactLevel,
   tokenDisplayFormatsCompatible,
@@ -59,5 +62,28 @@ describe("tokenCounter", () => {
     expect(rolling.length).toBeGreaterThan(0);
     const delays = rolling.map((cell) => cell.rollDelayMs);
     expect(delays.some((delay) => delay > 0)).toBe(true);
+  });
+
+  it("builds static odometer cells without animation flags", () => {
+    expect(buildStaticTokenOdometerCells("1.2K")).toEqual([
+      expect.objectContaining({ char: "1", kind: "digit", changed: false }),
+      expect.objectContaining({ char: ".", kind: "sep", changed: false }),
+      expect.objectContaining({ char: "2", kind: "digit", changed: false }),
+      expect.objectContaining({ char: "K", kind: "other", changed: false }),
+    ]);
+  });
+
+  it("estimates token display width from character classes", () => {
+    expect(estimateTokenDisplayWidth("111")).toBeGreaterThan(
+      estimateTokenDisplayWidth(",,"),
+    );
+    expect(estimateTokenDisplayWidth("1,000")).toBeGreaterThan(0);
+  });
+
+  it("steps animated token values toward the target", () => {
+    const next = stepAnimatedTokenValue(0, 100, 0.1);
+    expect(next).toBeGreaterThan(0);
+    expect(next).toBeLessThan(100);
+    expect(stepAnimatedTokenValue(99.8, 100, 0.1)).toBe(100);
   });
 });

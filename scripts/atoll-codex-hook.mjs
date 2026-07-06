@@ -3,10 +3,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { resolveHookUrl } from "./atoll-hook-bridge.mjs";
+import { hookAuthHeaders, resolveHookConfig } from "./atoll-hook-bridge.mjs";
 
 const defaultHookUrl = "http://127.0.0.1:47777/codex/hook";
-const hookUrl = resolveHookUrl("codexUrl", defaultHookUrl);
+const hookConfig = resolveHookConfig("codexUrl", defaultHookUrl);
+const hookUrl = hookConfig.url;
 const STDIN_TIMEOUT_MS = 5000;
 
 try {
@@ -17,7 +18,7 @@ try {
   try {
     response = await fetch(hookUrl, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...hookAuthHeaders(hookConfig.token) },
       body: payload || "{}",
     });
   } catch (fetchError) {

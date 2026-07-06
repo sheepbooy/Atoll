@@ -11,16 +11,18 @@ export type AppUpdateState =
 export const UPDATE_RECHECK_MS = 6 * 60 * 60 * 1000;
 export const UPDATE_INITIAL_DELAY_MS = 3_000;
 
-const isTauriRuntime = "__TAURI_INTERNALS__" in window;
+function isTauriRuntime(): boolean {
+  return "__TAURI_INTERNALS__" in window;
+}
 
 let pendingUpdate: Awaited<ReturnType<typeof check>> | null = null;
 
 export function isTauriUpdateRuntime(): boolean {
-  return isTauriRuntime;
+  return isTauriRuntime();
 }
 
 export async function checkAppUpdate(): Promise<AppUpdateState> {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return { status: "idle" };
   }
 
@@ -49,13 +51,13 @@ export type InstallProgressCallback = (progress: number) => void;
 export async function installAppUpdate(
   onProgress?: InstallProgressCallback,
 ): Promise<void> {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return;
   }
 
-  const update = pendingUpdate ?? (await check());
+  const update = pendingUpdate;
   if (!update) {
-    throw new Error("No update available");
+    throw new Error("No pending update. Check for updates again before installing.");
   }
 
   pendingUpdate = update;
@@ -89,7 +91,7 @@ export function clearPendingUpdate(): void {
 }
 
 export async function getAppVersion(): Promise<string | null> {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     return null;
   }
 
