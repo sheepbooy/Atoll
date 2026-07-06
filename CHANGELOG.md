@@ -2,6 +2,13 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.38] - 2026-07-06
+
+### 修复
+- **Windows Cursor Hook**：自动修复 legacy hook 命令与缺失事件，保留用户自定义 hook 配置
+- **Cursor Token 计数**：lifecycle hook 已上报用量的会话不再从 `stop` 重复采集
+- **Codex 会话详情**：修复 transcript 加载卡死；增量读取 transcript，避免每次全量扫描历史
+
 ## [0.1.37] - 2026-07-06
 
 ### 修复
