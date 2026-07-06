@@ -2,6 +2,11 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.36] - 2026-07-06
+
+### 修复
+- **Subagent 列表卡死**：修复 subagent 列表展开/刷新时 UI 冻结的问题；后端 snapshot 构建改为增量合并 subagent 数据，前端避免全量重渲染
+
 ## [0.1.35] - 2026-07-03
 
 ### 修复
