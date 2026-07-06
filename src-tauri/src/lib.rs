@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use std::sync::mpsc::SyncSender;
@@ -1365,6 +1365,13 @@ fn validate_trusted_transcript_path(
     Err("Transcript path is not associated with a known session".into())
 }
 
+fn push_transcript_message(messages: &mut VecDeque<ChatMessage>, message: ChatMessage) {
+    messages.push_back(message);
+    if messages.len() > TRANSCRIPT_MAX_MESSAGES {
+        messages.pop_front();
+    }
+}
+
 fn read_transcript_messages(transcript_path: &str) -> Result<Vec<ChatMessage>, String> {
     use std::fs::File;
     use std::io::{BufRead, BufReader};
@@ -1373,23 +1380,22 @@ fn read_transcript_messages(transcript_path: &str) -> Result<Vec<ChatMessage>, S
     let file = File::open(transcript_path).map_err(|e| format!("Cannot open transcript: {e}"))?;
     let reader = BufReader::new(file);
 
-    let mut messages: Vec<ChatMessage> = Vec::new();
+    let mut messages: VecDeque<ChatMessage> = VecDeque::new();
 
     if format == transcript::TranscriptFormat::Codex {
-        let lines: Vec<String> = reader
-            .lines()
-            .map(|line| line.map_err(|e| format!("Read error: {e}")))
-            .collect::<Result<Vec<_>, _>>()?;
-        for parsed in transcript::parse_codex_messages(&lines) {
-            if parsed.content.is_empty() && parsed.tool_name.is_none() {
-                continue;
+        for line in reader.lines() {
+            let line = line.map_err(|e| format!("Read error: {e}"))?;
+            if let Some(parsed) = transcript::parse_codex_message_line(&line) {
+                push_transcript_message(
+                    &mut messages,
+                    ChatMessage {
+                        role: parsed.role,
+                        content: parsed.content,
+                        tool_name: parsed.tool_name,
+                        tool_input: None,
+                    },
+                );
             }
-            messages.push(ChatMessage {
-                role: parsed.role,
-                content: parsed.content,
-                tool_name: parsed.tool_name,
-                tool_input: None,
-            });
         }
     } else {
         for line in reader.lines() {
@@ -1409,24 +1415,30 @@ fn read_transcript_messages(transcript_path: &str) -> Result<Vec<ChatMessage>, S
                     "human" | "user" => {
                         let content = extract_transcript_text(&entry);
                         if !content.is_empty() {
-                            messages.push(ChatMessage {
-                                role: "user".into(),
-                                content,
-                                tool_name: None,
-                                tool_input: None,
-                            });
+                            push_transcript_message(
+                                &mut messages,
+                                ChatMessage {
+                                    role: "user".into(),
+                                    content,
+                                    tool_name: None,
+                                    tool_input: None,
+                                },
+                            );
                         }
                     }
                     "assistant" => {
                         let content = extract_transcript_text(&entry);
                         let (tool_name, tool_input) = extract_tool_use_from_entry(&entry);
                         if !content.is_empty() || tool_name.is_some() {
-                            messages.push(ChatMessage {
-                                role: "assistant".into(),
-                                content,
-                                tool_name,
-                                tool_input,
-                            });
+                            push_transcript_message(
+                                &mut messages,
+                                ChatMessage {
+                                    role: "assistant".into(),
+                                    content,
+                                    tool_name,
+                                    tool_input,
+                                },
+                            );
                         }
                     }
                     _ => {}
@@ -1440,24 +1452,30 @@ fn read_transcript_messages(transcript_path: &str) -> Result<Vec<ChatMessage>, S
                     "user" => {
                         let content = extract_transcript_text(&entry);
                         if !content.is_empty() {
-                            messages.push(ChatMessage {
-                                role: "user".into(),
-                                content,
-                                tool_name: None,
-                                tool_input: None,
-                            });
+                            push_transcript_message(
+                                &mut messages,
+                                ChatMessage {
+                                    role: "user".into(),
+                                    content,
+                                    tool_name: None,
+                                    tool_input: None,
+                                },
+                            );
                         }
                     }
                     "assistant" => {
                         let content = extract_transcript_text(&entry);
                         let (tool_name, tool_input) = extract_tool_use_from_entry(&entry);
                         if !content.is_empty() || tool_name.is_some() {
-                            messages.push(ChatMessage {
-                                role: "assistant".into(),
-                                content,
-                                tool_name,
-                                tool_input,
-                            });
+                            push_transcript_message(
+                                &mut messages,
+                                ChatMessage {
+                                    role: "assistant".into(),
+                                    content,
+                                    tool_name,
+                                    tool_input,
+                                },
+                            );
                         }
                     }
                     _ => {}
@@ -1466,8 +1484,7 @@ fn read_transcript_messages(transcript_path: &str) -> Result<Vec<ChatMessage>, S
         }
     }
 
-    let start = messages.len().saturating_sub(TRANSCRIPT_MAX_MESSAGES);
-    Ok(messages[start..].to_vec())
+    Ok(messages.into_iter().collect())
 }
 
 /// Resolve a session's transcript file, checking known state, requests, and on-disk discovery.
@@ -1508,14 +1525,17 @@ fn resolve_session_transcript_path_from_snapshot(
     known_sessions: &HashMap<String, KnownSession>,
     requests: &[PermissionRequest],
     session_id: &str,
+    agent: &AgentKind,
 ) -> Option<String> {
     if let Some(entry) = known_sessions.get(session_id) {
         if let Some(path) = entry.transcript_path.clone() {
             return Some(path);
         }
-        if let Some(ref conv_id) = entry.conversation_id {
-            if let Some((path, _)) = discover_cursor_agent_transcript(conv_id) {
-                return Some(path);
+        if matches!(agent, AgentKind::Cursor) {
+            if let Some(ref conv_id) = entry.conversation_id {
+                if let Some((path, _)) = discover_cursor_agent_transcript(conv_id) {
+                    return Some(path);
+                }
             }
         }
     }
@@ -1528,7 +1548,11 @@ fn resolve_session_transcript_path_from_snapshot(
         }
     }
 
-    discover_cursor_agent_transcript(session_id).map(|(path, _)| path)
+    if matches!(agent, AgentKind::Cursor) {
+        discover_cursor_agent_transcript(session_id).map(|(path, _)| path)
+    } else {
+        None
+    }
 }
 
 fn persist_session_transcript_path(state: &AppState, session_id: &str, path: &str) {
@@ -6454,11 +6478,14 @@ fn snapshot_from(
             &session.cwd,
             &session.agent,
         );
-        if matches!(session.agent, AgentKind::Cursor) && session.transcript_path.is_none() {
+        if matches!(session.agent, AgentKind::Codex | AgentKind::Cursor)
+            && session.transcript_path.is_none()
+        {
             if let Some(path) = resolve_session_transcript_path_from_snapshot(
                 known_sessions,
                 requests,
                 &session.session_id,
+                &session.agent,
             ) {
                 session.transcript_path = Some(path);
             }
@@ -7106,6 +7133,99 @@ mod core_tests {
         );
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn codex_transcript_reader_keeps_last_messages_without_full_history() {
+        let dir = std::env::temp_dir().join(format!(
+            "atoll-codex-transcript-window-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let transcript_path = dir.join("session.jsonl");
+        let mut content = String::from(
+            r#"{"type":"session_meta","payload":{"id":"session-app","cwd":"/tmp/project"}}"#,
+        );
+        content.push('\n');
+        for i in 0..75 {
+            content.push_str(&format!(
+                r#"{{"type":"response_item","payload":{{"type":"message","role":"assistant","content":[{{"type":"output_text","text":"message {i}"}}]}}}}"#
+            ));
+            content.push('\n');
+        }
+        std::fs::write(&transcript_path, content).expect("write transcript");
+
+        let messages =
+            read_transcript_messages(&transcript_path.to_string_lossy()).expect("read messages");
+
+        assert_eq!(messages.len(), TRANSCRIPT_MAX_MESSAGES);
+        assert_eq!(messages[0].content, "message 25");
+        assert_eq!(messages[TRANSCRIPT_MAX_MESSAGES - 1].content, "message 74");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn codex_session_summary_exposes_known_or_request_transcript_path() {
+        let requested_at = iso_timestamp_now();
+        let request_path = "/tmp/atoll-codex-request.jsonl".to_string();
+        let known_path = "/tmp/atoll-codex-known.jsonl".to_string();
+        let requests = vec![PermissionRequest {
+            id: "req-codex".into(),
+            tool_use_id: None,
+            agent: AgentKind::Codex,
+            session: "codex-request-session".into(),
+            command: "Bash: ls".into(),
+            detail: "List files".into(),
+            cwd: "/tmp/request-project".into(),
+            requested_at: requested_at.clone(),
+            status: PermissionStatus::Approved,
+            archived: false,
+            supports_always: false,
+            transcript_path: Some(request_path.clone()),
+            tool_input: None,
+        }];
+        let known_sessions = HashMap::from([(
+            "codex-known-session".into(),
+            KnownSession {
+                agent: AgentKind::Codex,
+                cwd: "/tmp/known-project".into(),
+                transcript_path: Some(known_path.clone()),
+                last_activity: requested_at,
+                host: platform::SessionHost::Unknown,
+                conversation_id: None,
+            },
+        )]);
+
+        let snapshot = snapshot_from(
+            &requests,
+            &HashMap::new(),
+            900,
+            &HashMap::new(),
+            &known_sessions,
+            &HashSet::new(),
+            true,
+        );
+
+        let request_session = snapshot
+            .sessions
+            .iter()
+            .find(|session| session.session_id == "codex-request-session")
+            .expect("request session");
+        assert_eq!(
+            request_session.transcript_path.as_deref(),
+            Some(request_path.as_str())
+        );
+
+        let known_session = snapshot
+            .sessions
+            .iter()
+            .find(|session| session.session_id == "codex-known-session")
+            .expect("known session");
+        assert_eq!(
+            known_session.transcript_path.as_deref(),
+            Some(known_path.as_str())
+        );
     }
 
     #[test]

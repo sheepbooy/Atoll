@@ -68,11 +68,7 @@ pub fn detect_transcript_format_from_line(line: &str) -> Option<TranscriptFormat
     // Cursor transcripts use "role" instead of "type" at the top level
     if let Some(role) = entry.get("role").and_then(Value::as_str) {
         if matches!(role, "user" | "assistant") && entry.get("message").is_some() {
-            if entry
-                .get("message")
-                .and_then(|m| m.get("usage"))
-                .is_some()
-            {
+            if entry.get("message").and_then(|m| m.get("usage")).is_some() {
                 return Some(TranscriptFormat::Claude);
             }
             return Some(TranscriptFormat::Cursor);
@@ -131,58 +127,57 @@ pub fn read_codex_cwd_from_transcript(path: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-pub fn parse_codex_messages(lines: &[String]) -> Vec<ParsedChatMessage> {
-    let mut messages: Vec<ParsedChatMessage> = Vec::new();
-
-    for line in lines {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        let entry: Value = match serde_json::from_str(trimmed) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-
-        if entry.get("type").and_then(Value::as_str) != Some("response_item") {
-            continue;
-        }
-
-        let payload = entry.get("payload").unwrap_or(&Value::Null);
-        let payload_type = payload.get("type").and_then(Value::as_str).unwrap_or("");
-
-        match payload_type {
-            "message" => {
-                let role = payload
-                    .get("role")
-                    .and_then(Value::as_str)
-                    .unwrap_or("assistant");
-                let content = extract_codex_message_content(payload);
-                if !content.is_empty() {
-                    messages.push(ParsedChatMessage {
-                        role: role.to_string(),
-                        content,
-                        tool_name: None,
-                    });
-                }
-            }
-            "function_call" | "custom_tool_call" => {
-                let name = payload
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or(payload_type);
-                messages.push(ParsedChatMessage {
-                    role: "assistant".into(),
-                    content: String::new(),
-                    tool_name: Some(name.to_string()),
-                });
-            }
-            _ => {}
-        }
+pub fn parse_codex_message_line(line: &str) -> Option<ParsedChatMessage> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
     }
 
-    messages
+    let entry: Value = serde_json::from_str(trimmed).ok()?;
+    if entry.get("type").and_then(Value::as_str) != Some("response_item") {
+        return None;
+    }
+
+    let payload = entry.get("payload").unwrap_or(&Value::Null);
+    let payload_type = payload.get("type").and_then(Value::as_str).unwrap_or("");
+
+    match payload_type {
+        "message" => {
+            let role = payload
+                .get("role")
+                .and_then(Value::as_str)
+                .unwrap_or("assistant");
+            let content = extract_codex_message_content(payload);
+            if content.is_empty() {
+                return None;
+            }
+            Some(ParsedChatMessage {
+                role: role.to_string(),
+                content,
+                tool_name: None,
+            })
+        }
+        "function_call" | "custom_tool_call" => {
+            let name = payload
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or(payload_type);
+            Some(ParsedChatMessage {
+                role: "assistant".into(),
+                content: String::new(),
+                tool_name: Some(name.to_string()),
+            })
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+pub fn parse_codex_messages(lines: &[String]) -> Vec<ParsedChatMessage> {
+    lines
+        .iter()
+        .filter_map(|line| parse_codex_message_line(line))
+        .collect()
 }
 
 const SUBAGENT_TERMINAL_SUBSTRINGS: &[&str] = &[
