@@ -521,6 +521,10 @@ function compactPresentationKey(
   return mode === "dormant" ? "dormant" : `compact:${width}:${leftWidth}`;
 }
 
+function microPresentationWidth(): number {
+  return MICRO_WINDOW_WIDTH;
+}
+
 function shouldRestInMicro(usesMicro: boolean): boolean {
   return usesMicro;
 }
@@ -1539,14 +1543,15 @@ export function App() {
 
     clearIdleTimer();
     setPresentationPhase("micro");
+    const microWidth = microPresentationWidth();
     lastNativePresentationKeyRef.current = compactPresentationKey(
       "micro",
-      collapsedWindowWidthRef.current,
+      microWidth,
       0,
     );
     shrinkInFlightRef.current = true;
     try {
-      await setIslandPresentation("micro", collapsedWindowWidthRef.current);
+      await setIslandPresentation("micro", microWidth);
     } catch {
       setPresentationPhase("compact");
     } finally {
@@ -1701,16 +1706,18 @@ export function App() {
       (naturalCollapseMode === "dormant" || naturalCollapseMode === "micro")
         ? "compact"
         : naturalCollapseMode;
+    const collapsePresentationWidth =
+      collapseMode === "micro" ? microPresentationWidth() : compactWidth;
 
     lastNativePresentationKeyRef.current = compactPresentationKey(
       collapseMode,
-      compactWidth,
+      collapsePresentationWidth,
       compactLeftWidth,
     );
 
     const nativeTransition =
       collapseMode === "micro"
-        ? setIslandPresentation("micro", compactWidth)
+        ? setIslandPresentation("micro", microPresentationWidth())
         : collapseMode === "dormant"
           ? setIslandPresentation("dormant")
           : setIslandPresentation(
@@ -1729,7 +1736,7 @@ export function App() {
           if (collapseMode === "micro") {
             await setIslandPresentation(
               "micro",
-              compactWidth,
+              microPresentationWidth(),
               undefined,
               undefined,
               false,
@@ -1756,7 +1763,7 @@ export function App() {
           }
           lastNativePresentationKeyRef.current = compactPresentationKey(
             collapseMode,
-            compactWidth,
+            collapsePresentationWidth,
             compactLeftWidth,
           );
           expandCollapseAnchorRef.current = {
@@ -2428,10 +2435,11 @@ export function App() {
     }
 
     if (phase === "micro") {
-      const key = compactPresentationKey("micro", collapsedWindowWidth, 0);
+      const microWidth = microPresentationWidth();
+      const key = compactPresentationKey("micro", microWidth, 0);
       if (lastNativePresentationKeyRef.current === key) return;
       lastNativePresentationKeyRef.current = key;
-      syncNativeIslandPresentation("micro", collapsedWindowWidth).catch(
+      syncNativeIslandPresentation("micro", microWidth).catch(
         () => undefined,
       );
       return;

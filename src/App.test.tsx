@@ -1175,6 +1175,16 @@ describe("App", () => {
 
     expect(container.querySelector(".is-micro")).not.toBeNull();
     expect(bridge.setIslandPresentation.mock.calls[0]?.[0]).not.toBe("dormant");
+    await waitFor(() =>
+      expect(bridge.setIslandPresentation).toHaveBeenCalledWith(
+        "micro",
+        96,
+        undefined,
+        undefined,
+        expect.any(Boolean),
+        expect.any(Boolean),
+      ),
+    );
 
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,
@@ -1255,6 +1265,18 @@ describe("App", () => {
       ),
     );
     expect(toggle).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(window.localStorage.getItem("atoll.foldedIslandSize")).toBe(
+        "small",
+      ),
+    );
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    bridge.setIslandPresentation.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Atoll" }));
+    expect(bridge.setIslandPresentation).toHaveBeenCalledWith("micro", 96);
 
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,
