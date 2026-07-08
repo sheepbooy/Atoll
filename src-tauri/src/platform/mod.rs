@@ -299,7 +299,11 @@ pub fn is_claude_desktop_app_running() -> bool {
     {
         return macos::is_claude_desktop_app_running();
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        return windows::is_claude_desktop_app_running();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         false
     }
@@ -496,7 +500,7 @@ pub fn activate_claude_app(app: &AppHandle) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let _ = app;
-        return windows::focus_claude_app();
+        return windows::activate_claude_app();
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
@@ -530,7 +534,7 @@ pub fn activate_codex_app(app: &AppHandle) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let _ = app;
-        return windows::focus_codex_app();
+        return windows::activate_codex_app();
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {

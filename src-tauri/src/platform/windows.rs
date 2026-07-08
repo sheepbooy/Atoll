@@ -220,7 +220,7 @@ pub fn detect_claude_session_host(cwd: &str) -> SessionHost {
     if foreground_is_terminal_process() {
         return SessionHost::ClaudeCli;
     }
-    if try_focus_claude_process() {
+    if claude_desktop_window_exists() {
         return SessionHost::ClaudeDesktop;
     }
     SessionHost::Unknown
@@ -237,7 +237,7 @@ pub fn detect_codex_session_host(cwd: &str) -> SessionHost {
     if foreground_is_terminal_process() {
         return SessionHost::CodexCli;
     }
-    if try_focus_codex_process() {
+    if codex_desktop_window_exists() {
         return SessionHost::CodexDesktop;
     }
     SessionHost::Unknown
@@ -248,7 +248,7 @@ pub fn detect_claude_session_host_from_peer_pid(pid: u32) -> SessionHost {
     if foreground_is_terminal_process() {
         return SessionHost::ClaudeCli;
     }
-    if try_focus_claude_process() {
+    if claude_desktop_window_exists() {
         return SessionHost::ClaudeDesktop;
     }
     SessionHost::Unknown
@@ -259,14 +259,18 @@ pub fn detect_codex_session_host_from_peer_pid(pid: u32) -> SessionHost {
     if foreground_is_terminal_process() {
         return SessionHost::CodexCli;
     }
-    if try_focus_codex_process() {
+    if codex_desktop_window_exists() {
         return SessionHost::CodexDesktop;
     }
     SessionHost::Unknown
 }
 
+pub fn is_claude_desktop_app_running() -> bool {
+    claude_desktop_window_exists()
+}
+
 pub fn is_codex_desktop_app_running() -> bool {
-    try_focus_codex_process()
+    codex_desktop_window_exists()
 }
 
 fn foreground_process_name() -> Option<String> {
@@ -355,6 +359,25 @@ pub fn focus_cursor_app() -> Result<(), String> {
     Ok(())
 }
 
+/// Activate an already-running Codex Desktop window without launching a new
+/// instance. Mirrors macOS `activate_codex_app` (`launch_if_needed = false`).
+///
+/// The approval fallback (`restore_focus_after_approval`) must NOT spawn Codex —
+/// doing so re-launched Codex on every approval resolution when no titled Codex
+/// window was found (e.g. Codex minimized to tray, or only the CLI running),
+/// producing the "Codex keeps popping up" loop on Windows.
+pub fn activate_codex_app() -> Result<(), String> {
+    let _ = try_focus_codex_process();
+    Ok(())
+}
+
+/// Activate an already-running Claude Desktop window without launching a new
+/// instance. See `activate_codex_app` for rationale.
+pub fn activate_claude_app() -> Result<(), String> {
+    let _ = try_focus_claude_process();
+    Ok(())
+}
+
 pub fn detect_cursor_session_host_from_peer_pid(pid: u32) -> SessionHost {
     if is_cursor_process_pid(pid) {
         return SessionHost::CursorIde;
@@ -397,10 +420,18 @@ fn try_focus_cursor_process() -> bool {
     try_focus_process_by_title("Cursor")
 }
 
-fn try_focus_process_by_title(app_name: &'static str) -> bool {
+/// Find the first visible top-level window whose title contains `app_name`.
+///
+/// Pure query — does **not** call `ShowWindow`/`SetForegroundWindow`. Detection
+/// predicates (`is_*_desktop_app_running`, `detect_*_session_host`) must use this
+/// rather than the focus variant: the old implementation foregrounded the matched
+/// window as a side effect of "is it running?", which yanked Codex/Claude to the
+/// front on every snapshot build and hook event and made them appear to keep
+/// popping up (see `show_main_window_for_approval` + 10s auto-archive loop).
+fn find_window_by_title(app_name: &'static str) -> Option<windows::Win32::Foundation::HWND> {
     use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowTextW, IsWindowVisible, SetForegroundWindow, ShowWindow, SW_RESTORE,
+        EnumWindows, GetWindowTextW, IsWindowVisible,
     };
 
     struct Search {
@@ -431,12 +462,36 @@ fn try_focus_process_by_title(app_name: &'static str) -> bool {
     };
     unsafe {
         let _ = EnumWindows(Some(enum_proc), LPARAM(&mut search as *mut _ as isize));
-        if let Some(hwnd) = search.found {
-            let _ = ShowWindow(hwnd, SW_RESTORE);
-            return SetForegroundWindow(hwnd).as_bool();
-        }
     }
-    false
+    search.found
+}
+
+/// Pure existence check (no focus side effect) for detection predicates.
+fn window_exists_by_title(app_name: &'static str) -> bool {
+    find_window_by_title(app_name).is_some()
+}
+
+fn codex_desktop_window_exists() -> bool {
+    window_exists_by_title("Codex")
+}
+
+fn claude_desktop_window_exists() -> bool {
+    window_exists_by_title("Claude")
+}
+
+/// Focus an existing window whose title contains `app_name`. Returns false if
+/// none is found. This is the side-effectful variant — only call from paths that
+/// intentionally bring the app to the front (Open button, approval activate).
+fn try_focus_process_by_title(app_name: &'static str) -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_RESTORE};
+
+    let Some(hwnd) = find_window_by_title(app_name) else {
+        return false;
+    };
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_RESTORE);
+        SetForegroundWindow(hwnd).as_bool()
+    }
 }
 
 pub fn finish_show_for_approval(window: &WebviewWindow, app: &AppHandle, request_focus: bool) {
