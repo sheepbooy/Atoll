@@ -211,6 +211,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 describe("App", () => {
   beforeEach(() => {
     vi.useRealTimers();
+    window.localStorage.clear();
     clearConfiguredHookAgentsForTests();
     emitIslandHover = null;
     emitSnapshot = null;
@@ -1180,6 +1181,107 @@ describe("App", () => {
       value: originalUserAgent,
     });
     Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+  });
+
+  it("starts in compact mode on Windows when regular folded island is selected", async () => {
+    window.localStorage.setItem("atoll.foldedIslandSize", "regular");
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {},
+    });
+    const originalUserAgent = navigator.userAgent;
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    });
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    bridge.usesMicroIsland.mockResolvedValue(true);
+
+    const { container } = render(<App />);
+
+    expect(container.querySelector(".is-compact")).not.toBeNull();
+    expect(container.querySelector(".is-micro")).toBeNull();
+    expect(bridge.setIslandPresentation.mock.calls[0]?.[0]).not.toBe("dormant");
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: originalUserAgent,
+    });
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+  });
+
+  it("shows and persists the Windows small folded island setting", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {},
+    });
+    const originalUserAgent = navigator.userAgent;
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    });
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    bridge.usesMicroIsland.mockResolvedValue(true);
+
+    const { container } = render(<App />);
+    await waitForExpandedPanel(container);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Settings/i }));
+
+    const toggle = await screen.findByRole("switch", {
+      name: /Small folded island/i,
+    });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(toggle);
+
+    await waitFor(() =>
+      expect(window.localStorage.getItem("atoll.foldedIslandSize")).toBe(
+        "regular",
+      ),
+    );
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: originalUserAgent,
+    });
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+  });
+
+  it("does not show the folded island size setting outside Windows", async () => {
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+
+    const { container } = render(<App />);
+    await waitForExpandedPanel(container);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Settings/i }));
+
+    await screen.findByRole("switch", { name: /Launch at login/i });
+    expect(
+      screen.queryByRole("switch", { name: /Small folded island/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("hides the Windows micro listener dot after the last active session disappears", async () => {

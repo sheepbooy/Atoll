@@ -174,8 +174,10 @@ type PanelView =
   | { kind: "subagent"; sessionId: string; agentId: string }
   | { kind: "subagentList"; sessionId: string }
   | { kind: "settings"; page: "main" | "hooks" | "tokens" };
+type FoldedIslandSize = "small" | "regular";
 
 const COMPACT_ICON_SETTING_KEY = "atoll.maxCompactIcons";
+const FOLDED_ISLAND_SIZE_SETTING_KEY = "atoll.foldedIslandSize";
 const RETENTION_SETTING_KEY = "atoll.sessionRetentionMinutes";
 const SUBAGENT_RETENTION_SETTING_KEY = "atoll.subagentRetentionMinutes";
 const MAX_SUBAGENT_DISPLAY_SETTING_KEY = "atoll.maxSubagentDisplay";
@@ -300,6 +302,16 @@ function readCompactIconLimit() {
     DEFAULT_MAX_COMPACT_ICONS,
     (value) => clampCompactIconLimit(value),
   );
+}
+
+function readFoldedIslandSize(): FoldedIslandSize {
+  if (typeof window === "undefined") return "small";
+  try {
+    const stored = window.localStorage.getItem(FOLDED_ISLAND_SIZE_SETTING_KEY);
+    return stored === "regular" ? "regular" : "small";
+  } catch {
+    return "small";
+  }
 }
 
 function clampRetentionMinutes(value: number) {
@@ -513,14 +525,23 @@ function shouldRestInMicro(usesMicro: boolean): boolean {
   return usesMicro;
 }
 
+function shouldUseMicroIsland(
+  supportsMicroIsland: boolean,
+  foldedIslandSize: FoldedIslandSize,
+): boolean {
+  return supportsMicroIsland && foldedIslandSize === "small";
+}
+
 function resolveCollapsedMode(
   usesMicro: boolean,
+  supportsMicroIsland: boolean,
   sessionCount: number,
   pendingCount: number,
   phase: PresentationPhase,
 ): "micro" | "compact" | "dormant" {
   if (phase === "micro") return "micro";
   if (shouldRestInMicro(usesMicro)) return "compact";
+  if (supportsMicroIsland) return "compact";
   if (sessionCount === 0 && pendingCount === 0) return "dormant";
   return "compact";
 }
@@ -532,12 +553,30 @@ function expandedPresentationKey(idle: boolean): string {
 export function App() {
   const [snapshot, setSnapshot] = useState<IslandSnapshot>(initialSnapshot);
   const snapshotRef = useRef(initialSnapshot);
-  const initialUsesMicro = usesMicroIslandSync();
+  const initialSupportsMicroIsland = usesMicroIslandSync();
+  const initialFoldedIslandSize = readFoldedIslandSize();
+  const initialUsesMicro = shouldUseMicroIsland(
+    initialSupportsMicroIsland,
+    initialFoldedIslandSize,
+  );
+  const [supportsMicroIsland, setSupportsMicroIsland] = useState(
+    initialSupportsMicroIsland,
+  );
+  const supportsMicroIslandRef = useRef(initialSupportsMicroIsland);
+  const [foldedIslandSize, setFoldedIslandSize] =
+    useState<FoldedIslandSize>(initialFoldedIslandSize);
+  const foldedIslandSizeRef = useRef(initialFoldedIslandSize);
   const [phase, setPhase] = useState<PresentationPhase>(
     initialUsesMicro ? "micro" : "compact",
   );
   const phaseRef = useRef<PresentationPhase>(initialUsesMicro ? "micro" : "compact");
   const usesMicroIslandRef = useRef(initialUsesMicro);
+  foldedIslandSizeRef.current = foldedIslandSize;
+  supportsMicroIslandRef.current = supportsMicroIsland;
+  usesMicroIslandRef.current = shouldUseMicroIsland(
+    supportsMicroIsland,
+    foldedIslandSize,
+  );
   const [notchMetricsHydrated, setNotchMetricsHydrated] = useState(false);
   const initialNativePresentationSyncedRef = useRef(false);
   const hoveringRef = useRef(false);
@@ -688,6 +727,7 @@ export function App() {
   }, [computedCollapsedWidth, hasActiveSessions]);
   const rawCollapsedMode = resolveCollapsedMode(
     usesMicroIslandRef.current,
+    supportsMicroIsland,
     sessions.length,
     snapshot.pendingCount,
     phase,
@@ -818,7 +858,12 @@ export function App() {
     const retryTimer = window.setTimeout(refreshHookHealth, 750);
     usesMicroIsland()
       .then((enabled) => {
-        usesMicroIslandRef.current = enabled;
+        setSupportsMicroIsland(enabled);
+        supportsMicroIslandRef.current = enabled;
+        usesMicroIslandRef.current = shouldUseMicroIsland(
+          enabled,
+          foldedIslandSizeRef.current,
+        );
       })
       .catch(() => undefined);
     getNotchMetrics()
@@ -1136,6 +1181,18 @@ export function App() {
   }, [maxCompactIcons]);
 
   useEffect(() => {
+    if (!supportsMicroIsland) return;
+    try {
+      window.localStorage.setItem(
+        FOLDED_ISLAND_SIZE_SETTING_KEY,
+        foldedIslandSize,
+      );
+    } catch {
+      // ignore local storage errors
+    }
+  }, [foldedIslandSize, supportsMicroIsland]);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(
         RETENTION_SETTING_KEY,
@@ -1175,6 +1232,16 @@ export function App() {
       .then(setLaunchAtLogin)
       .catch(() => undefined);
   }, []);
+
+  function handleChangeFoldedIslandSize(small: boolean) {
+    const nextSize: FoldedIslandSize = small ? "small" : "regular";
+    foldedIslandSizeRef.current = nextSize;
+    usesMicroIslandRef.current = shouldUseMicroIsland(
+      supportsMicroIslandRef.current,
+      nextSize,
+    );
+    setFoldedIslandSize(nextSize);
+  }
 
   async function handleChangeLaunchAtLogin(enabled: boolean) {
     if (launchAtLoginBusy) {
@@ -1557,6 +1624,7 @@ export function App() {
     if (shouldRestInMicro(usesMicroIslandRef.current)) {
       return "micro";
     }
+    if (supportsMicroIslandRef.current) return "compact";
     if (sessionCount === 0 && pendingCount === 0) return "dormant";
     return "compact";
   }
@@ -2482,6 +2550,9 @@ export function App() {
           onChangeMaxCompactIcons={(nextValue) =>
             setMaxCompactIcons(clampCompactIconLimit(nextValue, maxCompactIconLimit))
           }
+          showFoldedIslandSizeSetting={supportsMicroIsland}
+          foldedIslandSize={foldedIslandSize}
+          onChangeFoldedIslandSize={handleChangeFoldedIslandSize}
           retentionMinutes={retentionMinutes}
           onChangeRetentionMinutes={(nextValue) =>
             setRetentionMinutes(clampRetentionMinutes(nextValue))
@@ -3337,6 +3408,9 @@ interface SettingsViewProps {
   maxCompactIcons: number;
   maxCompactIconLimit: number;
   onChangeMaxCompactIcons: (value: number) => void;
+  showFoldedIslandSizeSetting: boolean;
+  foldedIslandSize: FoldedIslandSize;
+  onChangeFoldedIslandSize: (small: boolean) => void;
   maxSubagentDisplay: number;
   onChangeMaxSubagentDisplay: (value: number) => void;
   retentionMinutes: number;
@@ -3446,6 +3520,9 @@ function SettingsView({
   maxCompactIcons,
   maxCompactIconLimit,
   onChangeMaxCompactIcons,
+  showFoldedIslandSizeSetting,
+  foldedIslandSize,
+  onChangeFoldedIslandSize,
   maxSubagentDisplay,
   onChangeMaxSubagentDisplay,
   retentionMinutes,
@@ -3536,6 +3613,14 @@ function SettingsView({
 
         <div className="settings-section">
           <span className="settings-section-label">Display</span>
+          {showFoldedIslandSizeSetting ? (
+            <SettingsToggle
+              label="Small folded island"
+              desc="Use the smaller Windows folded island so pages under the top-center edge stay easier to click."
+              checked={foldedIslandSize === "small"}
+              onChange={onChangeFoldedIslandSize}
+            />
+          ) : null}
           <SettingsSlider
             label="Folded icon limit"
             value={maxCompactIcons}
