@@ -2,6 +2,12 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.41] - 2026-07-08
+
+### 修复
+- **Windows micro 折叠岛宽度**：修复小巧模式下折叠岛宽度计算不正确的问题
+- **Windows micro 折叠岛尺寸**：进一步缩小折叠岛默认尺寸与样式，减少屏幕占用
+
 ## [0.1.40] - 2026-07-08
 
 ### 新增

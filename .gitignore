@@ -15,6 +15,7 @@ src-tauri/icons/ios/
 *.pem
 coverage/
 .DS_Store
+.mimocode/
 .worktrees
 .tools/
 .cursor/
