@@ -2,6 +2,14 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.40] - 2026-07-08
+
+### 新增
+- **Windows 折叠岛尺寸**：设置中新增折叠岛大小选项（常规 / 小巧），偏好持久化到 localStorage
+
+### 改进
+- **官网**：更新首页文案与样式，展示 agent workflow 相关能力
+
 ## [0.1.39] - 2026-07-08
 
 ### 修复
