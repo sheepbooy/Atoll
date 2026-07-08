@@ -25,8 +25,8 @@ mod transcript;
 const COMPACT_WINDOW_WIDTH: f64 = 132.0;
 pub(crate) const COMPACT_WINDOW_HEIGHT: f64 = 36.0;
 /// Windows-only super-collapsed strip; macOS never selects this mode.
-pub(crate) const MICRO_WINDOW_WIDTH: f64 = 96.0;
-pub(crate) const MICRO_WINDOW_HEIGHT: f64 = 32.0;
+pub(crate) const MICRO_WINDOW_WIDTH: f64 = 72.0;
+pub(crate) const MICRO_WINDOW_HEIGHT: f64 = 24.0;
 const EXPANDED_WINDOW_WIDTH: f64 = 560.0;
 pub(crate) const EXPANDED_WINDOW_HEIGHT: f64 = 320.0;
 const EXPANDED_IDLE_WINDOW_HEIGHT: f64 = 240.0;

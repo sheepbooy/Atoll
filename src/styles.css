@@ -533,8 +533,8 @@ kbd {
 /* ─── Windows micro pill (super-collapsed) ─────────────────────── */
 .island.is-micro {
   width: min(560px, 100vw);
-  height: var(--micro-height, 26px);
-  border-radius: 0 0 12px 12px;
+  height: var(--micro-height, 24px);
+  border-radius: 0 0 9px 9px;
   overflow: hidden;
 }
 
@@ -548,15 +548,15 @@ kbd {
   grid-template-columns: auto auto;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  gap: 3px;
   height: 100%;
-  padding: 0 6px 1px;
+  padding: 0 5px;
 }
 
 .is-micro .header-main {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   height: 100%;
   min-width: 0;
   overflow: hidden;
@@ -568,25 +568,25 @@ kbd {
 }
 
 .is-micro .atoll-indicator {
-  width: 30px;
-  height: 28px;
-  margin-top: -1px;
+  width: 24px;
+  height: 23px;
+  margin-top: 0;
   overflow: hidden;
 }
 
 .is-micro .atoll-indicator-inner {
-  width: 30px;
-  height: 30px;
-  transform: translateY(-4px);
+  width: 24px;
+  height: 24px;
+  transform: translateY(-2px);
 }
 
 .is-micro .atoll-indicator:has(.atoll-logo.is-idle) {
-  height: 30px;
+  height: 24px;
   margin-top: 0;
 }
 
 .is-micro .atoll-indicator:has(.atoll-logo.is-idle) .atoll-indicator-inner {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
 }
 
 .is-micro .atoll-indicator .atoll-logo,
@@ -600,22 +600,22 @@ kbd {
 }
 
 .is-micro .compact-session-stack {
-  gap: 2px;
+  gap: 1px;
 }
 
 .is-micro .compact-session-dot {
-  width: 18px;
-  height: 16px;
+  width: 14px;
+  height: 13px;
 }
 
 .is-micro .compact-session-dot .clawd,
 .is-micro .compact-session-dot .codex {
-  transform: scale(0.72);
+  transform: scale(0.6);
   transform-origin: center center;
 }
 
 .is-micro .compact-session-dot .cursor-mascot {
-  transform: scale(0.96);
+  transform: scale(0.78);
   transform-origin: center center;
 }
 
@@ -625,9 +625,9 @@ kbd {
 }
 
 .is-micro .compact-session-overflow {
-  font-size: 9px;
-  min-width: 16px;
-  height: 16px;
+  font-size: 8px;
+  min-width: 13px;
+  height: 13px;
 }
 
 .is-micro .header-actions,
@@ -640,7 +640,7 @@ kbd {
   flex: 0 0 auto;
   align-items: center;
   min-width: 0;
-  gap: 4px;
+  gap: 2px;
   height: 100%;
 }
 
@@ -655,10 +655,10 @@ kbd {
 .is-micro.has-pending::before {
   content: "";
   position: absolute;
-  top: 3px;
-  right: 6px;
-  width: 5px;
-  height: 5px;
+  top: 2px;
+  right: 4px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
   background: var(--color-warning);
   box-shadow: 0 0 6px rgba(248, 181, 0, 0.55);

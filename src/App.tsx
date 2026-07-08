@@ -473,8 +473,8 @@ function deriveSessionMood(
 // Keep in sync with COMPACT_WINDOW_HEIGHT in src-tauri/src/lib.rs.
 const COMPACT_WINDOW_HEIGHT = 36;
 // Keep in sync with MICRO_WINDOW_WIDTH / MICRO_WINDOW_HEIGHT in src-tauri/src/lib.rs.
-const MICRO_WINDOW_WIDTH = 96;
-const MICRO_WINDOW_HEIGHT = 32;
+const MICRO_WINDOW_WIDTH = 72;
+const MICRO_WINDOW_HEIGHT = 24;
 // Keep in sync with NOTCH_COVER_PADDING in src-tauri/src/lib.rs.
 const NOTCH_COVER_PADDING = 16;
 
@@ -2386,7 +2386,7 @@ export function App() {
     sessions.length === 0 &&
     snapshot.pendingCount === 0;
   const isSubview = isExpandedChrome && panelView.kind !== "home";
-  const menuBarLogoSize = isExpanded ? 36 : isMicro ? 30 : 34;
+  const menuBarLogoSize = isExpanded ? 36 : isMicro ? 24 : 34;
   const subviewSession =
     panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList"
       ? sessions.find((session) => session.sessionId === panelView.sessionId)

@@ -1178,7 +1178,7 @@ describe("App", () => {
     await waitFor(() =>
       expect(bridge.setIslandPresentation).toHaveBeenCalledWith(
         "micro",
-        96,
+        72,
         undefined,
         undefined,
         expect.any(Boolean),
@@ -1276,7 +1276,7 @@ describe("App", () => {
 
     bridge.setIslandPresentation.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Collapse Atoll" }));
-    expect(bridge.setIslandPresentation).toHaveBeenCalledWith("micro", 96);
+    expect(bridge.setIslandPresentation).toHaveBeenCalledWith("micro", 72);
 
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,
