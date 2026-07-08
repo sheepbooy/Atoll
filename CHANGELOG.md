@@ -2,6 +2,13 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.42] - 2026-07-08
+
+### 修复
+- **Windows Codex/Claude 反复弹窗**：检测宿主进程时不再附带抢焦点副作用，避免 snapshot 刷新与 hook 请求周期性把 Codex/Claude 拉到前台
+- **Windows 审批后重复启动**：审批完成后仅激活已有窗口，不再在找不到窗口时重新启动 Codex/Claude
+- **Windows Claude 宿主识别**：补齐 Claude Desktop 检测，避免 Desktop 运行时被误判为 CLI
+
 ## [0.1.41] - 2026-07-08
 
 ### 修复
