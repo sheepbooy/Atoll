@@ -2,6 +2,12 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.39] - 2026-07-08
+
+### 修复
+- **Agent 使用中点击卡死**：修复运行中的 agent 产生 subagent 事件时，点击活跃会话、subagent 列表或归档 subagent 可能卡死的问题；后端缩短 `active_subagents` 锁持有时间，避免持锁读取 transcript、解析路径或更新 conversation map
+- **Subagent 归档稳定性**：归档已完成 subagent 时仅隐藏已完成项，保留运行中的 sibling，并防止重复点击归档按钮触发并发请求
+
 ## [0.1.38] - 2026-07-06
 
 ### 修复
