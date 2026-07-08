@@ -2307,19 +2307,47 @@ fn set_subagent_retention(state: State<'_, AppState>, minutes: u64) -> u64 {
     secs
 }
 
+fn archive_subagent_in_state(state: &AppState, agent_id: &str) -> Option<String> {
+    if let Ok(mut subagents) = state.active_subagents.lock() {
+        subagents
+            .iter_mut()
+            .find(|s| s.agent_id == agent_id)
+            .and_then(|sub| {
+                let conv_id = sub.conversation_id.clone();
+                sub.archived = true;
+                conv_id
+            })
+    } else {
+        None
+    }
+}
+
+fn archive_completed_subagents_in_state(state: &AppState, session_id: &str) -> Vec<String> {
+    if let Ok(mut subagents) = state.active_subagents.lock() {
+        let mut conv_ids = Vec::new();
+        for sub in subagents.iter_mut() {
+            if sub.session_id == session_id && sub.completed_at.is_some() && !sub.archived {
+                if let Some(conv_id) = sub.conversation_id.clone() {
+                    conv_ids.push(conv_id);
+                }
+                sub.archived = true;
+            }
+        }
+        conv_ids
+    } else {
+        Vec::new()
+    }
+}
+
 #[tauri::command]
 fn archive_subagent(
     app: AppHandle,
     state: State<'_, AppState>,
     agent_id: String,
 ) -> Result<IslandSnapshot, String> {
-    if let Ok(mut subagents) = state.active_subagents.lock() {
-        if let Some(sub) = subagents.iter_mut().find(|s| s.agent_id == agent_id) {
-            let conv_id = sub.conversation_id.clone();
-            sub.archived = true;
-            drop(subagents);
-            unbind_cursor_subagent_conversation(state.inner(), conv_id.as_deref());
-        }
+    let conv_id = archive_subagent_in_state(state.inner(), &agent_id);
+    if let Some(conv_id) = conv_id {
+        unbind_cursor_subagent_conversation(state.inner(), Some(&conv_id));
     }
     let snapshot = build_snapshot(&app, &state);
     app.emit("snapshot-changed", &snapshot)
@@ -2333,12 +2361,9 @@ fn archive_completed_subagents(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<IslandSnapshot, String> {
-    if let Ok(mut subagents) = state.active_subagents.lock() {
-        for sub in subagents.iter_mut() {
-            if sub.session_id == session_id && sub.completed_at.is_some() && !sub.archived {
-                sub.archived = true;
-            }
-        }
+    let conv_ids = archive_completed_subagents_in_state(state.inner(), &session_id);
+    for conv_id in conv_ids {
+        unbind_cursor_subagent_conversation(state.inner(), Some(&conv_id));
     }
     let snapshot = build_snapshot(&app, &state);
     app.emit("snapshot-changed", &snapshot)
@@ -3165,22 +3190,33 @@ fn derive_subagent_transcript_path(
 }
 
 fn known_session_transcript_path(state: &AppState, session_id: &str) -> Option<String> {
-    state.known_sessions.lock().ok().and_then(|known| {
-        known
-            .get(session_id)
-            .and_then(|entry| entry.transcript_path.clone())
-    })
+    state
+        .known_sessions
+        .lock()
+        .ok()
+        .and_then(|known| known_session_transcript_path_from_map(&known, session_id))
 }
 
-fn refresh_subagent_transcript_path(state: &AppState, sub: &mut ActiveSubagent) {
-    let main_transcript = known_session_transcript_path(state, &sub.session_id);
+fn known_session_transcript_path_from_map(
+    known_sessions: &HashMap<String, KnownSession>,
+    session_id: &str,
+) -> Option<String> {
+    known_sessions
+        .get(session_id)
+        .and_then(|entry| entry.transcript_path.clone())
+}
+
+fn refreshed_subagent_transcript_path(
+    main_transcript: Option<&str>,
+    sub: &ActiveSubagent,
+) -> Option<String> {
     let Some(resolved) = derive_subagent_transcript_path(
-        main_transcript.as_deref(),
+        main_transcript,
         &sub.agent_id,
         sub.conversation_id.as_deref(),
         Some(&sub.started_at),
     ) else {
-        return;
+        return None;
     };
     let current_missing = sub
         .agent_transcript_path
@@ -3188,12 +3224,14 @@ fn refresh_subagent_transcript_path(state: &AppState, sub: &mut ActiveSubagent) 
         .is_none_or(|path| !std::path::Path::new(path).exists());
     let resolved_exists = std::path::Path::new(&resolved).exists();
     if current_missing && (resolved_exists || sub.conversation_id.is_some()) {
-        sub.agent_transcript_path = Some(resolved);
+        Some(resolved)
+    } else {
+        None
     }
 }
 
-fn resolve_complete_transcript_path(
-    state: &AppState,
+fn resolve_complete_transcript_path_from_main(
+    main_transcript: Option<&str>,
     sub: &ActiveSubagent,
     payload_path: Option<String>,
 ) -> Option<String> {
@@ -3201,7 +3239,7 @@ fn resolve_complete_transcript_path(
         return Some(path);
     }
     derive_subagent_transcript_path(
-        known_session_transcript_path(state, &sub.session_id).as_deref(),
+        main_transcript,
         &sub.agent_id,
         sub.conversation_id.as_deref(),
         Some(&sub.started_at),
@@ -3286,15 +3324,39 @@ pub(crate) fn resolve_cursor_session_for_payload(
     drop(subagents);
 
     bind_cursor_subagent_conversation(state, conv_id, &parent);
-    if let Ok(mut subagents) = state.active_subagents.lock() {
-        if let Some(sub) = subagents.iter_mut().find(|s| {
-            s.session_id == parent
-                && s.conversation_id.is_none()
-                && s.completed_at.is_none()
-                && !s.archived
-        }) {
-            sub.conversation_id = Some(conv_id.to_string());
-            refresh_subagent_transcript_path(state, sub);
+    let main_transcript = known_session_transcript_path(state, &parent);
+    let refresh_target = {
+        let mut subagents = match state.active_subagents.lock() {
+            Ok(guard) => guard,
+            Err(_) => return Some(parent),
+        };
+        subagents
+            .iter_mut()
+            .find(|s| {
+                s.session_id == parent
+                    && s.conversation_id.is_none()
+                    && s.completed_at.is_none()
+                    && !s.archived
+            })
+            .map(|sub| {
+                sub.conversation_id = Some(conv_id.to_string());
+                sub.clone()
+            })
+    };
+
+    if let Some(target) = refresh_target {
+        if let Some(path) = refreshed_subagent_transcript_path(main_transcript.as_deref(), &target)
+        {
+            if let Ok(mut subagents) = state.active_subagents.lock() {
+                if let Some(sub) = subagents.iter_mut().find(|s| {
+                    s.agent_id == target.agent_id
+                        && s.conversation_id.as_deref() == Some(conv_id)
+                        && s.completed_at.is_none()
+                        && !s.archived
+                }) {
+                    sub.agent_transcript_path = Some(path);
+                }
+            }
         }
     }
     Some(parent)
@@ -3350,15 +3412,26 @@ pub(crate) fn complete_subagent(state: &AppState, payload: &serde_json::Value) {
     let last_message = payload_subagent_last_message(payload);
 
     if let Some(agent_id) = payload_subagent_id(payload) {
-        if let Ok(mut subagents) = state.active_subagents.lock() {
-            if let Some(sub) = subagents.iter_mut().find(|s| s.agent_id == agent_id) {
-                let conv_id = sub.conversation_id.clone();
-                let transcript_path =
-                    resolve_complete_transcript_path(state, sub, payload_transcript_path);
-                mark_subagent_complete(sub, transcript_path, last_message);
-                drop(subagents);
-                unbind_cursor_subagent_conversation(state, conv_id.as_deref());
+        let target = state
+            .active_subagents
+            .lock()
+            .ok()
+            .and_then(|subagents| subagents.iter().find(|s| s.agent_id == agent_id).cloned());
+
+        if let Some(target) = target {
+            let main_transcript = known_session_transcript_path(state, &target.session_id);
+            let transcript_path = resolve_complete_transcript_path_from_main(
+                main_transcript.as_deref(),
+                &target,
+                payload_transcript_path,
+            );
+            let conv_id = target.conversation_id.clone();
+            if let Ok(mut subagents) = state.active_subagents.lock() {
+                if let Some(sub) = subagents.iter_mut().find(|s| s.agent_id == target.agent_id) {
+                    mark_subagent_complete(sub, transcript_path, last_message);
+                }
             }
+            unbind_cursor_subagent_conversation(state, conv_id.as_deref());
         }
         return;
     }
@@ -3371,33 +3444,36 @@ pub(crate) fn complete_subagent(state: &AppState, payload: &serde_json::Value) {
         .or_else(|| payload.get("agent_type"))
         .and_then(Value::as_str);
 
-    let target_idx = {
+    let target = {
         let subagents = match state.active_subagents.lock() {
             Ok(guard) => guard,
             Err(_) => return,
         };
         subagents
             .iter()
-            .enumerate()
-            .filter(|(_, s)| {
-                s.session_id == parent_session && s.completed_at.is_none() && !s.archived
-            })
-            .filter(|(_, s)| type_filter.map(|t| s.agent_type == t).unwrap_or(true))
-            .min_by_key(|(_, s)| s.started_at.clone())
-            .map(|(i, _)| i)
+            .filter(|s| s.session_id == parent_session && s.completed_at.is_none() && !s.archived)
+            .filter(|s| type_filter.map(|t| s.agent_type == t).unwrap_or(true))
+            .min_by_key(|s| s.started_at.clone())
+            .cloned()
     };
 
-    if let Some(idx) = target_idx {
+    if let Some(target) = target {
+        let main_transcript = known_session_transcript_path(state, &target.session_id);
+        let transcript_path = resolve_complete_transcript_path_from_main(
+            main_transcript.as_deref(),
+            &target,
+            payload_transcript_path,
+        );
+        let conv_id = target.conversation_id.clone();
         if let Ok(mut subagents) = state.active_subagents.lock() {
-            if let Some(sub) = subagents.get_mut(idx) {
-                let conv_id = sub.conversation_id.clone();
-                let transcript_path =
-                    resolve_complete_transcript_path(state, sub, payload_transcript_path);
+            if let Some(sub) = subagents
+                .iter_mut()
+                .find(|s| s.agent_id == target.agent_id && s.completed_at.is_none() && !s.archived)
+            {
                 mark_subagent_complete(sub, transcript_path, last_message);
-                drop(subagents);
-                unbind_cursor_subagent_conversation(state, conv_id.as_deref());
             }
         }
+        unbind_cursor_subagent_conversation(state, conv_id.as_deref());
     }
 }
 
@@ -3419,28 +3495,71 @@ fn mark_subagent_complete(
 }
 
 pub(crate) fn reconcile_incomplete_subagents(state: &AppState) {
-    {
-        let mut subagents = match state.active_subagents.lock() {
-            Ok(guard) => guard,
-            Err(_) => return,
-        };
-        for sub in subagents.iter_mut() {
-            if sub.completed_at.is_none() && !sub.archived {
-                refresh_subagent_transcript_path(state, sub);
-            }
-        }
-    }
+    let known_transcripts: HashMap<String, String> = state
+        .known_sessions
+        .lock()
+        .ok()
+        .map(|known| {
+            known
+                .iter()
+                .filter_map(|(session_id, session)| {
+                    session
+                        .transcript_path
+                        .as_ref()
+                        .map(|path| (session_id.clone(), path.clone()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
-    let pending_paths: Vec<(usize, String)> = {
+    let refresh_candidates: Vec<ActiveSubagent> = {
         let subagents = match state.active_subagents.lock() {
             Ok(guard) => guard,
             Err(_) => return,
         };
         subagents
             .iter()
-            .enumerate()
-            .filter(|(_, sub)| sub.completed_at.is_none() && !sub.archived)
-            .filter_map(|(i, sub)| sub.agent_transcript_path.as_ref().map(|p| (i, p.clone())))
+            .filter(|sub| sub.completed_at.is_none() && !sub.archived)
+            .cloned()
+            .collect()
+    };
+
+    let path_updates: Vec<(String, String)> = refresh_candidates
+        .iter()
+        .filter_map(|sub| {
+            refreshed_subagent_transcript_path(
+                known_transcripts.get(&sub.session_id).map(String::as_str),
+                sub,
+            )
+            .map(|path| (sub.agent_id.clone(), path))
+        })
+        .collect();
+
+    if !path_updates.is_empty() {
+        if let Ok(mut subagents) = state.active_subagents.lock() {
+            for (agent_id, path) in path_updates {
+                if let Some(sub) = subagents.iter_mut().find(|sub| {
+                    sub.agent_id == agent_id && sub.completed_at.is_none() && !sub.archived
+                }) {
+                    sub.agent_transcript_path = Some(path);
+                }
+            }
+        }
+    }
+
+    let pending_paths: Vec<(String, String)> = {
+        let subagents = match state.active_subagents.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+        subagents
+            .iter()
+            .filter(|sub| sub.completed_at.is_none() && !sub.archived)
+            .filter_map(|sub| {
+                sub.agent_transcript_path
+                    .as_ref()
+                    .map(|path| (sub.agent_id.clone(), path.clone()))
+            })
             .collect()
     };
 
@@ -3448,10 +3567,10 @@ pub(crate) fn reconcile_incomplete_subagents(state: &AppState) {
         return;
     }
 
-    let results: Vec<(usize, String)> = pending_paths
+    let results: Vec<(String, String)> = pending_paths
         .into_iter()
-        .filter_map(|(i, path)| {
-            transcript::extract_subagent_terminal_message(&path).map(|msg| (i, msg))
+        .filter_map(|(agent_id, path)| {
+            transcript::extract_subagent_terminal_message(&path).map(|msg| (agent_id, msg))
         })
         .collect();
 
@@ -3463,8 +3582,8 @@ pub(crate) fn reconcile_incomplete_subagents(state: &AppState) {
         Ok(guard) => guard,
         Err(_) => return,
     };
-    for (i, message) in results {
-        if let Some(sub) = subagents.get_mut(i) {
+    for (agent_id, message) in results {
+        if let Some(sub) = subagents.iter_mut().find(|sub| sub.agent_id == agent_id) {
             if sub.completed_at.is_none() && !sub.archived {
                 mark_subagent_complete(sub, None, Some(message));
             }
@@ -8843,6 +8962,115 @@ mod cursor_subagent_tests {
             last_message: None,
             conversation_id: None,
         }
+    }
+
+    #[test]
+    fn reconcile_incomplete_subagents_refreshes_path_and_terminal_message() {
+        let state = test_app_state();
+        let parent_uuid = "conv-parent-reconcile";
+        let agent_id = "sub-reconcile";
+        let dir =
+            std::env::temp_dir().join(format!("atoll-subagent-reconcile-{}", std::process::id()));
+        let parent_dir = dir.join(parent_uuid);
+        let subagents_dir = parent_dir.join("subagents");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&subagents_dir).expect("create subagents dir");
+        let main = parent_dir.join(format!("{parent_uuid}.jsonl"));
+        std::fs::write(&main, "{}").expect("write parent transcript");
+        let sub_path = subagents_dir.join(format!("agent-{agent_id}.jsonl"));
+        let terminal_entry = json!({
+            "type": "assistant",
+            "message": {
+                "content": [{
+                    "type": "text",
+                    "text": "Request interrupted by user for tool use"
+                }]
+            }
+        });
+        std::fs::write(&sub_path, format!("{terminal_entry}\n")).expect("write sub transcript");
+        let main_str = main.to_string_lossy().into_owned();
+
+        register_known_session(
+            &state,
+            parent_uuid,
+            AgentKind::Cursor,
+            "/tmp/project",
+            Some(&main_str),
+        );
+        register_subagent_start(
+            &state,
+            &json!({
+                "subagent_id": agent_id,
+                "conversation_id": parent_uuid,
+                "subagent_type": "explore"
+            }),
+            AgentKind::Cursor,
+        );
+
+        reconcile_incomplete_subagents(&state);
+
+        let subagents = state.active_subagents.lock().expect("lock");
+        assert_eq!(subagents.len(), 1);
+        assert_eq!(
+            subagents[0].agent_transcript_path.as_deref(),
+            Some(sub_path.to_string_lossy().as_ref())
+        );
+        assert!(subagents[0].completed_at.is_some());
+        assert_eq!(
+            subagents[0].last_message.as_deref(),
+            Some("Request interrupted by user for tool use")
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn archive_completed_subagents_keeps_running_sibling_visible() {
+        let state = test_app_state();
+        let now = parse_iso_timestamp_secs("2026-06-10T08:10:00Z");
+        let completed_at = Some(format_unix_timestamp(now - 30));
+        let mut completed = test_active_subagent("done", "session-a", completed_at, false);
+        completed.conversation_id = Some("conv-done".into());
+        let running = test_active_subagent("running", "session-a", None, false);
+        {
+            let mut subagents = state.active_subagents.lock().expect("lock");
+            subagents.push(completed);
+            subagents.push(running);
+        }
+        state
+            .cursor_subagent_conversations
+            .lock()
+            .expect("lock")
+            .insert("conv-done".into(), "session-a".into());
+
+        let conv_ids = archive_completed_subagents_in_state(&state, "session-a");
+        assert_eq!(conv_ids, vec!["conv-done".to_string()]);
+        for conv_id in conv_ids {
+            unbind_cursor_subagent_conversation(&state, Some(&conv_id));
+        }
+
+        assert!(!state
+            .cursor_subagent_conversations
+            .lock()
+            .expect("lock")
+            .contains_key("conv-done"));
+
+        let active_subagents = state.active_subagents.lock().expect("lock").clone();
+        assert!(active_subagents
+            .iter()
+            .any(|sub| sub.agent_id == "done" && sub.archived));
+        assert!(active_subagents
+            .iter()
+            .any(|sub| sub.agent_id == "running" && !sub.archived));
+
+        let mut sessions = vec![test_session_summary("session-a")];
+        assign_active_subagents_to_sessions(&mut sessions, &active_subagents, 60, now);
+        let visible_ids: Vec<&str> = sessions[0]
+            .active_subagents
+            .iter()
+            .map(|sub| sub.agent_id.as_str())
+            .collect();
+        assert_eq!(visible_ids, vec!["running"]);
     }
 
     #[test]

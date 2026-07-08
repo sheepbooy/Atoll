@@ -4281,7 +4281,7 @@ interface SubagentListViewProps {
   subagents: SubagentSummary[];
   agent: AgentKind;
   onSelectSubagent: (agentId: string) => void;
-  onArchiveCompletedSubagents: () => void;
+  onArchiveCompletedSubagents: () => void | Promise<void>;
 }
 
 const SUBAGENT_LIST_VIRTUALIZE_THRESHOLD = 40;
@@ -4372,6 +4372,7 @@ function SubagentListView({
   const listRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
+  const [archiveBusy, setArchiveBusy] = useState(false);
   const listState = useMemo(() => {
     let runningCount = 0;
     let hasCompleted = false;
@@ -4452,6 +4453,16 @@ function SubagentListView({
     setScrollTop(event.currentTarget.scrollTop);
   }, []);
 
+  async function handleArchiveCompletedSubagents() {
+    if (archiveBusy) return;
+    setArchiveBusy(true);
+    try {
+      await onArchiveCompletedSubagents();
+    } finally {
+      setArchiveBusy(false);
+    }
+  }
+
   return (
     <div className="subagent-list-view">
       <div className="subagent-list-header">
@@ -4468,10 +4479,11 @@ function SubagentListView({
           <button
             type="button"
             className="subagent-list-archive-all-btn"
-            onClick={onArchiveCompletedSubagents}
+            onClick={handleArchiveCompletedSubagents}
+            disabled={archiveBusy}
           >
             <Archive size={12} />
-            <span>Archive completed</span>
+            <span>{archiveBusy ? "Archiving..." : "Archive completed"}</span>
           </button>
         ) : null}
       </div>
@@ -4529,7 +4541,7 @@ interface SubagentDetailViewProps {
   completedAt: string | null;
   lastMessage: string | null;
   transcriptPath: string | null;
-  onArchive: () => void;
+  onArchive: () => void | Promise<void>;
 }
 
 function SubagentDetailView({
@@ -4546,6 +4558,7 @@ function SubagentDetailView({
   const subagentMood = getSubagentMood(agentId, Boolean(completedAt));
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(0);
 
@@ -4582,6 +4595,16 @@ function SubagentDetailView({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  async function handleArchive() {
+    if (archiveBusy) return;
+    setArchiveBusy(true);
+    try {
+      await onArchive();
+    } finally {
+      setArchiveBusy(false);
+    }
+  }
 
   return (
     <div className="subagent-detail-view">
@@ -4629,9 +4652,14 @@ function SubagentDetailView({
       </div>
       {completedAt ? (
         <div className="subagent-detail-footer">
-          <button type="button" className="subagent-archive-btn" onClick={onArchive}>
+          <button
+            type="button"
+            className="subagent-archive-btn"
+            onClick={handleArchive}
+            disabled={archiveBusy}
+          >
             <Archive size={14} />
-            <span>Archive</span>
+            <span>{archiveBusy ? "Archiving..." : "Archive"}</span>
           </button>
         </div>
       ) : null}
