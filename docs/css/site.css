@@ -308,7 +308,8 @@ section {
   .hero-tagline { animation: fade-up 0.7s var(--ease-out) 0.15s forwards; }
   .hero-actions { animation: fade-up 0.7s var(--ease-out) 0.2s forwards; }
   .hero-meta { animation: fade-up 0.7s var(--ease-out) 0.25s forwards; }
-  .hero-demo { animation: fade-up 0.9s var(--ease-out) 0.35s forwards; }
+  .hero-capabilities { animation: fade-up 0.75s var(--ease-out) 0.3s forwards; }
+  .hero-demo { animation: fade-up 0.9s var(--ease-out) 0.4s forwards; }
 }
 
 .hero-badge {
@@ -399,6 +400,47 @@ section {
   background: rgba(111, 220, 255, 0.06);
 }
 
+.hero-capabilities {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  width: min(100%, 660px);
+  margin-top: 24px;
+}
+
+.hero-capability {
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.032);
+  border: 1px solid var(--border-subtle);
+  text-align: left;
+}
+
+.hero-capability-kicker {
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.hero-capability strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.hero-capability p {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-tertiary);
+}
+
 .hero-demo {
   width: 100%;
   max-width: 720px;
@@ -456,6 +498,7 @@ section {
 .feature-card {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   padding: 24px;
   border-radius: var(--radius-lg);
   background: var(--surface-raised);
@@ -515,12 +558,14 @@ section {
   font-size: 0.875rem;
   color: var(--text-secondary);
   line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
 .feature-card code {
   font-family: var(--font-mono);
   font-size: 0.9em;
   color: var(--accent-cyan);
+  overflow-wrap: anywhere;
 }
 
 /* ─── Architecture section ──────────────────────────────────────── */
@@ -1331,6 +1376,15 @@ kbd {
 
   .hero-actions .btn {
     width: 100%;
+  }
+
+  .hero-capabilities {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .hero-capability {
+    text-align: center;
   }
 
   .nav-links {

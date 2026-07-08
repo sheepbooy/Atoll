@@ -3,21 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Atoll — 菜单栏 AI 权限审批浮岛</title>
-  <meta name="description" content="Atoll 住在 macOS 菜单栏 / Windows 顶栏，为本地 Coding Agent 提供权限审批浮岛。现已支持 Claude Code、Codex 与 Cursor，100% 本地，数据不出本机。" />
+  <title>Atoll — 菜单栏 AI 工作流浮岛</title>
+  <meta name="description" content="Atoll 住在 macOS 菜单栏 / Windows 顶栏，为 Claude Code、Codex 与 Cursor 提供权限审批、Plan 模式交互、Subagent 追踪与 Token 用量统计。100% 本地，数据不出本机。" />
   <meta name="theme-color" content="#0a0b0d" />
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="Atoll — 菜单栏 AI 权限审批浮岛" />
-  <meta property="og:description" content="本地 Coding Agent 权限审批浮岛，现已支持 Claude Code / Codex / Cursor。不用切窗口，一眼批准或拒绝。100% 本地。" />
+  <meta property="og:title" content="Atoll — 菜单栏 AI 工作流浮岛" />
+  <meta property="og:description" content="本地 Coding Agent 工作流浮岛：权限审批、Plan 模式问答与构建确认、Subagent 追踪、Token 统计。支持 Claude Code / Codex / Cursor。" />
   <meta property="og:image" content="https://sheepbooy.github.io/Atoll/assets/hero.png" />
   <meta property="og:url" content="https://sheepbooy.github.io/Atoll/" />
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Atoll — 菜单栏 AI 权限审批浮岛" />
-  <meta name="twitter:description" content="本地 Coding Agent 权限审批浮岛，现已支持 Claude Code / Codex / Cursor。不用切窗口，一眼批准或拒绝。" />
+  <meta name="twitter:title" content="Atoll — 菜单栏 AI 工作流浮岛" />
+  <meta name="twitter:description" content="权限审批、Plan 模式、Subagent 追踪与 Token 统计，都在菜单栏 / 顶栏里完成。" />
   <meta name="twitter:image" content="https://sheepbooy.github.io/Atoll/assets/hero.png" />
 
   <link rel="icon" href="assets/app-icon.svg" type="image/svg+xml" />
@@ -67,14 +67,14 @@
           <img src="assets/logo.svg" alt="Atoll mascot" class="hero-logo" width="64" height="72" />
           <div class="hero-badge">
             <span class="dot"></span>
-            v0.1.31 · macOS &amp; Windows
+            v0.1.39 · macOS &amp; Windows
           </div>
           <h1>
-            <span class="gradient">AI 权限审批</span>
+            <span class="gradient">AI 工作流浮岛</span>
             <span class="hero-title-line">住在你的菜单栏</span>
           </h1>
           <p class="hero-tagline">
-            本地 Coding Agent 发起权限请求时，不用切窗口——在顶栏浮岛上一眼批准、拒绝或永久放行。
+            本地 Coding Agent 发起权限请求、进入 Plan 模式或派发 subagent 时，不用切窗口——在顶栏里审批、回答、确认构建、追踪后台任务。
           </p>
           <div class="hero-actions">
             <a href="#install" class="btn btn-primary">
@@ -89,7 +89,25 @@
           <div class="hero-meta">
             <span class="pill">100% 本地</span>
             <span class="pill">MIT 开源</span>
-            <span class="pill pill-agents">现已支持 Claude Code · Codex · Cursor</span>
+            <span class="pill pill-agents">Claude Code · Codex · Cursor</span>
+            <span class="pill pill-agents">Plan 模式 · Subagent · Token</span>
+          </div>
+          <div class="hero-capabilities" aria-label="Atoll 核心能力">
+            <article class="hero-capability">
+              <span class="hero-capability-kicker">Approve</span>
+              <strong>权限审批</strong>
+              <p>Approve / Deny / Always，键盘即可处理。</p>
+            </article>
+            <article class="hero-capability">
+              <span class="hero-capability-kicker">Plan</span>
+              <strong>规划问答</strong>
+              <p>回答问题、预览 Markdown 计划、确认构建。</p>
+            </article>
+            <article class="hero-capability">
+              <span class="hero-capability-kicker">Subagent</span>
+              <strong>后台任务</strong>
+              <p>追踪子 agent 状态、详情与批量归档。</p>
+            </article>
           </div>
         </div>
 
@@ -97,7 +115,7 @@
           <div class="demo-frame">
             <img src="assets/demo.gif" alt="Atoll 演示：权限审批、置顶、归档" width="720" loading="eager" />
           </div>
-          <p class="demo-caption">权限请求 → 展开审批 → 置顶 / 归档 → 自动收回</p>
+          <p class="demo-caption">权限请求 → Plan / Subagent 状态 → 置顶 / 归档 → 自动收回</p>
         </div>
       </div>
     </header>
@@ -106,7 +124,7 @@
     <section id="features" class="container reveal">
       <span class="section-label">特性</span>
       <h2 class="section-title">终端里写代码，顶栏里批权限</h2>
-      <p class="section-desc">Atoll 是一个轻量桌面应用，住在屏幕顶栏。平时是紧凑胶囊，有请求时自动展开——全程本地，数据不出本机。</p>
+      <p class="section-desc">Atoll 是一个轻量桌面应用，住在屏幕顶栏。平时是紧凑胶囊，有请求、计划或子 agent 动态时自动展开——全程本地，数据不出本机。</p>
 
       <div class="features-grid">
         <article class="feature-card">
@@ -115,7 +133,7 @@
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M9 3v18M3 9h18"/></svg>
             </div>
             <h3>顶栏浮岛，零上下文切换</h3>
-            <p>macOS 菜单栏 / Windows 工作区顶部，紧凑胶囊显示在线状态、活跃会话与待审批数量。有请求时自动展开，展示命令详情。</p>
+            <p>macOS 菜单栏 / Windows 工作区顶部，紧凑胶囊显示在线状态、活跃会话、待审批数量与 token 用量。有请求时自动展开，展示命令、Plan 或 subagent 状态。</p>
           </div>
           <div class="feature-preview compact-bar-preview" role="img" aria-label="Atoll 菜单栏紧凑胶囊">
             <div class="compact-bar-pill">
@@ -166,7 +184,7 @@
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
             </div>
             <h3>一键 Approve / Deny / Always</h3>
-            <p>支持 Enter 批准、Delete 拒绝、Shift+Enter 永久放行。多 Session 并行，每个 Agent 有独立像素风 mascot。</p>
+            <p>支持 Enter 批准、Delete 拒绝、Shift+Enter 永久放行。多 Session 并行，每个 Agent 与 subagent 都有清晰状态。</p>
           </div>
           <div class="feature-preview approval-preview" role="img" aria-label="权限审批卡片：Approve / Deny / Always">
             <div class="approval-tabbar" aria-hidden="true">
@@ -246,7 +264,7 @@
       <span class="section-label">Plan 模式</span>
       <h2 class="section-title">规划问题与构建审批，不用离开顶栏</h2>
       <p class="section-desc">
-        Claude Code 进入 Plan 模式时，Atoll 会识别 <code>AskUserQuestion</code> 与 <code>ExitPlanMode</code> 事件——在浮岛里回答规划问题、预览 Markdown 计划，再决定是否开始构建。
+        Agent 进入 Plan 模式时，Atoll 会识别 <code>AskUserQuestion</code> 与 <code>ExitPlanMode</code> 事件——在浮岛里回答规划问题、预览 Markdown 计划，再决定是否开始构建。
       </p>
 
       <div class="plan-layout">
@@ -269,7 +287,7 @@
               <p>规划完成后展示 Markdown 预览。Continue Planning 继续打磨，Agree to Build 一键放行进入执行阶段。</p>
             </div>
           </div>
-          <p class="plan-note">v0.1.26 起支持 · 适用于 Claude Code Plan 模式</p>
+          <p class="plan-note">支持多选、Other 与自由回复 · Markdown / GFM 计划预览</p>
         </div>
 
         <div class="plan-demo">
@@ -286,7 +304,7 @@
       <span class="section-label">Subagent</span>
       <h2 class="section-title">子 agent 跑在后台，顶栏里一眼掌握</h2>
       <p class="section-desc">
-        Claude Code 派发 subagent 时，Atoll 通过 Hook 追踪启动与完成——在会话列表以彩色 chip 预览，进入列表查看全部，点进详情阅读 transcript。
+        Claude Code、Codex 或 Cursor 上报 subagent 生命周期时，Atoll 通过 Hook 追踪启动与完成——在会话列表以彩色 chip 预览，进入列表查看全部，点进详情阅读 transcript。
       </p>
 
       <div class="plan-layout">
@@ -309,7 +327,16 @@
               <p>查看某会话下全部 subagent 的状态与时间，点击进入 transcript 详情。已完成项可一键归档，Settings 可调显示数量与自动清理时长。</p>
             </div>
           </div>
-          <p class="plan-note">v0.1.27 起优化排版与列表入口 · 适用于 Claude Code subagent</p>
+          <div class="plan-phase">
+            <div class="plan-phase-icon lime">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            </div>
+            <div>
+              <h3>高并发也顺滑</h3>
+              <p>后端增量合并 snapshot、缩短锁持有时间；前端减少全量重渲染，归档已完成项时保留仍在运行的 sibling。</p>
+            </div>
+          </div>
+          <p class="plan-note">v0.1.39 已加固 subagent 列表、详情与批量归档稳定性</p>
         </div>
 
         <div class="plan-demo">
@@ -367,21 +394,21 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
           </div>
           <h3>Agent 发起事件</h3>
-          <p>Claude Code / Codex 触发 <code>PermissionRequest</code>、Plan 模式的 <code>AskUserQuestion</code> / <code>ExitPlanMode</code>，以及 <code>PostToolUse</code>、<code>Stop</code> 等 Hook 事件。</p>
+          <p>Claude Code / Codex / Cursor 触发 <code>PermissionRequest</code>、Plan 模式的 <code>AskUserQuestion</code> / <code>ExitPlanMode</code>、subagent 生命周期，以及 <code>PostToolUse</code>、<code>Stop</code> 等 Hook 事件。</p>
         </article>
         <article class="arch-card">
           <div class="arch-card-icon cyan">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
           </div>
           <h3>Hook → 本地 Bridge</h3>
-          <p>应用内一键安装的 Hook shim 写入 Agent 配置，通过 Node.js 把事件 POST 到 Rust 实现的本地 HTTP bridge，维护 session 与 Token 状态。</p>
+          <p>应用内一键安装的 Hook shim 写入 Agent 配置，通过 Node.js 把事件 POST 到 Rust 实现的本地 HTTP bridge，维护 session、subagent 与 Token 状态。</p>
         </article>
         <article class="arch-card">
           <div class="arch-card-icon violet">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M9 3v18"/></svg>
           </div>
           <h3>浮岛 UI 回传决定</h3>
-          <p>React 浮岛自动展开，展示命令或 Plan 内容。你的 Approve / Deny / Submit 经 bridge 写回 Hook，Agent 在同一终端继续执行，无需切窗口。</p>
+          <p>React 浮岛自动展开，展示命令、Plan 内容或 subagent 详情。你的 Approve / Deny / Submit 经 bridge 写回 Hook，Agent 在同一终端继续执行，无需切窗口。</p>
         </article>
       </div>
     </section>
@@ -436,7 +463,7 @@
     <section id="agents" class="container reveal">
       <span class="section-label">接入 Agent</span>
       <h2 class="section-title">现已支持 Claude Code、Codex &amp; Cursor</h2>
-      <p class="section-desc">面向本地 Coding Agent 的权限审批浮岛，更多 Agent 持续接入中。Hook 注册 PermissionRequest、PostToolUse、Stop 等事件，写入本地配置文件。</p>
+      <p class="section-desc">面向本地 Coding Agent 的工作流浮岛，更多 Agent 持续接入中。Hook 注册权限、Plan、subagent 与 lifecycle 事件，写入本地配置文件。</p>
 
       <div class="agents-layout">
         <div class="agents-demo">
@@ -447,14 +474,14 @@
             <img src="assets/agent-claude.png" alt="Claude" width="48" height="48" />
             <div>
               <h3>Claude Code（CLI + Desktop）</h3>
-              <p>Settings → Agent hooks → Install。Desktop 需选 Ask permissions，安装后完全退出并重启 Claude Desktop。</p>
+              <p>Settings → Agent hooks → Install。支持权限审批、Plan 模式与 subagent 追踪；Desktop 需选 Ask permissions，安装后完全退出并重启。</p>
             </div>
           </article>
           <article class="agent-card">
             <img src="assets/agent-codex.png" alt="Codex" width="48" height="48" />
             <div>
               <h3>Codex（CLI + Desktop）</h3>
-              <p>Settings → Agent hooks → Install Codex。安装后在 Codex 中打开 /hooks 并信任 Atoll hook，重启后触发验证。</p>
+              <p>Settings → Agent hooks → Install Codex。支持 CLI / Desktop 会话识别、权限审批、subagent 事件与 transcript 详情；安装后在 /hooks 信任 Atoll hook。</p>
             </div>
           </article>
           <article class="agent-card">
@@ -463,7 +490,7 @@
             </div>
             <div>
               <h3>Cursor（IDE Agent）</h3>
-              <p>Settings → Agent hooks → Install Cursor。安装后在 Cursor Settings → Hooks 确认 hook 已加载，重启 Cursor 后触发 Shell 权限验证。</p>
+              <p>Settings → Agent hooks → Install Cursor。通过 observer hooks 追踪 Agent / Ask 会话、subagent 与 Token；Shell 权限仍由 Cursor 自带 UI 处理。</p>
             </div>
           </article>
           <article class="agent-card">
@@ -553,7 +580,7 @@
     <section id="updates" class="container reveal">
       <span class="section-label">更新</span>
       <h2 class="section-title">自动检查更新，持续演进</h2>
-      <p class="section-desc">Atoll 还在快速迭代。v0.1.31 起支持 Cursor IDE——Hook 安装、会话追踪、Token 统计与 Open Cursor 跳转。应用启动时会自动检测 GitHub 新版本，有新版本时在三点菜单显示更新入口，可一键下载安装并重启。</p>
+      <p class="section-desc">Atoll 还在快速迭代。v0.1.39 聚焦 subagent 并发、归档稳定性与 Cursor / Windows hook 自动修复；应用启动时会自动检测 GitHub 新版本，有新版本时在三点菜单显示更新入口，可一键下载安装并重启。</p>
 
       <div class="update-grid">
         <article class="update-card">
@@ -567,15 +594,15 @@
           <div class="update-card-icon coral">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
           </div>
-          <h3>菜单内更新提示</h3>
-          <p>有新版本时在三点菜单显示更新入口，也可手动 Check for updates。</p>
+          <h3>Hook 自动升级</h3>
+          <p>启动时补齐缺失 lifecycle hooks，刷新过期 shim，并保留用户自定义配置。</p>
         </article>
         <article class="update-card">
           <div class="update-card-icon lime">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
           </div>
-          <h3>一键安装重启</h3>
-          <p>三点菜单内完成下载、安装与重启，不用离开工作流。</p>
+          <h3>Subagent 稳定性</h3>
+          <p>增量合并、虚拟列表与安全归档，让大量后台任务也能顺滑查看。</p>
         </article>
       </div>
     </section>
@@ -604,7 +631,7 @@
           <li><a href="https://github.com/sheepbooy/Atoll/releases" target="_blank" rel="noopener">Releases</a></li>
           <li><a href="https://github.com/sheepbooy/Atoll/blob/main/CHANGELOG.md" target="_blank" rel="noopener">更新日志</a></li>
         </ul>
-        <p class="footer-copy">© 2025 Atoll. 100% local, 100% open source.</p>
+        <p class="footer-copy">© 2026 Atoll. 100% local, 100% open source.</p>
       </div>
     </footer>
   </div>
