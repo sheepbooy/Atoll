@@ -9,6 +9,30 @@ export function tokenTotal(usage: Pick<TokenUsage, "inputTokens" | "outputTokens
   return usage.inputTokens + usage.outputTokens;
 }
 
+export function maxTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+  return {
+    inputTokens: Math.max(a.inputTokens, b.inputTokens),
+    outputTokens: Math.max(a.outputTokens, b.outputTokens),
+    cacheReadTokens: Math.max(a.cacheReadTokens ?? 0, b.cacheReadTokens ?? 0),
+    cacheCreationTokens: Math.max(a.cacheCreationTokens ?? 0, b.cacheCreationTokens ?? 0),
+  };
+}
+
+export function mergeByModelMax(
+  a: Record<string, TokenUsage> = {},
+  b: Record<string, TokenUsage> = {},
+): Record<string, TokenUsage> {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  const merged: Record<string, TokenUsage> = {};
+  for (const key of keys) {
+    const left = a[key];
+    const right = b[key];
+    if (left && right) merged[key] = maxTokenUsage(left, right);
+    else merged[key] = left ?? right!;
+  }
+  return merged;
+}
+
 export function dayDisplayTotal(
   day: {
     inputTokens: number;
@@ -199,14 +223,36 @@ export interface AgentSlice {
 }
 
 export function aggregateByAgent(
-  days: Array<{ byAgent: Record<string, TokenUsage> }>,
+  days: Array<{
+    byAgent: Record<string, TokenUsage>;
+    byModel?: Record<string, TokenUsage>;
+    inputTokens?: number;
+    outputTokens?: number;
+  }>,
+  displayMode: UsageDisplayMode = "tokens",
+  pricingRates: Record<string, ModelRate> = {},
 ): AgentSlice[] {
   const totals = new Map<string, number>();
+
   for (const day of days) {
+    if (displayMode === "cost") {
+      const dayCost = byModelCostUsd(day.byModel, pricingRates);
+      if (dayCost <= 0) continue;
+      const agentEntries = Object.entries(day.byAgent);
+      const dayTokens = agentEntries.reduce((sum, [, usage]) => sum + tokenTotal(usage), 0);
+      if (dayTokens <= 0) continue;
+      for (const [agent, usage] of agentEntries) {
+        const share = tokenTotal(usage) / dayTokens;
+        totals.set(agent, (totals.get(agent) ?? 0) + dayCost * share);
+      }
+      continue;
+    }
+
     for (const [agent, usage] of Object.entries(day.byAgent)) {
       totals.set(agent, (totals.get(agent) ?? 0) + tokenTotal(usage));
     }
   }
+
   const grand = Array.from(totals.values()).reduce((a, b) => a + b, 0);
   return Array.from(totals.entries())
     .map(([agent, total]) => ({

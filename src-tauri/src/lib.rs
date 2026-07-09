@@ -224,6 +224,48 @@ pub(crate) fn effective_daily_tokens(
     total
 }
 
+/// Same restart-floor semantics as [`effective_daily_tokens`], keyed by model.
+pub(crate) fn effective_daily_tokens_by_model(
+    session_usage_by_model: &HashMap<String, HashMap<String, TokenUsage>>,
+    startup_floor: &HashMap<String, TokenUsage>,
+    absolute_sessions: &HashSet<String>,
+) -> HashMap<String, TokenUsage> {
+    let mut absolute_sum: HashMap<String, TokenUsage> = HashMap::new();
+    let mut incremental_sum: HashMap<String, TokenUsage> = HashMap::new();
+
+    for (session_id, usage_by_model) in session_usage_by_model {
+        let target = if absolute_sessions.contains(session_id) {
+            &mut absolute_sum
+        } else {
+            &mut incremental_sum
+        };
+        for (model_id, usage) in usage_by_model {
+            target
+                .entry(model_id.clone())
+                .or_default()
+                .add_assign(*usage);
+        }
+    }
+
+    if absolute_sessions.is_empty() {
+        let mut total = startup_floor.clone();
+        for (model_id, usage) in incremental_sum {
+            total.entry(model_id).or_default().add_assign(usage);
+        }
+        return total;
+    }
+
+    let mut total = startup_floor.clone();
+    for (model_id, usage) in absolute_sum {
+        let entry = total.entry(model_id).or_default();
+        *entry = entry.component_wise_max(usage);
+    }
+    for (model_id, usage) in incremental_sum {
+        total.entry(model_id).or_default().add_assign(usage);
+    }
+    total
+}
+
 fn merge_session_model_usage(
     target: &mut HashMap<String, TokenUsage>,
     source: &HashMap<String, TokenUsage>,
@@ -579,13 +621,22 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
             .startup_daily_floor
             .lock()
             .expect("state mutex poisoned");
+        let startup_floor_by_model = state
+            .startup_daily_floor_by_model
+            .lock()
+            .expect("state mutex poisoned")
+            .clone();
         let absolute_sessions = state
             .absolute_token_sessions
             .lock()
             .expect("state mutex poisoned");
         snapshot.daily_tokens =
             effective_daily_tokens(&token_usage, startup_floor, &absolute_sessions);
-        snapshot.daily_tokens_by_model = aggregate_usage_by_model(&token_usage_by_model, None);
+        snapshot.daily_tokens_by_model = effective_daily_tokens_by_model(
+            &token_usage_by_model,
+            &startup_floor_by_model,
+            &absolute_sessions,
+        );
         let active_ids: HashSet<&str> = snapshot
             .sessions
             .iter()
@@ -5907,7 +5958,7 @@ pub fn run() {
             token_usage_file_offsets: Mutex::new(HashMap::new()),
             token_usage_day: Mutex::new(current_local_day_key()),
             startup_daily_floor: Mutex::new(token_history::load_today_baseline()),
-            startup_daily_floor_by_model: Mutex::new(HashMap::new()),
+            startup_daily_floor_by_model: Mutex::new(token_history::load_today_by_model_baseline()),
             absolute_token_sessions: Mutex::new(HashSet::new()),
             daily_tokens_baseline: Mutex::new(token_history::load_today_baseline()),
             known_sessions: Mutex::new(HashMap::new()),
@@ -8351,6 +8402,27 @@ mod core_tests {
         let daily = effective_daily_tokens(&hook_only, startup_floor, &HashSet::new());
         assert_eq!(daily.input_tokens, 3_000_500);
         assert_eq!(daily.output_tokens, 1_200_100);
+    }
+
+    #[test]
+    fn effective_daily_tokens_by_model_uses_startup_floor() {
+        let usage = |input: u64| TokenUsage {
+            input_tokens: input,
+            output_tokens: 0,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+        };
+        let floor = HashMap::from([("gpt-4o".into(), usage(1_000_000))]);
+        let live = HashMap::from([(
+            "session-new".into(),
+            HashMap::from([("gpt-4o".into(), usage(200_000))]),
+        )]);
+        let merged = effective_daily_tokens_by_model(&live, &floor, &HashSet::new());
+        assert_eq!(merged.get("gpt-4o").unwrap().input_tokens, 1_200_000);
+
+        let absolute = HashSet::from(["session-new".into()]);
+        let merged_abs = effective_daily_tokens_by_model(&live, &floor, &absolute);
+        assert_eq!(merged_abs.get("gpt-4o").unwrap().input_tokens, 1_000_000);
     }
 
     #[test]

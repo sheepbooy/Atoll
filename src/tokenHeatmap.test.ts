@@ -6,6 +6,7 @@ import {
   formatHeatmapDate,
   heatmapLevel,
   localDayKey,
+  mergeByModelMax,
   summarizeHeatmap,
   tokenTotal,
 } from "./tokenHeatmap";
@@ -76,6 +77,37 @@ describe("tokenHeatmap", () => {
     expect(aggregateByAgent([{ byAgent: {} }])).toEqual([]);
   });
 
+  it("allocates day cost across agents by token share in cost mode", () => {
+    const usage = (input: number, output: number) => ({
+      inputTokens: input,
+      outputTokens: output,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+    const rate = {
+      inputPerMillion: 2.5,
+      outputPerMillion: 10,
+      cacheReadPerMillion: 1.25,
+      cacheWritePerMillion: 2.5,
+    };
+    const slices = aggregateByAgent(
+      [
+        {
+          byAgent: { claude: usage(750_000, 0), cursor: usage(250_000, 0) },
+          byModel: { "gpt-4o": usage(1_000_000, 0) },
+        },
+      ],
+      "cost",
+      { "gpt-4o": rate },
+    );
+    expect(slices).toHaveLength(2);
+    expect(slices[0].agent).toBe("claude");
+    expect(slices[0].total).toBeCloseTo(1.875, 4);
+    expect(slices[1].agent).toBe("cursor");
+    expect(slices[1].total).toBeCloseTo(0.625, 4);
+    expect(slices[0].ratio).toBeCloseTo(0.75, 4);
+  });
+
   it("formats valid heatmap dates and preserves invalid input", () => {
     expect(formatHeatmapDate("2026-07-06")).toBe("Mon, Jul 6, 2026");
     expect(formatHeatmapDate("not-a-date")).toBe("not-a-date");
@@ -92,6 +124,25 @@ describe("tokenHeatmap", () => {
     expect(series[series.length - 1].date).toBe(todayKey);
     expect(series[series.length - 1].total).toBe(700);
     expect(series[0].total).toBe(0);
+  });
+
+  it("merges byModel with component-wise max", () => {
+    const usage = (input: number, output = 0) => ({
+      inputTokens: input,
+      outputTokens: output,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+    expect(
+      mergeByModelMax(
+        { "gpt-4o": usage(1_000_000), "old-model": usage(10) },
+        { "gpt-4o": usage(200_000), "new-model": usage(50) },
+      ),
+    ).toEqual({
+      "gpt-4o": usage(1_000_000),
+      "old-model": usage(10),
+      "new-model": usage(50),
+    });
   });
 
   it("uses byModel pricing in cost mode", () => {

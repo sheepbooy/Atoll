@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatCompactCost } from "./costFormat";
 import { formatCompactTokenCount } from "./tokenCounterFormat";
 import type { UsageDisplayMode } from "./displayPrefs";
@@ -13,6 +13,8 @@ import {
   HEATMAP_WEEKS,
   heatmapLevel,
   localDayKey,
+  mergeByModelMax,
+  maxTokenUsage,
   summarizeHeatmap,
   tokenTotal,
   type AgentSlice,
@@ -61,6 +63,7 @@ export function TokenHeatmapView({
 }: TokenHeatmapViewProps) {
   const [history, setHistory] = useState<TokenHistoryResponse | null>(null);
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,6 +81,12 @@ export function TokenHeatmapView({
     };
   }, []);
 
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollLeft = el.scrollWidth;
+  }, [history]);
+
   const days = useMemo(() => {
     const todayKey = localDayKey(new Date());
     const base = history?.days ?? [];
@@ -91,27 +100,15 @@ export function TokenHeatmapView({
         },
       ];
     }
-    return base.map((day) =>
-      day.date === todayKey
-        ? {
-            ...day,
-            inputTokens: Math.max(day.inputTokens, todayTokens.inputTokens),
-            outputTokens: Math.max(day.outputTokens, todayTokens.outputTokens),
-            cacheReadTokens: Math.max(
-              day.cacheReadTokens ?? 0,
-              todayTokens.cacheReadTokens ?? 0,
-            ),
-            cacheCreationTokens: Math.max(
-              day.cacheCreationTokens ?? 0,
-              todayTokens.cacheCreationTokens ?? 0,
-            ),
-            byModel: {
-              ...(day.byModel ?? {}),
-              ...todayTokensByModel,
-            },
-          }
-        : day,
-    );
+    return base.map((day) => {
+      if (day.date !== todayKey) return day;
+      const mergedUsage = maxTokenUsage(day, todayTokens);
+      return {
+        ...day,
+        ...mergedUsage,
+        byModel: mergeByModelMax(day.byModel, todayTokensByModel),
+      };
+    });
   }, [history, todayTokens, todayTokensByModel]);
 
   const grid = useMemo(
@@ -122,7 +119,10 @@ export function TokenHeatmapView({
     () => summarizeHeatmap(days, displayMode, pricingRates),
     [days, displayMode, pricingRates],
   );
-  const agentSlices = useMemo(() => aggregateByAgent(days), [days]);
+  const agentSlices = useMemo(
+    () => aggregateByAgent(days, displayMode, pricingRates),
+    [days, displayMode, pricingRates],
+  );
   const trendSeries = useMemo(
     () => buildTrendSeries(days, 30, displayMode, pricingRates),
     [days, displayMode, pricingRates],
@@ -139,154 +139,167 @@ export function TokenHeatmapView({
 
   const formatSummaryValue = (value: number) =>
     displayMode === "cost"
-      ? formatCompactCost(value, value >= 1 ? 1 : 0, value)
+      ? formatCompactCost(value, 0, value)
       : formatCompactTokenCount(value, value >= 1_000 ? 1 : 0, value);
 
   return (
     <div className="settings-view" data-no-drag>
       <div className="token-heatmap-view">
-        {hasUnpricedHistory ? (
-          <p className="token-heatmap-empty">
-            Older days without model metadata are not priced. Only new usage with known
-            models appears in cost mode.
-          </p>
-        ) : null}
-        <div className="token-heatmap-summary">
-        <div className="token-heatmap-stat">
-          <span className="token-heatmap-stat-label">Today</span>
-          <span className="token-heatmap-stat-value">
-            {formatSummaryValue(summary.today)}
-          </span>
-        </div>
-        <div className="token-heatmap-stat">
-          <span className="token-heatmap-stat-label">7-day</span>
-          <span className="token-heatmap-stat-value">
-            {formatSummaryValue(summary.sevenDay)}
-          </span>
-        </div>
-        <div className="token-heatmap-stat">
-          <span className="token-heatmap-stat-label">Best day</span>
-          <span className="token-heatmap-stat-value">
-            {summary.best.total > 0
-              ? formatSummaryValue(summary.best.total)
-              : "—"}
-          </span>
-        </div>
-      </div>
+        <div className="token-heatmap-top">
+          {hasUnpricedHistory ? (
+            <p className="token-heatmap-empty">
+              Older days without model metadata are not priced. Only new usage with known
+              models appears in cost mode.
+            </p>
+          ) : null}
 
-      {!hasHistory ? (
-        <p className="token-heatmap-empty">Recording starts today.</p>
-      ) : null}
-
-      <div className="token-heatmap-scroll">
-        <div className="token-heatmap-grid-wrap">
-          <div className="token-heatmap-weekdays" aria-hidden="true">
-            {WEEKDAY_LABELS.map((label, index) => (
-              <span key={`${label}-${index}`} className="token-heatmap-weekday">
-                {label}
+          <div className="token-heatmap-summary">
+            <div className="token-heatmap-stat">
+              <span className="token-heatmap-stat-label">Today</span>
+              <span className="token-heatmap-stat-value">
+                {formatSummaryValue(summary.today)}
               </span>
-            ))}
+            </div>
+            <div className="token-heatmap-stat">
+              <span className="token-heatmap-stat-label">7-day</span>
+              <span className="token-heatmap-stat-value">
+                {formatSummaryValue(summary.sevenDay)}
+              </span>
+            </div>
+            <div className="token-heatmap-stat">
+              <span className="token-heatmap-stat-label">Best day</span>
+              <span className="token-heatmap-stat-value">
+                {summary.best.total > 0 ? formatSummaryValue(summary.best.total) : "—"}
+              </span>
+            </div>
           </div>
-          <div className="token-heatmap-grid" role="grid" aria-label={displayMode === "cost" ? "Daily cost activity" : "Daily token activity"}>
-            {grid.rows[0].map((_, weekIndex) => (
-              <div key={weekIndex} className="token-heatmap-week" role="row">
-                {grid.rows.map((row, rowIndex) => {
-                  const cell = row[weekIndex];
-                  const level = cell.inRange
-                    ? heatmapLevel(cell.total, grid.maxTotal)
-                    : 0;
-                  const isToday = cell.date === todayKey;
-                  return (
-                    <button
-                      key={`${cell.date}-${rowIndex}`}
-                      type="button"
-                      className={`token-heatmap-cell is-level-${level}${cell.inRange ? "" : " is-outside"}${isToday ? " is-today" : ""}`}
-                      role="gridcell"
-                      aria-label={`${formatHeatmapDate(cell.date)}: ${
-                        displayMode === "cost"
-                          ? formatCompactCost(cell.total, 0, cell.total)
-                          : `${cell.total.toLocaleString()} tokens`
-                      }`}
-                      disabled={!cell.inRange}
-                      onMouseEnter={() => setHoveredDate(cell.date)}
-                      onMouseLeave={() => setHoveredDate(null)}
-                      onFocus={() => setHoveredDate(cell.date)}
-                      onBlur={() => setHoveredDate(null)}
-                    />
-                  );
-                })}
+
+          {!hasHistory ? (
+            <p className="token-heatmap-empty">Recording starts today.</p>
+          ) : null}
+
+          <div className="token-heatmap-scroll" ref={scrollRef}>
+            <div className="token-heatmap-grid-wrap">
+              <div className="token-heatmap-weekdays" aria-hidden="true">
+                {WEEKDAY_LABELS.map((label, index) => (
+                  <span key={`${label}-${index}`} className="token-heatmap-weekday">
+                    {label}
+                  </span>
+                ))}
               </div>
-            ))}
+              <div
+                className="token-heatmap-grid"
+                role="grid"
+                aria-label={
+                  displayMode === "cost" ? "Daily cost activity" : "Daily token activity"
+                }
+              >
+                {grid.rows[0].map((_, weekIndex) => (
+                  <div key={weekIndex} className="token-heatmap-week" role="row">
+                    {grid.rows.map((row, rowIndex) => {
+                      const cell = row[weekIndex];
+                      const level = cell.inRange
+                        ? heatmapLevel(cell.total, grid.maxTotal)
+                        : 0;
+                      const isToday = cell.date === todayKey;
+                      return (
+                        <button
+                          key={`${cell.date}-${rowIndex}`}
+                          type="button"
+                          className={`token-heatmap-cell is-level-${level}${cell.inRange ? "" : " is-outside"}${isToday ? " is-today" : ""}`}
+                          role="gridcell"
+                          aria-label={`${formatHeatmapDate(cell.date)}: ${
+                            displayMode === "cost"
+                              ? formatCompactCost(cell.total, 0, cell.total)
+                              : `${cell.total.toLocaleString()} tokens`
+                          }`}
+                          disabled={!cell.inRange}
+                          onMouseEnter={() => setHoveredDate(cell.date)}
+                          onMouseLeave={() => setHoveredDate(null)}
+                          onFocus={() => setHoveredDate(cell.date)}
+                          onBlur={() => setHoveredDate(null)}
+                        />
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
 
-      <div className="token-heatmap-footer">
-        <div className="token-heatmap-legend" aria-hidden="true">
-          <span>Less</span>
-          <span className="token-heatmap-cell is-level-0" />
-          <span className="token-heatmap-cell is-level-1" />
-          <span className="token-heatmap-cell is-level-2" />
-          <span className="token-heatmap-cell is-level-3" />
-          <span className="token-heatmap-cell is-level-4" />
-          <span>More</span>
-        </div>
-        {hoveredCell ? (
-          <div className="token-heatmap-tooltip" role="status">
-            <span className="token-heatmap-tooltip-date">
-              {formatHeatmapDate(hoveredCell.date)}
-            </span>
-            <span className="token-heatmap-tooltip-total">
-              {displayMode === "cost"
-                ? formatCompactCost(hoveredCell.total, 0, hoveredCell.total)
-                : `${hoveredCell.total.toLocaleString()} tokens`}
-            </span>
-            {displayMode === "tokens" ? (
-              <span className="token-heatmap-tooltip-detail">
-                in {hoveredCell.usage.inputTokens.toLocaleString()} · out{" "}
-                {hoveredCell.usage.outputTokens.toLocaleString()}
-              </span>
+          <div className="token-heatmap-footer">
+            <div className="token-heatmap-legend" aria-hidden="true">
+              <span>Less</span>
+              <span className="token-heatmap-cell is-level-0" />
+              <span className="token-heatmap-cell is-level-1" />
+              <span className="token-heatmap-cell is-level-2" />
+              <span className="token-heatmap-cell is-level-3" />
+              <span className="token-heatmap-cell is-level-4" />
+              <span>More</span>
+            </div>
+            {hoveredCell ? (
+              <div className="token-heatmap-tooltip" role="status">
+                <span className="token-heatmap-tooltip-date">
+                  {formatHeatmapDate(hoveredCell.date)}
+                </span>
+                <span className="token-heatmap-tooltip-total">
+                  {displayMode === "cost"
+                    ? formatCompactCost(hoveredCell.total, 0, hoveredCell.total)
+                    : `${hoveredCell.total.toLocaleString()} tokens`}
+                </span>
+                {displayMode === "tokens" ? (
+                  <span className="token-heatmap-tooltip-detail">
+                    in {hoveredCell.usage.inputTokens.toLocaleString()} · out{" "}
+                    {hoveredCell.usage.outputTokens.toLocaleString()}
+                  </span>
+                ) : (
+                  <span className="token-heatmap-tooltip-detail">
+                    Priced from model metadata only.
+                  </span>
+                )}
+                {Object.keys(hoveredCell.byAgent).length > 0 ? (
+                  <span className="token-heatmap-tooltip-agents">
+                    {Object.entries(hoveredCell.byAgent).map(([agent, usage]) => (
+                      <span
+                        key={agent}
+                        className={`token-heatmap-agent-dot ${AGENT_DOT_CLASS[agent] ?? "is-other"}`}
+                        title={`${agent}: ${tokenTotal(usage).toLocaleString()}`}
+                      />
+                    ))}
+                  </span>
+                ) : null}
+              </div>
             ) : (
-              <span className="token-heatmap-tooltip-detail">
-                Priced from model metadata only.
+              <span className="token-heatmap-timezone">
+                {history?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone}
               </span>
             )}
-            {Object.keys(hoveredCell.byAgent).length > 0 ? (
-              <span className="token-heatmap-tooltip-agents">
-                {Object.entries(hoveredCell.byAgent).map(([agent, usage]) => (
-                  <span
-                    key={agent}
-                    className={`token-heatmap-agent-dot ${AGENT_DOT_CLASS[agent] ?? "is-other"}`}
-                    title={`${agent}: ${tokenTotal(usage).toLocaleString()}`}
-                  />
-                ))}
-              </span>
-            ) : null}
           </div>
-        ) : (
-          <span className="token-heatmap-timezone">
-            {history?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone}
-          </span>
-        )}
-      </div>
+        </div>
 
-      <div className="token-heatmap-charts">
-        <AgentDonutChart slices={agentSlices} />
-        <TrendLineChart series={trendSeries} />
+        <div className="token-heatmap-charts">
+          <AgentDonutChart slices={agentSlices} displayMode={displayMode} />
+          <TrendLineChart series={trendSeries} displayMode={displayMode} />
+        </div>
       </div>
-    </div>
     </div>
   );
 }
 
 /* ── Agent donut chart ─────────────────────────────────────────── */
 
-const DONUT_SIZE = 64;
-const DONUT_STROKE = 8;
+const DONUT_SIZE = 120;
+const DONUT_STROKE = 12;
 const DONUT_RADIUS = (DONUT_SIZE - DONUT_STROKE) / 2;
 const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS;
 
-function AgentDonutChart({ slices }: { slices: AgentSlice[] }) {
+function AgentDonutChart({
+  slices,
+  displayMode,
+}: {
+  slices: AgentSlice[];
+  displayMode: UsageDisplayMode;
+}) {
   const hasData = slices.length > 0;
 
   let offset = 0;
@@ -304,14 +317,12 @@ function AgentDonutChart({ slices }: { slices: AgentSlice[] }) {
   });
 
   return (
-    <div className="token-heatmap-section">
+    <div className="token-heatmap-section token-heatmap-section--agents">
       <span className="token-heatmap-section-label">Agent breakdown</span>
       <div className="token-heatmap-agents">
         <svg
           className="token-heatmap-donut"
           viewBox={`0 0 ${DONUT_SIZE} ${DONUT_SIZE}`}
-          width={DONUT_SIZE}
-          height={DONUT_SIZE}
           aria-hidden="true"
         >
           <circle
@@ -354,7 +365,13 @@ function AgentDonutChart({ slices }: { slices: AgentSlice[] }) {
                   {Math.round(slice.ratio * 100)}%
                 </span>
                 <span className="token-heatmap-agent-total">
-                  {formatCompactTokenCount(slice.total, slice.total >= 1_000 ? 1 : 0, slice.total)}
+                  {displayMode === "cost"
+                    ? formatCompactCost(slice.total, 0, slice.total)
+                    : formatCompactTokenCount(
+                        slice.total,
+                        slice.total >= 1_000 ? 1 : 0,
+                        slice.total,
+                      )}
                 </span>
               </div>
             ))
@@ -369,11 +386,17 @@ function AgentDonutChart({ slices }: { slices: AgentSlice[] }) {
 
 /* ── Trend line chart ──────────────────────────────────────────── */
 
-const TREND_HEIGHT = 64;
-const TREND_PADDING_TOP = 4;
-const TREND_PADDING_BOTTOM = 0;
+const TREND_HEIGHT = 140;
+const TREND_PADDING_TOP = 8;
+const TREND_PADDING_BOTTOM = 4;
 
-function TrendLineChart({ series }: { series: TrendPoint[] }) {
+function TrendLineChart({
+  series,
+  displayMode,
+}: {
+  series: TrendPoint[];
+  displayMode: UsageDisplayMode;
+}) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   const maxVal = Math.max(...series.map((p) => p.total), 1);
@@ -395,14 +418,20 @@ function TrendLineChart({ series }: { series: TrendPoint[] }) {
   const lastLabel = series.length > 0 ? formatShortDate(series[series.length - 1].date) : "";
 
   const hovered = hoverIndex !== null ? series[hoverIndex] : null;
+  const hoverValue =
+    hovered == null
+      ? null
+      : displayMode === "cost"
+        ? formatCompactCost(hovered.total, 0, hovered.total)
+        : hovered.total.toLocaleString();
 
   return (
-    <div className="token-heatmap-section">
+    <div className="token-heatmap-section token-heatmap-section--trend">
       <div className="token-heatmap-section-header">
         <span className="token-heatmap-section-label">30-day trend</span>
-        {hovered ? (
+        {hovered && hoverValue ? (
           <span className="token-heatmap-trend-hover">
-            {formatShortDate(hovered.date)} · {hovered.total.toLocaleString()}
+            {formatShortDate(hovered.date)} · {hoverValue}
           </span>
         ) : null}
       </div>

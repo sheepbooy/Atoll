@@ -411,6 +411,24 @@ pub(crate) fn load_today_baseline() -> TokenUsage {
         .unwrap_or_default()
 }
 
+/// Persisted per-model totals for today — used as a restart floor for cost mode.
+pub(crate) fn load_today_by_model_baseline() -> HashMap<String, TokenUsage> {
+    let file = load_history_file();
+    let today_key = current_local_day_key();
+    file.days
+        .get(&today_key)
+        .map(|record| {
+            let mut repaired = record.clone();
+            repair_inflated_day_usage(&mut repaired);
+            repaired
+                .by_model
+                .into_iter()
+                .map(|(model_id, usage)| (model_id, TokenUsage::from(usage)))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub fn get_token_history(days: u32) -> Result<TokenHistoryResponse, String> {
     let file = load_history_file();
     let today_key = current_local_day_key();
