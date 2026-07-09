@@ -6308,6 +6308,11 @@ kbd {
   overflow: hidden;
 }
 
+.token-heatmap-section--agents > .token-heatmap-section-label {
+  align-self: flex-start;
+  flex-shrink: 0;
+}
+
 .token-heatmap-agents {
   display: flex;
   flex-direction: column;
@@ -6320,10 +6325,12 @@ kbd {
 }
 
 .token-heatmap-donut {
+  display: block;
   flex: 0 0 auto;
   width: 120px;
   height: 120px;
   max-width: 70%;
+  margin: auto;
 }
 
 .token-heatmap-agent-legend {
@@ -6331,8 +6338,11 @@ kbd {
   flex-direction: column;
   gap: 6px;
   width: 100%;
+  max-width: 220px;
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
+  margin-inline: auto;
+  margin-top: 0;
   overflow: hidden;
 }
 
