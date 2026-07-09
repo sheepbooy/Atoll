@@ -81,6 +81,8 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
       onModelsChange(response.models);
       setCatalogFetchedAt(response.catalogFetchedAt);
       setLastRefreshError(response.lastRefreshError);
+    } catch {
+      setLastRefreshError("refresh failed");
     } finally {
       setRefreshing(false);
     }

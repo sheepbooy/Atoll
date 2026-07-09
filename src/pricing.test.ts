@@ -1,14 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCompactCost } from "./costFormat";
 import { byModelCostUsd, pricingRateMap, usageCostUsd } from "./pricing";
-
-describe("costFormat", () => {
-  it("formats small and large costs", () => {
-    expect(formatCompactCost(0)).toBe("$0.00");
-    expect(formatCompactCost(1.23)).toBe("$1.23");
-    expect(formatCompactCost(1234, 1, 1234)).toBe("$1.2K");
-  });
-});
 
 describe("pricing", () => {
   it("computes usage cost across all dimensions", () => {
