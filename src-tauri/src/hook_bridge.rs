@@ -660,9 +660,29 @@ fn route_claude_request(
                 &error,
             ))
         }),
-        "PostToolUse" | "PostToolUseFailure" => {
-            sync_tool_completion(app, payload, AgentKind::Claude, Some(stream))?;
+        _ => {
+            spawn_claude_observer(app, hook_event_name.clone(), payload);
             Ok(json!({}))
+        }
+    }
+}
+
+fn spawn_claude_observer(app: AppHandle, hook_event_name: String, payload: Value) {
+    thread::spawn(move || {
+        if let Err(error) = process_claude_observer_event(app, hook_event_name.clone(), payload) {
+            eprintln!("Atoll Claude observer failed for {hook_event_name}: {error}");
+        }
+    });
+}
+
+fn process_claude_observer_event(
+    app: AppHandle,
+    hook_event_name: String,
+    payload: Value,
+) -> Result<(), String> {
+    match hook_event_name.as_str() {
+        "PostToolUse" | "PostToolUseFailure" => {
+            sync_tool_completion(app, payload, AgentKind::Claude, None)
         }
         "Stop" | "StopFailure" => {
             if payload
@@ -673,8 +693,7 @@ fn route_claude_request(
                 let state = app.state::<AppState>();
                 complete_subagent(&state, &payload);
             }
-            sync_turn_completion(app, payload, AgentKind::Claude, true, Some(stream))?;
-            Ok(json!({}))
+            sync_turn_completion(app, payload, AgentKind::Claude, true, None)
         }
         "SubagentStart" => {
             let state = app.state::<AppState>();
@@ -687,15 +706,14 @@ fn route_claude_request(
             register_known_session(&state, session_id, AgentKind::Claude, cwd, None);
             touch_session_activity(&state, session_id);
             emit_subagent_snapshot(&app, &state);
-            Ok(json!({}))
+            Ok(())
         }
         "SubagentStop" => {
             let state = app.state::<AppState>();
             complete_subagent(&state, &payload);
-            sync_turn_completion(app, payload, AgentKind::Claude, false, Some(stream))?;
-            Ok(json!({}))
+            sync_turn_completion(app, payload, AgentKind::Claude, false, None)
         }
-        _ => Ok(json!({})),
+        _ => Ok(()),
     }
 }
 
@@ -740,10 +758,28 @@ fn route_codex_request(
                 &error,
             ))
         }),
-        "PostToolUse" => {
-            sync_tool_completion(app, payload, AgentKind::Codex, Some(stream))?;
+        _ => {
+            spawn_codex_observer(app, hook_event_name.clone(), payload);
             Ok(json!({}))
         }
+    }
+}
+
+fn spawn_codex_observer(app: AppHandle, hook_event_name: String, payload: Value) {
+    thread::spawn(move || {
+        if let Err(error) = process_codex_observer_event(app, hook_event_name.clone(), payload) {
+            eprintln!("Atoll Codex observer failed for {hook_event_name}: {error}");
+        }
+    });
+}
+
+fn process_codex_observer_event(
+    app: AppHandle,
+    hook_event_name: String,
+    payload: Value,
+) -> Result<(), String> {
+    match hook_event_name.as_str() {
+        "PostToolUse" => sync_tool_completion(app, payload, AgentKind::Codex, None),
         "Stop" => {
             if payload
                 .get("agent_id")
@@ -753,8 +789,7 @@ fn route_codex_request(
                 let state = app.state::<AppState>();
                 complete_subagent(&state, &payload);
             }
-            sync_turn_completion(app, payload, AgentKind::Codex, true, Some(stream))?;
-            Ok(json!({}))
+            sync_turn_completion(app, payload, AgentKind::Codex, true, None)
         }
         "SubagentStart" => {
             let state = app.state::<AppState>();
@@ -767,15 +802,14 @@ fn route_codex_request(
             register_known_session(&state, session_id, AgentKind::Codex, cwd, None);
             touch_session_activity(&state, session_id);
             emit_subagent_snapshot(&app, &state);
-            Ok(json!({}))
+            Ok(())
         }
         "SubagentStop" => {
             let state = app.state::<AppState>();
             complete_subagent(&state, &payload);
-            sync_turn_completion(app, payload, AgentKind::Codex, false, Some(stream))?;
-            Ok(json!({}))
+            sync_turn_completion(app, payload, AgentKind::Codex, false, None)
         }
-        _ => Ok(json!({})),
+        _ => Ok(()),
     }
 }
 
