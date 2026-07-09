@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use chrono::{Duration, NaiveDate};
@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::local_time::{current_local_day_key, format_local_day_key};
 use crate::{AgentKind, AppState, TokenUsage};
 
-const HISTORY_VERSION: u32 = 1;
+const HISTORY_VERSION: u32 = 2;
 const RETENTION_DAYS: i64 = 365;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -70,6 +70,8 @@ struct TokenDayRecord {
     usage: TokenUsageRecord,
     #[serde(default)]
     by_agent: HashMap<String, TokenUsageRecord>,
+    #[serde(default)]
+    by_model: HashMap<String, TokenUsageRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -87,6 +89,8 @@ pub struct TokenHistoryDay {
     #[serde(flatten)]
     pub usage: TokenUsageRecord,
     pub by_agent: HashMap<String, TokenUsageRecord>,
+    #[serde(default)]
+    pub by_model: HashMap<String, TokenUsageRecord>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -231,6 +235,7 @@ fn repair_inflated_day_usage(record: &mut TokenDayRecord) {
 
 fn aggregate_day_record(
     session_usage: &HashMap<String, TokenUsage>,
+    session_usage_by_model: &HashMap<String, HashMap<String, TokenUsage>>,
     agent_by_session: &HashMap<String, String>,
 ) -> TokenDayRecord {
     let mut record = TokenDayRecord::default();
@@ -250,6 +255,16 @@ fn aggregate_day_record(
             .add_assign(TokenUsageRecord::from(*usage));
     }
 
+    for usage_by_model in session_usage_by_model.values() {
+        for (model_id, usage) in usage_by_model {
+            record
+                .by_model
+                .entry(model_id.clone())
+                .or_default()
+                .add_assign(TokenUsageRecord::from(*usage));
+        }
+    }
+
     record
 }
 
@@ -262,7 +277,17 @@ fn merge_day_records(existing: &TokenDayRecord, incoming: &TokenDayRecord) -> To
         *entry = entry.component_wise_max(*incoming_usage);
     }
 
-    TokenDayRecord { usage, by_agent }
+    let mut by_model = existing.by_model.clone();
+    for (model_id, incoming_usage) in &incoming.by_model {
+        let entry = by_model.entry(model_id.clone()).or_default();
+        *entry = entry.component_wise_max(*incoming_usage);
+    }
+
+    TokenDayRecord {
+        usage,
+        by_agent,
+        by_model,
+    }
 }
 
 fn upsert_day(
@@ -290,8 +315,16 @@ pub(crate) fn sync_today_to_history(state: &AppState) -> Result<(), String> {
         .session_token_usage
         .lock()
         .map_err(|error| error.to_string())?;
+    let session_usage_by_model = state
+        .session_token_usage_by_model
+        .lock()
+        .map_err(|error| error.to_string())?;
     let agent_by_session = build_agent_by_session(state);
-    let mut record = aggregate_day_record(&session_usage, &agent_by_session);
+    let mut record = aggregate_day_record(
+        &session_usage,
+        &session_usage_by_model,
+        &agent_by_session,
+    );
     let startup_floor = *state
         .startup_daily_floor
         .lock()
@@ -307,6 +340,7 @@ pub(crate) fn sync_today_to_history(state: &AppState) -> Result<(), String> {
     ));
     repair_inflated_day_usage(&mut record);
     drop(session_usage);
+    drop(session_usage_by_model);
 
     let mut file = load_history_file();
 
@@ -333,12 +367,21 @@ pub(crate) fn flush_day_to_history(state: &AppState, day_key: &str) -> Result<()
         .session_token_usage
         .lock()
         .map_err(|error| error.to_string())?;
+    let session_usage_by_model = state
+        .session_token_usage_by_model
+        .lock()
+        .map_err(|error| error.to_string())?;
     if session_usage.is_empty() {
         return Ok(());
     }
     let agent_by_session = build_agent_by_session(state);
-    let record = aggregate_day_record(&session_usage, &agent_by_session);
+    let record = aggregate_day_record(
+        &session_usage,
+        &session_usage_by_model,
+        &agent_by_session,
+    );
     drop(session_usage);
+    drop(session_usage_by_model);
 
     let mut file = load_history_file();
     if let Some(existing) = file.days.get(day_key) {
@@ -386,12 +429,14 @@ pub fn get_token_history(days: u32) -> Result<TokenHistoryResponse, String> {
                 date: date_key,
                 usage: repaired.usage,
                 by_agent: repaired.by_agent.clone(),
+                by_model: repaired.by_model.clone(),
             });
         } else {
             result.push(TokenHistoryDay {
                 date: date_key,
                 usage: TokenUsageRecord::default(),
                 by_agent: HashMap::new(),
+                by_model: HashMap::new(),
             });
         }
     }
@@ -400,6 +445,19 @@ pub fn get_token_history(days: u32) -> Result<TokenHistoryResponse, String> {
         timezone: file.timezone,
         days: result,
     })
+}
+
+pub fn known_model_ids() -> HashSet<String> {
+    let file = load_history_file();
+    let mut ids = HashSet::new();
+    for day in file.days.values() {
+        for model_id in day.by_model.keys() {
+            if model_id != crate::pricing::UNKNOWN_MODEL {
+                ids.insert(model_id.clone());
+            }
+        }
+    }
+    ids
 }
 
 #[cfg(test)]
@@ -418,6 +476,33 @@ mod tests {
     }
 
     #[test]
+    fn aggregate_groups_by_agent_and_model() {
+        let session_usage = HashMap::from([
+            ("s1".into(), sample_usage(100, 50)),
+            ("s2".into(), sample_usage(200, 80)),
+        ]);
+        let session_usage_by_model = HashMap::from([
+            (
+                "s1".into(),
+                HashMap::from([("claude-sonnet".into(), sample_usage(100, 50))]),
+            ),
+            (
+                "s2".into(),
+                HashMap::from([("gpt-4o".into(), sample_usage(200, 80))]),
+            ),
+        ]);
+        let agent_by_session = HashMap::from([
+            ("s1".into(), "claude".into()),
+            ("s2".into(), "codex".into()),
+        ]);
+
+        let record = aggregate_day_record(&session_usage, &session_usage_by_model, &agent_by_session);
+        assert_eq!(record.usage.input_tokens, 300);
+        assert_eq!(record.by_model.get("claude-sonnet").unwrap().input_tokens, 100);
+        assert_eq!(record.by_model.get("gpt-4o").unwrap().input_tokens, 200);
+    }
+
+    #[test]
     fn aggregate_groups_by_agent() {
         let session_usage = HashMap::from([
             ("s1".into(), sample_usage(100, 50)),
@@ -428,7 +513,7 @@ mod tests {
             ("s2".into(), "codex".into()),
         ]);
 
-        let record = aggregate_day_record(&session_usage, &agent_by_session);
+        let record = aggregate_day_record(&session_usage, &HashMap::new(), &agent_by_session);
         assert_eq!(record.usage.input_tokens, 300);
         assert_eq!(record.usage.output_tokens, 130);
         assert_eq!(record.by_agent.get("claude").unwrap().input_tokens, 100);
@@ -450,6 +535,7 @@ mod tests {
                         cache_creation_tokens: 0,
                     },
                     by_agent: HashMap::new(),
+                    by_model: HashMap::new(),
                 },
             ),
             (format_local_day_key(today), TokenDayRecord::default()),
@@ -522,6 +608,7 @@ mod tests {
                     },
                 ),
             ]),
+            by_model: HashMap::new(),
         };
         let expected = sum_by_agent_usage(&record.by_agent);
 
@@ -558,6 +645,7 @@ mod tests {
                     },
                 ),
             ]),
+            by_model: HashMap::new(),
         };
 
         // Simulate post-restart with only partial data recovered
@@ -577,6 +665,7 @@ mod tests {
                     cache_creation_tokens: 0,
                 },
             )]),
+            by_model: HashMap::new(),
         };
 
         let merged = merge_day_records(&existing, &incoming);
@@ -612,6 +701,7 @@ mod tests {
                 cache_creation_tokens: 0,
             },
             by_agent: HashMap::new(),
+            by_model: HashMap::new(),
         }
     }
 
@@ -722,5 +812,55 @@ mod tests {
 
         cleanup_history_paths(&history_path);
         let _ = backup_path;
+    }
+
+    #[test]
+    fn known_model_ids_skips_unknown() {
+        let _lock = history_path_test_lock();
+        let (history_path, _, _) = temp_history_paths("known-model-ids");
+        cleanup_history_paths(&history_path);
+        std::env::set_var(
+            "ATOLL_TOKEN_HISTORY_PATH",
+            history_path.to_string_lossy().as_ref(),
+        );
+
+        let file = TokenHistoryFile {
+            version: HISTORY_VERSION,
+            timezone: "UTC".to_string(),
+            days: HashMap::from([(
+                "2026-07-09".into(),
+                TokenDayRecord {
+                    usage: TokenUsageRecord::default(),
+                    by_agent: HashMap::new(),
+                    by_model: HashMap::from([
+                        (
+                            crate::pricing::UNKNOWN_MODEL.to_string(),
+                            TokenUsageRecord {
+                                input_tokens: 100,
+                                output_tokens: 0,
+                                cache_read_tokens: 0,
+                                cache_creation_tokens: 0,
+                            },
+                        ),
+                        (
+                            "gpt-4o".into(),
+                            TokenUsageRecord {
+                                input_tokens: 200,
+                                output_tokens: 0,
+                                cache_read_tokens: 0,
+                                cache_creation_tokens: 0,
+                            },
+                        ),
+                    ]),
+                },
+            )]),
+        };
+        save_history_file(&file).expect("save history");
+
+        let ids = known_model_ids();
+        assert!(ids.contains("gpt-4o"));
+        assert!(!ids.contains(crate::pricing::UNKNOWN_MODEL));
+
+        cleanup_history_paths(&history_path);
     }
 }
