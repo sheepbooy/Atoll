@@ -19,6 +19,7 @@ mod hook_bridge;
 mod hook_trust;
 mod local_time;
 mod platform;
+mod pricing;
 mod token_history;
 mod transcript;
 
@@ -32,6 +33,8 @@ pub(crate) const EXPANDED_WINDOW_HEIGHT: f64 = 320.0;
 const EXPANDED_IDLE_WINDOW_HEIGHT: f64 = 240.0;
 pub(crate) const EXPANDED_PLAN_WINDOW_WIDTH: f64 = 680.0;
 pub(crate) const EXPANDED_PLAN_WINDOW_HEIGHT: f64 = 680.0;
+pub(crate) const EXPANDED_SETTINGS_WINDOW_WIDTH: f64 = 680.0;
+pub(crate) const EXPANDED_SETTINGS_WINDOW_HEIGHT: f64 = 680.0;
 const MIN_COMPACT_WINDOW_WIDTH: f64 = 72.0;
 // Dormant pill height (width spans the notch + side padding on notched displays).
 const DORMANT_WINDOW_HEIGHT: f64 = 36.0;
@@ -49,6 +52,9 @@ pub(crate) fn lock_state<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 #[cfg(test)]
 pub(crate) static TOKEN_HISTORY_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
+pub(crate) static PRICING_ENV_LOCK: Mutex<()> = Mutex::new(());
 // Fallback notch width (logical pt) used when the auxiliary menu-bar areas
 // can't be read but a notch height is reported.
 pub(crate) const FALLBACK_NOTCH_WIDTH: f64 = 200.0;
@@ -92,6 +98,10 @@ struct IslandSnapshot {
     sessions: Vec<SessionSummary>,
     daily_tokens: TokenUsage,
     active_session_tokens: TokenUsage,
+    #[serde(default)]
+    daily_tokens_by_model: HashMap<String, TokenUsage>,
+    #[serde(default)]
+    active_session_tokens_by_model: HashMap<String, TokenUsage>,
     hook_health: HookHealthSnapshot,
 }
 
@@ -214,6 +224,60 @@ pub(crate) fn effective_daily_tokens(
     total
 }
 
+fn merge_session_model_usage(
+    target: &mut HashMap<String, TokenUsage>,
+    source: &HashMap<String, TokenUsage>,
+    is_full_scan: bool,
+) {
+    for (model_id, usage) in source {
+        let entry = target.entry(model_id.clone()).or_default();
+        if is_full_scan {
+            *entry = entry.component_wise_max(*usage);
+        } else {
+            entry.add_assign(*usage);
+        }
+    }
+}
+
+fn token_usage_from_delta(delta: transcript::TokenUsageDelta) -> TokenUsage {
+    TokenUsage {
+        input_tokens: delta.input_tokens,
+        output_tokens: delta.output_tokens,
+        cache_read_tokens: delta.cache_read_tokens,
+        cache_creation_tokens: delta.cache_creation_tokens,
+    }
+}
+
+fn token_usage_map_from_delta_map(
+    source: &HashMap<String, transcript::TokenUsageDelta>,
+) -> HashMap<String, TokenUsage> {
+    source
+        .iter()
+        .map(|(model_id, delta)| (model_id.clone(), token_usage_from_delta(*delta)))
+        .collect()
+}
+
+fn aggregate_usage_by_model(
+    session_usage_by_model: &HashMap<String, HashMap<String, TokenUsage>>,
+    session_filter: Option<&HashSet<&str>>,
+) -> HashMap<String, TokenUsage> {
+    let mut totals = HashMap::new();
+    for (session_id, usage_by_model) in session_usage_by_model {
+        if let Some(filter) = session_filter {
+            if !filter.contains(session_id.as_str()) {
+                continue;
+            }
+        }
+        for (model_id, usage) in usage_by_model {
+            totals
+                .entry(model_id.clone())
+                .or_insert(TokenUsage::default())
+                .add_assign(*usage);
+        }
+    }
+    totals
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum AgentKind {
@@ -298,6 +362,7 @@ pub(crate) struct AppState {
     session_retention_secs: Mutex<u64>,
     subagent_retention_secs: Mutex<u64>,
     session_token_usage: Mutex<HashMap<String, TokenUsage>>,
+    session_token_usage_by_model: Mutex<HashMap<String, HashMap<String, TokenUsage>>>,
     /// Sticky session → agent mapping that survives session purges within a day.
     session_agent_map: Mutex<HashMap<String, String>>,
     token_usage_file_offsets: Mutex<HashMap<String, u64>>,
@@ -489,6 +554,7 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
     let last_seen = lock_state(&state.session_last_seen);
     let retention = *lock_state(&state.session_retention_secs);
     let token_usage = lock_state(&state.session_token_usage);
+    let token_usage_by_model = lock_state(&state.session_token_usage_by_model);
     let known_sessions = lock_state(&state.known_sessions);
     let pinned = lock_state(&state.pinned_sessions);
     let online = compute_listening_online(app);
@@ -517,7 +583,16 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
             .expect("state mutex poisoned");
         snapshot.daily_tokens =
             effective_daily_tokens(&token_usage, startup_floor, &absolute_sessions);
+        snapshot.daily_tokens_by_model = aggregate_usage_by_model(&token_usage_by_model, None);
+        let active_ids: HashSet<&str> = snapshot
+            .sessions
+            .iter()
+            .map(|session| session.session_id.as_str())
+            .collect();
+        snapshot.active_session_tokens_by_model =
+            aggregate_usage_by_model(&token_usage_by_model, Some(&active_ids));
     }
+    drop(token_usage_by_model);
     drop(token_usage);
     drop(last_seen);
     drop(requests);
@@ -1115,6 +1190,7 @@ async fn set_island_presentation(
     compact_left_width: Option<f64>,
     expanded_idle: Option<bool>,
     expanded_plan: Option<bool>,
+    expanded_settings: Option<bool>,
     animate: Option<bool>,
     snap: Option<bool>,
 ) -> Result<(), String> {
@@ -1199,6 +1275,7 @@ async fn set_island_presentation(
         .map_err(|error| error.to_string())?;
     let expanded_idle = expanded_idle.unwrap_or(false);
     let expanded_plan = expanded_plan.unwrap_or(false);
+    let expanded_settings = expanded_settings.unwrap_or(false);
 
     tauri::async_runtime::spawn_blocking(move || {
         animate_island_window_mode(
@@ -1211,6 +1288,7 @@ async fn set_island_presentation(
             compact_left_width,
             expanded_idle,
             expanded_plan,
+            expanded_settings,
         )
         .map_err(|error| error.to_string())
     })
@@ -1704,6 +1782,9 @@ fn roll_over_token_usage_if_needed(state: &AppState) {
     if let Ok(mut usage_by_session) = state.session_token_usage.lock() {
         usage_by_session.clear();
     }
+    if let Ok(mut usage_by_model) = state.session_token_usage_by_model.lock() {
+        usage_by_model.clear();
+    }
     if let Ok(mut sticky) = state.session_agent_map.lock() {
         sticky.clear();
     }
@@ -1721,46 +1802,63 @@ fn roll_over_token_usage_if_needed(state: &AppState) {
     }
 }
 
-fn token_usage_from_transcript_entry(entry: &Value, local_today_key: &str) -> TokenUsage {
+fn token_usage_and_model_from_transcript_entry(
+    entry: &Value,
+    local_today_key: &str,
+) -> Option<(String, TokenUsage)> {
     if entry.get("type").and_then(Value::as_str) != Some("assistant") {
-        return TokenUsage::default();
+        return None;
     }
 
     let Some(timestamp) = entry.get("timestamp").and_then(Value::as_str) else {
-        return TokenUsage::default();
+        return None;
     };
     if !local_time::is_local_today(timestamp, local_today_key) {
-        return TokenUsage::default();
+        return None;
     }
 
-    let usage = entry
-        .get("message")
-        .and_then(|message| message.get("usage"));
-    TokenUsage {
-        input_tokens: usage
-            .and_then(|value| value.get("input_tokens"))
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-        output_tokens: usage
-            .and_then(|value| value.get("output_tokens"))
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-        cache_read_tokens: usage
-            .and_then(|value| value.get("cache_read_input_tokens"))
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-        cache_creation_tokens: usage
-            .and_then(|value| value.get("cache_creation_input_tokens"))
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-    }
+    let message = entry.get("message")?;
+    let usage = message.get("usage");
+    let model = message
+        .get("model")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| pricing::UNKNOWN_MODEL.to_string());
+
+    Some((
+        model,
+        TokenUsage {
+            input_tokens: usage
+                .and_then(|value| value.get("input_tokens"))
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            output_tokens: usage
+                .and_then(|value| value.get("output_tokens"))
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            cache_read_tokens: usage
+                .and_then(|value| value.get("cache_read_input_tokens"))
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            cache_creation_tokens: usage
+                .and_then(|value| value.get("cache_creation_input_tokens"))
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+        },
+    ))
+}
+
+fn token_usage_from_transcript_entry(entry: &Value, local_today_key: &str) -> TokenUsage {
+    token_usage_and_model_from_transcript_entry(entry, local_today_key)
+        .map(|(_, usage)| usage)
+        .unwrap_or_default()
 }
 
 fn parse_claude_token_usage_from_transcript(
     transcript_path: &str,
     offset: u64,
     today_key: &str,
-) -> Result<(TokenUsage, u64, bool), String> {
+) -> Result<(TokenUsage, HashMap<String, TokenUsage>, u64, bool), String> {
     use std::fs::File;
     use std::io::{BufRead, BufReader, Seek, SeekFrom};
 
@@ -1778,6 +1876,7 @@ fn parse_claude_token_usage_from_transcript(
 
     let mut reader = BufReader::new(file);
     let mut usage = TokenUsage::default();
+    let mut usage_by_model: HashMap<String, TokenUsage> = HashMap::new();
     let mut next_offset = start_offset;
     let mut line = String::new();
     loop {
@@ -1799,10 +1898,18 @@ fn parse_claude_token_usage_from_transcript(
             Ok(value) => value,
             Err(_) => continue,
         };
-        usage.add_assign(token_usage_from_transcript_entry(&entry, today_key));
+        if let Some((model, entry_usage)) =
+            token_usage_and_model_from_transcript_entry(&entry, today_key)
+        {
+            usage.add_assign(entry_usage);
+            usage_by_model
+                .entry(model)
+                .or_default()
+                .add_assign(entry_usage);
+        }
     }
 
-    Ok((usage, next_offset, is_full_scan))
+    Ok((usage, usage_by_model, next_offset, is_full_scan))
 }
 
 fn token_usage_from_codex_delta(delta: transcript::TokenUsageDelta) -> TokenUsage {
@@ -1818,7 +1925,7 @@ fn parse_codex_token_usage_from_transcript(
     transcript_path: &str,
     offset: u64,
     today_key: &str,
-) -> Result<(TokenUsage, u64, bool), String> {
+) -> Result<(TokenUsage, HashMap<String, TokenUsage>, u64, bool), String> {
     use std::fs::File;
     use std::io::BufReader;
 
@@ -1835,6 +1942,7 @@ fn parse_codex_token_usage_from_transcript(
     let parsed = transcript::parse_codex_tokens_from_reader(&mut reader, start_offset, today_key)?;
     Ok((
         token_usage_from_codex_delta(parsed.daily_delta),
+        token_usage_map_from_delta_map(&parsed.daily_delta_by_model),
         parsed.next_offset,
         is_full_scan,
     ))
@@ -1867,7 +1975,7 @@ pub(crate) fn refresh_session_token_usage(
         _ => transcript::detect_transcript_format(transcript_path),
     };
 
-    let (parsed_usage, next_offset, is_full_scan) = match format {
+    let (parsed_usage, parsed_usage_by_model, next_offset, is_full_scan) = match format {
         transcript::TranscriptFormat::Codex => {
             parse_codex_token_usage_from_transcript(transcript_path, last_offset, &today_key)?
         }
@@ -1882,7 +1990,7 @@ pub(crate) fn refresh_session_token_usage(
             let file_len = std::fs::metadata(transcript_path)
                 .map(|m| m.len())
                 .unwrap_or(last_offset);
-            (TokenUsage::default(), file_len, false)
+            (TokenUsage::default(), HashMap::new(), file_len, false)
         }
     };
 
@@ -1910,6 +2018,15 @@ pub(crate) fn refresh_session_token_usage(
         usage_entry.add_assign(parsed_usage);
     }
     drop(usage_by_session);
+
+    if !parsed_usage_by_model.is_empty() {
+        let mut usage_by_model = state
+            .session_token_usage_by_model
+            .lock()
+            .map_err(|error| error.to_string())?;
+        let model_entry = usage_by_model.entry(session_id.to_string()).or_default();
+        merge_session_model_usage(model_entry, &parsed_usage_by_model, is_full_scan);
+    }
 
     if let Some(agent) = agent {
         if let Ok(mut sticky) = state.session_agent_map.lock() {
@@ -1975,6 +2092,22 @@ pub(crate) fn ingest_cursor_token_usage_from_payload(
             *entry = entry.component_wise_max(parsed_usage);
         } else {
             entry.add_assign(parsed_usage);
+        }
+    }
+
+    let model_id = extract_cursor_model(payload);
+    let model_usage = HashMap::from([(model_id, parsed_usage)]);
+
+    {
+        let mut usage_by_model = state
+            .session_token_usage_by_model
+            .lock()
+            .map_err(|error| error.to_string())?;
+        let model_entry = usage_by_model.entry(session_id.to_string()).or_default();
+        if source == "sessionEnd" {
+            merge_session_model_usage(model_entry, &model_usage, true);
+        } else {
+            merge_session_model_usage(model_entry, &model_usage, false);
         }
     }
 
@@ -2076,6 +2209,37 @@ fn first_json_u64(source: &serde_json::Value, keys: &[&str]) -> u64 {
         .unwrap_or(0)
 }
 
+fn first_json_string(source: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| source.get(*key).and_then(Value::as_str).map(str::to_string))
+}
+
+fn extract_cursor_model(payload: &serde_json::Value) -> String {
+    first_json_string(
+        payload,
+        &[
+            "model",
+            "modelName",
+            "model_name",
+            "model_id",
+            "modelId",
+            "model_slug",
+            "modelSlug",
+        ],
+    )
+    .or_else(|| {
+        payload
+            .get("response")
+            .and_then(|response| {
+                first_json_string(
+                    response,
+                    &["model", "modelName", "model_name", "model_id", "modelId"],
+                )
+            })
+    })
+    .unwrap_or_else(|| pricing::UNKNOWN_MODEL.to_string())
+}
+
 /// Parse a JSON value as u64, accepting integers, floats, and numeric strings.
 fn json_value_as_u64(value: Option<&serde_json::Value>) -> Option<u64> {
     let value = value?;
@@ -2096,6 +2260,21 @@ fn json_value_as_u64(value: Option<&serde_json::Value>) -> Option<u64> {
 #[tauri::command]
 fn get_token_history(days: u32) -> Result<token_history::TokenHistoryResponse, String> {
     token_history::get_token_history(days)
+}
+
+#[tauri::command]
+fn get_pricing() -> Result<pricing::PricingResponse, String> {
+    pricing::get_pricing()
+}
+
+#[tauri::command]
+fn set_model_rate(request: pricing::SetModelRateRequest) -> Result<pricing::PricingResponse, String> {
+    pricing::set_model_rate(request)
+}
+
+#[tauri::command]
+fn reset_model_rate(model_id: String) -> Result<pricing::PricingResponse, String> {
+    pricing::reset_model_rate(model_id)
 }
 
 #[tauri::command]
@@ -5701,6 +5880,7 @@ pub fn run() {
             session_retention_secs: Mutex::new(DEFAULT_SESSION_RETENTION_SECS),
             subagent_retention_secs: Mutex::new(DEFAULT_SUBAGENT_RETENTION_SECS),
             session_token_usage: Mutex::new(HashMap::new()),
+            session_token_usage_by_model: Mutex::new(HashMap::new()),
             session_agent_map: Mutex::new(HashMap::new()),
             token_usage_file_offsets: Mutex::new(HashMap::new()),
             token_usage_day: Mutex::new(current_local_day_key()),
@@ -5754,6 +5934,9 @@ pub fn run() {
             archive_subagent,
             archive_completed_subagents,
             get_token_history,
+            get_pricing,
+            set_model_rate,
+            reset_model_rate,
             open_in_terminal,
             open_agent_app,
             focus_claude_app,
@@ -6301,11 +6484,19 @@ fn apply_island_window_mode(
         notch,
         false,
         false,
+        false,
     ))?;
     platform::set_island_cursor_events_ignored(window, is_collapsed_pass_through_mode(mode));
 
-    let window_size =
-        island_window_physical_size(mode, scale_factor, compact_width, notch, false, false);
+    let window_size = island_window_physical_size(
+        mode,
+        scale_factor,
+        compact_width,
+        notch,
+        false,
+        false,
+        false,
+    );
     let logical_window_size = window_size.to_logical::<f64>(scale_factor);
     let left_pane_width = if compact_left_width > 0.0 {
         compact_left_width
@@ -6359,6 +6550,7 @@ fn animate_island_window_mode(
     compact_left_width: f64,
     expanded_idle: bool,
     expanded_plan: bool,
+    expanded_settings: bool,
 ) -> tauri::Result<()> {
     let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
     platform::ensure_island_on_top(window);
@@ -6382,6 +6574,7 @@ fn animate_island_window_mode(
         notch,
         expanded_idle,
         expanded_plan,
+        expanded_settings,
     );
     let target_logical_size = target_size.to_logical::<f64>(scale_factor);
     // Center the target window on the screen center.  Using monitor_center_x
@@ -6491,17 +6684,25 @@ fn interpolate_f64(start: f64, end: f64, progress: f64) -> f64 {
     start + (end - start) * progress
 }
 
-fn expanded_window_width(expanded_plan: bool) -> f64 {
+fn expanded_window_width(expanded_plan: bool, expanded_settings: bool) -> f64 {
     if expanded_plan {
         EXPANDED_PLAN_WINDOW_WIDTH
+    } else if expanded_settings {
+        EXPANDED_SETTINGS_WINDOW_WIDTH
     } else {
         EXPANDED_WINDOW_WIDTH
     }
 }
 
-fn expanded_window_height(expanded_idle: bool, expanded_plan: bool) -> f64 {
+fn expanded_window_height(
+    expanded_idle: bool,
+    expanded_plan: bool,
+    expanded_settings: bool,
+) -> f64 {
     if expanded_plan {
         EXPANDED_PLAN_WINDOW_HEIGHT
+    } else if expanded_settings {
+        EXPANDED_SETTINGS_WINDOW_HEIGHT
     } else if expanded_idle {
         EXPANDED_IDLE_WINDOW_HEIGHT
     } else {
@@ -6515,6 +6716,7 @@ fn island_window_logical_size(
     notch: NotchMetrics,
     expanded_idle: bool,
     expanded_plan: bool,
+    expanded_settings: bool,
 ) -> LogicalSize<f64> {
     let compact_width = sanitize_compact_width(compact_width);
     let extra_top = if notch.has_notch {
@@ -6554,10 +6756,10 @@ fn island_window_logical_size(
             LogicalSize::new(w, COMPACT_WINDOW_HEIGHT)
         }
         IslandWindowMode::Expanded => {
-            let w = expanded_window_width(expanded_plan).max(min_notch_width);
+            let w = expanded_window_width(expanded_plan, expanded_settings).max(min_notch_width);
             LogicalSize::new(
                 w,
-                expanded_window_height(expanded_idle, expanded_plan) + extra_top,
+                expanded_window_height(expanded_idle, expanded_plan, expanded_settings) + extra_top,
             )
         }
     }
@@ -6570,9 +6772,16 @@ fn island_window_physical_size(
     notch: NotchMetrics,
     expanded_idle: bool,
     expanded_plan: bool,
+    expanded_settings: bool,
 ) -> PhysicalSize<u32> {
-    let logical_size =
-        island_window_logical_size(mode, compact_width, notch, expanded_idle, expanded_plan);
+    let logical_size = island_window_logical_size(
+        mode,
+        compact_width,
+        notch,
+        expanded_idle,
+        expanded_plan,
+        expanded_settings,
+    );
 
     PhysicalSize::new(
         (logical_size.width * scale_factor).round() as u32,
@@ -6845,6 +7054,8 @@ fn snapshot_from(
         sessions,
         daily_tokens,
         active_session_tokens,
+        daily_tokens_by_model: HashMap::new(),
+        active_session_tokens_by_model: HashMap::new(),
         hook_health: HookHealthSnapshot::default(),
     }
 }
@@ -8050,6 +8261,7 @@ mod core_tests {
             session_retention_secs: Mutex::new(DEFAULT_SESSION_RETENTION_SECS),
             subagent_retention_secs: Mutex::new(DEFAULT_SUBAGENT_RETENTION_SECS),
             session_token_usage: Mutex::new(HashMap::new()),
+            session_token_usage_by_model: Mutex::new(HashMap::new()),
             session_agent_map: Mutex::new(HashMap::new()),
             token_usage_file_offsets: Mutex::new(HashMap::new()),
             token_usage_day: Mutex::new(current_local_day_key()),
@@ -8473,6 +8685,7 @@ mod core_tests {
             NotchMetrics::default(),
             false,
             false,
+            false,
         );
 
         assert_eq!(size, LogicalSize::new(560.0, 320.0));
@@ -8485,6 +8698,7 @@ mod core_tests {
             COMPACT_WINDOW_WIDTH,
             NotchMetrics::default(),
             true,
+            false,
             false,
         );
 
@@ -8499,11 +8713,32 @@ mod core_tests {
             NotchMetrics::default(),
             false,
             true,
+            false,
         );
 
         assert_eq!(
             size,
             LogicalSize::new(EXPANDED_PLAN_WINDOW_WIDTH, EXPANDED_PLAN_WINDOW_HEIGHT)
+        );
+    }
+
+    #[test]
+    fn expanded_settings_window_is_larger() {
+        let size = island_window_logical_size(
+            IslandWindowMode::Expanded,
+            COMPACT_WINDOW_WIDTH,
+            NotchMetrics::default(),
+            false,
+            false,
+            true,
+        );
+
+        assert_eq!(
+            size,
+            LogicalSize::new(
+                EXPANDED_SETTINGS_WINDOW_WIDTH,
+                EXPANDED_SETTINGS_WINDOW_HEIGHT,
+            )
         );
     }
 
@@ -8554,7 +8789,7 @@ mod core_tests {
             height: 38.0,
             ..NotchMetrics::default()
         };
-        let compact = island_window_logical_size(IslandWindowMode::Compact, 132.0, notch, false, false);
+        let compact = island_window_logical_size(IslandWindowMode::Compact, 132.0, notch, false, false, false);
         // Compact sits in the menu-bar band (like dormant) — no extra_top.
         assert_eq!(compact.height, COMPACT_WINDOW_HEIGHT);
         // Width is clamped up to the notch width so the capsule visually
@@ -8562,11 +8797,11 @@ mod core_tests {
         assert_eq!(compact.width, 200.0);
 
         // Content wider than the notch keeps its own width.
-        let wide = island_window_logical_size(IslandWindowMode::Compact, 300.0, notch, false, false);
+        let wide = island_window_logical_size(IslandWindowMode::Compact, 300.0, notch, false, false, false);
         assert_eq!(wide.width, 300.0);
 
         // Dormant is slightly wider than the notch (padding on each side).
-        let dormant = island_window_logical_size(IslandWindowMode::Dormant, 132.0, notch, false, false);
+        let dormant = island_window_logical_size(IslandWindowMode::Dormant, 132.0, notch, false, false, false);
         assert_eq!(dormant.width, 200.0 + 2.0 * DORMANT_NOTCH_PADDING);
         assert_eq!(dormant.height, DORMANT_WINDOW_HEIGHT);
     }
@@ -8611,16 +8846,16 @@ mod core_tests {
         let no_notch = NotchMetrics::default();
 
         // Compact: content width is kept as-is on non-notched displays.
-        let compact = island_window_logical_size(IslandWindowMode::Compact, 132.0, no_notch, false, false);
+        let compact = island_window_logical_size(IslandWindowMode::Compact, 132.0, no_notch, false, false, false);
         assert_eq!(compact.width, 132.0);
         assert_eq!(compact.height, COMPACT_WINDOW_HEIGHT);
 
         // A compact_width that already exceeds the floor is kept as-is.
-        let wide = island_window_logical_size(IslandWindowMode::Compact, 250.0, no_notch, false, false);
+        let wide = island_window_logical_size(IslandWindowMode::Compact, 250.0, no_notch, false, false, false);
         assert_eq!(wide.width, 250.0);
 
         // Dormant: uses the same FALLBACK_NOTCH_WIDTH reference + padding.
-        let dormant = island_window_logical_size(IslandWindowMode::Dormant, 132.0, no_notch, false, false);
+        let dormant = island_window_logical_size(IslandWindowMode::Dormant, 132.0, no_notch, false, false, false);
         assert_eq!(
             dormant.width,
             FALLBACK_NOTCH_WIDTH + 2.0 * DORMANT_NOTCH_PADDING
@@ -8636,6 +8871,7 @@ mod core_tests {
             NotchMetrics::default(),
             false,
             false,
+            false,
         );
         assert_eq!(micro.width, 132.0);
         assert_eq!(micro.height, MICRO_WINDOW_HEIGHT);
@@ -8643,6 +8879,7 @@ mod core_tests {
             IslandWindowMode::Micro,
             48.0,
             NotchMetrics::default(),
+            false,
             false,
             false,
         );
@@ -8692,6 +8929,7 @@ mod cursor_subagent_tests {
             session_retention_secs: Mutex::new(DEFAULT_SESSION_RETENTION_SECS),
             subagent_retention_secs: Mutex::new(DEFAULT_SUBAGENT_RETENTION_SECS),
             session_token_usage: Mutex::new(HashMap::new()),
+            session_token_usage_by_model: Mutex::new(HashMap::new()),
             session_agent_map: Mutex::new(HashMap::new()),
             token_usage_file_offsets: Mutex::new(HashMap::new()),
             token_usage_day: Mutex::new(current_local_day_key()),
