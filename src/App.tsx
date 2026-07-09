@@ -795,7 +795,7 @@ export function App() {
     () =>
       settingsBadgeDisplay === "cost"
         ? dailyCostTotal > 0
-          ? `${formatCompactCost(dailyCostTotal, dailyCostTotal >= 1 ? 1 : 0, dailyCostTotal)} today`
+          ? `${formatCompactCost(dailyCostTotal, 0, dailyCostTotal)} today`
           : "No priced usage"
         : dailyTokenTotal > 0
           ? `${formatCompactTokenCount(dailyTokenTotal, dailyTokenTotal >= 1_000 ? 1 : 0, dailyTokenTotal)} today`

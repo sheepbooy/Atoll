@@ -7,26 +7,18 @@ export function formatCompactCost(
   const hintAbs = Math.abs(formatHint);
   const sign = value < 0 ? "-" : "";
 
-  if (compact === 0) {
-    if (abs < 0.01) return "$0.00";
-    if (abs < 10) return `${sign}$${abs.toFixed(2)}`;
-    if (abs < 100) return `${sign}$${abs.toFixed(2)}`;
-    return `${sign}$${abs.toFixed(0)}`;
-  }
-
-  if (hintAbs < 0.01) return "$0.00";
-  if (hintAbs < 1) return `${sign}$${abs.toFixed(2)}`;
-  if (hintAbs < 10) return `${sign}$${abs.toFixed(2)}`;
-  if (hintAbs < 1000) return `${sign}$${abs.toFixed(hintAbs >= 100 ? 0 : 2)}`;
-  if (hintAbs >= 1_000_000) {
-    const fractionDigits = compact >= 2 ? 0 : 1;
+  // Abbreviated forms only when compact pressure is high and the amount is large.
+  if (compact >= 1 && hintAbs >= 1_000_000) {
+    const fractionDigits = compact >= 2 ? 0 : 2;
     return `${sign}$${(abs / 1_000_000).toFixed(fractionDigits)}M`;
   }
-  if (hintAbs >= 1_000) {
-    const fractionDigits = compact >= 2 ? 0 : 1;
+  if (compact >= 1 && hintAbs >= 1_000) {
+    const fractionDigits = compact >= 2 ? 0 : 2;
     return `${sign}$${(abs / 1_000).toFixed(fractionDigits)}K`;
   }
-  return `${sign}$${abs.toFixed(0)}`;
+
+  if (abs < 0.01 && value === 0) return "$0.00";
+  return `${sign}$${abs.toFixed(2)}`;
 }
 
 export function costDisplayCompactLevel(
