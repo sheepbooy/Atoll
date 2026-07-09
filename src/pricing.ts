@@ -5,42 +5,56 @@ function isTauriRuntimeForPricing(): boolean {
   return "__TAURI_INTERNALS__" in window;
 }
 
+function emptyPricingResponse(): PricingResponse {
+  return {
+    models: [],
+    hiddenModels: [],
+    catalogFetchedAt: null,
+    lastRefreshError: null,
+  };
+}
+
 export async function getPricing(): Promise<PricingResponse> {
   if (isTauriRuntimeForPricing()) {
     return invoke<PricingResponse>("get_pricing");
   }
-  return { models: [], catalogFetchedAt: null, lastRefreshError: null };
+  return emptyPricingResponse();
 }
 
 export async function setModelRate(request: SetModelRateRequest): Promise<PricingResponse> {
   if (isTauriRuntimeForPricing()) {
     return invoke<PricingResponse>("set_model_rate", { request });
   }
-  return { models: [], catalogFetchedAt: null, lastRefreshError: null };
+  return emptyPricingResponse();
 }
 
 export async function resetModelRate(modelId: string): Promise<PricingResponse> {
   if (isTauriRuntimeForPricing()) {
     return invoke<PricingResponse>("reset_model_rate", { modelId });
   }
-  return { models: [], catalogFetchedAt: null, lastRefreshError: null };
+  return emptyPricingResponse();
 }
 
 export async function hideModel(modelId: string): Promise<PricingResponse> {
   if (isTauriRuntimeForPricing()) {
     return invoke<PricingResponse>("hide_model", { modelId });
   }
-  return { models: [], catalogFetchedAt: null, lastRefreshError: null };
+  return emptyPricingResponse();
+}
+
+export async function unhideModel(modelId: string): Promise<PricingResponse> {
+  if (isTauriRuntimeForPricing()) {
+    return invoke<PricingResponse>("unhide_model", { modelId });
+  }
+  return emptyPricingResponse();
 }
 
 export async function refreshPricing(): Promise<PricingResponse> {
   if (isTauriRuntimeForPricing()) {
     return invoke<PricingResponse>("refresh_pricing");
   }
-  return { models: [], catalogFetchedAt: null, lastRefreshError: null };
+  return emptyPricingResponse();
 }
-
-export type { ModelPricingEntry, ModelRate, PricingResponse, SetModelRateRequest };
 
 export interface SetModelRateRequest {
   modelId: string;
@@ -66,6 +80,7 @@ export interface ModelPricingEntry {
 
 export interface PricingResponse {
   models: ModelPricingEntry[];
+  hiddenModels: ModelPricingEntry[];
   catalogFetchedAt: string | null;
   lastRefreshError: string | null;
 }

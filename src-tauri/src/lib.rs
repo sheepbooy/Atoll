@@ -370,6 +370,8 @@ pub(crate) struct AppState {
     /// Today's persisted total loaded at process start (and after midnight rollover).
     /// Hook increments add on top until transcript full-scans produce absolute totals.
     startup_daily_floor: Mutex<TokenUsage>,
+    /// Today's persisted per-model totals loaded at process start (cost-mode floor).
+    startup_daily_floor_by_model: Mutex<HashMap<String, TokenUsage>>,
     /// Sessions whose in-memory totals came from a transcript full-scan (absolute).
     absolute_token_sessions: Mutex<HashSet<String>>,
     /// High-water mark synced to token_history.json; never regresses within a day.
@@ -1797,6 +1799,9 @@ fn roll_over_token_usage_if_needed(state: &AppState) {
     if let Ok(mut startup_floor) = state.startup_daily_floor.lock() {
         *startup_floor = TokenUsage::default();
     }
+    if let Ok(mut startup_floor_by_model) = state.startup_daily_floor_by_model.lock() {
+        startup_floor_by_model.clear();
+    }
     if let Ok(mut absolute_sessions) = state.absolute_token_sessions.lock() {
         absolute_sessions.clear();
     }
@@ -2280,6 +2285,11 @@ fn reset_model_rate(model_id: String) -> Result<pricing::PricingResponse, String
 #[tauri::command]
 fn hide_model(model_id: String) -> Result<pricing::PricingResponse, String> {
     pricing::hide_model(model_id)
+}
+
+#[tauri::command]
+fn unhide_model(model_id: String) -> Result<pricing::PricingResponse, String> {
+    pricing::unhide_model(model_id)
 }
 
 #[tauri::command]
@@ -5897,6 +5907,7 @@ pub fn run() {
             token_usage_file_offsets: Mutex::new(HashMap::new()),
             token_usage_day: Mutex::new(current_local_day_key()),
             startup_daily_floor: Mutex::new(token_history::load_today_baseline()),
+            startup_daily_floor_by_model: Mutex::new(HashMap::new()),
             absolute_token_sessions: Mutex::new(HashSet::new()),
             daily_tokens_baseline: Mutex::new(token_history::load_today_baseline()),
             known_sessions: Mutex::new(HashMap::new()),
@@ -5950,6 +5961,7 @@ pub fn run() {
             set_model_rate,
             reset_model_rate,
             hide_model,
+            unhide_model,
             refresh_pricing,
             open_in_terminal,
             open_agent_app,
@@ -8283,6 +8295,7 @@ mod core_tests {
             token_usage_file_offsets: Mutex::new(HashMap::new()),
             token_usage_day: Mutex::new(current_local_day_key()),
             startup_daily_floor: Mutex::new(TokenUsage::default()),
+            startup_daily_floor_by_model: Mutex::new(HashMap::new()),
             absolute_token_sessions: Mutex::new(HashSet::new()),
             daily_tokens_baseline: Mutex::new(TokenUsage::default()),
             known_sessions: Mutex::new(HashMap::new()),
@@ -8951,6 +8964,7 @@ mod cursor_subagent_tests {
             token_usage_file_offsets: Mutex::new(HashMap::new()),
             token_usage_day: Mutex::new(current_local_day_key()),
             startup_daily_floor: Mutex::new(TokenUsage::default()),
+            startup_daily_floor_by_model: Mutex::new(HashMap::new()),
             absolute_token_sessions: Mutex::new(HashSet::new()),
             daily_tokens_baseline: Mutex::new(TokenUsage::default()),
             known_sessions: Mutex::new(HashMap::new()),

@@ -5244,6 +5244,21 @@ kbd {
   background: rgba(111, 220, 255, 0.08);
 }
 
+.pricing-hidden-section {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.pricing-model-row.is-hidden {
+  opacity: 0.78;
+}
+
+.settings-hook-badge.is-hidden {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.55);
+}
+
 .pricing-model-meta,
 .pricing-editor-actions {
   display: flex;

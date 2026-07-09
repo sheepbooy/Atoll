@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import type { ModelPricingEntry, ModelRate } from "./pricing";
-import { getPricing, hideModel, refreshPricing, resetModelRate, setModelRate } from "./pricing";
+import type { ModelPricingEntry, ModelRate, PricingResponse } from "./pricing";
+import {
+  getPricing,
+  hideModel,
+  refreshPricing,
+  resetModelRate,
+  setModelRate,
+  unhideModel,
+} from "./pricing";
 
 interface PricingSettingsProps {
   models: ModelPricingEntry[];
@@ -127,10 +134,19 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
   const [refreshing, setRefreshing] = useState(false);
   const [catalogFetchedAt, setCatalogFetchedAt] = useState<string | null>(null);
   const [lastRefreshError, setLastRefreshError] = useState<string | null>(null);
+  const [hiddenModels, setHiddenModels] = useState<ModelPricingEntry[]>([]);
+
+  function applyResponse(response: PricingResponse) {
+    onModelsChange(response.models);
+    setHiddenModels(response.hiddenModels ?? []);
+    setCatalogFetchedAt(response.catalogFetchedAt);
+    setLastRefreshError(response.lastRefreshError);
+  }
 
   useEffect(() => {
     getPricing()
       .then((response) => {
+        setHiddenModels(response.hiddenModels ?? []);
         setCatalogFetchedAt(response.catalogFetchedAt);
         setLastRefreshError(response.lastRefreshError);
       })
@@ -139,18 +155,14 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
 
   async function refreshModels() {
     const response = await getPricing();
-    onModelsChange(response.models);
-    setCatalogFetchedAt(response.catalogFetchedAt);
-    setLastRefreshError(response.lastRefreshError);
+    applyResponse(response);
   }
 
   async function handleRefreshCatalog() {
     setRefreshing(true);
     try {
       const response = await refreshPricing();
-      onModelsChange(response.models);
-      setCatalogFetchedAt(response.catalogFetchedAt);
-      setLastRefreshError(response.lastRefreshError);
+      applyResponse(response);
     } catch {
       setLastRefreshError("refresh failed");
     } finally {
@@ -167,7 +179,7 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
         displayName: model.displayName,
         rate: draftRate,
       });
-      onModelsChange(response.models);
+      applyResponse(response);
       setEditingId(null);
       setDraftRate(null);
     } finally {
@@ -179,7 +191,7 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
     setBusy(true);
     try {
       const response = await resetModelRate(modelId);
-      onModelsChange(response.models);
+      applyResponse(response);
       if (editingId === modelId) {
         setEditingId(null);
         setDraftRate(null);
@@ -193,11 +205,21 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
     setBusy(true);
     try {
       const response = await hideModel(modelId);
-      onModelsChange(response.models);
+      applyResponse(response);
       if (editingId === modelId) {
         setEditingId(null);
         setDraftRate(null);
       }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRestore(modelId: string) {
+    setBusy(true);
+    try {
+      const response = await unhideModel(modelId);
+      applyResponse(response);
     } finally {
       setBusy(false);
     }
@@ -310,7 +332,40 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
         })}
       </div>
 
-      {models.length === 0 ? (
+      {hiddenModels.length > 0 ? (
+        <div className="pricing-hidden-section">
+          <span className="settings-section-label">Hidden models</span>
+          <p className="settings-card-desc pricing-settings-note">
+            Deleted models stay hidden here. Restore to show them in the list again.
+          </p>
+          <div className="pricing-model-list">
+            {hiddenModels.map((model) => (
+              <div key={model.modelId} className="pricing-model-row is-hidden">
+                <div className="pricing-model-row-main">
+                  <div className="pricing-model-copy">
+                    <span className="settings-card-title">{model.displayName}</span>
+                    <span className="settings-card-desc">{model.modelId}</span>
+                  </div>
+                  <div className="pricing-model-meta">
+                    <span className="settings-hook-badge is-summary is-hidden">Hidden</span>
+                    <button
+                      type="button"
+                      className="settings-inline-button"
+                      disabled={busy}
+                      onClick={() => handleRestore(model.modelId)}
+                      data-no-drag
+                    >
+                      Restore
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {models.length === 0 && hiddenModels.length === 0 ? (
         <button
           type="button"
           className="settings-inline-button"

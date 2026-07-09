@@ -36,6 +36,8 @@ pub struct ModelPricingEntry {
 #[serde(rename_all = "camelCase")]
 pub struct PricingResponse {
     pub models: Vec<ModelPricingEntry>,
+    #[serde(default)]
+    pub hidden_models: Vec<ModelPricingEntry>,
     pub catalog_fetched_at: Option<String>,
     pub last_refresh_error: Option<String>,
 }
@@ -329,6 +331,39 @@ pub fn get_pricing() -> Result<PricingResponse, String> {
     get_pricing_with_discovered(discovered)
 }
 
+fn pricing_entry_for(
+    model_id: String,
+    overrides: &PricingOverridesFile,
+    catalog: &PricingCatalogFile,
+) -> ModelPricingEntry {
+    let is_custom = overrides.overrides.contains_key(&model_id);
+    let effective = effective_rate(&model_id);
+    let is_unpriced = effective.is_none();
+    let rate = effective.unwrap_or_else(zero_rate);
+    let display_name = overrides
+        .overrides
+        .get(&model_id)
+        .and_then(|entry| entry.display_name.clone())
+        .or_else(|| catalog_display_name(&model_id, catalog))
+        .or_else(|| builtin_display_name(&model_id).map(str::to_string))
+        .unwrap_or_else(|| model_id.clone());
+    ModelPricingEntry {
+        model_id,
+        display_name,
+        rate,
+        is_custom,
+        is_unpriced,
+    }
+}
+
+fn sort_pricing_entries(models: &mut [ModelPricingEntry]) {
+    models.sort_by(|a, b| {
+        b.is_unpriced
+            .cmp(&a.is_unpriced)
+            .then_with(|| a.display_name.cmp(&b.display_name))
+    });
+}
+
 pub fn get_pricing_with_discovered(discovered: HashSet<String>) -> Result<PricingResponse, String> {
     let overrides = load_overrides();
     let catalog = load_catalog();
@@ -344,36 +379,21 @@ pub fn get_pricing_with_discovered(discovered: HashSet<String>) -> Result<Pricin
     model_ids.extend(catalog.models.iter().map(|model| model.model_id.clone()));
     model_ids.extend(overrides.overrides.keys().cloned());
     model_ids.extend(discovered);
+    // Keep previously deleted models restorable even if they left discovery.
+    model_ids.extend(overrides.hidden_model_ids.iter().cloned());
 
-    let mut models: Vec<ModelPricingEntry> = model_ids
-        .into_iter()
-        .filter(|model_id| !hidden.contains(model_id.as_str()))
-        .map(|model_id| {
-            let is_custom = overrides.overrides.contains_key(&model_id);
-            let effective = effective_rate(&model_id);
-            let is_unpriced = effective.is_none();
-            let rate = effective.unwrap_or_else(zero_rate);
-            let display_name = overrides
-                .overrides
-                .get(&model_id)
-                .and_then(|entry| entry.display_name.clone())
-                .or_else(|| catalog_display_name(&model_id, &catalog))
-                .or_else(|| builtin_display_name(&model_id).map(str::to_string))
-                .unwrap_or_else(|| model_id.clone());
-            ModelPricingEntry {
-                model_id,
-                display_name,
-                rate,
-                is_custom,
-                is_unpriced,
-            }
-        })
-        .collect();
-    models.sort_by(|a, b| {
-        b.is_unpriced
-            .cmp(&a.is_unpriced)
-            .then_with(|| a.display_name.cmp(&b.display_name))
-    });
+    let mut models = Vec::new();
+    let mut hidden_models = Vec::new();
+    for model_id in model_ids {
+        let entry = pricing_entry_for(model_id.clone(), &overrides, &catalog);
+        if hidden.contains(model_id.as_str()) {
+            hidden_models.push(entry);
+        } else {
+            models.push(entry);
+        }
+    }
+    sort_pricing_entries(&mut models);
+    sort_pricing_entries(&mut hidden_models);
 
     let last_refresh_error = LAST_REFRESH_ERROR
         .lock()
@@ -382,6 +402,7 @@ pub fn get_pricing_with_discovered(discovered: HashSet<String>) -> Result<Pricin
 
     Ok(PricingResponse {
         models,
+        hidden_models,
         catalog_fetched_at: catalog.fetched_at,
         last_refresh_error,
     })
@@ -424,6 +445,13 @@ pub fn hide_model(model_id: String) -> Result<PricingResponse, String> {
     if !overrides.hidden_model_ids.iter().any(|id| id == &model_id) {
         overrides.hidden_model_ids.push(model_id);
     }
+    save_overrides(&overrides)?;
+    get_pricing()
+}
+
+pub fn unhide_model(model_id: String) -> Result<PricingResponse, String> {
+    let mut overrides = load_overrides();
+    overrides.hidden_model_ids.retain(|id| id != &model_id);
     save_overrides(&overrides)?;
     get_pricing()
 }
@@ -944,6 +972,44 @@ mod tests {
             .expect("model visible again");
         assert!(entry.is_custom);
         assert_eq!(entry.rate.input_per_million, 4.0);
+
+        cleanup_pricing_paths(&pricing_path, &catalog_path);
+    }
+
+    #[test]
+    fn unhide_model_restores_hidden_entry() {
+        let _lock = pricing_test_lock();
+        let (pricing_path, catalog_path) = temp_pricing_paths("unhide-restore");
+        cleanup_pricing_paths(&pricing_path, &catalog_path);
+        std::env::set_var(
+            "ATOLL_PRICING_PATH",
+            pricing_path.to_string_lossy().as_ref(),
+        );
+        std::env::set_var(
+            "ATOLL_PRICING_CATALOG_PATH",
+            catalog_path.to_string_lossy().as_ref(),
+        );
+
+        hide_model("gpt-4o".into()).expect("hide builtin");
+        let hidden = get_pricing_with_discovered(HashSet::new()).unwrap();
+        assert!(hidden
+            .hidden_models
+            .iter()
+            .any(|model| model.model_id == "gpt-4o"));
+        assert!(!hidden
+            .models
+            .iter()
+            .any(|model| model.model_id == "gpt-4o"));
+
+        let restored = unhide_model("gpt-4o".into()).expect("unhide");
+        assert!(restored
+            .models
+            .iter()
+            .any(|model| model.model_id == "gpt-4o"));
+        assert!(!restored
+            .hidden_models
+            .iter()
+            .any(|model| model.model_id == "gpt-4o"));
 
         cleanup_pricing_paths(&pricing_path, &catalog_path);
     }
