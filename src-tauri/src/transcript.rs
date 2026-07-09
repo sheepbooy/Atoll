@@ -1,4 +1,8 @@
+use std::collections::HashMap;
+
 use serde_json::Value;
+
+use crate::pricing::UNKNOWN_MODEL;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TranscriptFormat {
@@ -13,6 +17,7 @@ pub struct CodexTokenParseResult {
     #[allow(dead_code)] // parsed for correctness; session UI uses daily_delta increments
     pub session_total: TokenUsageDelta,
     pub daily_delta: TokenUsageDelta,
+    pub daily_delta_by_model: HashMap<String, TokenUsageDelta>,
     pub next_offset: u64,
 }
 
@@ -319,6 +324,8 @@ pub fn parse_codex_tokens_from_reader<R: std::io::BufRead + std::io::Seek>(
 
     let mut session_total = TokenUsageDelta::default();
     let mut daily_delta = TokenUsageDelta::default();
+    let mut daily_delta_by_model: HashMap<String, TokenUsageDelta> = HashMap::new();
+    let mut current_model = UNKNOWN_MODEL.to_string();
     let mut next_offset = offset;
 
     if offset > 0 {
@@ -353,7 +360,16 @@ pub fn parse_codex_tokens_from_reader<R: std::io::BufRead + std::io::Seek>(
         }
 
         let payload = entry.get("payload").unwrap_or(&Value::Null);
-        if payload.get("type").and_then(Value::as_str) != Some("token_count") {
+        let payload_type = payload.get("type").and_then(Value::as_str).unwrap_or("");
+
+        if payload_type == "turn_context" || payload_type == "session_meta" {
+            if let Some(model) = extract_codex_model(payload) {
+                current_model = model;
+            }
+            continue;
+        }
+
+        if payload_type != "token_count" {
             continue;
         }
 
@@ -361,6 +377,8 @@ pub fn parse_codex_tokens_from_reader<R: std::io::BufRead + std::io::Seek>(
         if info.is_none() {
             continue;
         }
+
+        let model = extract_codex_model(payload).unwrap_or_else(|| current_model.clone());
 
         if let Some(total) =
             token_usage_from_codex_usage(info.and_then(|v| v.get("total_token_usage")))
@@ -374,6 +392,10 @@ pub fn parse_codex_tokens_from_reader<R: std::io::BufRead + std::io::Seek>(
                 token_usage_from_codex_usage(info.and_then(|v| v.get("last_token_usage")))
             {
                 daily_delta.add_assign(last);
+                daily_delta_by_model
+                    .entry(model)
+                    .or_default()
+                    .add_assign(last);
             }
         }
     }
@@ -381,8 +403,26 @@ pub fn parse_codex_tokens_from_reader<R: std::io::BufRead + std::io::Seek>(
     Ok(CodexTokenParseResult {
         session_total,
         daily_delta,
+        daily_delta_by_model,
         next_offset,
     })
+}
+
+fn extract_codex_model(payload: &Value) -> Option<String> {
+    first_json_string(
+        payload,
+        &["model", "model_slug", "modelSlug", "model_id", "modelId"],
+    )
+    .or_else(|| {
+        payload
+            .get("info")
+            .and_then(|info| first_json_string(info, &["model", "model_slug", "modelSlug"]))
+    })
+}
+
+fn first_json_string(source: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| source.get(*key).and_then(Value::as_str).map(str::to_string))
 }
 
 fn token_usage_from_codex_usage(usage: Option<&Value>) -> Option<TokenUsageDelta> {
@@ -502,5 +542,24 @@ mod tests {
         assert_eq!(result.session_total.cache_read_tokens, 50);
         assert_eq!(result.daily_delta.input_tokens, 10);
         assert_eq!(result.daily_delta.output_tokens, 3);
+    }
+
+    #[test]
+    fn attributes_codex_tokens_to_current_model() {
+        let jsonl = concat!(
+            r#"{"type":"event_msg","timestamp":"2026-06-19T10:00:00.000Z","payload":{"type":"turn_context","model":"gpt-4o"}}"#,
+            "\n",
+            r#"{"type":"event_msg","timestamp":"2026-06-19T10:00:00.000Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":2,"reasoning_output_tokens":0}}}}"#,
+            "\n",
+        );
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(jsonl.as_bytes()));
+        let result = parse_codex_tokens_from_reader(
+            &mut reader,
+            0,
+            &crate::local_time::local_day_key_from_iso("2026-06-19T10:00:00.000Z")
+                .expect("local day key"),
+        )
+        .expect("parse");
+        assert_eq!(result.daily_delta_by_model.get("gpt-4o").unwrap().input_tokens, 10);
     }
 }
