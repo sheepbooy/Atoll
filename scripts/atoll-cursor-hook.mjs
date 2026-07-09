@@ -8,37 +8,59 @@ import { hookAuthHeaders, resolveHookConfig } from "./atoll-hook-bridge.mjs";
 const defaultHookUrl = "http://127.0.0.1:47777/cursor/hook";
 const hookConfig = resolveHookConfig("cursorUrl", defaultHookUrl);
 const hookUrl = hookConfig.url;
+const hookTimeoutMs = parseHookTimeoutMs(process.env.ATOLL_CURSOR_HOOK_TIMEOUT_MS);
 
 try {
   const rawPayload = await readStdin();
   const payload = (rawPayload || "").replace(/^\uFEFF/, "");
-  logHookInvoke(payload);
-  let response;
+  let text;
+  let timeout;
+  const controller = new AbortController();
   try {
-    response = await fetch(hookUrl, {
+    timeout = setTimeout(() => controller.abort(), hookTimeoutMs);
+    const response = await fetch(hookUrl, {
       method: "POST",
       headers: { "content-type": "application/json", ...hookAuthHeaders(hookConfig.token) },
       body: payload || "{}",
+      signal: controller.signal,
     });
+
+    if (!response.ok) {
+      throw new Error(`Atoll hook bridge returned HTTP ${response.status}`);
+    }
+
+    text = await response.text();
   } catch (fetchError) {
     logHookInvoke(payload, fetchError);
     throw fetchError;
+  } finally {
+    clearTimeout(timeout);
   }
 
-  if (!response.ok) {
-    const httpError = new Error(`Atoll hook bridge returned HTTP ${response.status}`);
-    logHookInvoke(payload, httpError);
-    throw httpError;
+  try {
+    JSON.parse(text);
+  } catch (parseError) {
+    logHookInvoke(payload, parseError);
+    throw parseError;
   }
-
-  const text = await response.text();
-  JSON.parse(text);
   process.stdout.write(text);
 } catch (error) {
   process.stdout.write(fallbackResponse(hookEventNameFromPayload(globalThis.__ATOLL_LAST_PAYLOAD__), error));
 }
 
+function parseHookTimeoutMs(value) {
+  const parsed = Number.parseInt(value || "", 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.min(parsed, 5000);
+  }
+  return 1200;
+}
+
 function logHookInvoke(payload, error = null) {
+  if (!error && process.env.ATOLL_CURSOR_HOOK_DEBUG !== "1") {
+    return;
+  }
+
   try {
     const localAppData = process.env.LOCALAPPDATA;
     const base = localAppData

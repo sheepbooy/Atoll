@@ -32,6 +32,7 @@ const HOOK_FALLBACK_PORT_END: u16 = 47_827;
 const HOOK_SECONDARY_FALLBACK_START: u16 = 48_800;
 const HOOK_SECONDARY_FALLBACK_END: u16 = 48_850;
 const HOOK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+const HOOK_REQUEST_READ_TIMEOUT: Duration = Duration::from_secs(5);
 const BRIDGE_PROBE_TIMEOUT: Duration = Duration::from_millis(200);
 const BRIDGE_ONLINE_GRACE: Duration = Duration::from_secs(3);
 const HOOK_POLL_INTERVAL: Duration = Duration::from_millis(180);
@@ -568,9 +569,11 @@ pub(crate) fn hook_defer_response(hook_event_name: &str, reason: &str) -> Value 
 
 fn handle_connection(app: AppHandle, mut stream: TcpStream) {
     touch_hook_activity(&app.state::<AppState>());
+    let _ = stream.set_read_timeout(Some(HOOK_REQUEST_READ_TIMEOUT));
     let result = read_http_request(&mut stream)
         .and_then(|request| route_request(app, request, &stream))
         .unwrap_or_else(|error| fallback_hook_response("PreToolUse", &error));
+    let _ = stream.set_read_timeout(None);
 
     let _ = write_json_response(&mut stream, result);
 }
@@ -894,6 +897,8 @@ fn observe_cursor_session(
     touch_session_activity(state, &session_id);
     if let Some(stream) = stream {
         maybe_detect_and_store_cursor_host(state, &session_id, Some(stream));
+    } else if get_stored_session_host(state, &session_id) == platform::SessionHost::Unknown {
+        crate::store_session_host(state, &session_id, platform::SessionHost::CursorIde);
     }
     if ingest_tokens {
         let has_tokens = cursor_payload_has_token_usage(payload);
@@ -909,7 +914,7 @@ fn observe_cursor_session(
 fn route_cursor_request(
     app: AppHandle,
     request: HttpRequest,
-    stream: &TcpStream,
+    _stream: &TcpStream,
 ) -> Result<Value, String> {
     let payload: Value = serde_json::from_slice(strip_utf8_bom(&request.body))
         .map_err(|error| format!("Invalid Cursor hook payload: {error}"))?;
@@ -935,6 +940,32 @@ fn route_cursor_request(
     );
     // #endregion
 
+    spawn_cursor_observer(app, hook_event_name.clone(), payload);
+
+    match hook_event_name.as_str() {
+        "beforeSubmitPrompt" => Ok(json!({ "continue": true })),
+        "preToolUse" => Ok(json!({ "permission": "allow" })),
+        "sessionStart" | "afterAgentResponse" | "sessionEnd" | "afterAgentThought"
+        | "postToolUse" | "postToolUseFailure" | "stop" | "subagentStart" | "subagentStop" => {
+            Ok(json!({}))
+        }
+        _ => Ok(json!({})),
+    }
+}
+
+fn spawn_cursor_observer(app: AppHandle, hook_event_name: String, payload: Value) {
+    thread::spawn(move || {
+        if let Err(error) = process_cursor_observer_event(app, hook_event_name.clone(), payload) {
+            eprintln!("Atoll Cursor observer failed for {hook_event_name}: {error}");
+        }
+    });
+}
+
+fn process_cursor_observer_event(
+    app: AppHandle,
+    hook_event_name: String,
+    payload: Value,
+) -> Result<(), String> {
     match hook_event_name.as_str() {
         "sessionStart" | "afterAgentResponse" | "sessionEnd" | "afterAgentThought" => {
             let state = app.state::<AppState>();
@@ -946,43 +977,34 @@ fn route_cursor_request(
                 &app,
                 &state,
                 &payload,
-                Some(stream),
+                None,
                 ingest_tokens,
                 hook_event_name.as_str(),
-            )?;
-            Ok(json!({}))
+            )
         }
         "beforeSubmitPrompt" => {
             let state = app.state::<AppState>();
-            observe_cursor_session(
-                &app,
-                &state,
-                &payload,
-                Some(stream),
-                false,
-                "beforeSubmitPrompt",
-            )?;
-            Ok(json!({ "continue": true }))
+            observe_cursor_session(&app, &state, &payload, None, false, "beforeSubmitPrompt")
         }
         "preToolUse" => {
             let state = app.state::<AppState>();
-            observe_cursor_session(&app, &state, &payload, Some(stream), false, "preToolUse")?;
+            observe_cursor_session(&app, &state, &payload, None, false, "preToolUse")?;
             if let Some(mut request) = permission_request_from_cursor_payload(
                 uuid::Uuid::new_v4().to_string(),
                 payload,
                 crate::iso_timestamp_now(),
             ) {
-                request.status = crate::PermissionStatus::Approved;
+                request.status = PermissionStatus::Approved;
                 request.detail = format!("{} Auto-approved.", request.detail);
                 let session_id = request.session.clone();
                 touch_session_activity(&state, &session_id);
                 if let Ok(mut requests) = state.requests.lock() {
                     requests.insert(0, request);
-                    crate::roll_over_token_usage_if_needed(&state);
+                    roll_over_token_usage_if_needed(&state);
                 }
-                crate::schedule_observer_snapshot_emit(&app);
+                schedule_observer_snapshot_emit(&app);
             }
-            Ok(json!({ "permission": "allow" }))
+            Ok(())
         }
         "postToolUse" | "postToolUseFailure" => {
             let state = app.state::<AppState>();
@@ -997,8 +1019,7 @@ fn route_cursor_request(
             } else {
                 payload
             };
-            sync_tool_completion(app, payload, AgentKind::Cursor, Some(stream))?;
-            Ok(json!({}))
+            sync_tool_completion(app, payload, AgentKind::Cursor, None)
         }
         "stop" => {
             let state = app.state::<AppState>();
@@ -1018,9 +1039,8 @@ fn route_cursor_request(
             };
             let state = app.state::<AppState>();
             let ingest_tokens = cursor_stop_should_ingest_tokens(&state, &payload);
-            observe_cursor_session(&app, &state, &payload, Some(stream), ingest_tokens, "stop")?;
-            sync_turn_completion(app, payload, AgentKind::Cursor, true, Some(stream))?;
-            Ok(json!({}))
+            observe_cursor_session(&app, &state, &payload, None, ingest_tokens, "stop")?;
+            sync_turn_completion(app, payload, AgentKind::Cursor, true, None)
         }
         "subagentStart" => {
             let state = app.state::<AppState>();
@@ -1037,9 +1057,12 @@ fn route_cursor_request(
                 &cwd,
                 transcript_path.as_deref(),
             );
+            if get_stored_session_host(&state, session_id) == platform::SessionHost::Unknown {
+                crate::store_session_host(&state, session_id, platform::SessionHost::CursorIde);
+            }
             touch_session_activity(&state, session_id);
             emit_subagent_snapshot(&app, &state);
-            Ok(json!({}))
+            Ok(())
         }
         "subagentStop" => {
             let state = app.state::<AppState>();
@@ -1056,10 +1079,9 @@ fn route_cursor_request(
             } else {
                 payload
             };
-            sync_turn_completion(app, payload, AgentKind::Cursor, false, Some(stream))?;
-            Ok(json!({}))
+            sync_turn_completion(app, payload, AgentKind::Cursor, false, None)
         }
-        _ => Ok(json!({})),
+        _ => Ok(()),
     }
 }
 

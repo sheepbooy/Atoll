@@ -2882,6 +2882,10 @@ pub(crate) fn sync_cursor_hook_bridge_urls(app: &AppHandle, port: u16) {
                 obj.insert("env".to_string(), Value::Object(env));
                 updated = true;
             }
+            if obj.get("timeout").and_then(Value::as_u64) != Some(CURSOR_HOOK_TIMEOUT_SECONDS) {
+                obj.insert("timeout".to_string(), json!(CURSOR_HOOK_TIMEOUT_SECONDS));
+                updated = true;
+            }
         }
     }
     if !updated {
@@ -5362,17 +5366,18 @@ fn hook_entry_has_atoll_cursor(entry: &Value) -> bool {
         .unwrap_or(false)
 }
 
+const CURSOR_HOOK_TIMEOUT_SECONDS: u64 = 5;
 const CURSOR_HOOK_EVENTS: [(&str, u64); 10] = [
-    ("sessionStart", 30),
-    ("beforeSubmitPrompt", 30),
-    ("afterAgentResponse", 30),
-    ("afterAgentThought", 30),
-    ("sessionEnd", 30),
-    ("preToolUse", 1800),
-    ("postToolUse", 30),
-    ("stop", 30),
-    ("subagentStart", 30),
-    ("subagentStop", 30),
+    ("sessionStart", CURSOR_HOOK_TIMEOUT_SECONDS),
+    ("beforeSubmitPrompt", CURSOR_HOOK_TIMEOUT_SECONDS),
+    ("afterAgentResponse", CURSOR_HOOK_TIMEOUT_SECONDS),
+    ("afterAgentThought", CURSOR_HOOK_TIMEOUT_SECONDS),
+    ("sessionEnd", CURSOR_HOOK_TIMEOUT_SECONDS),
+    ("preToolUse", CURSOR_HOOK_TIMEOUT_SECONDS),
+    ("postToolUse", CURSOR_HOOK_TIMEOUT_SECONDS),
+    ("stop", CURSOR_HOOK_TIMEOUT_SECONDS),
+    ("subagentStart", CURSOR_HOOK_TIMEOUT_SECONDS),
+    ("subagentStop", CURSOR_HOOK_TIMEOUT_SECONDS),
 ];
 
 const CURSOR_CORE_HOOK_EVENTS: [&str; 5] = [
@@ -5457,6 +5462,25 @@ fn cursor_hooks_have_events(config: &Value, events: &[&str]) -> bool {
 fn cursor_hooks_need_lifecycle_upgrade(config: &Value) -> bool {
     has_atoll_cursor_hooks(config)
         && !cursor_hooks_have_events(config, &CURSOR_LIFECYCLE_HOOK_EVENTS)
+}
+
+fn cursor_hooks_need_timeout_repair(config: &Value) -> bool {
+    let Some(hooks) = config.get("hooks").and_then(Value::as_object) else {
+        return false;
+    };
+
+    hooks.values().any(|entries| {
+        entries
+            .as_array()
+            .map(|arr| {
+                arr.iter().any(|entry| {
+                    hook_entry_has_atoll_cursor(entry)
+                        && entry.get("timeout").and_then(Value::as_u64)
+                            != Some(CURSOR_HOOK_TIMEOUT_SECONDS)
+                })
+            })
+            .unwrap_or(false)
+    })
 }
 
 fn cursor_hook_command_needs_repair(
@@ -5563,6 +5587,7 @@ fn maybe_repair_cursor_hook_events(
     let preferred_script_path = deployed_hook_script_path("atoll-cursor-hook.mjs")
         .unwrap_or_else(|| source_script_path.clone());
     let needs_repair = cursor_hooks_need_lifecycle_upgrade(config)
+        || cursor_hooks_need_timeout_repair(config)
         || cursor_hooks_need_command_repair(config, Some(&preferred_script_path), cfg!(windows));
     if !needs_repair {
         return None;
@@ -9954,9 +9979,10 @@ mod claude_hooks_tests {
 mod cursor_hooks_tests {
     use super::{
         cursor_hook_command_needs_repair, cursor_hooks_need_command_repair,
-        cursor_hooks_need_lifecycle_upgrade, format_cursor_hook_command, has_atoll_cursor_hooks,
-        hook_entry_has_atoll_cursor, remove_atoll_cursor_hooks,
-        repair_cursor_hook_events_with_command, upsert_cursor_hook_events, CURSOR_HOOK_EVENTS,
+        cursor_hooks_need_lifecycle_upgrade, cursor_hooks_need_timeout_repair,
+        format_cursor_hook_command, has_atoll_cursor_hooks, hook_entry_has_atoll_cursor,
+        remove_atoll_cursor_hooks, repair_cursor_hook_events_with_command,
+        upsert_cursor_hook_events, CURSOR_HOOK_EVENTS, CURSOR_HOOK_TIMEOUT_SECONDS,
     };
     use serde_json::json;
 
@@ -10011,6 +10037,13 @@ mod cursor_hooks_tests {
             config["hooks"]["preToolUse"].as_array().unwrap()[0]["env"]["ATOLL_HOOK_URL"],
             "http://127.0.0.1:47777/cursor/hook"
         );
+        for (event, _) in CURSOR_HOOK_EVENTS {
+            assert_eq!(
+                config["hooks"][event].as_array().unwrap()[0]["timeout"],
+                json!(CURSOR_HOOK_TIMEOUT_SECONDS),
+                "event {event}"
+            );
+        }
     }
 
     #[test]
@@ -10164,6 +10197,59 @@ mod cursor_hooks_tests {
             Some("C:/Users/test/AppData/Local/Atoll/hooks/atoll-cursor-hook.mjs"),
             true,
         ));
+    }
+
+    #[test]
+    fn cursor_hook_timeout_repair_detects_legacy_timeouts() {
+        let config = json!({
+            "version": 1,
+            "hooks": {
+                "preToolUse": [
+                    { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 1800 },
+                    { "command": "./user-cursor-hook.sh", "timeout": 1800 }
+                ],
+                "postToolUse": [
+                    { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 30 }
+                ],
+                "stop": [
+                    { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 30 }
+                ],
+                "subagentStart": [
+                    { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 30 }
+                ],
+                "subagentStop": [
+                    { "command": "node \"/tmp/atoll-cursor-hook.mjs\"", "timeout": 30 }
+                ]
+            }
+        });
+
+        assert!(cursor_hooks_need_timeout_repair(&config));
+
+        let repaired = repair_cursor_hook_events_with_command(
+            &config,
+            "node \"/tmp/atoll-cursor-hook.mjs\"",
+            "http://127.0.0.1:47777/cursor/hook",
+        )
+        .expect("repaired hooks");
+
+        for (event, _) in CURSOR_HOOK_EVENTS {
+            let entries = repaired["hooks"][event].as_array().expect("event entries");
+            let atoll_entries: Vec<_> = entries
+                .iter()
+                .filter(|entry| hook_entry_has_atoll_cursor(entry))
+                .collect();
+            assert_eq!(atoll_entries.len(), 1, "event {event}");
+            assert_eq!(
+                atoll_entries[0]["timeout"],
+                json!(CURSOR_HOOK_TIMEOUT_SECONDS),
+                "event {event}"
+            );
+        }
+
+        let pre_tool_entries = repaired["hooks"]["preToolUse"].as_array().unwrap();
+        assert!(pre_tool_entries
+            .iter()
+            .any(|entry| entry["command"] == "./user-cursor-hook.sh"));
     }
 
     /// Missing any one of the five core events means hooks are incomplete.
