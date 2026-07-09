@@ -2278,8 +2278,10 @@ fn reset_model_rate(model_id: String) -> Result<pricing::PricingResponse, String
 }
 
 #[tauri::command]
-fn refresh_pricing() -> Result<pricing::PricingResponse, String> {
-    pricing::refresh_pricing_catalog(true)
+async fn refresh_pricing() -> Result<pricing::PricingResponse, String> {
+    tauri::async_runtime::spawn_blocking(|| pricing::refresh_pricing_catalog(true))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
