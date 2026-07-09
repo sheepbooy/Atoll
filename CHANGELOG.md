@@ -2,6 +2,12 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.44] - 2026-07-09
+
+### 修复
+- **Windows 岛启动可见性**：修复 Windows 上应用启动时岛窗口不可见或未能正确置顶的问题
+- **Codex Stop 超时**：Codex/Claude observer hook 改为后台异步处理，并缩短 runner 请求超时，避免 `Stop` 事件阻塞 agent 30 秒
+
 ## [0.1.43] - 2026-07-09
 
 ### 修复
