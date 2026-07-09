@@ -90,6 +90,9 @@
   /* Expanded plan panel — keep in sync with EXPANDED_PLAN_WINDOW_* in lib.rs */
   --expanded-plan-width: 680px;
   --expanded-plan-height: 680px;
+  /* Expanded settings panel — keep in sync with EXPANDED_SETTINGS_WINDOW_* in lib.rs */
+  --expanded-settings-width: 680px;
+  --expanded-settings-height: 680px;
   /* Token counter extends left of header-actions; reserve space in the menu bar */
   --header-token-inset: 88px;
 
@@ -383,6 +386,11 @@ kbd {
 .island.is-expanded.is-plan {
   width: min(var(--expanded-plan-width), 100vw);
   height: min(var(--expanded-plan-height), 100vh);
+}
+
+.island.is-expanded.is-settings {
+  width: min(var(--expanded-settings-width), 100vw);
+  height: min(var(--expanded-settings-height), 100vh);
 }
 
 .tauri-runtime .island.is-expanded {
@@ -3433,6 +3441,10 @@ kbd {
   transform: translate3d(-50%, 0, 0);
 }
 
+.tauri-runtime .is-expanded.is-settings .island-panel {
+  width: var(--expanded-settings-width);
+}
+
 /* Keep panel out of layout while the native window width animates. */
 .island.is-opening .island-panel,
 .island.is-closing .island-panel {
@@ -5128,6 +5140,139 @@ kbd {
 .settings-toggle.is-on .settings-toggle-thumb {
   transform: translateX(14px);
   background: rgba(111, 220, 255, 0.95);
+}
+
+.settings-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.settings-segment {
+  min-width: 52px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.settings-segment.is-active {
+  background: rgba(111, 220, 255, 0.18);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.settings-inline-button {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 10px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.settings-inline-button.is-primary {
+  border-color: rgba(111, 220, 255, 0.35);
+  background: rgba(111, 220, 255, 0.14);
+}
+
+.pricing-settings {
+  display: grid;
+  gap: 10px;
+}
+
+.pricing-refresh-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.settings-hook-badge.is-unpriced {
+  background: rgba(255, 196, 96, 0.1);
+  color: rgba(255, 196, 96, 0.85);
+}
+
+.pricing-settings-note {
+  margin: 0;
+}
+
+.pricing-editor {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(111, 220, 255, 0.22);
+  border-radius: 12px;
+  background: rgba(111, 220, 255, 0.06);
+}
+
+.pricing-model-list {
+  display: grid;
+  gap: 8px;
+}
+
+.pricing-model-row {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.pricing-model-row,
+.pricing-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pricing-model-row.is-editing {
+  border-color: rgba(111, 220, 255, 0.28);
+  background: rgba(111, 220, 255, 0.08);
+}
+
+.pricing-model-meta,
+.pricing-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pricing-rate-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pricing-rate-field {
+  display: grid;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.pricing-rate-field input {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.9);
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+.token-counter--cost {
+  letter-spacing: 0.01em;
+}
+
+.token-counter-mark.is-cost {
+  opacity: 0.9;
 }
 
 /* -- range slider -- */
