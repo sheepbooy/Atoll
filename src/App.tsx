@@ -480,6 +480,25 @@ const NOTCH_COVER_PADDING = 16;
 
 // Keep in sync with EXPANDED_IDLE_WINDOW_HEIGHT in src-tauri/src/lib.rs.
 const EXPANDED_IDLE_WINDOW_HEIGHT = 240;
+// Keep in sync with EXPANDED_PLAN_WINDOW_WIDTH in src-tauri/src/lib.rs.
+const EXPANDED_PLAN_WINDOW_WIDTH = 680;
+// Keep in sync with EXPANDED_PLAN_WINDOW_HEIGHT in src-tauri/src/lib.rs.
+const EXPANDED_PLAN_WINDOW_HEIGHT = 680;
+
+function isPlanModeCommand(command: string): boolean {
+  return (
+    command.startsWith("AskUserQuestion:") ||
+    command === "AskUserQuestion" ||
+    command.startsWith("ExitPlanMode:") ||
+    command === "ExitPlanMode"
+  );
+}
+
+function snapshotHasPlanPending(snapshot: IslandSnapshot): boolean {
+  return snapshot.recent.some(
+    (request) => request.status === "pending" && isPlanModeCommand(request.command),
+  );
+}
 
 function applyWindowMetrics(notch: NotchMetrics) {
   if (typeof document === "undefined") return;
@@ -489,6 +508,14 @@ function applyWindowMetrics(notch: NotchMetrics) {
   root.style.setProperty(
     "--expanded-idle-height",
     `${EXPANDED_IDLE_WINDOW_HEIGHT}px`,
+  );
+  root.style.setProperty(
+    "--expanded-plan-width",
+    `${EXPANDED_PLAN_WINDOW_WIDTH}px`,
+  );
+  root.style.setProperty(
+    "--expanded-plan-height",
+    `${EXPANDED_PLAN_WINDOW_HEIGHT}px`,
   );
   const coverHeight = notch.hasNotch
     ? Math.max(0, notch.height + NOTCH_COVER_PADDING)
@@ -550,7 +577,8 @@ function resolveCollapsedMode(
   return "compact";
 }
 
-function expandedPresentationKey(idle: boolean): string {
+function expandedPresentationKey(idle: boolean, plan: boolean): string {
+  if (plan) return "expanded:plan";
   return `expanded:${idle}`;
 }
 
@@ -764,6 +792,11 @@ export function App() {
     return null;
   }, [selectedAgent, snapshot.recent, activeRequest]);
 
+  const isPlanExpanded = useMemo(() => {
+    if (!selectedAgentRequest) return false;
+    return isPlanModeCommand(selectedAgentRequest.command);
+  }, [selectedAgentRequest]);
+
   const filteredSessions = useMemo(() => {
     if (!selectedAgent) return sessions;
     return sessions.filter((session) => session.agent === selectedAgent);
@@ -966,6 +999,7 @@ export function App() {
           const idleExpanded =
             snapshotRef.current.pendingCount === 0 &&
             snapshotRef.current.sessions.length === 0;
+          const planExpanded = snapshotHasPlanPending(snapshotRef.current);
           await setIslandPresentation(
             "expanded",
             collapsedWindowWidthRef.current,
@@ -973,6 +1007,7 @@ export function App() {
             compactLeftPaneWidthRef.current,
             false,
             true,
+            planExpanded,
           );
         }
 
@@ -1465,6 +1500,7 @@ export function App() {
     compactWidth?: number,
     expandedIdle?: boolean,
     compactLeftWidth?: number,
+    expandedPlan?: boolean,
   ) {
     const snap =
       !notchMetricsHydrated || !initialNativePresentationSyncedRef.current;
@@ -1475,6 +1511,7 @@ export function App() {
       compactLeftWidth,
       !snap,
       snap,
+      expandedPlan,
     ).finally(() => {
       if (notchMetricsHydrated) {
         initialNativePresentationSyncedRef.current = true;
@@ -1600,13 +1637,20 @@ export function App() {
     const idleExpanded =
       snapshotRef.current.pendingCount === 0 &&
       snapshotRef.current.sessions.length === 0;
-    lastNativePresentationKeyRef.current = expandedPresentationKey(idleExpanded);
+    const planExpanded = snapshotHasPlanPending(snapshotRef.current);
+    lastNativePresentationKeyRef.current = expandedPresentationKey(
+      idleExpanded,
+      planExpanded,
+    );
     setPresentationPhase(next);
     const nativeTransition = setIslandPresentation(
       "expanded",
       collapsedWindowWidthRef.current,
       idleExpanded,
       compactLeftPaneWidthRef.current,
+      true,
+      false,
+      planExpanded,
     );
     transitionTimerRef.current = window.setTimeout(async () => {
       transitionTimerRef.current = null;
@@ -2286,8 +2330,8 @@ export function App() {
   function handleOpenTokensFromCounter() {
     if (panelView.kind === "settings" && panelView.page === "tokens") return;
     if (isIdleExpanded) {
-      lastNativePresentationKeyRef.current = expandedPresentationKey(false);
-      syncNativeIslandPresentation("expanded", undefined, false).catch(
+      lastNativePresentationKeyRef.current = expandedPresentationKey(false, false);
+      syncNativeIslandPresentation("expanded", undefined, false, undefined, false).catch(
         () => undefined,
       );
     }
@@ -2467,12 +2511,16 @@ export function App() {
     }
 
     if (phase === "expanded") {
-      const key = expandedPresentationKey(isIdleExpanded);
+      const key = expandedPresentationKey(isIdleExpanded, isPlanExpanded);
       if (lastNativePresentationKeyRef.current === key) return;
       lastNativePresentationKeyRef.current = key;
-      syncNativeIslandPresentation("expanded", undefined, isIdleExpanded).catch(
-        () => undefined,
-      );
+      syncNativeIslandPresentation(
+        "expanded",
+        undefined,
+        isIdleExpanded,
+        undefined,
+        isPlanExpanded,
+      ).catch(() => undefined);
     }
   }, [
     phase,
@@ -2480,6 +2528,7 @@ export function App() {
     compactLeftPaneWidth,
     collapsedMode,
     isIdleExpanded,
+    isPlanExpanded,
     notchMetricsHydrated,
   ]);
 
@@ -2666,7 +2715,7 @@ export function App() {
   return (
     <main className="stage">
       <section
-        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList" ? "is-session-subview" : ""}`}
+        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isPlanExpanded ? "is-plan" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList" ? "is-session-subview" : ""}`}
         aria-label="Atoll"
         tabIndex={0}
         onClick={handleIslandClick}
@@ -3698,10 +3747,13 @@ function SettingsView({
 /* ─── Approval Card ───────────────────────────────────────────── */
 
 function getPlanModeType(request: PermissionRequest): "question" | "exitPlan" | null {
-  if (request.command.startsWith("AskUserQuestion:") || request.command === "AskUserQuestion") {
-    return "question";
-  }
-  if (request.command.startsWith("ExitPlanMode:") || request.command === "ExitPlanMode") {
+  if (isPlanModeCommand(request.command)) {
+    if (
+      request.command.startsWith("AskUserQuestion:") ||
+      request.command === "AskUserQuestion"
+    ) {
+      return "question";
+    }
     return "exitPlan";
   }
   return null;
@@ -3910,7 +3962,7 @@ function PlanQuestionCard({ request, onResolve }: PlanQuestionCardProps) {
                 value={freeResponse}
                 onChange={(e) => setFreeResponse((e.target as HTMLTextAreaElement).value)}
                 placeholder="Type a freeform reply..."
-                rows={3}
+                rows={4}
                 disabled={busy}
               />
             </div>

@@ -93,6 +93,26 @@ const request = {
   status: "pending" as const,
 };
 
+const planQuestionRequest = {
+  ...request,
+  id: "plan-question-1",
+  command: "AskUserQuestion",
+  detail: "Agent needs your input to continue planning.",
+  toolInput: {
+    questions: [
+      {
+        header: "Scope",
+        question: "Which areas should we focus on first?",
+        multiSelect: true,
+        options: [
+          { label: "Hook bridge", description: "Permission events and local HTTP bridge" },
+          { label: "Plan mode UI", description: "Questions card and build approval preview" },
+        ],
+      },
+    ],
+  },
+};
+
 function makeSubagent(
   index: number,
   overrides: Partial<SubagentSummary> = {},
@@ -341,6 +361,27 @@ describe("App", () => {
     expect(screen.queryByLabelText(/demo/i)).not.toBeInTheDocument();
   });
 
+  it("expands taller for plan mode permission requests", async () => {
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 1,
+      activeRequest: planQuestionRequest,
+      recent: [planQuestionRequest],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    const { container } = render(<App />);
+    await waitForExpandedPanel(container);
+
+    expect(container.querySelector(".is-plan")).not.toBeNull();
+    expect(screen.getByText("Plan questions")).toBeInTheDocument();
+    expect(
+      bridge.setIslandPresentation.mock.calls.some(
+        (call) => call[0] === "expanded" && call[6] === true,
+      ),
+    ).toBe(true);
+  });
+
   it("collapses to a persistent capsule that can be reopened", async () => {
     const { container } = render(<App />);
     const collapseButton = await screen.findByRole("button", { name: "Collapse Atoll" });
@@ -369,6 +410,9 @@ describe("App", () => {
       expect.any(Number),
       false,
       expect.any(Number),
+      true,
+      false,
+      false,
     );
     expect(container.querySelector(".is-expanded")).not.toBeNull();
     vi.useRealTimers();
@@ -878,6 +922,9 @@ describe("App", () => {
       expect.any(Number),
       false,
       expect.any(Number),
+      true,
+      false,
+      false,
     );
     vi.useRealTimers();
   });
@@ -1183,6 +1230,7 @@ describe("App", () => {
         undefined,
         expect.any(Boolean),
         expect.any(Boolean),
+        undefined,
       ),
     );
 

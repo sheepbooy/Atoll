@@ -87,6 +87,9 @@
   --expanded-header-height: 36px;
   /* Expanded idle panel — keep in sync with EXPANDED_IDLE_WINDOW_HEIGHT in lib.rs */
   --expanded-idle-height: 240px;
+  /* Expanded plan panel — keep in sync with EXPANDED_PLAN_WINDOW_* in lib.rs */
+  --expanded-plan-width: 680px;
+  --expanded-plan-height: 680px;
   /* Token counter extends left of header-actions; reserve space in the menu bar */
   --header-token-inset: 88px;
 
@@ -375,6 +378,11 @@ kbd {
 
 .island.is-expanded.is-idle {
   height: min(var(--expanded-idle-height), 100vh);
+}
+
+.island.is-expanded.is-plan {
+  width: min(var(--expanded-plan-width), 100vw);
+  height: min(var(--expanded-plan-height), 100vh);
 }
 
 .tauri-runtime .island.is-expanded {
@@ -3722,8 +3730,8 @@ kbd {
 .plan-question-text {
   margin: 0;
   color: var(--text-primary);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .plan-options {
@@ -3733,9 +3741,9 @@ kbd {
 
 .plan-option {
   display: grid;
-  gap: 2px;
+  gap: 3px;
   width: 100%;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.03);
@@ -3759,15 +3767,15 @@ kbd {
 }
 
 .plan-option-label {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 650;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
 .plan-option-description {
   color: var(--text-secondary);
-  font-size: 11px;
-  line-height: 1.45;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .plan-option-other {
@@ -3800,7 +3808,7 @@ kbd {
 }
 
 .plan-free-response {
-  min-height: 60px;
+  min-height: 88px;
 }
 
 .plan-toggle-free {
@@ -3834,13 +3842,14 @@ kbd {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.03);
-  padding: 12px 14px;
+  padding: 14px 16px;
+  min-height: 0;
 }
 
 .plan-preview-md {
   color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.55;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .plan-preview-md > :first-child { margin-top: 0; }
