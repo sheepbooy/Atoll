@@ -18,25 +18,45 @@ import {
   tokenDisplayCompactLevel,
   type TokenOdometerCell,
 } from "./tokenCounterFormat";
+import {
+  costDisplayCompactLevel,
+  formatCompactCost,
+} from "./costFormat";
+import type { UsageDisplayMode } from "./displayPrefs";
 import { onIslandHoverChanged, type TokenUsage } from "./tauri";
 
 type TokenCounterEnergy = "idle" | "live" | "settle";
 export type TokenCounterVariant = "compact" | "expanded" | "micro";
 
-function tokenScopeLabel(variant: TokenCounterVariant): string {
-  return variant === "expanded" ? "Today tokens" : "Active session tokens";
+function tokenScopeLabel(variant: TokenCounterVariant, displayMode: UsageDisplayMode): string {
+  const scope = variant === "expanded" ? "Today" : "Active session";
+  return displayMode === "cost" ? `${scope} cost` : `${scope} tokens`;
 }
 
-function tokenScopeShortLabel(variant: TokenCounterVariant): string {
-  return variant === "expanded" ? "Today" : "Active";
+function tokenScopeShortLabel(variant: TokenCounterVariant, displayMode: UsageDisplayMode): string {
+  return displayMode === "cost"
+    ? variant === "expanded"
+      ? "Today $"
+      : "Active $"
+    : variant === "expanded"
+      ? "Today"
+      : "Active";
 }
 
-function TokenScopeMark({ variant }: { variant: TokenCounterVariant }) {
+function TokenScopeMark({
+  variant,
+  displayMode,
+}: {
+  variant: TokenCounterVariant;
+  displayMode: UsageDisplayMode;
+}) {
   return (
     <span
-      className={`token-counter-mark token-counter-mark--${variant}`}
+      className={`token-counter-mark token-counter-mark--${variant}${
+        displayMode === "cost" ? " is-cost" : ""
+      }`}
       aria-hidden="true"
-      title={tokenScopeShortLabel(variant)}
+      title={tokenScopeShortLabel(variant, displayMode)}
     />
   );
 }
@@ -51,9 +71,16 @@ function tokenCounterTitle(
   value: number,
   usage: TokenUsage,
   variant: TokenCounterVariant,
+  displayMode: UsageDisplayMode,
 ): string {
+  if (displayMode === "cost") {
+    return [
+      `${tokenScopeLabel(variant, displayMode)} ${formatCompactCost(value, 0, value)}`,
+      "Includes input, output, and cache when model pricing is available.",
+    ].join(" · ");
+  }
   return [
-    `${tokenScopeLabel(variant)} ${value.toLocaleString()}`,
+    `${tokenScopeLabel(variant, displayMode)} ${value.toLocaleString()}`,
     `input ${usage.inputTokens.toLocaleString()}`,
     `output ${usage.outputTokens.toLocaleString()}`,
     `cache-read ${usage.cacheReadTokens.toLocaleString()}`,
@@ -80,11 +107,13 @@ function TokenCounterTooltip({
   usage,
   visible,
   variant,
+  displayMode,
 }: {
   value: number;
   usage: TokenUsage;
   visible: boolean;
   variant: TokenCounterVariant;
+  displayMode: UsageDisplayMode;
 }) {
   return (
     <span
@@ -94,16 +123,27 @@ function TokenCounterTooltip({
       aria-hidden={!visible}
     >
       <span className="token-counter-tooltip-headline">
-        {tokenScopeLabel(variant)} {value.toLocaleString()}
+        {tokenScopeLabel(variant, displayMode)}{" "}
+        {displayMode === "cost"
+          ? formatCompactCost(value, 0, value)
+          : value.toLocaleString()}
       </span>
-      <span className="token-counter-tooltip-detail">
-        in {usage.inputTokens.toLocaleString()} · out{" "}
-        {usage.outputTokens.toLocaleString()}
-      </span>
-      <span className="token-counter-tooltip-detail">
-        cache-read {usage.cacheReadTokens.toLocaleString()} · cache-write{" "}
-        {usage.cacheCreationTokens.toLocaleString()}
-      </span>
+      {displayMode === "cost" ? (
+        <span className="token-counter-tooltip-detail">
+          Priced usage only. Unpriced model metadata is excluded.
+        </span>
+      ) : (
+        <>
+          <span className="token-counter-tooltip-detail">
+            in {usage.inputTokens.toLocaleString()} · out{" "}
+            {usage.outputTokens.toLocaleString()}
+          </span>
+          <span className="token-counter-tooltip-detail">
+            cache-read {usage.cacheReadTokens.toLocaleString()} · cache-write{" "}
+            {usage.cacheCreationTokens.toLocaleString()}
+          </span>
+        </>
+      )}
       <span className="token-counter-tooltip-hint">{tokenScopeHint(variant)}</span>
     </span>
   );
@@ -214,6 +254,7 @@ export interface TokenCounterProps {
   value: number;
   usage: TokenUsage;
   variant?: TokenCounterVariant;
+  displayMode?: UsageDisplayMode;
   sessionCount?: number;
   maxCompactIcons?: number;
   /** When set, overrides width/session heuristics for collapsed display. */
@@ -229,6 +270,7 @@ export function TokenCounter({
   value,
   usage,
   variant = "compact",
+  displayMode = "tokens",
   sessionCount = 0,
   maxCompactIcons = DEFAULT_ICON_LIMIT,
   compactTokenLevel,
@@ -239,11 +281,15 @@ export function TokenCounter({
   const compactLevel =
     isCollapsedVariant && compactTokenLevel !== undefined
       ? compactTokenLevel
-      : tokenDisplayCompactLevel(value, variant, sessionCount, maxCompactIcons);
-  const animateDigits = !suppressAnimations;
-  const [displayText, setDisplayText] = useState(() =>
-    formatCompactTokenCount(value, compactLevel, value),
-  );
+      : displayMode === "cost"
+        ? costDisplayCompactLevel(value, variant, sessionCount, maxCompactIcons)
+        : tokenDisplayCompactLevel(value, variant, sessionCount, maxCompactIcons);
+  const formatValue = (nextValue: number, level = compactLevel) =>
+    displayMode === "cost"
+      ? formatCompactCost(nextValue, level, value)
+      : formatCompactTokenCount(nextValue, level, value);
+  const animateDigits = !suppressAnimations && displayMode === "tokens";
+  const [displayText, setDisplayText] = useState(() => formatValue(value));
   const [energy, setEnergy] = useState<TokenCounterEnergy>("idle");
   const [deltaText, setDeltaText] = useState<string | null>(null);
   const [deltaKey, setDeltaKey] = useState(0);
@@ -311,7 +357,7 @@ export function TokenCounter({
       isCollapsedVariant &&
       !suppressAnimations
     ) {
-      setDeltaText(`+${formatCompactTokenCount(incomingDelta, compactLevel, value)}`);
+      setDeltaText(`+${formatValue(incomingDelta, compactLevel)}`);
       setDeltaKey((key) => key + 1);
       deltaTimerRef.current = window.setTimeout(() => {
         setDeltaText(null);
@@ -323,7 +369,7 @@ export function TokenCounter({
 
     const publishDisplay = (nextValue: number) => {
       const rounded = Math.round(nextValue);
-      const nextText = formatCompactTokenCount(rounded, compactLevel, targetRef.current);
+      const nextText = formatValue(rounded, compactLevel);
       animatedValueRef.current = nextValue;
       if (nextText !== displayTextRef.current) {
         displayTextRef.current = nextText;
@@ -380,7 +426,7 @@ export function TokenCounter({
       }
       clearTimers();
     };
-  }, [value, compactLevel, variant, suppressAnimations]);
+  }, [value, compactLevel, variant, suppressAnimations, displayMode]);
 
   function handlePointerEnter() {
     pointerHoverRef.current = true;
@@ -437,15 +483,16 @@ export function TokenCounter({
         usage={usage}
         visible={tooltipVisible}
         variant={variant}
+        displayMode={displayMode}
       />
       <span className={`token-counter-body token-counter-body--${variant}`}>
-        <TokenScopeMark variant={variant} />
+        <TokenScopeMark variant={variant} displayMode={displayMode} />
         <span
-          className="token-counter"
-          aria-label={tokenCounterTitle(value, usage, variant)}
+          className={`token-counter${displayMode === "cost" ? " token-counter--cost" : ""}`}
+          aria-label={tokenCounterTitle(value, usage, variant, displayMode)}
           aria-describedby={tooltipVisible ? "token-counter-tooltip" : undefined}
         >
-          {variant === "expanded" ? (
+          {variant === "expanded" && displayMode === "tokens" ? (
             <PixelDigitDisplay
               text={displayText}
               energy={energy}

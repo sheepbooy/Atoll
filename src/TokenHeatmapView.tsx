@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
+import { formatCompactCost } from "./costFormat";
 import { formatCompactTokenCount } from "./tokenCounterFormat";
+import type { UsageDisplayMode } from "./displayPrefs";
+import type { ModelRate } from "./pricing";
+import { byModelCostUsd } from "./pricing";
 import {
   aggregateByAgent,
   buildHeatmapGrid,
   buildTrendSeries,
+  dayDisplayTotal,
   formatHeatmapDate,
   HEATMAP_WEEKS,
   heatmapLevel,
@@ -43,9 +48,17 @@ const AGENT_LABEL: Record<string, string> = {
 
 interface TokenHeatmapViewProps {
   todayTokens: TokenUsage;
+  todayTokensByModel?: Record<string, TokenUsage>;
+  displayMode?: UsageDisplayMode;
+  pricingRates?: Record<string, ModelRate>;
 }
 
-export function TokenHeatmapView({ todayTokens }: TokenHeatmapViewProps) {
+export function TokenHeatmapView({
+  todayTokens,
+  todayTokensByModel = {},
+  displayMode = "tokens",
+  pricingRates = {},
+}: TokenHeatmapViewProps) {
   const [history, setHistory] = useState<TokenHistoryResponse | null>(null);
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
 
@@ -74,6 +87,7 @@ export function TokenHeatmapView({ todayTokens }: TokenHeatmapViewProps) {
           date: todayKey,
           ...todayTokens,
           byAgent: {},
+          byModel: todayTokensByModel,
         },
       ];
     }
@@ -91,43 +105,70 @@ export function TokenHeatmapView({ todayTokens }: TokenHeatmapViewProps) {
               day.cacheCreationTokens ?? 0,
               todayTokens.cacheCreationTokens ?? 0,
             ),
+            byModel: {
+              ...(day.byModel ?? {}),
+              ...todayTokensByModel,
+            },
           }
         : day,
     );
-  }, [history, todayTokens]);
+  }, [history, todayTokens, todayTokensByModel]);
 
-  const grid = useMemo(() => buildHeatmapGrid(days), [days]);
-  const summary = useMemo(() => summarizeHeatmap(days), [days]);
+  const grid = useMemo(
+    () => buildHeatmapGrid(days, HEATMAP_WEEKS, displayMode, pricingRates),
+    [days, displayMode, pricingRates],
+  );
+  const summary = useMemo(
+    () => summarizeHeatmap(days, displayMode, pricingRates),
+    [days, displayMode, pricingRates],
+  );
   const agentSlices = useMemo(() => aggregateByAgent(days), [days]);
-  const trendSeries = useMemo(() => buildTrendSeries(days, 30), [days]);
+  const trendSeries = useMemo(
+    () => buildTrendSeries(days, 30, displayMode, pricingRates),
+    [days, displayMode, pricingRates],
+  );
   const hoveredCell =
     hoveredDate === null
       ? null
       : grid.rows.flat().find((cell) => cell.date === hoveredDate && cell.inRange) ?? null;
   const todayKey = localDayKey(new Date());
-  const hasHistory = days.some((day) => tokenTotal(day) > 0);
+  const hasHistory = days.some((day) => dayDisplayTotal(day, displayMode, pricingRates) > 0);
+  const hasUnpricedHistory =
+    displayMode === "cost" &&
+    days.some((day) => tokenTotal(day) > 0 && byModelCostUsd(day.byModel, pricingRates) === 0);
+
+  const formatSummaryValue = (value: number) =>
+    displayMode === "cost"
+      ? formatCompactCost(value, value >= 1 ? 1 : 0, value)
+      : formatCompactTokenCount(value, value >= 1_000 ? 1 : 0, value);
 
   return (
     <div className="settings-view" data-no-drag>
       <div className="token-heatmap-view">
+        {hasUnpricedHistory ? (
+          <p className="token-heatmap-empty">
+            Older days without model metadata are not priced. Only new usage with known
+            models appears in cost mode.
+          </p>
+        ) : null}
         <div className="token-heatmap-summary">
         <div className="token-heatmap-stat">
           <span className="token-heatmap-stat-label">Today</span>
           <span className="token-heatmap-stat-value">
-            {formatCompactTokenCount(summary.today, summary.today >= 1_000 ? 1 : 0, summary.today)}
+            {formatSummaryValue(summary.today)}
           </span>
         </div>
         <div className="token-heatmap-stat">
           <span className="token-heatmap-stat-label">7-day</span>
           <span className="token-heatmap-stat-value">
-            {formatCompactTokenCount(summary.sevenDay, summary.sevenDay >= 1_000 ? 1 : 0, summary.sevenDay)}
+            {formatSummaryValue(summary.sevenDay)}
           </span>
         </div>
         <div className="token-heatmap-stat">
           <span className="token-heatmap-stat-label">Best day</span>
           <span className="token-heatmap-stat-value">
             {summary.best.total > 0
-              ? `${formatCompactTokenCount(summary.best.total, summary.best.total >= 1_000 ? 1 : 0, summary.best.total)}`
+              ? formatSummaryValue(summary.best.total)
               : "—"}
           </span>
         </div>
@@ -146,7 +187,7 @@ export function TokenHeatmapView({ todayTokens }: TokenHeatmapViewProps) {
               </span>
             ))}
           </div>
-          <div className="token-heatmap-grid" role="grid" aria-label="Daily token activity">
+          <div className="token-heatmap-grid" role="grid" aria-label={displayMode === "cost" ? "Daily cost activity" : "Daily token activity"}>
             {grid.rows[0].map((_, weekIndex) => (
               <div key={weekIndex} className="token-heatmap-week" role="row">
                 {grid.rows.map((row, rowIndex) => {
@@ -161,7 +202,11 @@ export function TokenHeatmapView({ todayTokens }: TokenHeatmapViewProps) {
                       type="button"
                       className={`token-heatmap-cell is-level-${level}${cell.inRange ? "" : " is-outside"}${isToday ? " is-today" : ""}`}
                       role="gridcell"
-                      aria-label={`${formatHeatmapDate(cell.date)}: ${cell.total.toLocaleString()} tokens`}
+                      aria-label={`${formatHeatmapDate(cell.date)}: ${
+                        displayMode === "cost"
+                          ? formatCompactCost(cell.total, 0, cell.total)
+                          : `${cell.total.toLocaleString()} tokens`
+                      }`}
                       disabled={!cell.inRange}
                       onMouseEnter={() => setHoveredDate(cell.date)}
                       onMouseLeave={() => setHoveredDate(null)}
@@ -192,12 +237,20 @@ export function TokenHeatmapView({ todayTokens }: TokenHeatmapViewProps) {
               {formatHeatmapDate(hoveredCell.date)}
             </span>
             <span className="token-heatmap-tooltip-total">
-              {hoveredCell.total.toLocaleString()} tokens
+              {displayMode === "cost"
+                ? formatCompactCost(hoveredCell.total, 0, hoveredCell.total)
+                : `${hoveredCell.total.toLocaleString()} tokens`}
             </span>
-            <span className="token-heatmap-tooltip-detail">
-              in {hoveredCell.usage.inputTokens.toLocaleString()} · out{" "}
-              {hoveredCell.usage.outputTokens.toLocaleString()}
-            </span>
+            {displayMode === "tokens" ? (
+              <span className="token-heatmap-tooltip-detail">
+                in {hoveredCell.usage.inputTokens.toLocaleString()} · out{" "}
+                {hoveredCell.usage.outputTokens.toLocaleString()}
+              </span>
+            ) : (
+              <span className="token-heatmap-tooltip-detail">
+                Priced from model metadata only.
+              </span>
+            )}
             {Object.keys(hoveredCell.byAgent).length > 0 ? (
               <span className="token-heatmap-tooltip-agents">
                 {Object.entries(hoveredCell.byAgent).map(([agent, usage]) => (

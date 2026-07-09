@@ -392,7 +392,9 @@ describe("App", () => {
     expect(collapseButton).not.toHaveFocus();
     expect(container.querySelector(".is-closing")).not.toBeNull();
 
-    await vi.advanceTimersByTimeAsync(420);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(420);
+    });
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
       "compact",
       expect.any(Number),
@@ -411,6 +413,7 @@ describe("App", () => {
       false,
       expect.any(Number),
       true,
+      false,
       false,
       false,
     );
@@ -897,12 +900,14 @@ describe("App", () => {
     await waitFor(() =>
       expect(container.querySelector(".is-expanded")).not.toBeNull(),
     );
+    const collapseButton = await screen.findByRole("button", { name: "Collapse Atoll" });
     await vi.advanceTimersByTimeAsync(420);
 
-    const collapseButton = screen.getByRole("button", { name: "Collapse Atoll" });
     fireEvent.click(collapseButton);
     emitIslandHover?.({ hovering: true, cursorOverWindow: true });
-    await vi.advanceTimersByTimeAsync(420);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(420);
+    });
 
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
       "compact",
@@ -923,6 +928,7 @@ describe("App", () => {
       false,
       expect.any(Number),
       true,
+      false,
       false,
       false,
     );
@@ -1230,6 +1236,7 @@ describe("App", () => {
         undefined,
         expect.any(Boolean),
         expect.any(Boolean),
+        undefined,
         undefined,
       ),
     );

@@ -52,6 +52,8 @@ describe("Tauri bridge", () => {
         cacheReadTokens: 0,
         cacheCreationTokens: 0,
       },
+      dailyTokensByModel: {},
+      activeSessionTokensByModel: {},
       hookHealth: EMPTY_HOOK_HEALTH,
     });
   });

@@ -1,9 +1,27 @@
+import type { ModelRate } from "./pricing";
+import { byModelCostUsd } from "./pricing";
 import type { TokenUsage } from "./tauri";
+import type { UsageDisplayMode } from "./displayPrefs";
 
 export const HEATMAP_WEEKS = 26;
 
 export function tokenTotal(usage: Pick<TokenUsage, "inputTokens" | "outputTokens">): number {
   return usage.inputTokens + usage.outputTokens;
+}
+
+export function dayDisplayTotal(
+  day: {
+    inputTokens: number;
+    outputTokens: number;
+    byModel?: Record<string, TokenUsage>;
+  },
+  displayMode: UsageDisplayMode = "tokens",
+  pricingRates: Record<string, ModelRate> = {},
+): number {
+  if (displayMode === "cost") {
+    return byModelCostUsd(day.byModel, pricingRates);
+  }
+  return tokenTotal(day);
 }
 
 export function formatHeatmapDate(dateKey: string): string {
@@ -46,6 +64,7 @@ export interface HeatmapCell {
   total: number;
   usage: TokenUsage;
   byAgent: Record<string, TokenUsage>;
+  byModel: Record<string, TokenUsage>;
   inRange: boolean;
 }
 
@@ -78,8 +97,11 @@ export function buildHeatmapGrid(
     cacheReadTokens: number;
     cacheCreationTokens: number;
     byAgent: Record<string, TokenUsage>;
+    byModel?: Record<string, TokenUsage>;
   }>,
   weeks = HEATMAP_WEEKS,
+  displayMode: UsageDisplayMode = "tokens",
+  pricingRates: Record<string, ModelRate> = {},
 ): HeatmapGrid {
   const today = new Date();
   const endDate = localDayKey(today);
@@ -91,7 +113,7 @@ export function buildHeatmapGrid(
     days.map((day) => [
       day.date,
       {
-        total: tokenTotal(day),
+        total: dayDisplayTotal(day, displayMode, pricingRates),
         usage: {
           inputTokens: day.inputTokens,
           outputTokens: day.outputTokens,
@@ -99,6 +121,7 @@ export function buildHeatmapGrid(
           cacheCreationTokens: day.cacheCreationTokens,
         },
         byAgent: day.byAgent,
+        byModel: day.byModel ?? {},
       },
     ]),
   );
@@ -126,6 +149,7 @@ export function buildHeatmapGrid(
           cacheCreationTokens: 0,
         },
         byAgent: entry?.byAgent ?? {},
+        byModel: entry?.byModel ?? {},
         inRange,
       };
     }
@@ -143,10 +167,19 @@ export function buildHeatmapGrid(
   };
 }
 
-export function summarizeHeatmap(days: Array<{ date: string; inputTokens: number; outputTokens: number }>) {
+export function summarizeHeatmap(
+  days: Array<{
+    date: string;
+    inputTokens: number;
+    outputTokens: number;
+    byModel?: Record<string, TokenUsage>;
+  }>,
+  displayMode: UsageDisplayMode = "tokens",
+  pricingRates: Record<string, ModelRate> = {},
+) {
   const totals = days.map((day) => ({
     date: day.date,
-    total: tokenTotal(day),
+    total: dayDisplayTotal(day, displayMode, pricingRates),
   }));
   const todayKey = localDayKey(new Date());
   const today = totals.find((day) => day.date === todayKey)?.total ?? 0;
@@ -190,14 +223,21 @@ export interface TrendPoint {
 }
 
 export function buildTrendSeries(
-  days: Array<{ date: string; inputTokens: number; outputTokens: number }>,
+  days: Array<{
+    date: string;
+    inputTokens: number;
+    outputTokens: number;
+    byModel?: Record<string, TokenUsage>;
+  }>,
   n = 30,
+  displayMode: UsageDisplayMode = "tokens",
+  pricingRates: Record<string, ModelRate> = {},
 ): TrendPoint[] {
   const today = new Date();
   const result: TrendPoint[] = [];
 
   const byDate = new Map(
-    days.map((day) => [day.date, tokenTotal(day)]),
+    days.map((day) => [day.date, dayDisplayTotal(day, displayMode, pricingRates)]),
   );
 
   for (let offset = n - 1; offset >= 0; offset -= 1) {

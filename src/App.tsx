@@ -34,6 +34,7 @@ import {
   ChevronRight,
   ChevronUp,
   CircleCheck,
+  CircleDollarSign,
   Download,
   Ellipsis,
   ExternalLink,
@@ -107,6 +108,23 @@ import {
 import { TokenCounter } from "./TokenCounter";
 import { TokenHeatmapView } from "./TokenHeatmapView";
 import { formatCompactTokenCount } from "./tokenCounterFormat";
+import { formatCompactCost } from "./costFormat";
+import {
+  EXPANDED_COUNTER_DISPLAY_KEY,
+  FOLDED_COUNTER_DISPLAY_KEY,
+  HEATMAP_DISPLAY_KEY,
+  readDisplayMode,
+  SETTINGS_BADGE_DISPLAY_KEY,
+  writeDisplayMode,
+  type UsageDisplayMode,
+} from "./displayPrefs";
+import {
+  byModelCostUsd,
+  getPricing,
+  pricingRateMap,
+  type ModelPricingEntry,
+} from "./pricing";
+import { UsageSettingsView } from "./UsageSettingsView";
 import { getDemoMode, isGifCaptureMode, shouldAutoExpandDemo } from "./demoSnapshot";
 import { manageAsyncUnlisten } from "./asyncUnlisten";
 import { toPng } from "html-to-image";
@@ -173,7 +191,7 @@ type PanelView =
   | { kind: "session"; sessionId: string }
   | { kind: "subagent"; sessionId: string; agentId: string }
   | { kind: "subagentList"; sessionId: string }
-  | { kind: "settings"; page: "main" | "hooks" | "tokens" };
+  | { kind: "settings"; page: "main" | "hooks" | "tokens" | "usage" };
 type FoldedIslandSize = "small" | "regular";
 
 const COMPACT_ICON_SETTING_KEY = "atoll.maxCompactIcons";
@@ -484,6 +502,10 @@ const EXPANDED_IDLE_WINDOW_HEIGHT = 240;
 const EXPANDED_PLAN_WINDOW_WIDTH = 680;
 // Keep in sync with EXPANDED_PLAN_WINDOW_HEIGHT in src-tauri/src/lib.rs.
 const EXPANDED_PLAN_WINDOW_HEIGHT = 680;
+// Keep in sync with EXPANDED_SETTINGS_WINDOW_WIDTH in src-tauri/src/lib.rs.
+const EXPANDED_SETTINGS_WINDOW_WIDTH = 680;
+// Keep in sync with EXPANDED_SETTINGS_WINDOW_HEIGHT in src-tauri/src/lib.rs.
+const EXPANDED_SETTINGS_WINDOW_HEIGHT = 680;
 
 function isPlanModeCommand(command: string): boolean {
   return (
@@ -516,6 +538,14 @@ function applyWindowMetrics(notch: NotchMetrics) {
   root.style.setProperty(
     "--expanded-plan-height",
     `${EXPANDED_PLAN_WINDOW_HEIGHT}px`,
+  );
+  root.style.setProperty(
+    "--expanded-settings-width",
+    `${EXPANDED_SETTINGS_WINDOW_WIDTH}px`,
+  );
+  root.style.setProperty(
+    "--expanded-settings-height",
+    `${EXPANDED_SETTINGS_WINDOW_HEIGHT}px`,
   );
   const coverHeight = notch.hasNotch
     ? Math.max(0, notch.height + NOTCH_COVER_PADDING)
@@ -577,8 +607,13 @@ function resolveCollapsedMode(
   return "compact";
 }
 
-function expandedPresentationKey(idle: boolean, plan: boolean): string {
+function expandedPresentationKey(
+  idle: boolean,
+  plan: boolean,
+  settings: boolean,
+): string {
   if (plan) return "expanded:plan";
+  if (settings) return "expanded:settings";
   return `expanded:${idle}`;
 }
 
@@ -649,6 +684,7 @@ export function App() {
   const [hookInstallError, setHookInstallError] = useState<string | null>(null);
   const [hooksBackTarget, setHooksBackTarget] = useState<"home" | "settings-main">("home");
   const [tokensBackTarget, setTokensBackTarget] = useState<"home" | "settings-main">("home");
+  const [usageBackTarget, setUsageBackTarget] = useState<"home" | "settings-main">("home");
   const [selectedAgent, setSelectedAgent] = useState<AgentKind | null>(null);
   const [notchMetrics, setNotchMetrics] = useState<NotchMetrics>(EMPTY_NOTCH_METRICS);
   const [maxCompactIcons, setMaxCompactIcons] = useState<number>(() => readCompactIconLimit());
@@ -657,6 +693,19 @@ export function App() {
   const [maxSubagentDisplay, setMaxSubagentDisplay] = useState<number>(() => readMaxSubagentDisplay());
   const [idleIntervalSec, setIdleIntervalSec] = useState<number>(() => readIdleInterval());
   const [idleDurationSec, setIdleDurationSec] = useState<number>(() => readIdleDuration());
+  const [foldedCounterDisplay, setFoldedCounterDisplay] = useState<UsageDisplayMode>(() =>
+    readDisplayMode(FOLDED_COUNTER_DISPLAY_KEY),
+  );
+  const [expandedCounterDisplay, setExpandedCounterDisplay] = useState<UsageDisplayMode>(() =>
+    readDisplayMode(EXPANDED_COUNTER_DISPLAY_KEY),
+  );
+  const [settingsBadgeDisplay, setSettingsBadgeDisplay] = useState<UsageDisplayMode>(() =>
+    readDisplayMode(SETTINGS_BADGE_DISPLAY_KEY),
+  );
+  const [heatmapDisplay, setHeatmapDisplay] = useState<UsageDisplayMode>(() =>
+    readDisplayMode(HEATMAP_DISPLAY_KEY),
+  );
+  const [pricingModels, setPricingModels] = useState<ModelPricingEntry[]>([]);
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
   const [launchAtLoginBusy, setLaunchAtLoginBusy] = useState(false);
   const [justResolved, setJustResolved] = useState(false);
@@ -716,6 +765,43 @@ export function App() {
   const activeSessionTokens = snapshot.activeSessionTokens ?? ZERO_TOKEN_USAGE;
   const activeSessionTokenTotal =
     activeSessionTokens.inputTokens + activeSessionTokens.outputTokens;
+  const pricingRates = useMemo(() => pricingRateMap(pricingModels), [pricingModels]);
+  const dailyCostTotal = useMemo(
+    () => byModelCostUsd(snapshot.dailyTokensByModel, pricingRates),
+    [snapshot.dailyTokensByModel, pricingRates],
+  );
+  const activeSessionCostTotal = useMemo(
+    () => byModelCostUsd(snapshot.activeSessionTokensByModel, pricingRates),
+    [snapshot.activeSessionTokensByModel, pricingRates],
+  );
+  const usageDisplaySummary = useMemo(() => {
+    const modes = [
+      foldedCounterDisplay,
+      expandedCounterDisplay,
+      settingsBadgeDisplay,
+      heatmapDisplay,
+    ];
+    const costCount = modes.filter((mode) => mode === "cost").length;
+    if (costCount === 0) return "Tokens";
+    if (costCount === modes.length) return "Cost";
+    return `${costCount} cost`;
+  }, [
+    foldedCounterDisplay,
+    expandedCounterDisplay,
+    settingsBadgeDisplay,
+    heatmapDisplay,
+  ]);
+  const settingsTodayLabel = useMemo(
+    () =>
+      settingsBadgeDisplay === "cost"
+        ? dailyCostTotal > 0
+          ? `${formatCompactCost(dailyCostTotal, dailyCostTotal >= 1 ? 1 : 0, dailyCostTotal)} today`
+          : "No priced usage"
+        : dailyTokenTotal > 0
+          ? `${formatCompactTokenCount(dailyTokenTotal, dailyTokenTotal >= 1_000 ? 1 : 0, dailyTokenTotal)} today`
+          : "No usage yet",
+    [settingsBadgeDisplay, dailyCostTotal, dailyTokenTotal],
+  );
   const maxCompactIconLimit = useMemo(
     () => computeMaxCompactIconLimit(notchMetrics),
     [notchMetrics],
@@ -871,6 +957,28 @@ export function App() {
   }, [hookHealthHydrated, snapshot.hookHealth]);
 
   useEffect(() => {
+    getPricing()
+      .then((response) => setPricingModels(response.models))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    writeDisplayMode(FOLDED_COUNTER_DISPLAY_KEY, foldedCounterDisplay);
+  }, [foldedCounterDisplay]);
+
+  useEffect(() => {
+    writeDisplayMode(EXPANDED_COUNTER_DISPLAY_KEY, expandedCounterDisplay);
+  }, [expandedCounterDisplay]);
+
+  useEffect(() => {
+    writeDisplayMode(SETTINGS_BADGE_DISPLAY_KEY, settingsBadgeDisplay);
+  }, [settingsBadgeDisplay]);
+
+  useEffect(() => {
+    writeDisplayMode(HEATMAP_DISPLAY_KEY, heatmapDisplay);
+  }, [heatmapDisplay]);
+
+  useEffect(() => {
     const loadSnapshot = () => {
       const seq = snapshotLoadSeqRef.current;
       getSnapshot()
@@ -1000,6 +1108,7 @@ export function App() {
             snapshotRef.current.pendingCount === 0 &&
             snapshotRef.current.sessions.length === 0;
           const planExpanded = snapshotHasPlanPending(snapshotRef.current);
+          const settingsExpanded = panelViewRef.current.kind === "settings";
           await setIslandPresentation(
             "expanded",
             collapsedWindowWidthRef.current,
@@ -1007,7 +1116,8 @@ export function App() {
             compactLeftPaneWidthRef.current,
             false,
             true,
-            planExpanded,
+            planExpanded && !settingsExpanded,
+            settingsExpanded,
           );
         }
 
@@ -1501,6 +1611,7 @@ export function App() {
     expandedIdle?: boolean,
     compactLeftWidth?: number,
     expandedPlan?: boolean,
+    expandedSettings?: boolean,
   ) {
     const snap =
       !notchMetricsHydrated || !initialNativePresentationSyncedRef.current;
@@ -1512,6 +1623,7 @@ export function App() {
       !snap,
       snap,
       expandedPlan,
+      expandedSettings,
     ).finally(() => {
       if (notchMetricsHydrated) {
         initialNativePresentationSyncedRef.current = true;
@@ -1638,9 +1750,11 @@ export function App() {
       snapshotRef.current.pendingCount === 0 &&
       snapshotRef.current.sessions.length === 0;
     const planExpanded = snapshotHasPlanPending(snapshotRef.current);
+    const settingsExpanded = panelViewRef.current.kind === "settings";
     lastNativePresentationKeyRef.current = expandedPresentationKey(
       idleExpanded,
-      planExpanded,
+      planExpanded && !settingsExpanded,
+      settingsExpanded,
     );
     setPresentationPhase(next);
     const nativeTransition = setIslandPresentation(
@@ -1650,7 +1764,8 @@ export function App() {
       compactLeftPaneWidthRef.current,
       true,
       false,
-      planExpanded,
+      planExpanded && !settingsExpanded,
+      settingsExpanded,
     );
     transitionTimerRef.current = window.setTimeout(async () => {
       transitionTimerRef.current = null;
@@ -2330,8 +2445,8 @@ export function App() {
   function handleOpenTokensFromCounter() {
     if (panelView.kind === "settings" && panelView.page === "tokens") return;
     if (isIdleExpanded) {
-      lastNativePresentationKeyRef.current = expandedPresentationKey(false, false);
-      syncNativeIslandPresentation("expanded", undefined, false, undefined, false).catch(
+      lastNativePresentationKeyRef.current = expandedPresentationKey(false, false, true);
+      syncNativeIslandPresentation("expanded", undefined, false, undefined, false, true).catch(
         () => undefined,
       );
     }
@@ -2344,6 +2459,24 @@ export function App() {
 
   function navigateBackFromTokens() {
     if (tokensBackTarget === "settings-main") {
+      setPanelView({ kind: "settings", page: "main" });
+    } else {
+      navigateBack();
+    }
+  }
+
+  function openUsagePage(backTarget: "home" | "settings-main") {
+    setMenuOpen(false);
+    setUsageBackTarget(backTarget);
+    setPanelView({ kind: "settings", page: "usage" });
+  }
+
+  function handleOpenUsageFromSettings() {
+    openUsagePage("settings-main");
+  }
+
+  function navigateBackFromUsage() {
+    if (usageBackTarget === "settings-main") {
       setPanelView({ kind: "settings", page: "main" });
     } else {
       navigateBack();
@@ -2429,6 +2562,9 @@ export function App() {
     panelView.kind === "home" &&
     sessions.length === 0 &&
     snapshot.pendingCount === 0;
+  const isSettingsExpanded = isExpandedChrome && panelView.kind === "settings";
+  const nativeExpandedPlan = isPlanExpanded && !isSettingsExpanded;
+  const nativeExpandedSettings = isSettingsExpanded;
   const isSubview = isExpandedChrome && panelView.kind !== "home";
   const menuBarLogoSize = isExpanded ? 36 : isMicro ? 24 : 34;
   const subviewSession =
@@ -2511,7 +2647,11 @@ export function App() {
     }
 
     if (phase === "expanded") {
-      const key = expandedPresentationKey(isIdleExpanded, isPlanExpanded);
+      const key = expandedPresentationKey(
+        isIdleExpanded,
+        nativeExpandedPlan,
+        nativeExpandedSettings,
+      );
       if (lastNativePresentationKeyRef.current === key) return;
       lastNativePresentationKeyRef.current = key;
       syncNativeIslandPresentation(
@@ -2519,7 +2659,8 @@ export function App() {
         undefined,
         isIdleExpanded,
         undefined,
-        isPlanExpanded,
+        nativeExpandedPlan,
+        nativeExpandedSettings,
       ).catch(() => undefined);
     }
   }, [
@@ -2529,6 +2670,9 @@ export function App() {
     collapsedMode,
     isIdleExpanded,
     isPlanExpanded,
+    isSettingsExpanded,
+    nativeExpandedPlan,
+    nativeExpandedSettings,
     notchMetricsHydrated,
   ]);
 
@@ -2597,7 +2741,31 @@ export function App() {
       }
 
       if (panelView.page === "tokens") {
-        return <TokenHeatmapView todayTokens={dailyTokens} />;
+        return (
+          <TokenHeatmapView
+            todayTokens={dailyTokens}
+            todayTokensByModel={snapshot.dailyTokensByModel}
+            displayMode={heatmapDisplay}
+            pricingRates={pricingRates}
+          />
+        );
+      }
+
+      if (panelView.page === "usage") {
+        return (
+          <UsageSettingsView
+            foldedCounterDisplay={foldedCounterDisplay}
+            expandedCounterDisplay={expandedCounterDisplay}
+            settingsBadgeDisplay={settingsBadgeDisplay}
+            heatmapDisplay={heatmapDisplay}
+            onChangeFoldedCounterDisplay={setFoldedCounterDisplay}
+            onChangeExpandedCounterDisplay={setExpandedCounterDisplay}
+            onChangeSettingsBadgeDisplay={setSettingsBadgeDisplay}
+            onChangeHeatmapDisplay={setHeatmapDisplay}
+            pricingModels={pricingModels}
+            onPricingModelsChange={setPricingModels}
+          />
+        );
       }
 
       return (
@@ -2631,7 +2799,9 @@ export function App() {
           onChangeLaunchAtLogin={handleChangeLaunchAtLogin}
           onOpenHooks={handleOpenHooksFromSettings}
           onOpenTokens={handleOpenTokensFromSettings}
-          todayTokenTotal={dailyTokenTotal}
+          onOpenUsage={handleOpenUsageFromSettings}
+          todayLabel={settingsTodayLabel}
+          usageDisplaySummary={usageDisplaySummary}
           hooksSummary={hooksSetupSummary}
           hooksNeedAttention={hooksNeedAttention}
         />
@@ -2715,7 +2885,7 @@ export function App() {
   return (
     <main className="stage">
       <section
-        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isPlanExpanded ? "is-plan" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList" ? "is-session-subview" : ""}`}
+        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isPlanExpanded ? "is-plan" : ""} ${isSettingsExpanded ? "is-settings" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList" ? "is-session-subview" : ""}`}
         aria-label="Atoll"
         tabIndex={0}
         onClick={handleIslandClick}
@@ -2845,6 +3015,11 @@ export function App() {
                 onBack={navigateBackFromTokens}
                 backLabel={tokensBackTarget === "settings-main" ? "Settings" : "Back"}
               />
+            ) : panelView.kind === "settings" && panelView.page === "usage" ? (
+              <UsageSubviewNav
+                onBack={navigateBackFromUsage}
+                backLabel={usageBackTarget === "settings-main" ? "Settings" : "Back"}
+              />
             ) : panelView.kind === "settings" ? (
               <SettingsSubviewNav onBack={navigateBack} />
             ) : showPanelAgentTabs ? (
@@ -2886,9 +3061,14 @@ export function App() {
               ) : null}
               {showCompactTokenCounter ? (
                 <TokenCounter
-                  value={activeSessionTokenTotal}
+                  value={
+                    foldedCounterDisplay === "cost"
+                      ? activeSessionCostTotal
+                      : activeSessionTokenTotal
+                  }
                   usage={activeSessionTokens}
                   variant={isMicro ? "micro" : "compact"}
+                  displayMode={foldedCounterDisplay}
                   suppressAnimations={isPresentationTransition}
                   sessionCount={sessions.length}
                   maxCompactIcons={maxCompactIcons}
@@ -2920,9 +3100,12 @@ export function App() {
           >
             {showExpandedTokenCounter && !isDormant ? (
               <TokenCounter
-                value={dailyTokenTotal}
+                value={
+                  expandedCounterDisplay === "cost" ? dailyCostTotal : dailyTokenTotal
+                }
                 usage={dailyTokens}
                 variant="expanded"
+                displayMode={expandedCounterDisplay}
                 onClick={handleOpenTokensFromCounter}
               />
             ) : null}
@@ -3483,7 +3666,9 @@ interface SettingsViewProps {
   onChangeLaunchAtLogin: (enabled: boolean) => void;
   onOpenHooks: () => void;
   onOpenTokens: () => void;
-  todayTokenTotal: number;
+  onOpenUsage: () => void;
+  todayLabel: string;
+  usageDisplaySummary: string;
   hooksSummary: string;
   hooksNeedAttention: boolean;
 }
@@ -3595,15 +3780,12 @@ function SettingsView({
   onChangeLaunchAtLogin,
   onOpenHooks,
   onOpenTokens,
-  todayTokenTotal,
+  onOpenUsage,
+  todayLabel,
+  usageDisplaySummary,
   hooksSummary,
   hooksNeedAttention,
 }: SettingsViewProps) {
-  const todayLabel =
-    todayTokenTotal > 0
-      ? `${formatCompactTokenCount(todayTokenTotal, todayTokenTotal >= 1_000 ? 1 : 0, todayTokenTotal)} today`
-      : "No usage yet";
-
   return (
     <div className="settings-view" data-no-drag>
       <div className="settings-body">
@@ -3620,6 +3802,25 @@ function SettingsView({
 
         <div className="settings-section">
           <span className="settings-section-label">Usage</span>
+          <button
+            type="button"
+            className="settings-nav-card"
+            onClick={onOpenUsage}
+            data-no-drag
+          >
+            <div className="settings-nav-card-copy">
+              <span className="settings-card-title">Display & pricing</span>
+              <span className="settings-card-desc">
+                Choose tokens or cost for each counter, and edit model rates.
+              </span>
+            </div>
+            <div className="settings-nav-card-meta">
+              <span className="settings-hook-badge is-summary is-installed">
+                {usageDisplaySummary}
+              </span>
+              <ChevronRight size={14} className="settings-nav-chevron" />
+            </div>
+          </button>
           <button
             type="button"
             className="settings-nav-card"
@@ -4857,6 +5058,27 @@ function TokensSubviewNav({
       <span className="settings-header-title">
         <Activity size={14} />
         <span>Token activity</span>
+      </span>
+    </div>
+  );
+}
+
+function UsageSubviewNav({
+  onBack,
+  backLabel,
+}: {
+  onBack: () => void;
+  backLabel: string;
+}) {
+  return (
+    <div className="settings-subview-nav" data-no-drag>
+      <button type="button" className="back-button" onClick={onBack}>
+        <ArrowLeft size={13} />
+        <span>{backLabel}</span>
+      </button>
+      <span className="settings-header-title">
+        <CircleDollarSign size={14} />
+        <span>Display & pricing</span>
       </span>
     </div>
   );

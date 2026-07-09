@@ -93,4 +93,35 @@ describe("tokenHeatmap", () => {
     expect(series[series.length - 1].total).toBe(700);
     expect(series[0].total).toBe(0);
   });
+
+  it("uses byModel pricing in cost mode", () => {
+    const todayKey = localDayKey(new Date());
+    const summary = summarizeHeatmap(
+      [
+        {
+          date: todayKey,
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+          byModel: {
+            "gpt-4o": {
+              inputTokens: 1_000_000,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+            },
+          },
+        },
+      ],
+      "cost",
+      {
+        "gpt-4o": {
+          inputPerMillion: 2.5,
+          outputPerMillion: 10,
+          cacheReadPerMillion: 1.25,
+          cacheWritePerMillion: 2.5,
+        },
+      },
+    );
+    expect(summary.today).toBeCloseTo(2.5, 4);
+  });
 });

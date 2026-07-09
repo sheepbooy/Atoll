@@ -235,6 +235,22 @@ export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {
       cacheReadTokens: 890_000,
       cacheCreationTokens: 12_400,
     },
+    dailyTokensByModel: {
+      "claude-sonnet-4-20250514": {
+        inputTokens: 128_400,
+        outputTokens: 42_180,
+        cacheReadTokens: 890_000,
+        cacheCreationTokens: 12_400,
+      },
+    },
+    activeSessionTokensByModel: {
+      "claude-sonnet-4-20250514": {
+        inputTokens: 128_400,
+        outputTokens: 42_180,
+        cacheReadTokens: 890_000,
+        cacheCreationTokens: 12_400,
+      },
+    },
     hookHealth: {
       claude: demoHookInstalled,
       codex: demoCodexHookInstalled,

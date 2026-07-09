@@ -42,6 +42,8 @@ export interface IslandSnapshot {
   sessions: SessionSummary[];
   dailyTokens: TokenUsage;
   activeSessionTokens: TokenUsage;
+  dailyTokensByModel?: Record<string, TokenUsage>;
+  activeSessionTokensByModel?: Record<string, TokenUsage>;
   hookHealth: HookHealthSnapshot;
 }
 
@@ -146,6 +148,8 @@ export async function getSnapshot(): Promise<IslandSnapshot> {
       cacheReadTokens: 0,
       cacheCreationTokens: 0,
     },
+    dailyTokensByModel: {},
+    activeSessionTokensByModel: {},
     hookHealth: EMPTY_HOOK_HEALTH,
   };
 }
@@ -300,6 +304,7 @@ export interface TokenHistoryDay {
   cacheReadTokens: number;
   cacheCreationTokens: number;
   byAgent: Record<string, TokenUsage>;
+  byModel?: Record<string, TokenUsage>;
 }
 
 export interface TokenHistoryResponse {
@@ -542,6 +547,7 @@ export async function setIslandPresentation(
   animate = true,
   snap = false,
   expandedPlan?: boolean,
+  expandedSettings?: boolean,
 ) {
   if (!isTauriRuntime()) {
     return;
@@ -553,6 +559,7 @@ export async function setIslandPresentation(
     compactLeftWidth,
     expandedIdle,
     expandedPlan,
+    expandedSettings,
     animate,
     snap,
   });
@@ -637,6 +644,7 @@ export async function getTokenHistory(days: number): Promise<TokenHistoryRespons
         cacheReadTokens: 0,
         cacheCreationTokens: 0,
         byAgent: {},
+        byModel: {},
       },
     ],
   };
