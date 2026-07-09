@@ -54,7 +54,7 @@ struct ModelRateOverride {
     pub rate: ModelRate,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogModel {
     pub model_id: String,
@@ -408,6 +408,155 @@ pub fn reset_model_rate(model_id: String) -> Result<PricingResponse, String> {
     get_pricing()
 }
 
+// Maintainers: keep hosted file in sync with pricing-catalog.example.json
+pub const PRICING_CATALOG_URL: &str =
+    "https://raw.githubusercontent.com/sheepbooy/Atoll/main/pricing-catalog.example.json";
+
+pub struct FetchResult {
+    pub status: u16,
+    pub body: Option<String>,
+    pub etag: Option<String>,
+}
+
+pub fn catalog_is_stale(now_secs: i64, fetched_at: Option<&str>) -> bool {
+    let Some(fetched_at) = fetched_at else {
+        return true;
+    };
+    let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(fetched_at) else {
+        return true;
+    };
+    now_secs.saturating_sub(parsed.timestamp()) >= CATALOG_STALE_SECS as i64
+}
+
+pub fn apply_fetched_catalog(
+    body: &str,
+    etag: Option<String>,
+    fetched_at: String,
+) -> Result<PricingCatalogFile, String> {
+    let mut file: PricingCatalogFile =
+        serde_json::from_str(body).map_err(|error| format!("invalid catalog JSON: {error}"))?;
+    validate_catalog(&file)?;
+    file.fetched_at = Some(fetched_at);
+    file.etag = etag;
+    Ok(file)
+}
+
+fn set_last_refresh_error(message: String) {
+    *LAST_REFRESH_ERROR
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(message);
+}
+
+fn clear_last_refresh_error() {
+    *LAST_REFRESH_ERROR
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+}
+
+fn utc_now_rfc3339() -> String {
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+pub fn refresh_pricing_catalog_with_fetcher<F>(
+    force: bool,
+    fetch: F,
+) -> Result<PricingResponse, String>
+where
+    F: FnOnce(Option<&str>) -> Result<FetchResult, String>,
+{
+    let catalog = load_catalog();
+    if !force {
+        if let Some(ref fetched_at) = catalog.fetched_at {
+            if !catalog_is_stale(chrono::Utc::now().timestamp(), Some(fetched_at)) {
+                return get_pricing();
+            }
+        }
+    }
+
+    let result = match fetch(catalog.etag.as_deref()) {
+        Ok(result) => result,
+        Err(error) => {
+            set_last_refresh_error(error.clone());
+            return Err(error);
+        }
+    };
+
+    match result.status {
+        304 => {
+            let mut updated = catalog;
+            updated.fetched_at = Some(utc_now_rfc3339());
+            if let Some(etag) = result.etag {
+                updated.etag = Some(etag);
+            }
+            save_catalog(&updated)?;
+            clear_last_refresh_error();
+            get_pricing()
+        }
+        200 => {
+            let body = result
+                .body
+                .ok_or_else(|| "empty catalog response body".to_string())?;
+            let new_catalog = match apply_fetched_catalog(&body, result.etag, utc_now_rfc3339()) {
+                Ok(catalog) => catalog,
+                Err(error) => {
+                    set_last_refresh_error(error.clone());
+                    return Err(error);
+                }
+            };
+            save_catalog(&new_catalog)?;
+            clear_last_refresh_error();
+            get_pricing()
+        }
+        status => {
+            let error = format!("unexpected catalog HTTP status {status}");
+            set_last_refresh_error(error.clone());
+            Err(error)
+        }
+    }
+}
+
+pub fn refresh_pricing_catalog(force: bool) -> Result<PricingResponse, String> {
+    refresh_pricing_catalog_with_fetcher(force, |etag| {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+            .map_err(|error| error.to_string())?;
+        let mut request = client.get(PRICING_CATALOG_URL);
+        if let Some(etag) = etag {
+            request = request.header(reqwest::header::IF_NONE_MATCH, etag);
+        }
+        let response = request.send().map_err(|error| error.to_string())?;
+        let status = response.status().as_u16();
+        let etag = response
+            .headers()
+            .get(reqwest::header::ETAG)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        let body = if status == 200 {
+            Some(response.text().map_err(|error| error.to_string())?)
+        } else {
+            None
+        };
+        Ok(FetchResult { status, body, etag })
+    })
+}
+
+pub fn maybe_refresh_pricing_catalog_on_startup() {
+    let catalog = load_catalog();
+    let now = chrono::Utc::now().timestamp();
+    let needs_refresh = catalog
+        .fetched_at
+        .as_deref()
+        .map(|fetched_at| catalog_is_stale(now, Some(fetched_at)))
+        .unwrap_or(true);
+    if !needs_refresh {
+        return;
+    }
+    if let Err(error) = refresh_pricing_catalog(false) {
+        set_last_refresh_error(error);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -596,6 +745,132 @@ mod tests {
             get_pricing_with_discovered(HashSet::from(["zzz-unpriced".into()])).unwrap();
         assert_eq!(response.models[0].model_id, "zzz-unpriced");
         assert!(response.models[0].is_unpriced);
+
+        cleanup_pricing_paths(&pricing_path, &catalog_path);
+    }
+
+    #[test]
+    fn catalog_is_stale_when_missing_or_old() {
+        assert!(catalog_is_stale(1_700_000_000, None));
+        assert!(catalog_is_stale(1_700_000_000, Some("2000-01-01T00:00:00Z")));
+    }
+
+    #[test]
+    fn apply_fetched_catalog_rejects_invalid_json() {
+        assert!(apply_fetched_catalog("{nope}", None, "2026-07-09T00:00:00Z".into()).is_err());
+    }
+
+    #[test]
+    fn refresh_with_fetcher_304_bumps_fetched_at_only() {
+        let _lock = pricing_test_lock();
+        let (pricing_path, catalog_path) = temp_pricing_paths("refresh-304");
+        cleanup_pricing_paths(&pricing_path, &catalog_path);
+        std::env::set_var(
+            "ATOLL_PRICING_PATH",
+            pricing_path.to_string_lossy().as_ref(),
+        );
+        std::env::set_var(
+            "ATOLL_PRICING_CATALOG_PATH",
+            catalog_path.to_string_lossy().as_ref(),
+        );
+
+        let old_fetched = "2000-01-01T00:00:00Z".to_string();
+        let models = vec![CatalogModel {
+            model_id: "test-model".to_string(),
+            display_name: "Test Model".to_string(),
+            rate: ModelRate {
+                input_per_million: 1.0,
+                output_per_million: 2.0,
+                cache_read_per_million: 0.1,
+                cache_write_per_million: 0.2,
+            },
+        }];
+        let catalog = PricingCatalogFile {
+            version: CATALOG_SCHEMA_VERSION,
+            updated_at: Some("2026-07-09T00:00:00Z".into()),
+            fetched_at: Some(old_fetched.clone()),
+            etag: Some("W/\"abc\"".into()),
+            models: models.clone(),
+        };
+        save_catalog(&catalog).expect("seed catalog");
+
+        refresh_pricing_catalog_with_fetcher(true, |_etag| {
+            Ok(FetchResult {
+                status: 304,
+                body: None,
+                etag: Some("W/\"abc\"".into()),
+            })
+        })
+        .expect("304 refresh");
+
+        let reloaded = load_catalog();
+        assert_ne!(reloaded.fetched_at.as_ref().unwrap(), &old_fetched);
+        assert_eq!(reloaded.models, models);
+
+        cleanup_pricing_paths(&pricing_path, &catalog_path);
+    }
+
+    #[test]
+    fn refresh_with_fetcher_200_replaces_models() {
+        let _lock = pricing_test_lock();
+        let (pricing_path, catalog_path) = temp_pricing_paths("refresh-200");
+        cleanup_pricing_paths(&pricing_path, &catalog_path);
+        std::env::set_var(
+            "ATOLL_PRICING_PATH",
+            pricing_path.to_string_lossy().as_ref(),
+        );
+        std::env::set_var(
+            "ATOLL_PRICING_CATALOG_PATH",
+            catalog_path.to_string_lossy().as_ref(),
+        );
+
+        let catalog = PricingCatalogFile {
+            version: CATALOG_SCHEMA_VERSION,
+            updated_at: Some("2026-01-01T00:00:00Z".into()),
+            fetched_at: Some("2026-01-01T00:00:00Z".into()),
+            etag: Some("W/\"old\"".into()),
+            models: vec![CatalogModel {
+                model_id: "old-model".to_string(),
+                display_name: "Old".to_string(),
+                rate: ModelRate {
+                    input_per_million: 1.0,
+                    output_per_million: 1.0,
+                    cache_read_per_million: 1.0,
+                    cache_write_per_million: 1.0,
+                },
+            }],
+        };
+        save_catalog(&catalog).expect("seed catalog");
+
+        let new_body = r#"{
+            "version": 1,
+            "updatedAt": "2026-07-09T00:00:00Z",
+            "models": [{
+                "modelId": "new-model",
+                "displayName": "New Model",
+                "rate": {
+                    "inputPerMillion": 5.0,
+                    "outputPerMillion": 10.0,
+                    "cacheReadPerMillion": 0.5,
+                    "cacheWritePerMillion": 1.0
+                }
+            }]
+        }"#;
+
+        refresh_pricing_catalog_with_fetcher(true, |_etag| {
+            Ok(FetchResult {
+                status: 200,
+                body: Some(new_body.to_string()),
+                etag: Some("W/\"new\"".into()),
+            })
+        })
+        .expect("200 refresh");
+
+        let reloaded = load_catalog();
+        assert_eq!(reloaded.models.len(), 1);
+        assert_eq!(reloaded.models[0].model_id, "new-model");
+        assert_eq!(reloaded.etag.as_deref(), Some("W/\"new\""));
+        assert!(reloaded.fetched_at.is_some());
 
         cleanup_pricing_paths(&pricing_path, &catalog_path);
     }

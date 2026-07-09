@@ -30,6 +30,7 @@ iana-time-zone = "0.1"
 socket2 = "0.5"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json"] }
 
 [target.'cfg(windows)'.dependencies]
 auto-launch = "0.5"

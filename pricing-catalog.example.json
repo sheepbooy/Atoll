@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "updatedAt": "2026-07-09T00:00:00Z",
+  "models": [
+    {
+      "modelId": "claude-sonnet-4-5-20250929",
+      "displayName": "Claude Sonnet 4.5",
+      "rate": {
+        "inputPerMillion": 3.0,
+        "outputPerMillion": 15.0,
+        "cacheReadPerMillion": 0.3,
+        "cacheWritePerMillion": 3.75
+      }
+    },
+    {
+      "modelId": "claude-opus-4-5-20251101",
+      "displayName": "Claude Opus 4.5",
+      "rate": {
+        "inputPerMillion": 15.0,
+        "outputPerMillion": 75.0,
+        "cacheReadPerMillion": 1.5,
+        "cacheWritePerMillion": 18.75
+      }
+    },
+    {
+      "modelId": "claude-sonnet-4-20250514",
+      "displayName": "Claude Sonnet 4",
+      "rate": {
+        "inputPerMillion": 3.0,
+        "outputPerMillion": 15.0,
+        "cacheReadPerMillion": 0.3,
+        "cacheWritePerMillion": 3.75
+      }
+    },
+    {
+      "modelId": "claude-opus-4-20250514",
+      "displayName": "Claude Opus 4",
+      "rate": {
+        "inputPerMillion": 15.0,
+        "outputPerMillion": 75.0,
+        "cacheReadPerMillion": 1.5,
+        "cacheWritePerMillion": 18.75
+      }
+    },
+    {
+      "modelId": "claude-3-5-haiku-20241022",
+      "displayName": "Claude Haiku 3.5",
+      "rate": {
+        "inputPerMillion": 0.8,
+        "outputPerMillion": 4.0,
+        "cacheReadPerMillion": 0.08,
+        "cacheWritePerMillion": 1.0
+      }
+    },
+    {
+      "modelId": "gpt-4o",
+      "displayName": "GPT-4o",
+      "rate": {
+        "inputPerMillion": 2.5,
+        "outputPerMillion": 10.0,
+        "cacheReadPerMillion": 1.25,
+        "cacheWritePerMillion": 2.5
+      }
+    },
+    {
+      "modelId": "gpt-4o-mini",
+      "displayName": "GPT-4o mini",
+      "rate": {
+        "inputPerMillion": 0.15,
+        "outputPerMillion": 0.6,
+        "cacheReadPerMillion": 0.075,
+        "cacheWritePerMillion": 0.15
+      }
+    },
+    {
+      "modelId": "o3",
+      "displayName": "OpenAI o3",
+      "rate": {
+        "inputPerMillion": 10.0,
+        "outputPerMillion": 40.0,
+        "cacheReadPerMillion": 2.5,
+        "cacheWritePerMillion": 10.0
+      }
+    },
+    {
+      "modelId": "o4-mini",
+      "displayName": "OpenAI o4-mini",
+      "rate": {
+        "inputPerMillion": 1.1,
+        "outputPerMillion": 4.4,
+        "cacheReadPerMillion": 0.275,
+        "cacheWritePerMillion": 1.1
+      }
+    },
+    {
+      "modelId": "gpt-4.1",
+      "displayName": "GPT-4.1",
+      "rate": {
+        "inputPerMillion": 2.0,
+        "outputPerMillion": 8.0,
+        "cacheReadPerMillion": 0.5,
+        "cacheWritePerMillion": 2.0
+      }
+    },
+    {
+      "modelId": "gpt-4.1-mini",
+      "displayName": "GPT-4.1 mini",
+      "rate": {
+        "inputPerMillion": 0.4,
+        "outputPerMillion": 1.6,
+        "cacheReadPerMillion": 0.1,
+        "cacheWritePerMillion": 0.4
+      }
+    },
+    {
+      "modelId": "gpt-5",
+      "displayName": "GPT-5",
+      "rate": {
+        "inputPerMillion": 5.0,
+        "outputPerMillion": 20.0,
+        "cacheReadPerMillion": 1.25,
+        "cacheWritePerMillion": 5.0
+      }
+    }
+  ]
+}

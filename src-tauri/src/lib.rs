@@ -2278,6 +2278,11 @@ fn reset_model_rate(model_id: String) -> Result<pricing::PricingResponse, String
 }
 
 #[tauri::command]
+fn refresh_pricing() -> Result<pricing::PricingResponse, String> {
+    pricing::refresh_pricing_catalog(true)
+}
+
+#[tauri::command]
 fn archive_all_resolved(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -5937,6 +5942,7 @@ pub fn run() {
             get_pricing,
             set_model_rate,
             reset_model_rate,
+            refresh_pricing,
             open_in_terminal,
             open_agent_app,
             focus_claude_app,
@@ -5971,6 +5977,9 @@ pub fn run() {
             }
             start_auto_archive_timer(app.handle().clone());
             start_token_refresh_timer(app.handle().clone());
+            std::thread::spawn(|| {
+                pricing::maybe_refresh_pricing_catalog_on_startup();
+            });
 
             if capture::enabled() {
                 let state = app.state::<AppState>();
