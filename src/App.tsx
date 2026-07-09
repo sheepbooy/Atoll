@@ -714,6 +714,7 @@ export function App() {
     readConfiguredHookAgents(),
   );
   const prevPendingRef = useRef(0);
+  const lastSyncedRequestIdRef = useRef<string | null>(null);
   const selectedAgentRef = useRef<AgentKind | null>(null);
   selectedAgentRef.current = selectedAgent;
 
@@ -1304,13 +1305,31 @@ export function App() {
   useEffect(() => {
     if (tabAgents.length === 0) {
       setSelectedAgent(null);
+      lastSyncedRequestIdRef.current = null;
       return;
     }
+
+    // New pending request: force-select its agent and return to home so the
+    // approval card is visible (not stuck on another agent's tab/subview).
+    if (activeRequest?.id && activeRequest.id !== lastSyncedRequestIdRef.current) {
+      lastSyncedRequestIdRef.current = activeRequest.id;
+      setSelectedAgent(activeRequest.agent);
+      if (panelView.kind !== "home") {
+        ++navigationSeqRef.current;
+        setPanelView({ kind: "home" });
+      }
+      return;
+    }
+
+    if (!activeRequest) {
+      lastSyncedRequestIdRef.current = null;
+    }
+
     if (selectedAgent && tabAgents.includes(selectedAgent)) {
       return;
     }
     setSelectedAgent(activeRequest?.agent ?? tabAgents[0]);
-  }, [tabAgents, selectedAgent, activeRequest?.agent]);
+  }, [tabAgents, selectedAgent, activeRequest?.id, activeRequest?.agent, panelView.kind]);
 
   useEffect(() => {
     setMaxCompactIcons((current) =>

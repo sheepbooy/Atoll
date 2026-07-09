@@ -1602,6 +1602,76 @@ describe("App", () => {
     ).toHaveLength(1);
   });
 
+  it("switches to the pending agent tab when a new approval arrives", async () => {
+    const cursorSession = {
+      sessionId: "session-cursor",
+      agent: "cursor" as const,
+      cwd: "/tmp/cursor-project",
+      pendingCount: 0,
+      totalCount: 1,
+      lastActivity: "2026-06-10T08:00:00Z",
+      transcriptPath: null,
+    };
+    const claudeSession = {
+      sessionId: "session-claude",
+      agent: "claude" as const,
+      cwd: "/tmp/claude-project",
+      pendingCount: 0,
+      totalCount: 1,
+      lastActivity: "2026-06-10T08:00:00Z",
+      transcriptPath: null,
+    };
+    const idleSnapshot = {
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [cursorSession, claudeSession],
+      hookHealth: connectedHookHealth,
+    };
+    const claudePending = {
+      ...request,
+      id: "claude-pending-1",
+      agent: "claude" as const,
+      session: "session-claude",
+      command: "Bash: rm -rf /tmp/claude-scratch",
+      cwd: "/tmp/claude-project",
+    };
+    bridge.getSnapshot.mockResolvedValue(idleSnapshot);
+    bridge.getNotchMetrics.mockResolvedValue({
+      hasNotch: false,
+      width: 0,
+      height: 0,
+    });
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+
+    await waitForExpandedPanel(container);
+    await user.click(screen.getByRole("button", { name: "Cursor" }));
+    await waitFor(() => {
+      expect(container.querySelector(".agent-tab.is-active[aria-label='Cursor']")).not.toBeNull();
+    });
+
+    await act(async () => {
+      emitSnapshot?.({
+        ...idleSnapshot,
+        pendingCount: 1,
+        activeRequest: claudePending,
+        recent: [claudePending],
+        sessions: [
+          cursorSession,
+          { ...claudeSession, pendingCount: 1 },
+        ],
+      });
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector(".agent-tab.is-active[aria-label='Claude']")).not.toBeNull();
+    });
+    expect(screen.getByText("Bash: rm -rf /tmp/claude-scratch")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
+  });
+
   it("shows live logo after installing all hooks on first setup", async () => {
     bridge.getSnapshot.mockResolvedValue(emptySnapshot);
     const { container } = render(<App />);
