@@ -2278,6 +2278,11 @@ fn reset_model_rate(model_id: String) -> Result<pricing::PricingResponse, String
 }
 
 #[tauri::command]
+fn hide_model(model_id: String) -> Result<pricing::PricingResponse, String> {
+    pricing::hide_model(model_id)
+}
+
+#[tauri::command]
 async fn refresh_pricing() -> Result<pricing::PricingResponse, String> {
     tauri::async_runtime::spawn_blocking(|| pricing::refresh_pricing_catalog(true))
         .await
@@ -5944,6 +5949,7 @@ pub fn run() {
             get_pricing,
             set_model_rate,
             reset_model_rate,
+            hide_model,
             refresh_pricing,
             open_in_terminal,
             open_agent_app,

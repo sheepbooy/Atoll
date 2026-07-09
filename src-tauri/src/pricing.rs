@@ -44,6 +44,7 @@ pub struct PricingResponse {
 #[serde(rename_all = "camelCase", default)]
 struct PricingOverridesFile {
     overrides: HashMap<String, ModelRateOverride>,
+    hidden_model_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -331,6 +332,11 @@ pub fn get_pricing() -> Result<PricingResponse, String> {
 pub fn get_pricing_with_discovered(discovered: HashSet<String>) -> Result<PricingResponse, String> {
     let overrides = load_overrides();
     let catalog = load_catalog();
+    let hidden: HashSet<&str> = overrides
+        .hidden_model_ids
+        .iter()
+        .map(String::as_str)
+        .collect();
     let mut model_ids: HashSet<String> = builtin_models()
         .into_iter()
         .map(|model| model.model_id.to_string())
@@ -341,6 +347,7 @@ pub fn get_pricing_with_discovered(discovered: HashSet<String>) -> Result<Pricin
 
     let mut models: Vec<ModelPricingEntry> = model_ids
         .into_iter()
+        .filter(|model_id| !hidden.contains(model_id.as_str()))
         .map(|model_id| {
             let is_custom = overrides.overrides.contains_key(&model_id);
             let effective = effective_rate(&model_id);
@@ -390,6 +397,9 @@ pub struct SetModelRateRequest {
 
 pub fn set_model_rate(request: SetModelRateRequest) -> Result<PricingResponse, String> {
     let mut overrides = load_overrides();
+    overrides
+        .hidden_model_ids
+        .retain(|id| id != &request.model_id);
     overrides.overrides.insert(
         request.model_id,
         ModelRateOverride {
@@ -404,6 +414,16 @@ pub fn set_model_rate(request: SetModelRateRequest) -> Result<PricingResponse, S
 pub fn reset_model_rate(model_id: String) -> Result<PricingResponse, String> {
     let mut overrides = load_overrides();
     overrides.overrides.remove(&model_id);
+    save_overrides(&overrides)?;
+    get_pricing()
+}
+
+pub fn hide_model(model_id: String) -> Result<PricingResponse, String> {
+    let mut overrides = load_overrides();
+    overrides.overrides.remove(&model_id);
+    if !overrides.hidden_model_ids.iter().any(|id| id == &model_id) {
+        overrides.hidden_model_ids.push(model_id);
+    }
     save_overrides(&overrides)?;
     get_pricing()
 }
@@ -806,6 +826,124 @@ mod tests {
         let reloaded = load_catalog();
         assert_ne!(reloaded.fetched_at.as_ref().unwrap(), &old_fetched);
         assert_eq!(reloaded.models, models);
+
+        cleanup_pricing_paths(&pricing_path, &catalog_path);
+    }
+
+    #[test]
+    fn hide_model_filters_settings_list_but_keeps_effective_rate() {
+        let _lock = pricing_test_lock();
+        let (pricing_path, catalog_path) = temp_pricing_paths("hide-model");
+        cleanup_pricing_paths(&pricing_path, &catalog_path);
+        std::env::set_var(
+            "ATOLL_PRICING_PATH",
+            pricing_path.to_string_lossy().as_ref(),
+        );
+        std::env::set_var(
+            "ATOLL_PRICING_CATALOG_PATH",
+            catalog_path.to_string_lossy().as_ref(),
+        );
+
+        let mut overrides = PricingOverridesFile::default();
+        overrides.overrides.insert(
+            "custom-only".to_string(),
+            ModelRateOverride {
+                display_name: Some("Custom Only".into()),
+                rate: ModelRate {
+                    input_per_million: 7.0,
+                    output_per_million: 7.0,
+                    cache_read_per_million: 7.0,
+                    cache_write_per_million: 7.0,
+                },
+            },
+        );
+        save_overrides(&overrides).expect("seed overrides");
+
+        hide_model("gpt-4o".into()).expect("hide builtin");
+        hide_model("custom-only".into()).expect("hide custom");
+
+        let response = get_pricing_with_discovered(HashSet::new()).unwrap();
+        assert!(
+            !response
+                .models
+                .iter()
+                .any(|model| model.model_id == "gpt-4o" || model.model_id == "custom-only")
+        );
+        assert_eq!(effective_rate("gpt-4o").unwrap().input_per_million, 2.50);
+        assert_eq!(effective_rate("custom-only"), None);
+
+        let reloaded = load_overrides();
+        assert!(reloaded.hidden_model_ids.contains(&"gpt-4o".to_string()));
+        assert!(reloaded.hidden_model_ids.contains(&"custom-only".to_string()));
+        assert!(!reloaded.overrides.contains_key("custom-only"));
+
+        cleanup_pricing_paths(&pricing_path, &catalog_path);
+    }
+
+    #[test]
+    fn hide_model_filters_discovered_unpriced_models() {
+        let _lock = pricing_test_lock();
+        let (pricing_path, catalog_path) = temp_pricing_paths("hide-discovered");
+        cleanup_pricing_paths(&pricing_path, &catalog_path);
+        std::env::set_var(
+            "ATOLL_PRICING_PATH",
+            pricing_path.to_string_lossy().as_ref(),
+        );
+        std::env::set_var(
+            "ATOLL_PRICING_CATALOG_PATH",
+            catalog_path.to_string_lossy().as_ref(),
+        );
+
+        hide_model("discovered-model".into()).expect("hide discovered");
+
+        let response = get_pricing_with_discovered(HashSet::from(["discovered-model".into()]))
+            .unwrap();
+        assert!(
+            !response
+                .models
+                .iter()
+                .any(|model| model.model_id == "discovered-model")
+        );
+
+        cleanup_pricing_paths(&pricing_path, &catalog_path);
+    }
+
+    #[test]
+    fn set_model_rate_unhides_model() {
+        let _lock = pricing_test_lock();
+        let (pricing_path, catalog_path) = temp_pricing_paths("unhide-on-set");
+        cleanup_pricing_paths(&pricing_path, &catalog_path);
+        std::env::set_var(
+            "ATOLL_PRICING_PATH",
+            pricing_path.to_string_lossy().as_ref(),
+        );
+        std::env::set_var(
+            "ATOLL_PRICING_CATALOG_PATH",
+            catalog_path.to_string_lossy().as_ref(),
+        );
+
+        hide_model("gpt-4o".into()).expect("hide builtin");
+
+        set_model_rate(SetModelRateRequest {
+            model_id: "gpt-4o".into(),
+            display_name: None,
+            rate: ModelRate {
+                input_per_million: 4.0,
+                output_per_million: 4.0,
+                cache_read_per_million: 4.0,
+                cache_write_per_million: 4.0,
+            },
+        })
+        .expect("set rate");
+
+        let response = get_pricing_with_discovered(HashSet::new()).unwrap();
+        let entry = response
+            .models
+            .iter()
+            .find(|model| model.model_id == "gpt-4o")
+            .expect("model visible again");
+        assert!(entry.is_custom);
+        assert_eq!(entry.rate.input_per_million, 4.0);
 
         cleanup_pricing_paths(&pricing_path, &catalog_path);
     }

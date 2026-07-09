@@ -26,6 +26,13 @@ export async function resetModelRate(modelId: string): Promise<PricingResponse> 
   return { models: [], catalogFetchedAt: null, lastRefreshError: null };
 }
 
+export async function hideModel(modelId: string): Promise<PricingResponse> {
+  if (isTauriRuntimeForPricing()) {
+    return invoke<PricingResponse>("hide_model", { modelId });
+  }
+  return { models: [], catalogFetchedAt: null, lastRefreshError: null };
+}
+
 export async function refreshPricing(): Promise<PricingResponse> {
   if (isTauriRuntimeForPricing()) {
     return invoke<PricingResponse>("refresh_pricing");

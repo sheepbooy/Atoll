@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ModelPricingEntry, ModelRate } from "./pricing";
-import { getPricing, refreshPricing, resetModelRate, setModelRate } from "./pricing";
+import { getPricing, hideModel, refreshPricing, resetModelRate, setModelRate } from "./pricing";
 
 interface PricingSettingsProps {
   models: ModelPricingEntry[];
@@ -42,6 +42,84 @@ function RateField({
   );
 }
 
+function PricingModelEditor({
+  model,
+  draftRate,
+  busy,
+  onDraftChange,
+  onCancel,
+  onSave,
+}: {
+  model: ModelPricingEntry;
+  draftRate: ModelRate;
+  busy: boolean;
+  onDraftChange: (rate: ModelRate) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  const editorRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    editorRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [model.modelId]);
+
+  return (
+    <div className="pricing-editor" ref={editorRef}>
+      <span className="settings-section-label">Edit {model.displayName}</span>
+      <div className="pricing-rate-grid">
+        <RateField
+          label="Input / 1M"
+          value={draftRate.inputPerMillion}
+          onChange={(value) =>
+            onDraftChange({ ...draftRate, inputPerMillion: value })
+          }
+        />
+        <RateField
+          label="Output / 1M"
+          value={draftRate.outputPerMillion}
+          onChange={(value) =>
+            onDraftChange({ ...draftRate, outputPerMillion: value })
+          }
+        />
+        <RateField
+          label="Cache read / 1M"
+          value={draftRate.cacheReadPerMillion}
+          onChange={(value) =>
+            onDraftChange({ ...draftRate, cacheReadPerMillion: value })
+          }
+        />
+        <RateField
+          label="Cache write / 1M"
+          value={draftRate.cacheWritePerMillion}
+          onChange={(value) =>
+            onDraftChange({ ...draftRate, cacheWritePerMillion: value })
+          }
+        />
+      </div>
+      <div className="pricing-editor-actions">
+        <button
+          type="button"
+          className="settings-inline-button"
+          disabled={busy}
+          onClick={onCancel}
+          data-no-drag
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="settings-inline-button is-primary"
+          disabled={busy}
+          onClick={onSave}
+          data-no-drag
+        >
+          Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function PricingSettings({ models, onModelsChange }: PricingSettingsProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftRate, setDraftRate] = useState<ModelRate | null>(null);
@@ -49,9 +127,6 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
   const [refreshing, setRefreshing] = useState(false);
   const [catalogFetchedAt, setCatalogFetchedAt] = useState<string | null>(null);
   const [lastRefreshError, setLastRefreshError] = useState<string | null>(null);
-  const editorRef = useRef<HTMLDivElement | null>(null);
-
-  const editingModel = models.find((model) => model.modelId === editingId) ?? null;
 
   useEffect(() => {
     getPricing()
@@ -61,11 +136,6 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
       })
       .catch(() => undefined);
   }, []);
-
-  useEffect(() => {
-    if (!editingModel || !draftRate || !editorRef.current) return;
-    editorRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [editingModel, draftRate]);
 
   async function refreshModels() {
     const response = await getPricing();
@@ -88,13 +158,13 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
     }
   }
 
-  async function handleSave() {
-    if (!editingModel || !draftRate) return;
+  async function handleSave(model: ModelPricingEntry) {
+    if (!draftRate) return;
     setBusy(true);
     try {
       const response = await setModelRate({
-        modelId: editingModel.modelId,
-        displayName: editingModel.displayName,
+        modelId: model.modelId,
+        displayName: model.displayName,
         rate: draftRate,
       });
       onModelsChange(response.models);
@@ -109,6 +179,20 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
     setBusy(true);
     try {
       const response = await resetModelRate(modelId);
+      onModelsChange(response.models);
+      if (editingId === modelId) {
+        setEditingId(null);
+        setDraftRate(null);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete(modelId: string) {
+    setBusy(true);
+    try {
+      const response = await hideModel(modelId);
       onModelsChange(response.models);
       if (editingId === modelId) {
         setEditingId(null);
@@ -145,123 +229,85 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
         without model metadata are excluded from cost totals.
       </p>
 
-      {editingModel && draftRate ? (
-        <div className="pricing-editor" ref={editorRef}>
-          <span className="settings-section-label">Edit {editingModel.displayName}</span>
-          <div className="pricing-rate-grid">
-            <RateField
-              label="Input / 1M"
-              value={draftRate.inputPerMillion}
-              onChange={(value) =>
-                setDraftRate((current) =>
-                  current ? { ...current, inputPerMillion: value } : current,
-                )
-              }
-            />
-            <RateField
-              label="Output / 1M"
-              value={draftRate.outputPerMillion}
-              onChange={(value) =>
-                setDraftRate((current) =>
-                  current ? { ...current, outputPerMillion: value } : current,
-                )
-              }
-            />
-            <RateField
-              label="Cache read / 1M"
-              value={draftRate.cacheReadPerMillion}
-              onChange={(value) =>
-                setDraftRate((current) =>
-                  current ? { ...current, cacheReadPerMillion: value } : current,
-                )
-              }
-            />
-            <RateField
-              label="Cache write / 1M"
-              value={draftRate.cacheWritePerMillion}
-              onChange={(value) =>
-                setDraftRate((current) =>
-                  current ? { ...current, cacheWritePerMillion: value } : current,
-                )
-              }
-            />
-          </div>
-          <div className="pricing-editor-actions">
-            <button
-              type="button"
-              className="settings-inline-button"
-              disabled={busy}
-              onClick={() => {
-                setEditingId(null);
-                setDraftRate(null);
-              }}
-              data-no-drag
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="settings-inline-button is-primary"
-              disabled={busy}
-              onClick={handleSave}
-              data-no-drag
-            >
-              Save
-            </button>
-          </div>
-        </div>
-      ) : null}
-
       <div className="pricing-model-list">
-        {models.map((model) => (
-          <div
-            key={model.modelId}
-            className={`pricing-model-row${
-              editingId === model.modelId ? " is-editing" : ""
-            }`}
-          >
-            <div className="pricing-model-copy">
-              <span className="settings-card-title">{model.displayName}</span>
-              <span className="settings-card-desc">{model.modelId}</span>
-            </div>
-            <div className="pricing-model-meta">
-              <span
-                className={`settings-hook-badge is-summary${
-                  model.isUnpriced
-                    ? " is-unpriced"
-                    : model.isCustom
-                      ? ""
-                      : " is-installed"
-                }`}
-              >
-                {model.isUnpriced ? "Unpriced" : model.isCustom ? "Custom" : "Default"}
-              </span>
-              <button
-                type="button"
-                className="settings-inline-button"
-                disabled={busy}
-                onClick={() => {
-                  setEditingId(model.modelId);
-                  setDraftRate(model.rate);
-                }}
-                data-no-drag
-              >
-                Edit
-              </button>
-              {model.isCustom ? (
-                <button
-                  type="button"
-                  className="settings-inline-button"
-                  disabled={busy}
-                  onClick={() => handleReset(model.modelId)}
-                  data-no-drag
-                >
-                  Reset
-                </button>
+        {models.map((model) => {
+          const isEditing = editingId === model.modelId;
+          return (
+            <div
+              key={model.modelId}
+              className={`pricing-model-row${isEditing ? " is-editing" : ""}`}
+            >
+              <div className="pricing-model-row-main">
+                <div className="pricing-model-copy">
+                  <span className="settings-card-title">{model.displayName}</span>
+                  <span className="settings-card-desc">{model.modelId}</span>
+                </div>
+                <div className="pricing-model-meta">
+                  <span
+                    className={`settings-hook-badge is-summary${
+                      model.isUnpriced
+                        ? " is-unpriced"
+                        : model.isCustom
+                          ? ""
+                          : " is-installed"
+                    }`}
+                  >
+                    {model.isUnpriced ? "Unpriced" : model.isCustom ? "Custom" : "Default"}
+                  </span>
+                  {isEditing ? null : (
+                    <>
+                      <button
+                        type="button"
+                        className="settings-inline-button"
+                        disabled={busy}
+                        onClick={() => {
+                          setEditingId(model.modelId);
+                          setDraftRate(model.rate);
+                        }}
+                        data-no-drag
+                      >
+                        Edit
+                      </button>
+                      {model.isCustom ? (
+                        <button
+                          type="button"
+                          className="settings-inline-button"
+                          disabled={busy}
+                          onClick={() => handleReset(model.modelId)}
+                          data-no-drag
+                        >
+                          Reset
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="settings-inline-button is-danger"
+                        disabled={busy}
+                        onClick={() => handleDelete(model.modelId)}
+                        data-no-drag
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+              {isEditing && draftRate ? (
+                <PricingModelEditor
+                  model={model}
+                  draftRate={draftRate}
+                  busy={busy}
+                  onDraftChange={setDraftRate}
+                  onCancel={() => {
+                    setEditingId(null);
+                    setDraftRate(null);
+                  }}
+                  onSave={() => handleSave(model)}
+                />
               ) : null}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {models.length === 0 ? (
