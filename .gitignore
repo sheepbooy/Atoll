@@ -18,7 +18,9 @@ coverage/
 .mimocode/
 .worktrees
 .tools/
-.cursor/
+.cursor/*
+!.cursor/skills/
+!.cursor/skills/**
 src-tauri/.tauri-keys/
 
 # Local-only (not shipped)
