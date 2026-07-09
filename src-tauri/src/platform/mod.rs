@@ -67,6 +67,11 @@ pub fn ensure_island_on_top(window: &WebviewWindow) {
     let _ = window;
 }
 
+#[cfg(target_os = "windows")]
+pub fn show_island_on_top(window: &WebviewWindow) {
+    windows::show_island_on_top(window);
+}
+
 pub fn detect_notch_metrics(
     window: &WebviewWindow,
     monitor_x: f64,

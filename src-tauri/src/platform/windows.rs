@@ -23,8 +23,8 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow, SetWindowPos,
-    HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow, SetWindowPos, HWND_TOPMOST,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
 };
 
 use super::SessionHost;
@@ -83,21 +83,35 @@ pub fn apply_island_window_style(window: &WebviewWindow) {
 /// and other topmost apps (Codex Desktop, Cursor, etc.) can demote the island even
 /// while `is_always_on_top()` still reads true, which makes it look like it vanished.
 pub fn ensure_island_on_top(window: &WebviewWindow) {
+    set_island_topmost(window, false);
+}
+
+/// Show and re-assert the island as topmost in the same native operation.
+///
+/// Tauri's `show()` + `set_always_on_top(true)` can leave the HWND hidden or
+/// visually demoted after a Windows updater relaunch. `SWP_SHOWWINDOW` makes
+/// the display transition explicit while `SWP_NOACTIVATE` preserves Atoll's
+/// background behavior for tray/startup show paths.
+pub fn show_island_on_top(window: &WebviewWindow) {
+    let _ = window.show();
+    set_island_topmost(window, true);
+}
+
+fn set_island_topmost(window: &WebviewWindow, show: bool) {
     if let Some(hwnd) = window_hwnd(window) {
+        let mut flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
+        if show {
+            flags |= SWP_SHOWWINDOW;
+        }
         unsafe {
-            let _ = SetWindowPos(
-                hwnd,
-                HWND_TOPMOST,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-            );
+            let _ = SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags);
         }
         return;
     }
     let _ = window.set_always_on_top(true);
+    if show {
+        let _ = window.show();
+    }
 }
 
 /// Windows WebView2 does not pass clicks through transparent pixels the way macOS
@@ -498,8 +512,7 @@ pub fn finish_show_for_approval(window: &WebviewWindow, app: &AppHandle, request
     let window = window.clone();
     let app = app.clone();
     let _ = window.clone().run_on_main_thread(move || {
-        let _ = window.show();
-        let _ = window.set_always_on_top(true);
+        show_island_on_top(&window);
         if request_focus {
             remember_foreground_window(&app);
             set_force_interactive(&window, true);

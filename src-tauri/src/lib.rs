@@ -5793,9 +5793,12 @@ pub fn run() {
                 let _ = window.set_shadow(false);
                 let _ = window.set_skip_taskbar(true);
                 let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
-                let _ = window.show();
-                // Apply island style AFTER show() so the window number is
-                // assigned and the NSPanel promotion takes effect.
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let _ = window.show();
+                    // Apply island style AFTER show() so the window number is
+                    // assigned and the NSPanel promotion takes effect on macOS.
+                }
                 platform::apply_island_window_style(&window);
                 eprintln!("[Atoll] step: island style applied, now applying mode...");
                 let initial_mode = if cfg!(target_os = "windows") {
@@ -5815,6 +5818,8 @@ pub fn run() {
                         *notch_metrics = home.notch;
                     };
                 }
+                #[cfg(target_os = "windows")]
+                platform::show_island_on_top(&window);
                 eprintln!("[Atoll] step: setup window complete");
             }
 
