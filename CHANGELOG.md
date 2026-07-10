@@ -2,6 +2,18 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.46] - 2026-07-10
+
+### 改进
+- **浮岛动效**：统一 motion 令牌，优化展开/收起、视图切换与审批反馈动画；展开面板增加环境光与轻量材质
+- **Token 图表展开**：设置尺寸放大改用更稳的缓动，并延迟挂载热力图/图表，减少窗口放大卡顿
+
+### 修复
+- **审批 Tab 同步**：新审批到达时自动切换到对应 agent 标签
+- **Cursor Subagent**：避免已完成/活跃 subagent 在会话列表中重复出现
+- **Codex 审批阻塞**：即使 observer hook 超时，仍保持 PermissionRequest 阻塞，避免误放行
+- **Hook Bridge**：加固 bridge 与 snapshot 快路径，降低卡顿与超时风险
+
 ## [0.1.45] - 2026-07-09
 
 ### 新增
