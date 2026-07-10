@@ -106,11 +106,11 @@ describe("compactLayout", () => {
     );
   });
 
-  it("keeps all icons on the left when the bar is wide enough", () => {
+  it("balances session icons across both notch wings when space allows", () => {
     const layout = computeCompactHeaderLayout(NOTCH_14, 6, 8, 12_345, 0);
 
-    expect(layout.leftIconCount).toBe(6);
-    expect(layout.rightIconCount).toBe(0);
+    expect(layout.leftIconCount).toBe(3);
+    expect(layout.rightIconCount).toBe(3);
     expect(layout.overflowCount).toBe(0);
     expect(layout.tokenCompactLevel).toBe(0);
   });
@@ -121,11 +121,14 @@ describe("compactLayout", () => {
     expect(layout.leftIconCount + layout.rightIconCount).toBe(8);
     expect(layout.overflowCount).toBe(2);
     expect(layout.rightIconCount).toBeGreaterThan(0);
+    expect(Math.abs(layout.leftIconCount - layout.rightIconCount)).toBeLessThanOrEqual(1);
   });
 
   it("prefers full token digits when the right side has room", () => {
     const layout = computeCompactHeaderLayout(NOTCH_14, 2, 8, 12_345, 0);
     expect(layout.tokenCompactLevel).toBe(0);
+    expect(layout.leftIconCount).toBe(1);
+    expect(layout.rightIconCount).toBe(1);
   });
 
   it("allows the full icon range on non-notched displays", () => {
@@ -145,6 +148,14 @@ describe("compactLayout", () => {
     expect(layout.rightIconCount).toBe(0);
     expect(width).toBeLessThanOrEqual(COMPACT_MAX_WINDOW_WIDTH);
     expect(width).toBeGreaterThanOrEqual(120 + COMPACT_HEADER_GAP);
+  });
+
+  it("keeps icons left-packed on non-notched displays", () => {
+    const layout = computeCompactHeaderLayout(NO_NOTCH, 4, 8, 12_345, 0);
+
+    expect(layout.leftIconCount).toBe(4);
+    expect(layout.rightIconCount).toBe(0);
+    expect(layout.overflowCount).toBe(0);
   });
 
   it("includes metrics gap when sessions spill to the right on non-notch displays", () => {
@@ -183,13 +194,13 @@ describe("compactLayout session counts (icon limit = 4, notch)", () => {
 
   it.each([
     { sessions: 1, left: 1, right: 0, overflow: 0, tokenLevel: 0 },
-    { sessions: 2, left: 2, right: 0, overflow: 0, tokenLevel: 0 },
-    { sessions: 3, left: 3, right: 0, overflow: 0, tokenLevel: 0 },
-    { sessions: 4, left: 4, right: 0, overflow: 0, tokenLevel: 0 },
-    { sessions: 5, left: 3, right: 1, overflow: 1, tokenLevel: 0 },
-    { sessions: 6, left: 3, right: 1, overflow: 2, tokenLevel: 0 },
-    { sessions: 8, left: 3, right: 1, overflow: 4, tokenLevel: 0 },
-    { sessions: 10, left: 3, right: 1, overflow: 6, tokenLevel: 0 },
+    { sessions: 2, left: 1, right: 1, overflow: 0, tokenLevel: 0 },
+    { sessions: 3, left: 2, right: 1, overflow: 0, tokenLevel: 0 },
+    { sessions: 4, left: 2, right: 2, overflow: 0, tokenLevel: 0 },
+    { sessions: 5, left: 2, right: 2, overflow: 1, tokenLevel: 0 },
+    { sessions: 6, left: 2, right: 2, overflow: 2, tokenLevel: 0 },
+    { sessions: 8, left: 2, right: 2, overflow: 4, tokenLevel: 0 },
+    { sessions: 10, left: 2, right: 2, overflow: 6, tokenLevel: 0 },
   ])(
     "$sessions sessions → left=$left right=$right +$overflow",
     ({ sessions, left, right, overflow, tokenLevel }) => {
@@ -245,7 +256,7 @@ describe("compactLayout session counts (icon limit = 8, notch)", () => {
     );
   });
 
-  it("fits all visible icons on the left when the notch bar is wide enough", () => {
+  it("balances visible icons across notch wings when the bar is wide enough", () => {
     const layout = computeCompactHeaderLayout(
       NOTCH_14,
       8,
@@ -254,9 +265,10 @@ describe("compactLayout session counts (icon limit = 8, notch)", () => {
       0,
     );
 
-    expect(layout.leftIconCount).toBe(8);
-    expect(layout.rightIconCount).toBe(0);
+    expect(layout.leftIconCount).toBe(4);
+    expect(layout.rightIconCount).toBe(4);
     expect(layout.overflowCount).toBe(0);
+    expect(Math.abs(layout.leftIconCount - layout.rightIconCount)).toBeLessThanOrEqual(1);
   });
 });
 
@@ -264,8 +276,8 @@ describe("compactLayout with pending badge", () => {
   it("still fits 4 sessions with pending count on notch display", () => {
     const layout = computeCompactHeaderLayout(NOTCH_14, 4, 4, 999_999, 3);
 
-    expect(layout.leftIconCount).toBe(4);
-    expect(layout.rightIconCount).toBe(0);
+    expect(layout.leftIconCount).toBe(2);
+    expect(layout.rightIconCount).toBe(2);
     assertLayoutInvariants(NOTCH_14, 4, 4, 999_999, 3, layout);
 
     const width = computeCollapsedWindowWidth(NOTCH_14, 4, 4, 999_999, 3);

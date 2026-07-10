@@ -174,13 +174,17 @@ export function computeCompactHeaderLayout(
       if (rightWidth + COMPACT_NOTCH_INNER_GAP > paneBudgets.right + 0.5) continue;
     }
 
+    // Notch bars should split session icons across both visible wings.
+    // Non-notch bars keep packing left (no invisible center to balance around).
+    const sidePreference = notchMetrics.hasNotch
+      ? -Math.abs(left - right) * 1_000 + left
+      : left * 1_000 + right * 100;
     const score =
       (left + right) * 1_000_000 -
       overflow * 100_000 -
       tokenLevel * 10_000 +
       (tokenLevel === 0 ? 5_000 : 0) +
-      left * 1_000 +
-      right * 100 -
+      sidePreference -
       (overflowOnLeft ? 30_000 : 0);
 
     if (score > bestScore) {
