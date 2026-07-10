@@ -118,10 +118,18 @@ export function usesMicroIslandSync(): boolean {
 }
 
 let localRequests: PermissionRequest[] = [];
+let snapshotInFlight: Promise<IslandSnapshot> | null = null;
 
 export async function getSnapshot(): Promise<IslandSnapshot> {
   if (isTauriRuntime()) {
-    return normalizeSnapshot(await invoke<IslandSnapshot>("get_snapshot"));
+    if (!snapshotInFlight) {
+      snapshotInFlight = invoke<IslandSnapshot>("get_snapshot")
+        .then(normalizeSnapshot)
+        .finally(() => {
+          snapshotInFlight = null;
+        });
+    }
+    return snapshotInFlight;
   }
 
   const demoMode = getDemoMode();

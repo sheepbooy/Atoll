@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Component, Path, PathBuf};
-use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
@@ -393,6 +393,7 @@ struct KnownSession {
 /// minimum data and dropping each guard before acquiring the next lock.
 pub(crate) struct AppState {
     requests: Mutex<Vec<PermissionRequest>>,
+    session_request_totals: Mutex<HashMap<String, usize>>,
     hook_waiters: Mutex<HashMap<String, SyncSender<DecisionWithNote>>>,
     auto_approve_sessions: Mutex<HashSet<String>>,
     compact_width: Mutex<f64>,
@@ -441,10 +442,14 @@ pub(crate) struct AppState {
     last_subagent_snapshot_emit: Mutex<Instant>,
     /// Debounce generation for Cursor observer snapshot emits.
     snapshot_debounce_generation: AtomicU64,
+    snapshot_debounce_worker_running: AtomicBool,
     /// Rate-limiter for subagent transcript reconciliation in build_snapshot.
     last_subagent_reconcile: Mutex<Instant>,
     /// Last hook HTTP activity; used to back off token refresh when idle.
     last_hook_activity: Mutex<Instant>,
+    /// Coalesces token-history persistence so snapshot and hook hot paths never write files.
+    token_history_dirty: AtomicBool,
+    transcript_cache: Mutex<TranscriptCache>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -475,29 +480,19 @@ pub(crate) struct NotchMetrics {
 }
 
 #[tauri::command]
-fn get_snapshot(app: AppHandle, state: State<'_, AppState>) -> IslandSnapshot {
-    roll_over_token_usage_if_needed(&state);
-    refresh_hook_health_cache(&app, &state);
-    let tracked_sessions = {
-        let requests = lock_state(&state.requests);
-        let known_sessions = lock_state(&state.known_sessions);
-        collect_session_transcript_paths(&requests, &known_sessions)
-    };
-    for (session_id, transcript_path, agent) in tracked_sessions {
-        let _ = refresh_session_token_usage(
-            &state,
-            &session_id,
-            Some(transcript_path.as_str()),
-            Some(&agent),
-        );
-    }
-
-    let snapshot = build_snapshot(&app, &state);
-    if let Ok(mut last) = state.last_listening_online.lock() {
-        *last = Some(snapshot.online);
-    }
-    remember_hook_health(&state, &snapshot.hook_health);
-    snapshot
+async fn get_snapshot(app: AppHandle) -> Result<IslandSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        roll_over_token_usage_if_needed(&state);
+        let snapshot = build_snapshot(&app, &state);
+        if let Ok(mut last) = state.last_listening_online.lock() {
+            *last = Some(snapshot.online);
+        }
+        remember_hook_health(&state, &snapshot.hook_health);
+        snapshot
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 /// 任一 Agent hook 已安装且 shim 存在，并且本地 bridge 可连接 → 在线监听。
@@ -531,36 +526,44 @@ pub(crate) fn get_stored_session_host(state: &AppState, session_id: &str) -> pla
 
 pub(crate) fn schedule_observer_snapshot_emit(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let generation = state
+    state
         .snapshot_debounce_generation
-        .fetch_add(1, Ordering::SeqCst)
-        + 1;
+        .fetch_add(1, Ordering::AcqRel);
+    if state
+        .snapshot_debounce_worker_running
+        .swap(true, Ordering::AcqRel)
+    {
+        return;
+    }
     let app = app.clone();
     thread::spawn(move || {
-        thread::sleep(OBSERVER_SNAPSHOT_DEBOUNCE);
-        let state = app.state::<AppState>();
-        if state.snapshot_debounce_generation.load(Ordering::SeqCst) != generation {
-            return;
+        loop {
+            let state = app.state::<AppState>();
+            let before = state.snapshot_debounce_generation.load(Ordering::Acquire);
+            thread::sleep(OBSERVER_SNAPSHOT_DEBOUNCE);
+            if state.snapshot_debounce_generation.load(Ordering::Acquire) != before {
+                continue;
+            }
+            let snapshot = build_snapshot(&app, &state);
+            let _ = app.emit("snapshot-changed", &snapshot);
+            state
+                .snapshot_debounce_worker_running
+                .store(false, Ordering::Release);
+            if state.snapshot_debounce_generation.load(Ordering::Acquire) == before
+                || state
+                    .snapshot_debounce_worker_running
+                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                    .is_err()
+            {
+                break;
+            }
         }
-        let snapshot = build_snapshot(&app, &state);
-        let _ = app.emit("snapshot-changed", &snapshot);
     });
 }
 
 pub(crate) fn refresh_hook_health_cache(app: &AppHandle, state: &AppState) {
     let health = build_hook_health(app);
     remember_hook_health(state, &health);
-}
-
-fn cached_hook_health(app: &AppHandle, state: &AppState) -> HookHealthSnapshot {
-    if let Ok(last) = state.last_hook_health.lock() {
-        if let Some(cached) = last.as_ref() {
-            return cached.clone();
-        }
-    }
-    let health = build_hook_health(app);
-    remember_hook_health(state, &health);
-    health
 }
 
 pub(crate) fn reconcile_incomplete_subagents_now(state: &AppState) {
@@ -589,26 +592,35 @@ fn reconcile_incomplete_subagents_if_due(state: &AppState) {
     }
 }
 
-pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapshot {
+pub(crate) fn build_snapshot(_app: &AppHandle, state: &AppState) -> IslandSnapshot {
     prune_active_subagents(state);
-    roll_over_token_usage_if_needed(state);
-    reconcile_incomplete_subagents_if_due(state);
-    backfill_cursor_session_metadata(state);
-    let requests = lock_state(&state.requests);
-    let last_seen = lock_state(&state.session_last_seen);
+    // Clone each state component independently. No file, network, or process
+    // operations are allowed in this path.
+    let requests = lock_state(&state.requests).clone();
+    let last_seen = lock_state(&state.session_last_seen).clone();
     let retention = *lock_state(&state.session_retention_secs);
-    let token_usage = lock_state(&state.session_token_usage);
-    let token_usage_by_model = lock_state(&state.session_token_usage_by_model);
-    let known_sessions = lock_state(&state.known_sessions);
-    let pinned = lock_state(&state.pinned_sessions);
+    let token_usage = lock_state(&state.session_token_usage).clone();
+    let token_usage_by_model = lock_state(&state.session_token_usage_by_model).clone();
+    let known_sessions = lock_state(&state.known_sessions).clone();
+    let pinned = lock_state(&state.pinned_sessions).clone();
     let cursor_subagent_conversation_ids: HashSet<String> = lock_state(
         &state.cursor_subagent_conversations,
     )
     .keys()
     .cloned()
     .collect();
-    let online = compute_listening_online(app);
-    let hook_health = cached_hook_health(app, state);
+    let online = state
+        .last_listening_online
+        .lock()
+        .ok()
+        .and_then(|value| *value)
+        .unwrap_or_else(capture::listening_online);
+    let hook_health = state
+        .last_hook_health
+        .lock()
+        .ok()
+        .and_then(|value| value.clone())
+        .unwrap_or_default();
     let mut snapshot = snapshot_from(
         &requests,
         &last_seen,
@@ -619,10 +631,12 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
         online,
         &cursor_subagent_conversation_ids,
     );
-    drop(pinned);
-    drop(known_sessions);
-    // Scope token aggregation locks: sync_today_to_history below re-acquires
-    // absolute_token_sessions; holding the guard here deadlocks the main thread.
+    let session_request_totals = lock_state(&state.session_request_totals).clone();
+    for session in &mut snapshot.sessions {
+        if let Some(total) = session_request_totals.get(&session.session_id) {
+            session.total_count = session.total_count.max(*total);
+        }
+    }
     {
         let startup_floor = *state
             .startup_daily_floor
@@ -652,26 +666,20 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
         snapshot.active_session_tokens_by_model =
             aggregate_usage_by_model(&token_usage_by_model, Some(&active_ids));
     }
-    drop(token_usage_by_model);
-    drop(token_usage);
-    drop(last_seen);
-    drop(requests);
     let subagent_retention = *lock_state(&state.subagent_retention_secs);
     let now_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let active_subagents = lock_state(&state.active_subagents);
+    let active_subagents = lock_state(&state.active_subagents).clone();
     assign_active_subagents_to_sessions(
         &mut snapshot.sessions,
         &active_subagents,
         subagent_retention,
         now_secs,
     );
-    drop(active_subagents);
     persist_session_hosts(state, &snapshot.sessions);
     snapshot.hook_health = hook_health;
-    let _ = token_history::sync_today_to_history(state);
 
     snapshot
 }
@@ -1180,8 +1188,8 @@ fn resolve_permission_request(
     }
 
     touch_session_activity(&state, &session_id);
-    roll_over_token_usage_if_needed(&state);
     drop(requests);
+    roll_over_token_usage_if_needed(&state);
     let snapshot = build_snapshot(&app, &state);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
@@ -1228,8 +1236,8 @@ fn resolve_permission_with_input(
     }
 
     touch_session_activity(&state, &session_id);
-    roll_over_token_usage_if_needed(&state);
     drop(requests);
+    roll_over_token_usage_if_needed(&state);
     let snapshot = build_snapshot(&app, &state);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
@@ -1309,7 +1317,9 @@ async fn set_island_presentation(
                     let _ = sync_tx.send(result);
                 })
                 .map_err(|error| error.to_string())?;
-            let home = sync_rx.recv().map_err(|error| error.to_string())??;
+            let home = sync_rx
+                .recv_timeout(Duration::from_secs(2))
+                .map_err(|error| format!("main-thread presentation timed out: {error}"))??;
             if let Some(home) = home {
                 if let Ok(mut home_bounds) = state.home_bounds.lock() {
                     *home_bounds = Some(home);
@@ -1389,8 +1399,8 @@ fn archive_request(
     if let Some(request) = requests.iter_mut().find(|r| r.id == id) {
         request.archived = true;
     }
-    roll_over_token_usage_if_needed(&state);
     drop(requests);
+    roll_over_token_usage_if_needed(&state);
     let snapshot = build_snapshot(&app, &state);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
@@ -1419,7 +1429,28 @@ struct ChatMessage {
 }
 
 const TRANSCRIPT_MAX_MESSAGES: usize = 50;
+const TRANSCRIPT_CACHE_MAX_ENTRIES: usize = 128;
+const TRANSCRIPT_INITIAL_TAIL_BYTES: u64 = 8 * 1024 * 1024;
+const TRANSCRIPT_MESSAGE_MAX_CHARS: usize = 64 * 1024;
+const TRANSCRIPT_TOOL_INPUT_MAX_BYTES: usize = 256 * 1024;
 const TRANSCRIPT_EXTENSIONS: &[&str] = &["jsonl", "json"];
+
+#[derive(Clone)]
+struct TranscriptCacheEntry {
+    file_len: u64,
+    modified: Option<std::time::SystemTime>,
+    read_offset: u64,
+    carry: Vec<u8>,
+    format: transcript::TranscriptFormat,
+    messages: VecDeque<ChatMessage>,
+    last_access: u64,
+}
+
+#[derive(Default)]
+struct TranscriptCache {
+    entries: HashMap<PathBuf, TranscriptCacheEntry>,
+    access_clock: u64,
+}
 
 fn has_parent_dir_component(path: &Path) -> bool {
     path.components()
@@ -1515,119 +1546,186 @@ fn push_transcript_message(messages: &mut VecDeque<ChatMessage>, message: ChatMe
     }
 }
 
-fn read_transcript_messages(transcript_path: &str) -> Result<Vec<ChatMessage>, String> {
-    use std::fs::File;
-    use std::io::{BufRead, BufReader};
+fn truncate_transcript_content(content: String) -> String {
+    if content.chars().count() <= TRANSCRIPT_MESSAGE_MAX_CHARS {
+        return content;
+    }
+    let mut truncated: String = content.chars().take(TRANSCRIPT_MESSAGE_MAX_CHARS).collect();
+    truncated.push_str("\n… [message truncated by Atoll]");
+    truncated
+}
 
-    let format = transcript::detect_transcript_format(transcript_path);
-    let file = File::open(transcript_path).map_err(|e| format!("Cannot open transcript: {e}"))?;
-    let reader = BufReader::new(file);
-
-    let mut messages: VecDeque<ChatMessage> = VecDeque::new();
-
+fn parse_transcript_line(
+    format: transcript::TranscriptFormat,
+    line: &str,
+) -> Option<ChatMessage> {
     if format == transcript::TranscriptFormat::Codex {
-        for line in reader.lines() {
-            let line = line.map_err(|e| format!("Read error: {e}"))?;
-            if let Some(parsed) = transcript::parse_codex_message_line(&line) {
-                push_transcript_message(
-                    &mut messages,
-                    ChatMessage {
-                        role: parsed.role,
-                        content: parsed.content,
-                        tool_name: parsed.tool_name,
-                        tool_input: None,
-                    },
-                );
-            }
-        }
+        let parsed = transcript::parse_codex_message_line(line)?;
+        return Some(ChatMessage {
+            role: parsed.role,
+            content: truncate_transcript_content(parsed.content),
+            tool_name: parsed.tool_name,
+            tool_input: None,
+        });
+    }
+
+    let entry: Value = serde_json::from_str(line.trim()).ok()?;
+    let role = entry
+        .get("type")
+        .and_then(Value::as_str)
+        .or_else(|| entry.get("role").and_then(Value::as_str))?;
+    let role = match role {
+        "human" | "user" => "user",
+        "assistant" => "assistant",
+        _ => return None,
+    };
+    let content = truncate_transcript_content(extract_transcript_text(&entry));
+    let (tool_name, mut tool_input) = if role == "assistant" {
+        extract_tool_use_from_entry(&entry)
     } else {
-        for line in reader.lines() {
-            let line = line.map_err(|e| format!("Read error: {e}"))?;
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
+        (None, None)
+    };
+    if tool_input.as_ref().is_some_and(|input| {
+        serde_json::to_vec(input)
+            .map(|bytes| bytes.len() > TRANSCRIPT_TOOL_INPUT_MAX_BYTES)
+            .unwrap_or(true)
+    }) {
+        tool_input = Some(json!({ "truncated": true }));
+    }
+    if content.is_empty() && tool_name.is_none() {
+        return None;
+    }
+    Some(ChatMessage {
+        role: role.into(),
+        content,
+        tool_name,
+        tool_input,
+    })
+}
 
-            let entry: Value = match serde_json::from_str(trimmed) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
+fn format_from_transcript_bytes(bytes: &[u8]) -> transcript::TranscriptFormat {
+    String::from_utf8_lossy(bytes)
+        .lines()
+        .find_map(transcript::detect_transcript_format_from_line)
+        .unwrap_or(transcript::TranscriptFormat::Claude)
+}
 
-            if let Some(msg_type) = entry.get("type").and_then(Value::as_str) {
-                match msg_type {
-                    "human" | "user" => {
-                        let content = extract_transcript_text(&entry);
-                        if !content.is_empty() {
-                            push_transcript_message(
-                                &mut messages,
-                                ChatMessage {
-                                    role: "user".into(),
-                                    content,
-                                    tool_name: None,
-                                    tool_input: None,
-                                },
-                            );
-                        }
-                    }
-                    "assistant" => {
-                        let content = extract_transcript_text(&entry);
-                        let (tool_name, tool_input) = extract_tool_use_from_entry(&entry);
-                        if !content.is_empty() || tool_name.is_some() {
-                            push_transcript_message(
-                                &mut messages,
-                                ChatMessage {
-                                    role: "assistant".into(),
-                                    content,
-                                    tool_name,
-                                    tool_input,
-                                },
-                            );
-                        }
-                    }
-                    _ => {}
-                }
-                continue;
-            }
+fn parse_transcript_bytes(entry: &mut TranscriptCacheEntry, bytes: &[u8]) {
+    let mut combined = std::mem::take(&mut entry.carry);
+    combined.extend_from_slice(bytes);
+    let complete_len = combined
+        .iter()
+        .rposition(|byte| *byte == b'\n')
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    for line in String::from_utf8_lossy(&combined[..complete_len]).lines() {
+        if let Some(message) = parse_transcript_line(entry.format, line) {
+            push_transcript_message(&mut entry.messages, message);
+        }
+    }
+    entry.carry = combined[complete_len..].to_vec();
+}
 
-            // Cursor transcripts: top-level "role" instead of "type"
-            if let Some(role) = entry.get("role").and_then(Value::as_str) {
-                match role {
-                    "user" => {
-                        let content = extract_transcript_text(&entry);
-                        if !content.is_empty() {
-                            push_transcript_message(
-                                &mut messages,
-                                ChatMessage {
-                                    role: "user".into(),
-                                    content,
-                                    tool_name: None,
-                                    tool_input: None,
-                                },
-                            );
-                        }
-                    }
-                    "assistant" => {
-                        let content = extract_transcript_text(&entry);
-                        let (tool_name, tool_input) = extract_tool_use_from_entry(&entry);
-                        if !content.is_empty() || tool_name.is_some() {
-                            push_transcript_message(
-                                &mut messages,
-                                ChatMessage {
-                                    role: "assistant".into(),
-                                    content,
-                                    tool_name,
-                                    tool_input,
-                                },
-                            );
-                        }
-                    }
-                    _ => {}
-                }
-            }
+fn read_transcript_messages_cached(
+    state: &AppState,
+    transcript_path: &Path,
+) -> Result<Vec<ChatMessage>, String> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let metadata = std::fs::metadata(transcript_path)
+        .map_err(|error| format!("Cannot stat transcript: {error}"))?;
+    let file_len = metadata.len();
+    let modified = metadata.modified().ok();
+    let cached = state
+        .transcript_cache
+        .lock()
+        .ok()
+        .and_then(|cache| cache.entries.get(transcript_path).cloned());
+
+    if let Some(entry) = cached.as_ref() {
+        if entry.file_len == file_len
+            && entry.read_offset >= file_len
+            && entry.modified == modified
+        {
+            return Ok(entry.messages.iter().cloned().collect());
         }
     }
 
-    Ok(messages.into_iter().collect())
+    let append_only = cached
+        .as_ref()
+        .is_some_and(|entry| {
+            file_len > entry.file_len && entry.read_offset == entry.file_len
+        });
+    let start = if append_only {
+        cached.as_ref().map(|entry| entry.read_offset).unwrap_or(0)
+    } else {
+        file_len.saturating_sub(TRANSCRIPT_INITIAL_TAIL_BYTES)
+    };
+    let mut file = std::fs::File::open(transcript_path)
+        .map_err(|error| format!("Cannot open transcript: {error}"))?;
+    file.seek(SeekFrom::Start(start))
+        .map_err(|error| format!("Cannot seek transcript: {error}"))?;
+    let mut bytes = Vec::with_capacity((file_len - start).min(TRANSCRIPT_INITIAL_TAIL_BYTES) as usize);
+    file.take(TRANSCRIPT_INITIAL_TAIL_BYTES)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("Cannot read transcript: {error}"))?;
+    let next_offset = start.saturating_add(bytes.len() as u64);
+
+    if !append_only && start > 0 {
+        if let Some(newline) = bytes.iter().position(|byte| *byte == b'\n') {
+            bytes.drain(..=newline);
+        } else {
+            bytes.clear();
+        }
+    }
+
+    let format = cached
+        .as_ref()
+        .filter(|_| append_only)
+        .map(|entry| entry.format)
+        .unwrap_or_else(|| format_from_transcript_bytes(&bytes));
+    let mut entry = if append_only {
+        cached.unwrap()
+    } else {
+        TranscriptCacheEntry {
+            file_len,
+            modified,
+            read_offset: start,
+            carry: Vec::new(),
+            format,
+            messages: VecDeque::new(),
+            last_access: 0,
+        }
+    };
+    parse_transcript_bytes(&mut entry, &bytes);
+    if next_offset >= file_len && !entry.carry.is_empty() {
+        let final_line = String::from_utf8_lossy(&entry.carry).into_owned();
+        if let Some(message) = parse_transcript_line(entry.format, &final_line) {
+            push_transcript_message(&mut entry.messages, message);
+            entry.carry.clear();
+        }
+    }
+    entry.file_len = next_offset;
+    entry.modified = modified;
+    entry.read_offset = next_offset;
+
+    let result: Vec<ChatMessage> = entry.messages.iter().cloned().collect();
+    if let Ok(mut cache) = state.transcript_cache.lock() {
+        cache.access_clock = cache.access_clock.wrapping_add(1);
+        entry.last_access = cache.access_clock;
+        cache.entries.insert(transcript_path.to_path_buf(), entry);
+        if cache.entries.len() > TRANSCRIPT_CACHE_MAX_ENTRIES {
+            if let Some(oldest) = cache
+                .entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_access)
+                .map(|(path, _)| path.clone())
+            {
+                cache.entries.remove(&oldest);
+            }
+        }
+    }
+    Ok(result)
 }
 
 /// Resolve a session's transcript file, checking known state, requests, and on-disk discovery.
@@ -1668,18 +1766,11 @@ fn resolve_session_transcript_path_from_snapshot(
     known_sessions: &HashMap<String, KnownSession>,
     requests: &[PermissionRequest],
     session_id: &str,
-    agent: &AgentKind,
+    _agent: &AgentKind,
 ) -> Option<String> {
     if let Some(entry) = known_sessions.get(session_id) {
         if let Some(path) = entry.transcript_path.clone() {
             return Some(path);
-        }
-        if matches!(agent, AgentKind::Cursor) {
-            if let Some(ref conv_id) = entry.conversation_id {
-                if let Some((path, _)) = discover_cursor_agent_transcript(conv_id) {
-                    return Some(path);
-                }
-            }
         }
     }
 
@@ -1691,11 +1782,7 @@ fn resolve_session_transcript_path_from_snapshot(
         }
     }
 
-    if matches!(agent, AgentKind::Cursor) {
-        discover_cursor_agent_transcript(session_id).map(|(path, _)| path)
-    } else {
-        None
-    }
+    None
 }
 
 fn persist_session_transcript_path(state: &AppState, session_id: &str, path: &str) {
@@ -1716,25 +1803,33 @@ fn persist_session_transcript_path(state: &AppState, session_id: &str, path: &st
 }
 
 #[tauri::command]
-fn get_session_transcript(
-    state: State<'_, AppState>,
+async fn get_session_transcript(
+    app: AppHandle,
     transcript_path: String,
 ) -> Result<Vec<ChatMessage>, String> {
-    let canonical = validate_trusted_transcript_path(&state, &transcript_path)?;
-    read_transcript_messages(&canonical.to_string_lossy())
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let canonical = validate_trusted_transcript_path(&state, &transcript_path)?;
+        read_transcript_messages_cached(&state, &canonical)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-fn get_session_chat(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<Vec<ChatMessage>, String> {
-    let requests = lock_state(&state.requests);
-    let path = resolve_session_transcript_path(&state, &session_id, &requests)
-        .ok_or_else(|| format!("No transcript found for session {session_id}"))?;
-    drop(requests);
-    persist_session_transcript_path(&state, &session_id, &path);
-    read_transcript_messages(&path)
+async fn get_session_chat(app: AppHandle, session_id: String) -> Result<Vec<ChatMessage>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let requests = lock_state(&state.requests).clone();
+        let path = resolve_session_transcript_path(&state, &session_id, &requests)
+            .ok_or_else(|| format!("No transcript found for session {session_id}"))?;
+        persist_session_transcript_path(&state, &session_id, &path);
+        let canonical = std::fs::canonicalize(&path)
+            .map_err(|error| format!("Cannot resolve transcript path: {error}"))?;
+        read_transcript_messages_cached(&state, &canonical)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 fn extract_transcript_text(entry: &Value) -> String {
@@ -2099,7 +2194,7 @@ pub(crate) fn refresh_session_token_usage(
         }
     }
 
-    token_history::sync_today_to_history(state)?;
+    state.token_history_dirty.store(true, Ordering::Release);
 
     Ok(())
 }
@@ -2180,7 +2275,7 @@ pub(crate) fn ingest_cursor_token_usage_from_payload(
             .or_insert_with(|| token_history::agent_kind_key(&AgentKind::Cursor));
     }
 
-    token_history::sync_today_to_history(state)?;
+    state.token_history_dirty.store(true, Ordering::Release);
     Ok(())
 }
 
@@ -2438,6 +2533,9 @@ fn archive_session(
     }
     if let Ok(mut last_seen) = state.session_last_seen.lock() {
         last_seen.remove(&session_id);
+    }
+    if let Ok(mut totals) = state.session_request_totals.lock() {
+        totals.remove(&session_id);
     }
     // Keep session_token_usage so archived sessions still count toward daily totals.
     roll_over_token_usage_if_needed(&state);
@@ -2708,6 +2806,9 @@ pub(crate) fn purge_tracked_session(
     if let Ok(mut last_seen) = state.session_last_seen.lock() {
         last_seen.remove(session_id);
     }
+    if let Ok(mut totals) = state.session_request_totals.lock() {
+        totals.remove(session_id);
+    }
     // Keep session_token_usage so auto-archived / retention-purged sessions still
     // count toward daily totals until UTC day rollover.
     if let Some(path) = transcript_path {
@@ -2839,7 +2940,7 @@ pub(crate) fn store_session_host(state: &AppState, session_id: &str, host: platf
 fn session_host_for_summary(
     known_sessions: &HashMap<String, KnownSession>,
     session_id: &str,
-    cwd: &str,
+    _cwd: &str,
     agent: &AgentKind,
 ) -> platform::SessionHost {
     match agent {
@@ -2854,13 +2955,6 @@ fn session_host_for_summary(
                     }
                 }
             }
-            let detected = platform::detect_claude_session_host(cwd);
-            if detected != platform::SessionHost::Unknown {
-                return detected;
-            }
-            if platform::is_claude_desktop_app_running() && !platform::frontmost_is_terminal() {
-                return platform::SessionHost::ClaudeDesktop;
-            }
             platform::SessionHost::Unknown
         }
         AgentKind::Codex => {
@@ -2874,13 +2968,6 @@ fn session_host_for_summary(
                     }
                 }
             }
-            let detected = platform::detect_codex_session_host(cwd);
-            if detected != platform::SessionHost::Unknown {
-                return detected;
-            }
-            if platform::is_codex_desktop_app_running() && !platform::frontmost_is_terminal() {
-                return platform::SessionHost::CodexDesktop;
-            }
             platform::SessionHost::Unknown
         }
         AgentKind::Cursor => {
@@ -2889,12 +2976,40 @@ fn session_host_for_summary(
                     return entry.host;
                 }
             }
-            if platform::is_cursor_app_running() {
-                return platform::SessionHost::CursorIde;
-            }
             platform::SessionHost::Unknown
         }
         _ => platform::SessionHost::Unknown,
+    }
+}
+
+/// Resolve unknown session hosts away from snapshot/IPC paths. Platform host
+/// detection may launch `ps`, `lsof`, or `tasklist`, so it belongs on the
+/// maintenance worker rather than the webview thread.
+fn refresh_unknown_session_hosts(state: &AppState) {
+    let candidates: Vec<(String, AgentKind, String)> = state
+        .known_sessions
+        .lock()
+        .ok()
+        .map(|known| {
+            known
+                .iter()
+                .filter(|(_, info)| info.host == platform::SessionHost::Unknown)
+                .take(16)
+                .map(|(id, info)| (id.clone(), info.agent.clone(), info.cwd.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    for (session_id, agent, cwd) in candidates {
+        let host = match agent {
+            AgentKind::Claude => platform::detect_claude_session_host(&cwd),
+            AgentKind::Codex => platform::detect_codex_session_host(&cwd),
+            AgentKind::Cursor => platform::detect_cursor_session_host(),
+            _ => platform::SessionHost::Unknown,
+        };
+        if host != platform::SessionHost::Unknown {
+            store_session_host(state, &session_id, host);
+        }
     }
 }
 
@@ -3683,6 +3798,18 @@ pub(crate) fn register_subagent_start(
 
     if let Ok(mut subagents) = state.active_subagents.lock() {
         if !subagents.iter().any(|s| s.agent_id == subagent.agent_id) {
+            if subagents.len() >= MAX_ACTIVE_SUBAGENTS {
+                subagents.retain(|existing| {
+                    !existing.archived && existing.completed_at.is_none()
+                });
+            }
+            if subagents.len() >= MAX_ACTIVE_SUBAGENTS {
+                eprintln!(
+                    "Atoll ignored subagent {}: active subagent limit reached",
+                    subagent.agent_id
+                );
+                return;
+            }
             subagents.push(subagent);
         }
     }
@@ -4796,22 +4923,15 @@ fn resolve_node_executable() -> Result<String, String> {
 
     #[cfg(not(windows))]
     {
-        let output = std::process::Command::new("sh")
-            .args(["-lc", "command -v node"])
-            .output()
-            .map_err(|error| format!("Cannot locate node: {error}"))?;
-        if !output.status.success() {
-            return Err(
-                "Node.js not found. Install Node.js and ensure it is on PATH, then retry.".into(),
-            );
+        if let Some(path_var) = std::env::var_os("PATH") {
+            for directory in std::env::split_paths(&path_var) {
+                let candidate = directory.join("node");
+                if candidate.is_file() {
+                    return Ok(normalize_hook_script_path(&candidate.to_string_lossy()));
+                }
+            }
         }
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if path.is_empty() || !std::path::Path::new(&path).exists() {
-            return Err(
-                "Node.js not found. Install Node.js and ensure it is on PATH, then retry.".into(),
-            );
-        }
-        Ok(normalize_hook_script_path(&path))
+        Err("Node.js not found. Install Node.js and ensure it is on PATH, then retry.".into())
     }
 }
 
@@ -5896,32 +6016,44 @@ fn has_atoll_cursor_hooks(config: &Value) -> bool {
 }
 
 #[tauri::command]
-fn open_in_terminal(cwd: String) -> Result<(), String> {
-    platform::open_in_terminal(&cwd)
+async fn open_in_terminal(cwd: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || platform::open_in_terminal(&cwd))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-fn focus_claude_app(app: AppHandle) -> Result<(), String> {
-    platform::focus_claude_app(&app)
+async fn focus_claude_app(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || platform::focus_claude_app(&app))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-fn open_url(app: AppHandle, url: String) -> Result<(), String> {
-    platform::open_url(&app, &url)
+async fn open_url(app: AppHandle, url: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || platform::open_url(&app, &url))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-fn is_autostart_enabled() -> Result<bool, String> {
-    platform::autostart::is_enabled()
+async fn is_autostart_enabled() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(platform::autostart::is_enabled)
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-fn set_autostart_enabled(enabled: bool) -> Result<(), String> {
-    if enabled {
-        platform::autostart::enable()
-    } else {
-        platform::autostart::disable()
-    }
+async fn set_autostart_enabled(enabled: bool) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if enabled {
+            platform::autostart::enable()
+        } else {
+            platform::autostart::disable()
+        }
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -5930,31 +6062,39 @@ fn quit_atoll(app: AppHandle) {
 }
 
 #[tauri::command]
-fn deactivate_atoll(
+async fn deactivate_atoll(
     app: AppHandle,
-    state: State<'_, AppState>,
     agent: Option<String>,
     session: Option<String>,
     cwd: Option<String>,
-) {
-    platform::restore_focus_after_approval(
-        &app,
-        &state,
-        agent.as_deref(),
-        session.as_deref(),
-        cwd.as_deref(),
-    );
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        platform::restore_focus_after_approval(
+            &app,
+            &state,
+            agent.as_deref(),
+            session.as_deref(),
+            cwd.as_deref(),
+        );
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-fn open_agent_app(
+async fn open_agent_app(
     app: AppHandle,
-    state: State<'_, AppState>,
     agent: String,
     cwd: String,
     session: Option<String>,
 ) -> Result<(), String> {
-    platform::open_agent_app(&app, &state, &agent, &cwd, session.as_deref())
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        platform::open_agent_app(&app, &state, &agent, &cwd, session.as_deref())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 pub fn run() {
@@ -5962,6 +6102,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
             requests: Mutex::new(Vec::new()),
+            session_request_totals: Mutex::new(HashMap::new()),
             hook_waiters: Mutex::new(HashMap::new()),
             auto_approve_sessions: Mutex::new(HashSet::new()),
             compact_width: Mutex::new(COMPACT_WINDOW_WIDTH),
@@ -5994,8 +6135,11 @@ pub fn run() {
             cursor_lifecycle_token_sessions: Mutex::new(HashSet::new()),
             last_subagent_snapshot_emit: Mutex::new(Instant::now() - Duration::from_secs(10)),
             snapshot_debounce_generation: AtomicU64::new(0),
+            snapshot_debounce_worker_running: AtomicBool::new(false),
             last_subagent_reconcile: Mutex::new(Instant::now() - Duration::from_secs(10)),
             last_hook_activity: Mutex::new(Instant::now()),
+            token_history_dirty: AtomicBool::new(false),
+            transcript_cache: Mutex::new(TranscriptCache::default()),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -6068,6 +6212,8 @@ pub fn run() {
             }
             start_auto_archive_timer(app.handle().clone());
             start_token_refresh_timer(app.handle().clone());
+            start_token_history_writer(app.handle().clone());
+            start_initial_maintenance(app.handle().clone());
             std::thread::spawn(|| {
                 pricing::maybe_refresh_pricing_catalog_on_startup();
             });
@@ -6163,6 +6309,37 @@ fn tray_menu_entries() -> [(&'static str, &'static str); 2] {
 
 const AUTO_ARCHIVE_INTERVAL: Duration = Duration::from_secs(10);
 const TOKEN_SNAPSHOT_MIN_INTERVAL: Duration = Duration::from_secs(2);
+const TOKEN_HISTORY_WRITE_INTERVAL: Duration = Duration::from_secs(2);
+
+fn start_token_history_writer(app: AppHandle) {
+    thread::spawn(move || loop {
+        thread::sleep(TOKEN_HISTORY_WRITE_INTERVAL);
+        let state = app.state::<AppState>();
+        if !state.token_history_dirty.swap(false, Ordering::AcqRel) {
+            continue;
+        }
+        if let Err(error) = token_history::sync_today_to_history(&state) {
+            state.token_history_dirty.store(true, Ordering::Release);
+            eprintln!("Atoll token history sync failed: {error}");
+        }
+    });
+}
+
+fn start_initial_maintenance(app: AppHandle) {
+    thread::spawn(move || {
+        let state = app.state::<AppState>();
+        reconcile_incomplete_subagents_now(&state);
+        backfill_cursor_session_metadata(&state);
+        refresh_unknown_session_hosts(&state);
+        refresh_hook_health_cache(&app, &state);
+        let online = compute_listening_online(&app);
+        if let Ok(mut last) = state.last_listening_online.lock() {
+            *last = Some(online);
+        }
+        let snapshot = build_snapshot(&app, &state);
+        let _ = app.emit("snapshot-changed", &snapshot);
+    });
+}
 
 fn start_auto_archive_timer(app: AppHandle) {
     thread::spawn(move || loop {
@@ -6274,6 +6451,10 @@ fn start_auto_archive_timer(app: AppHandle) {
         for (session_id, transcript_path) in expired {
             purge_tracked_session(&state, &session_id, transcript_path.as_deref());
         }
+
+        reconcile_incomplete_subagents_if_due(&state);
+        backfill_cursor_session_metadata(&state);
+        refresh_unknown_session_hosts(&state);
 
         if changed {
             roll_over_token_usage_if_needed(&state);
@@ -6414,6 +6595,8 @@ fn parse_iso_timestamp_secs(iso: &str) -> u64 {
 }
 
 fn exit_atoll(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let _ = token_history::sync_today_to_history(&state);
     app.cleanup_before_exit();
     std::process::exit(0);
 }
@@ -6727,6 +6910,18 @@ fn animate_island_window_mode(
         );
 
         platform::set_island_window_frame(window, position, size, scale_factor, home_bounds)?;
+        #[cfg(target_os = "macos")]
+        {
+            // Back-pressure AppKit frame delivery. Without this acknowledgement,
+            // rapid expand/collapse cycles can enqueue dozens of stale frames.
+            let (frame_tx, frame_rx) = std::sync::mpsc::sync_channel::<()>(0);
+            window.run_on_main_thread(move || {
+                let _ = frame_tx.send(());
+            })?;
+            if frame_rx.recv_timeout(Duration::from_millis(250)).is_err() {
+                return Ok(());
+            }
+        }
 
         if progress >= 1.0 {
             // #region agent log
@@ -6759,7 +6954,7 @@ fn animate_island_window_mode(
     let _ = window.run_on_main_thread(move || {
         let _ = sync_tx.send(());
     });
-    let _ = sync_rx.recv();
+    let _ = sync_rx.recv_timeout(Duration::from_secs(2));
 
     platform::set_island_cursor_events_ignored(window, is_collapsed_pass_through_mode(mode));
     Ok(())
@@ -7007,11 +7202,9 @@ fn snapshot_from(
             if excluded_session_ids.contains(&request.session) {
                 continue;
             }
-            if is_codex_internal_session(
-                &request.agent,
-                &request.cwd,
-                request.transcript_path.as_deref(),
-            ) {
+            if matches!(request.agent, AgentKind::Codex)
+                && is_codex_internal_cwd(&request.cwd)
+            {
                 continue;
             }
             // Pinned sessions are always retained regardless of time.
@@ -7083,7 +7276,7 @@ fn snapshot_from(
             if excluded_session_ids.contains(session_id) {
                 continue;
             }
-            if is_codex_internal_session(&info.agent, &info.cwd, info.transcript_path.as_deref()) {
+            if matches!(info.agent, AgentKind::Codex) && is_codex_internal_cwd(&info.cwd) {
                 continue;
             }
             // Cursor observer hooks often omit workspace_roots; skip ghost rows until
@@ -7175,11 +7368,7 @@ fn build_session_summaries(visible: &[&PermissionRequest]) -> Vec<SessionSummary
         HashMap::new();
 
     for request in visible {
-        if is_codex_internal_session(
-            &request.agent,
-            &request.cwd,
-            request.transcript_path.as_deref(),
-        ) {
+        if matches!(request.agent, AgentKind::Codex) && is_codex_internal_cwd(&request.cwd) {
             continue;
         }
         let entry = session_map.entry(&request.session).or_insert_with(|| {
@@ -7658,14 +7847,129 @@ mod core_tests {
         }
         std::fs::write(&transcript_path, content).expect("write transcript");
 
-        let messages =
-            read_transcript_messages(&transcript_path.to_string_lossy()).expect("read messages");
+        let state = test_app_state();
+        let messages = read_transcript_messages_cached(&state, &transcript_path)
+            .expect("read messages");
 
         assert_eq!(messages.len(), TRANSCRIPT_MAX_MESSAGES);
         assert_eq!(messages[0].content, "message 25");
         assert_eq!(messages[TRANSCRIPT_MAX_MESSAGES - 1].content, "message 74");
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn transcript_cache_reads_appends_and_recovers_from_truncation() {
+        use std::io::Write;
+
+        let dir = std::env::temp_dir().join(format!(
+            "atoll-transcript-cache-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("session.jsonl");
+        std::fs::write(
+            &path,
+            "{\"type\":\"assistant\",\"message\":{\"content\":\"first\"}}\n",
+        )
+        .expect("initial transcript");
+        let state = test_app_state();
+        let first = read_transcript_messages_cached(&state, &path).expect("first read");
+        assert_eq!(first.len(), 1);
+
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .expect("append transcript");
+        writeln!(
+            file,
+            "{{\"type\":\"assistant\",\"message\":{{\"content\":\"second\"}}}}"
+        )
+        .expect("append line");
+        let appended = read_transcript_messages_cached(&state, &path).expect("append read");
+        assert_eq!(appended.len(), 2);
+        assert_eq!(appended[1].content, "second");
+
+        std::fs::write(
+            &path,
+            "{\"type\":\"assistant\",\"message\":{\"content\":\"reset\"}}\n",
+        )
+        .expect("truncate transcript");
+        let reset = read_transcript_messages_cached(&state, &path).expect("reset read");
+        assert_eq!(reset.len(), 1);
+        assert_eq!(reset[0].content, "reset");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn transcript_cache_bounds_initial_read_for_large_file() {
+        use std::io::{Seek, SeekFrom, Write};
+
+        let dir = std::env::temp_dir().join(format!(
+            "atoll-large-transcript-cache-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("large.jsonl");
+        let mut file = std::fs::File::create(&path).expect("large transcript");
+        file.set_len(100 * 1024 * 1024).expect("sparse transcript");
+        file.seek(SeekFrom::End(0)).expect("seek end");
+        writeln!(
+            file,
+            "\n{{\"type\":\"assistant\",\"message\":{{\"content\":\"tail\"}}}}"
+        )
+        .expect("tail message");
+        drop(file);
+
+        let state = test_app_state();
+        let messages = read_transcript_messages_cached(&state, &path).expect("bounded read");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].content, "tail");
+        let cached = state.transcript_cache.lock().expect("cache");
+        let entry = cached.entries.get(&path).expect("cache entry");
+        assert_eq!(entry.read_offset, std::fs::metadata(&path).unwrap().len());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn rollover_completes_while_requests_mutex_is_held() {
+        let _env = TOKEN_HISTORY_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let path = std::env::temp_dir().join(format!(
+            "atoll-rollover-lock-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        std::env::set_var("ATOLL_TOKEN_HISTORY_PATH", &path);
+
+        let state = Arc::new(test_app_state());
+        *state.token_usage_day.lock().expect("day") = "2000-01-01".into();
+        state.session_token_usage.lock().expect("usage").insert(
+            "session-a".into(),
+            TokenUsage {
+                input_tokens: 1,
+                ..TokenUsage::default()
+            },
+        );
+        state
+            .session_agent_map
+            .lock()
+            .expect("agent map")
+            .insert("session-a".into(), "codex".into());
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let worker_state = Arc::clone(&state);
+        std::thread::spawn(move || {
+            let _requests = worker_state.requests.lock().expect("requests");
+            roll_over_token_usage_if_needed(&worker_state);
+            let _ = tx.send(());
+        });
+        assert!(rx.recv_timeout(Duration::from_secs(2)).is_ok());
+
+        std::env::remove_var("ATOLL_TOKEN_HISTORY_PATH");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("json.bak"));
+        let _ = std::fs::remove_file(path.with_extension("json.tmp"));
     }
 
     #[test]
@@ -8369,6 +8673,7 @@ mod core_tests {
     fn test_app_state() -> AppState {
         AppState {
             requests: Mutex::new(Vec::new()),
+            session_request_totals: Mutex::new(HashMap::new()),
             hook_waiters: Mutex::new(HashMap::new()),
             auto_approve_sessions: Mutex::new(HashSet::new()),
             compact_width: Mutex::new(COMPACT_WINDOW_WIDTH),
@@ -8401,8 +8706,11 @@ mod core_tests {
             cursor_lifecycle_token_sessions: Mutex::new(HashSet::new()),
             last_subagent_snapshot_emit: Mutex::new(Instant::now() - Duration::from_secs(10)),
             snapshot_debounce_generation: AtomicU64::new(0),
+            snapshot_debounce_worker_running: AtomicBool::new(false),
             last_subagent_reconcile: Mutex::new(Instant::now() - Duration::from_secs(10)),
             last_hook_activity: Mutex::new(Instant::now()),
+            token_history_dirty: AtomicBool::new(false),
+            transcript_cache: Mutex::new(TranscriptCache::default()),
         }
     }
 
@@ -9060,6 +9368,7 @@ mod cursor_subagent_tests {
     fn test_app_state() -> AppState {
         AppState {
             requests: Mutex::new(Vec::new()),
+            session_request_totals: Mutex::new(HashMap::new()),
             hook_waiters: Mutex::new(HashMap::new()),
             auto_approve_sessions: Mutex::new(HashSet::new()),
             compact_width: Mutex::new(COMPACT_WINDOW_WIDTH),
@@ -9092,8 +9401,11 @@ mod cursor_subagent_tests {
             cursor_lifecycle_token_sessions: Mutex::new(HashSet::new()),
             last_subagent_snapshot_emit: Mutex::new(Instant::now() - Duration::from_secs(10)),
             snapshot_debounce_generation: AtomicU64::new(0),
+            snapshot_debounce_worker_running: AtomicBool::new(false),
             last_subagent_reconcile: Mutex::new(Instant::now() - Duration::from_secs(10)),
             last_hook_activity: Mutex::new(Instant::now()),
+            token_history_dirty: AtomicBool::new(false),
+            transcript_cache: Mutex::new(TranscriptCache::default()),
         }
     }
 

@@ -90,7 +90,7 @@ pub fn detect_transcript_format(path: &str) -> TranscriptFormat {
     let file = File::open(path).ok();
     if let Some(file) = file {
         let reader = BufReader::new(file);
-        for line in reader.lines().flatten() {
+        for line in reader.lines().map_while(Result::ok) {
             if let Some(format) = detect_transcript_format_from_line(&line) {
                 return format;
             }
@@ -269,7 +269,7 @@ pub fn extract_subagent_terminal_message(path: &str) -> Option<String> {
     let reader = BufReader::new(file);
     let mut last_terminal: Option<String> = None;
 
-    for line in reader.lines().flatten() {
+    for line in reader.lines().map_while(Result::ok) {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;

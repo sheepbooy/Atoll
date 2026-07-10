@@ -6579,3 +6579,31 @@ kbd {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: rgba(232, 234, 237, 0.28);
 }
+.atoll-recovery {
+  box-sizing: border-box;
+  min-height: 100vh;
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  padding: 18px;
+  color: #f5f7fa;
+  background: #0a0b0d;
+  font: 12px/1.4 system-ui, sans-serif;
+}
+
+.atoll-recovery span {
+  color: #aeb6c2;
+}
+
+.atoll-recovery div {
+  display: flex;
+  gap: 8px;
+}
+
+.atoll-recovery button {
+  border: 1px solid #3a424d;
+  border-radius: 6px;
+  padding: 5px 9px;
+  color: inherit;
+  background: #171a1f;
+}

@@ -1624,9 +1624,12 @@ describe("App", () => {
     const idleSnapshot = {
       online: true,
       pendingCount: 0,
+      archivedCount: 0,
       activeRequest: null,
       recent: [],
       sessions: [cursorSession, claudeSession],
+      dailyTokens: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+      activeSessionTokens: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
       hookHealth: connectedHookHealth,
     };
     const claudePending = {

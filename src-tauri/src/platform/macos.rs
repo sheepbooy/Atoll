@@ -642,8 +642,8 @@ fn focus_codex_app_impl(app: &AppHandle, launch_if_needed: bool) -> Result<(), S
             let _ = tx.send(focus_codex_app_on_main_thread(&app, launch_if_needed));
         })
         .map_err(|error| format!("Failed to dispatch Codex focus: {error}"))?;
-    rx.recv()
-        .map_err(|_| "Codex focus dispatch channel closed".to_string())?
+    rx.recv_timeout(std::time::Duration::from_secs(2))
+        .map_err(|_| "Codex focus dispatch timed out".to_string())?
 }
 
 fn focus_codex_app_on_main_thread(_app: &AppHandle, launch_if_needed: bool) -> Result<(), String> {
@@ -739,8 +739,8 @@ fn focus_claude_app_impl(app: &AppHandle, launch_if_needed: bool) -> Result<(), 
             let _ = tx.send(focus_claude_app_on_main_thread(&app, launch_if_needed));
         })
         .map_err(|error| format!("Failed to dispatch Claude focus: {error}"))?;
-    rx.recv()
-        .map_err(|_| "Claude focus dispatch channel closed".to_string())?
+    rx.recv_timeout(std::time::Duration::from_secs(2))
+        .map_err(|_| "Claude focus dispatch timed out".to_string())?
 }
 
 fn focus_claude_app_on_main_thread(_app: &AppHandle, launch_if_needed: bool) -> Result<(), String> {
@@ -775,8 +775,8 @@ pub fn focus_cursor_app(app: &AppHandle) -> Result<(), String> {
             let _ = tx.send(focus_cursor_app_on_main_thread(&app, true));
         })
         .map_err(|error| format!("Failed to dispatch Cursor focus: {error}"))?;
-    rx.recv()
-        .map_err(|_| "Cursor focus dispatch channel closed".to_string())?
+    rx.recv_timeout(std::time::Duration::from_secs(2))
+        .map_err(|_| "Cursor focus dispatch timed out".to_string())?
 }
 
 fn focus_cursor_app_on_main_thread(_app: &AppHandle, launch_if_needed: bool) -> Result<(), String> {
@@ -875,9 +875,10 @@ fn is_in_cursor_tree(mut pid: u32) -> bool {
         if is_cursor_process(pid) {
             return true;
         }
-        let output = match Command::new("ps")
-            .args(["-p", &pid.to_string(), "-o", "ppid="])
-            .output()
+        let output = match super::command_output_with_timeout(
+            Command::new("ps").args(["-p", &pid.to_string(), "-o", "ppid="]),
+            std::time::Duration::from_secs(2),
+        )
         {
             Ok(output) => output,
             Err(_) => return false,
@@ -1229,9 +1230,10 @@ fn is_in_codex_desktop_tree(mut pid: u32) -> bool {
         if is_codex_desktop_process(pid) {
             return true;
         }
-        let output = match Command::new("ps")
-            .args(["-p", &pid.to_string(), "-o", "ppid="])
-            .output()
+        let output = match super::command_output_with_timeout(
+            Command::new("ps").args(["-p", &pid.to_string(), "-o", "ppid="]),
+            std::time::Duration::from_secs(2),
+        )
         {
             Ok(output) => output,
             Err(_) => return false,
@@ -1339,9 +1341,10 @@ fn is_in_claude_desktop_tree(mut pid: u32) -> bool {
         if is_claude_desktop_process(pid) {
             return true;
         }
-        let output = match Command::new("ps")
-            .args(["-p", &pid.to_string(), "-o", "ppid="])
-            .output()
+        let output = match super::command_output_with_timeout(
+            Command::new("ps").args(["-p", &pid.to_string(), "-o", "ppid="]),
+            std::time::Duration::from_secs(2),
+        )
         {
             Ok(output) => output,
             Err(_) => return false,
@@ -1356,7 +1359,10 @@ fn is_in_claude_desktop_tree(mut pid: u32) -> bool {
 }
 
 fn pids_with_cwd(cwd: &str) -> Vec<u32> {
-    let output = match Command::new("lsof").args(["-d", "cwd", "+c", "0"]).output() {
+    let output = match super::command_output_with_timeout(
+        Command::new("lsof").args(["-d", "cwd", "+c", "0"]),
+        std::time::Duration::from_secs(2),
+    ) {
         Ok(output) => output,
         Err(_) => return Vec::new(),
     };
@@ -1382,10 +1388,11 @@ fn is_claude_desktop_bundle(bundle: &str) -> bool {
 }
 
 fn process_executable(pid: u32) -> Option<String> {
-    let output = Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", "comm="])
-        .output()
-        .ok()?;
+    let output = super::command_output_with_timeout(
+        Command::new("ps").args(["-p", &pid.to_string(), "-o", "comm="]),
+        std::time::Duration::from_secs(2),
+    )
+    .ok()?;
     let comm = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if comm.is_empty() {
         None
@@ -1395,10 +1402,11 @@ fn process_executable(pid: u32) -> Option<String> {
 }
 
 fn process_command_line(pid: u32) -> Option<String> {
-    let output = Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", "args="])
-        .output()
-        .ok()?;
+    let output = super::command_output_with_timeout(
+        Command::new("ps").args(["-p", &pid.to_string(), "-o", "args="]),
+        std::time::Duration::from_secs(2),
+    )
+    .ok()?;
     let args = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if args.is_empty() {
         None
@@ -1500,10 +1508,11 @@ fn find_terminal_ancestor(mut pid: u32) -> Option<String> {
         if pid <= 1 {
             return None;
         }
-        let output = Command::new("ps")
-            .args(["-p", &pid.to_string(), "-o", "ppid=,comm="])
-            .output()
-            .ok()?;
+        let output = super::command_output_with_timeout(
+            Command::new("ps").args(["-p", &pid.to_string(), "-o", "ppid=,comm="]),
+            std::time::Duration::from_secs(2),
+        )
+        .ok()?;
         let line = String::from_utf8_lossy(&output.stdout);
         let line = line.trim();
         if line.is_empty() {

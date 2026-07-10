@@ -10,6 +10,7 @@ const hookConfig = resolveHookConfig("codexUrl", defaultHookUrl);
 const hookUrl = hookConfig.url;
 const hookTimeoutMs = parseHookTimeoutMs(process.env.ATOLL_CODEX_HOOK_TIMEOUT_MS);
 const STDIN_TIMEOUT_MS = 5000;
+const MAX_STDIN_BYTES = 2 * 1024 * 1024;
 
 try {
   const rawPayload = await readStdin(STDIN_TIMEOUT_MS);
@@ -93,6 +94,7 @@ function logHookInvoke(payload, error = null) {
 function readStdin(timeoutMs) {
   return new Promise((resolve, reject) => {
     const chunks = [];
+    let totalBytes = 0;
     const timer = setTimeout(() => {
       cleanup();
       globalThis.__ATOLL_LAST_PAYLOAD__ = Buffer.concat(chunks).toString("utf-8");
@@ -100,6 +102,12 @@ function readStdin(timeoutMs) {
     }, timeoutMs);
 
     const onData = (chunk) => {
+      totalBytes += chunk.length;
+      if (totalBytes > MAX_STDIN_BYTES) {
+        cleanup();
+        reject(new Error("Atoll hook payload exceeds 2 MiB"));
+        return;
+      }
       chunks.push(chunk);
     };
     const onEnd = () => {

@@ -139,6 +139,35 @@ describe("Tauri bridge", () => {
     expect(snapshot.hookHealth.codex.scriptPath).toBe("/tmp/atoll-codex-hook.mjs");
   });
 
+  it("coalesces concurrent snapshot IPC calls", async () => {
+    setTauriRuntime(true);
+    let resolveInvoke!: (value: unknown) => void;
+    invoke.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveInvoke = resolve;
+      }),
+    );
+    const { getSnapshot, EMPTY_HOOK_HEALTH } = await import("./tauri");
+    const first = getSnapshot();
+    const second = getSnapshot();
+
+    expect(invoke).toHaveBeenCalledTimes(1);
+    resolveInvoke({
+      online: true,
+      pendingCount: 0,
+      archivedCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      dailyTokens: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+      activeSessionTokens: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+      hookHealth: EMPTY_HOOK_HEALTH,
+    });
+
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
   it("detects Windows micro island synchronously", async () => {
     setTauriRuntime(true);
     const originalUserAgent = navigator.userAgent;

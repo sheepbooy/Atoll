@@ -26,6 +26,7 @@ describe("appUpdate", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.resetModules();
   });
@@ -56,6 +57,18 @@ describe("appUpdate", () => {
     await expect(checkAppUpdate()).resolves.toEqual({
       status: "error",
       message: "network down",
+    });
+  });
+
+  it("times out a stalled update check", async () => {
+    vi.useFakeTimers();
+    checkMock.mockReturnValue(new Promise(() => undefined));
+    const { checkAppUpdate, UPDATE_CHECK_TIMEOUT_MS } = await import("./appUpdate");
+    const result = checkAppUpdate();
+    await vi.advanceTimersByTimeAsync(UPDATE_CHECK_TIMEOUT_MS);
+    await expect(result).resolves.toEqual({
+      status: "error",
+      message: "Update check timed out",
     });
   });
 

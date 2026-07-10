@@ -185,26 +185,11 @@ pub(crate) fn agent_kind_key(agent: &AgentKind) -> String {
 }
 
 pub(crate) fn build_agent_by_session(state: &AppState) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-
-    if let Ok(sticky) = state.session_agent_map.lock() {
-        map.extend(sticky.iter().map(|(k, v)| (k.clone(), v.clone())));
-    }
-
-    if let Ok(known) = state.known_sessions.lock() {
-        for (session_id, info) in known.iter() {
-            map.insert(session_id.clone(), agent_kind_key(&info.agent));
-        }
-    }
-
-    if let Ok(requests) = state.requests.lock() {
-        for request in requests.iter() {
-            map.entry(request.session.clone())
-                .or_insert_with(|| agent_kind_key(&request.agent));
-        }
-    }
-
-    map
+    state
+        .session_agent_map
+        .lock()
+        .map(|sticky| sticky.clone())
+        .unwrap_or_default()
 }
 
 fn sum_by_agent_usage(by_agent: &HashMap<String, TokenUsageRecord>) -> TokenUsageRecord {
@@ -314,11 +299,13 @@ pub(crate) fn sync_today_to_history(state: &AppState) -> Result<(), String> {
     let session_usage = state
         .session_token_usage
         .lock()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())?
+        .clone();
     let session_usage_by_model = state
         .session_token_usage_by_model
         .lock()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())?
+        .clone();
     let agent_by_session = build_agent_by_session(state);
     let mut record = aggregate_day_record(
         &session_usage,
@@ -332,16 +319,14 @@ pub(crate) fn sync_today_to_history(state: &AppState) -> Result<(), String> {
     let absolute_sessions = state
         .absolute_token_sessions
         .lock()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())?
+        .clone();
     record.usage = TokenUsageRecord::from(crate::effective_daily_tokens(
         &session_usage,
         startup_floor,
         &absolute_sessions,
     ));
     repair_inflated_day_usage(&mut record);
-    drop(session_usage);
-    drop(session_usage_by_model);
-
     let mut file = load_history_file();
 
     // Merge with existing data: never let a post-restart empty state overwrite
@@ -366,11 +351,13 @@ pub(crate) fn flush_day_to_history(state: &AppState, day_key: &str) -> Result<()
     let session_usage = state
         .session_token_usage
         .lock()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())?
+        .clone();
     let session_usage_by_model = state
         .session_token_usage_by_model
         .lock()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())?
+        .clone();
     if session_usage.is_empty() {
         return Ok(());
     }
@@ -380,9 +367,6 @@ pub(crate) fn flush_day_to_history(state: &AppState, day_key: &str) -> Result<()
         &session_usage_by_model,
         &agent_by_session,
     );
-    drop(session_usage);
-    drop(session_usage_by_model);
-
     let mut file = load_history_file();
     if let Some(existing) = file.days.get(day_key) {
         let merged = merge_day_records(existing, &record);

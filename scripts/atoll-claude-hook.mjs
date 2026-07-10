@@ -5,6 +5,7 @@ import { hookAuthHeaders, resolveHookConfig } from "./atoll-hook-bridge.mjs";
 const defaultHookUrl = "http://127.0.0.1:47777/claude/pre-tool-use";
 const hookConfig = resolveHookConfig("claudeUrl", defaultHookUrl);
 const hookUrl = hookConfig.url;
+const MAX_STDIN_BYTES = 2 * 1024 * 1024;
 
 try {
   const rawPayload = await readStdin();
@@ -29,8 +30,15 @@ try {
 function readStdin() {
   return new Promise((resolve, reject) => {
     let value = "";
+    let totalBytes = 0;
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (chunk) => {
+      totalBytes += Buffer.byteLength(chunk, "utf8");
+      if (totalBytes > MAX_STDIN_BYTES) {
+        reject(new Error("Atoll hook payload exceeds 2 MiB"));
+        process.stdin.removeAllListeners();
+        return;
+      }
       value += chunk;
     });
     process.stdin.on("end", () => {

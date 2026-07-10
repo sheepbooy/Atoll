@@ -9,6 +9,7 @@ const defaultHookUrl = "http://127.0.0.1:47777/cursor/hook";
 const hookConfig = resolveHookConfig("cursorUrl", defaultHookUrl);
 const hookUrl = hookConfig.url;
 const hookTimeoutMs = parseHookTimeoutMs(process.env.ATOLL_CURSOR_HOOK_TIMEOUT_MS);
+const MAX_STDIN_BYTES = 2 * 1024 * 1024;
 
 try {
   const rawPayload = await readStdin();
@@ -88,7 +89,14 @@ function logHookInvoke(payload, error = null) {
 function readStdin() {
   return new Promise((resolve, reject) => {
     const chunks = [];
+    let totalBytes = 0;
     process.stdin.on("data", (chunk) => {
+      totalBytes += chunk.length;
+      if (totalBytes > MAX_STDIN_BYTES) {
+        reject(new Error("Atoll hook payload exceeds 2 MiB"));
+        process.stdin.removeAllListeners();
+        return;
+      }
       chunks.push(chunk);
     });
     process.stdin.on("end", () => {

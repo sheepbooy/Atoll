@@ -2,6 +2,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
+use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -33,11 +34,112 @@ const HOOK_SECONDARY_FALLBACK_START: u16 = 48_800;
 const HOOK_SECONDARY_FALLBACK_END: u16 = 48_850;
 const HOOK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const HOOK_REQUEST_READ_TIMEOUT: Duration = Duration::from_secs(5);
+const HOOK_RESPONSE_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 const BRIDGE_PROBE_TIMEOUT: Duration = Duration::from_millis(200);
 const BRIDGE_ONLINE_GRACE: Duration = Duration::from_secs(3);
 const HOOK_POLL_INTERVAL: Duration = Duration::from_millis(180);
 const HOOK_AUTH_HEADER: &str = "x-atoll-hook-token";
-const MAX_HOOK_WAITERS: usize = 512;
+const MAX_HOOK_WAITERS: usize = 96;
+const MAX_INFLIGHT_CONNECTIONS: usize = 128;
+const MAX_HOOK_REQUEST_LINE_BYTES: usize = 8 * 1024;
+const MAX_HOOK_HEADER_BYTES: usize = 32 * 1024;
+const MAX_HOOK_BODY_BYTES: usize = 2 * 1024 * 1024;
+const MAX_PERMISSION_TOOL_INPUT_BYTES: usize = 512 * 1024;
+const MAX_PERMISSION_LABEL_CHARS: usize = 32 * 1024;
+const OBSERVER_QUEUE_CAPACITY: usize = 256;
+const MAX_RESOLVED_REQUESTS: usize = 4096;
+const MAX_RESOLVED_REQUESTS_PER_SESSION: usize = 256;
+
+static ACTIVE_CONNECTIONS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+static OBSERVER_SENDER: OnceLock<mpsc::SyncSender<ObserverJob>> = OnceLock::new();
+
+#[derive(Clone, Copy)]
+enum ObserverKind {
+    Claude,
+    Codex,
+    Cursor,
+}
+
+struct ObserverJob {
+    app: AppHandle,
+    hook_event_name: String,
+    payload: Value,
+    kind: ObserverKind,
+}
+
+struct ConnectionGuard;
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+fn start_observer_worker() {
+    OBSERVER_SENDER.get_or_init(|| {
+        let (sender, receiver) = mpsc::sync_channel::<ObserverJob>(OBSERVER_QUEUE_CAPACITY);
+        thread::spawn(move || {
+            while let Ok(job) = receiver.recv() {
+                let event = job.hook_event_name.clone();
+                let result = match job.kind {
+                    ObserverKind::Claude => {
+                        process_claude_observer_event(job.app, job.hook_event_name, job.payload)
+                    }
+                    ObserverKind::Codex => {
+                        process_codex_observer_event(job.app, job.hook_event_name, job.payload)
+                    }
+                    ObserverKind::Cursor => {
+                        process_cursor_observer_event(job.app, job.hook_event_name, job.payload)
+                    }
+                };
+                if let Err(error) = result {
+                    eprintln!("Atoll {event} observer failed: {error}");
+                }
+            }
+        });
+        sender
+    });
+}
+
+fn enqueue_observer(job: ObserverJob) -> Result<(), String> {
+    start_observer_worker();
+    OBSERVER_SENDER
+        .get()
+        .ok_or_else(|| "Atoll observer queue unavailable".to_string())?
+        .send(job)
+        .map_err(|_| "Atoll observer worker stopped".to_string())
+}
+
+fn record_and_prune_request(state: &AppState, requests: &mut Vec<PermissionRequest>, session: &str) {
+    if let Ok(mut totals) = state.session_request_totals.lock() {
+        let total = totals.entry(session.to_string()).or_default();
+        *total = total.saturating_add(1);
+    }
+
+    prune_request_history(requests);
+}
+
+fn prune_request_history(requests: &mut Vec<PermissionRequest>) {
+    let mut resolved_total = 0usize;
+    let mut resolved_by_session: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    requests.retain(|request| {
+        if request.status == PermissionStatus::Pending {
+            return true;
+        }
+        let session_count = resolved_by_session
+            .entry(request.session.clone())
+            .or_default();
+        let keep = resolved_total < MAX_RESOLVED_REQUESTS
+            && *session_count < MAX_RESOLVED_REQUESTS_PER_SESSION;
+        if keep {
+            resolved_total += 1;
+            *session_count += 1;
+        }
+        keep
+    });
+}
 
 pub(crate) fn bridge_config_path() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "macos")]
@@ -166,10 +268,11 @@ fn bridge_port_from_config_file() -> Option<u16> {
 
 fn refresh_listening_snapshot(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let snapshot = build_snapshot(app, &state);
+    let online = crate::compute_listening_online(app);
     if let Ok(mut last) = state.last_listening_online.lock() {
-        *last = Some(snapshot.online);
+        *last = Some(online);
     }
+    let snapshot = build_snapshot(app, &state);
     let _ = app.emit("snapshot-changed", &snapshot);
 }
 
@@ -223,6 +326,7 @@ pub(crate) fn is_bridge_online(app: &AppHandle) -> bool {
 }
 
 pub(crate) fn start_server(app: AppHandle) {
+    start_observer_worker();
     thread::spawn(move || {
         let listener = match bind_hook_listener() {
             Ok((listener, port)) => {
@@ -269,8 +373,18 @@ pub(crate) fn start_server(app: AppHandle) {
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
+                    if ACTIVE_CONNECTIONS.fetch_add(1, Ordering::AcqRel)
+                        >= MAX_INFLIGHT_CONNECTIONS
+                    {
+                        ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::AcqRel);
+                        let _ = stream.shutdown(std::net::Shutdown::Both);
+                        continue;
+                    }
                     let app = app.clone();
-                    thread::spawn(move || handle_connection(app, stream));
+                    thread::spawn(move || {
+                        let _guard = ConnectionGuard;
+                        handle_connection(app, stream);
+                    });
                 }
                 Err(error) => eprintln!("Atoll hook bridge connection failed: {error}"),
             }
@@ -353,8 +467,20 @@ fn permission_request_from_tool_payload(
 ) -> Option<PermissionRequest> {
     let tool_name = payload.get("tool_name")?.as_str()?.to_string();
     let tool_input = payload.get("tool_input").cloned().unwrap_or(Value::Null);
-    let command = command_label(&tool_name, &tool_input);
-    let detail = detail_label(&tool_name, &tool_input);
+    if serde_json::to_vec(&tool_input).ok()?.len() > MAX_PERMISSION_TOOL_INPUT_BYTES {
+        return None;
+    }
+    let truncate_label = |label: String| {
+        if label.chars().count() <= MAX_PERMISSION_LABEL_CHARS {
+            label
+        } else {
+            let mut value: String = label.chars().take(MAX_PERMISSION_LABEL_CHARS).collect();
+            value.push_str("… [truncated]");
+            value
+        }
+    };
+    let command = truncate_label(command_label(&tool_name, &tool_input));
+    let detail = truncate_label(detail_label(&tool_name, &tool_input));
     let default_session = match agent {
         AgentKind::Codex => "codex",
         AgentKind::Cursor => "cursor",
@@ -574,6 +700,7 @@ fn handle_connection(app: AppHandle, mut stream: TcpStream) {
         .and_then(|request| route_request(app, request, &stream))
         .unwrap_or_else(|error| fallback_hook_response("PreToolUse", &error));
     let _ = stream.set_read_timeout(None);
+    let _ = stream.set_write_timeout(Some(HOOK_RESPONSE_WRITE_TIMEOUT));
 
     let _ = write_json_response(&mut stream, result);
 }
@@ -661,18 +788,15 @@ fn route_claude_request(
             ))
         }),
         _ => {
-            spawn_claude_observer(app, hook_event_name.clone(), payload);
+            enqueue_observer(ObserverJob {
+                app,
+                hook_event_name,
+                payload,
+                kind: ObserverKind::Claude,
+            })?;
             Ok(json!({}))
         }
     }
-}
-
-fn spawn_claude_observer(app: AppHandle, hook_event_name: String, payload: Value) {
-    thread::spawn(move || {
-        if let Err(error) = process_claude_observer_event(app, hook_event_name.clone(), payload) {
-            eprintln!("Atoll Claude observer failed for {hook_event_name}: {error}");
-        }
-    });
 }
 
 fn process_claude_observer_event(
@@ -759,18 +883,15 @@ fn route_codex_request(
             ))
         }),
         _ => {
-            spawn_codex_observer(app, hook_event_name.clone(), payload);
+            enqueue_observer(ObserverJob {
+                app,
+                hook_event_name,
+                payload,
+                kind: ObserverKind::Codex,
+            })?;
             Ok(json!({}))
         }
     }
-}
-
-fn spawn_codex_observer(app: AppHandle, hook_event_name: String, payload: Value) {
-    thread::spawn(move || {
-        if let Err(error) = process_codex_observer_event(app, hook_event_name.clone(), payload) {
-            eprintln!("Atoll Codex observer failed for {hook_event_name}: {error}");
-        }
-    });
 }
 
 fn process_codex_observer_event(
@@ -986,7 +1107,12 @@ fn route_cursor_request(
     );
     // #endregion
 
-    spawn_cursor_observer(app, hook_event_name.clone(), payload);
+    enqueue_observer(ObserverJob {
+        app,
+        hook_event_name: hook_event_name.clone(),
+        payload,
+        kind: ObserverKind::Cursor,
+    })?;
 
     match hook_event_name.as_str() {
         "beforeSubmitPrompt" => Ok(json!({ "continue": true })),
@@ -997,14 +1123,6 @@ fn route_cursor_request(
         }
         _ => Ok(json!({})),
     }
-}
-
-fn spawn_cursor_observer(app: AppHandle, hook_event_name: String, payload: Value) {
-    thread::spawn(move || {
-        if let Err(error) = process_cursor_observer_event(app, hook_event_name.clone(), payload) {
-            eprintln!("Atoll Cursor observer failed for {hook_event_name}: {error}");
-        }
-    });
 }
 
 fn process_cursor_observer_event(
@@ -1050,8 +1168,9 @@ fn process_cursor_observer_event(
                 touch_session_activity(&state, &session_id);
                 if let Ok(mut requests) = state.requests.lock() {
                     requests.insert(0, request);
-                    roll_over_token_usage_if_needed(&state);
+                    record_and_prune_request(&state, &mut requests, &session_id);
                 }
+                roll_over_token_usage_if_needed(&state);
                 schedule_observer_snapshot_emit(&app);
             }
             Ok(())
@@ -1161,10 +1280,12 @@ fn submit_blocking_permission_request(
             let mut auto_request = request;
             auto_request.status = PermissionStatus::Approved;
             auto_request.detail = format!("{} Auto-approved.", auto_request.detail);
-            touch_session_activity(&state, &auto_request.session);
+            let session_id = auto_request.session.clone();
+            touch_session_activity(&state, &session_id);
             requests.insert(0, auto_request);
-            roll_over_token_usage_if_needed(&state);
+            record_and_prune_request(&state, &mut requests, &session_id);
         }
+        roll_over_token_usage_if_needed(&state);
         let snapshot = build_snapshot(&app, &state);
         let _ = app.emit("snapshot-changed", &snapshot);
         return Ok(build_permission_response(
@@ -1198,8 +1319,9 @@ fn submit_blocking_permission_request(
         let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
         touch_session_activity(&state, &request.session);
         requests.insert(0, request);
-        roll_over_token_usage_if_needed(&state);
+        record_and_prune_request(&state, &mut requests, &session_id);
     }
+    roll_over_token_usage_if_needed(&state);
     if matches!(session_agent, AgentKind::Claude) {
         register_known_session(
             &state,
@@ -1353,13 +1475,13 @@ fn mark_request_completed_externally(
                 resolved_agent = Some(request.agent.clone());
             }
         }
-        roll_over_token_usage_if_needed(state);
         (
             resolved_session_id,
             resolved_transcript_path,
             resolved_agent,
         )
     };
+    roll_over_token_usage_if_needed(state);
 
     if let Some(session_id) = resolved_session_id.as_deref() {
         if let Err(error) = refresh_session_token_usage(
@@ -1388,8 +1510,8 @@ fn mark_request_denied(state: &AppState, app: &AppHandle, request_id: &str, note
             touch_session_activity(state, &request.session);
         }
 
-        roll_over_token_usage_if_needed(state);
     }
+    roll_over_token_usage_if_needed(state);
 
     let snapshot = build_snapshot(app, state);
     let _ = app.emit("snapshot-changed", &snapshot);
@@ -1884,9 +2006,11 @@ fn hook_peer_session_host(stream: &TcpStream) -> platform::SessionHost {
     let own_pid = std::process::id();
     eprintln!("[Atoll:host-detect] peer port={port}, own_pid={own_pid}");
 
-    let output = match std::process::Command::new("lsof")
-        .args(["-i", &format!("TCP@127.0.0.1:{port}"), "-n", "-P", "-t"])
-        .output()
+    let output = match platform::command_output_with_timeout(
+        std::process::Command::new("lsof")
+            .args(["-i", &format!("TCP@127.0.0.1:{port}"), "-n", "-P", "-t"]),
+        Duration::from_secs(2),
+    )
     {
         Ok(o) => o,
         Err(e) => {
@@ -1946,9 +2070,11 @@ fn hook_peer_codex_session_host(stream: &TcpStream) -> platform::SessionHost {
     let own_pid = std::process::id();
     eprintln!("[Atoll:host-detect] peer port={port}, own_pid={own_pid}");
 
-    let output = match std::process::Command::new("lsof")
-        .args(["-i", &format!("TCP@127.0.0.1:{port}"), "-n", "-P", "-t"])
-        .output()
+    let output = match platform::command_output_with_timeout(
+        std::process::Command::new("lsof")
+            .args(["-i", &format!("TCP@127.0.0.1:{port}"), "-n", "-P", "-t"]),
+        Duration::from_secs(2),
+    )
     {
         Ok(o) => o,
         Err(e) => {
@@ -2019,9 +2145,11 @@ fn hook_peer_cursor_session_host(stream: &TcpStream) -> platform::SessionHost {
     let port = peer.port();
     let own_pid = std::process::id();
 
-    let output = match std::process::Command::new("lsof")
-        .args(["-i", &format!("TCP@127.0.0.1:{port}"), "-n", "-P", "-t"])
-        .output()
+    let output = match platform::command_output_with_timeout(
+        std::process::Command::new("lsof")
+            .args(["-i", &format!("TCP@127.0.0.1:{port}"), "-n", "-P", "-t"]),
+        Duration::from_secs(2),
+    )
     {
         Ok(o) => o,
         Err(_) => return platform::SessionHost::Unknown,
@@ -2245,12 +2373,21 @@ struct HttpRequest {
     body: Vec<u8>,
 }
 
+fn read_limited_line<R: BufRead>(reader: &mut R, limit: usize) -> Result<String, String> {
+    let mut bytes = Vec::new();
+    let read = reader
+        .take((limit + 1) as u64)
+        .read_until(b'\n', &mut bytes)
+        .map_err(|error| format!("Failed to read hook request: {error}"))?;
+    if read > limit {
+        return Err("Atoll hook request line is too large".into());
+    }
+    String::from_utf8(bytes).map_err(|_| "Atoll hook request is not valid UTF-8".into())
+}
+
 fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, String> {
     let mut reader = BufReader::new(stream);
-    let mut request_line = String::new();
-    reader
-        .read_line(&mut request_line)
-        .map_err(|error| format!("Failed to read hook request line: {error}"))?;
+    let request_line = read_limited_line(&mut reader, MAX_HOOK_REQUEST_LINE_BYTES)?;
 
     let mut parts = request_line.split_whitespace();
     let method = parts
@@ -2264,11 +2401,14 @@ fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, String> {
 
     let mut content_length = 0usize;
     let mut headers = std::collections::HashMap::new();
+    let mut header_bytes = 0usize;
     loop {
-        let mut header = String::new();
-        reader
-            .read_line(&mut header)
-            .map_err(|error| format!("Failed to read hook request header: {error}"))?;
+        let remaining = MAX_HOOK_HEADER_BYTES.saturating_sub(header_bytes);
+        if remaining == 0 {
+            return Err("Atoll hook request headers are too large".into());
+        }
+        let header = read_limited_line(&mut reader, remaining)?;
+        header_bytes = header_bytes.saturating_add(header.len());
         let trimmed = header.trim_end();
         if trimmed.is_empty() {
             break;
@@ -2282,6 +2422,12 @@ fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, String> {
                     .trim()
                     .parse::<usize>()
                     .map_err(|error| format!("Invalid content-length: {error}"))?;
+                if content_length > MAX_HOOK_BODY_BYTES {
+                    return Err(format!(
+                        "Atoll hook request body exceeds {} bytes",
+                        MAX_HOOK_BODY_BYTES
+                    ));
+                }
             }
             headers.insert(name, value);
         }
@@ -2349,6 +2495,48 @@ fn detail_label(tool_name: &str, tool_input: &Value) -> String {
 #[cfg(test)]
 mod bridge_bind_tests {
     use super::*;
+
+    #[test]
+    fn request_line_reader_rejects_oversized_input() {
+        let payload = vec![b'a'; MAX_HOOK_REQUEST_LINE_BYTES + 1];
+        let mut reader = std::io::Cursor::new(payload);
+        assert!(read_limited_line(&mut reader, MAX_HOOK_REQUEST_LINE_BYTES).is_err());
+    }
+
+    #[test]
+    fn request_history_pruning_keeps_pending_requests() {
+        let mut requests = Vec::new();
+        for index in 0..(MAX_RESOLVED_REQUESTS_PER_SESSION + 20) {
+            requests.push(PermissionRequest {
+                id: format!("resolved-{index}"),
+                tool_use_id: None,
+                agent: AgentKind::Codex,
+                session: "session-a".into(),
+                command: "Bash: true".into(),
+                detail: String::new(),
+                cwd: ".".into(),
+                requested_at: String::new(),
+                status: PermissionStatus::Approved,
+                archived: false,
+                supports_always: false,
+                transcript_path: None,
+                tool_input: None,
+            });
+        }
+        let mut pending = requests[0].clone();
+        pending.id = "pending".into();
+        pending.status = PermissionStatus::Pending;
+        requests.insert(0, pending);
+        prune_request_history(&mut requests);
+        assert!(requests.iter().any(|request| request.id == "pending"));
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request.status != PermissionStatus::Pending)
+                .count(),
+            MAX_RESOLVED_REQUESTS_PER_SESSION
+        );
+    }
 
     #[test]
     fn fallback_port_range_starts_after_default() {

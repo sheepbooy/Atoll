@@ -400,9 +400,10 @@ pub fn detect_cursor_session_host_from_peer_pid(pid: u32) -> SessionHost {
 }
 
 pub fn is_cursor_app_running() -> bool {
-    hidden_command("tasklist")
-        .args(["/FI", "IMAGENAME eq Cursor.exe", "/NH"])
-        .output()
+    super::command_output_with_timeout(
+        hidden_command("tasklist").args(["/FI", "IMAGENAME eq Cursor.exe", "/NH"]),
+        std::time::Duration::from_secs(2),
+    )
         .map(|output| {
             String::from_utf8_lossy(&output.stdout)
                 .lines()
@@ -412,9 +413,11 @@ pub fn is_cursor_app_running() -> bool {
 }
 
 fn is_cursor_process_pid(pid: u32) -> bool {
-    hidden_command("tasklist")
-        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
-        .output()
+    super::command_output_with_timeout(
+        hidden_command("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"]),
+        std::time::Duration::from_secs(2),
+    )
         .map(|output| {
             String::from_utf8_lossy(&output.stdout)
                 .contains("Cursor.exe")

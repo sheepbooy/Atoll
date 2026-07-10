@@ -10,6 +10,17 @@ export type AppUpdateState =
 
 export const UPDATE_RECHECK_MS = 6 * 60 * 60 * 1000;
 export const UPDATE_INITIAL_DELAY_MS = 3_000;
+export const UPDATE_CHECK_TIMEOUT_MS = 20_000;
+
+function checkWithTimeout() {
+  return new Promise<Awaited<ReturnType<typeof check>>>((resolve, reject) => {
+    const timer = window.setTimeout(
+      () => reject(new Error("Update check timed out")),
+      UPDATE_CHECK_TIMEOUT_MS,
+    );
+    check().then(resolve, reject).finally(() => window.clearTimeout(timer));
+  });
+}
 
 function isTauriRuntime(): boolean {
   return "__TAURI_INTERNALS__" in window;
@@ -27,7 +38,7 @@ export async function checkAppUpdate(): Promise<AppUpdateState> {
   }
 
   try {
-    const update = await check();
+    const update = await checkWithTimeout();
     pendingUpdate = update;
     if (!update) {
       return { status: "idle" };

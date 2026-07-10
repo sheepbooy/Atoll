@@ -4,6 +4,32 @@ use tauri::{App, AppHandle, LogicalPosition, Monitor, PhysicalSize, WebviewWindo
 
 use crate::{AppState, HomeWindowBounds, NotchMetrics};
 
+pub(crate) fn command_output_with_timeout(
+    command: &mut std::process::Command,
+    timeout: std::time::Duration,
+) -> std::io::Result<std::process::Output> {
+    use std::process::Stdio;
+    use std::thread;
+    use std::time::Instant;
+
+    let mut child = command.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        if child.try_wait()?.is_some() {
+            return child.wait_with_output();
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "platform command timed out",
+            ));
+        }
+        thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
 /// Where an agent session is running — used to restore focus correctly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -727,6 +753,18 @@ pub fn open_in_terminal(cwd: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn platform_command_timeout_stops_a_stalled_process() {
+        let started = std::time::Instant::now();
+        let result = command_output_with_timeout(
+            std::process::Command::new("sleep").arg("5"),
+            std::time::Duration::from_millis(50),
+        );
+        assert_eq!(result.expect_err("timeout").kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    }
 
     #[test]
     fn claude_approval_fallback_prefers_terminal_for_cli_host() {

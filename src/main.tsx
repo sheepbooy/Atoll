@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./App";
+import { AppErrorBoundary } from "./AppErrorBoundary";
 import { BrandExportPage, getBrandExportMode } from "./BrandExport";
 import { CursorMascotPreviewPage, getCursorPreviewMode } from "./CursorMascotPreview";
 import { getDemoMode } from "./demoSnapshot";
@@ -34,7 +35,9 @@ if (getBrandExportMode()) {
 } else {
   root.render(
     <React.StrictMode>
-      <App />
+      <AppErrorBoundary>
+        <App />
+      </AppErrorBoundary>
     </React.StrictMode>,
   );
 }
