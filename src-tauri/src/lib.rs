@@ -6899,7 +6899,19 @@ fn animate_island_window_mode(
 
         let progress =
             (started_at.elapsed().as_secs_f64() / WINDOW_ANIMATION_DURATION.as_secs_f64()).min(1.0);
-        let eased = ease_out_cubic(progress);
+        // Overshoot only when growing out of the menu-bar pill. Resizing between
+        // already-expanded sizes (idle → settings/tokens) stays cubic so AppKit
+        // never has to grow past the target and shrink back — that path felt
+        // stuttery under heavy WebView content.
+        let start_logical_h = start_size.height as f64 / scale_factor;
+        let from_collapsed = start_logical_h <= COMPACT_WINDOW_HEIGHT + 1.0;
+        let expanding = target_size.width > start_size.width
+            || target_size.height > start_size.height;
+        let eased = if expanding && from_collapsed {
+            ease_out_back(progress)
+        } else {
+            ease_out_cubic(progress)
+        };
         let size = PhysicalSize::new(
             interpolate_u32(start_size.width, target_size.width, eased),
             interpolate_u32(start_size.height, target_size.height, eased),
@@ -6969,6 +6981,14 @@ fn is_collapsed_pass_through_mode(mode: IslandWindowMode) -> bool {
 
 fn ease_out_cubic(progress: f64) -> f64 {
     1.0 - (1.0 - progress).powi(3)
+}
+
+/// Ease-out-back with ~2% overshoot (c1 ≈ 0.4). Settles exactly at 1.0.
+fn ease_out_back(progress: f64) -> f64 {
+    let c1 = 0.4;
+    let c3 = c1 + 1.0;
+    let t = progress - 1.0;
+    1.0 + c3 * t * t * t + c1 * t * t
 }
 
 fn interpolate_u32(start: u32, end: u32, progress: f64) -> u32 {
@@ -9206,6 +9226,10 @@ mod core_tests {
         assert_eq!(interpolate_u32(132, 560, ease_out_cubic(1.0)), 560);
         assert_eq!(interpolate_f64(100.0, -20.0, ease_out_cubic(0.0)), 100.0);
         assert_eq!(interpolate_f64(100.0, -20.0, ease_out_cubic(1.0)), -20.0);
+        assert!((ease_out_back(0.0) - 0.0).abs() < 1e-9);
+        assert!((ease_out_back(1.0) - 1.0).abs() < 1e-9);
+        // Mild overshoot: mid-late progress exceeds 1.0 briefly.
+        assert!(ease_out_back(0.85) > 1.0);
     }
 
     #[test]

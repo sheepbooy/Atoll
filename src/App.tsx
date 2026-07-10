@@ -87,7 +87,9 @@ import {
   finishExpand,
   IDLE_COLLAPSE_DELAY_MS,
   MICRO_SHRINK_DELAY_MS,
+  PANEL_EXIT_MS,
   PresentationPhase,
+  RESOLVE_FEEDBACK_MS,
 } from "./islandPresentation";
 import { AgentMascot, AGENT_ACCENT } from "./AgentMascot";
 import type { ClawdMood } from "./ClawdMascot";
@@ -430,6 +432,14 @@ const agentSortRank: Record<AgentKind, number> = {
 const agentMascotAccent = (agent: AgentKind) => AGENT_ACCENT[agent]?.accent;
 const agentMascotDark = (agent: AgentKind) => AGENT_ACCENT[agent]?.accentDark;
 
+const PANEL_GLOW: Record<AgentKind, string> = {
+  claude: "rgba(255, 129, 117, 0.18)",
+  codex: "rgba(97, 216, 247, 0.18)",
+  cursor: "rgba(167, 139, 250, 0.18)",
+  gemini: "rgba(178, 229, 120, 0.18)",
+  other: "rgba(201, 188, 255, 0.16)",
+};
+
 type RiskLevel = "danger" | "caution";
 
 const DANGER_PATTERNS: RegExp[] = [
@@ -713,6 +723,10 @@ export function App() {
   const [configuredHookAgents, setConfiguredHookAgents] = useState(() =>
     readConfiguredHookAgents(),
   );
+  const [navDirection, setNavDirection] = useState<"forward" | "back" | null>(null);
+  const [panelAnimKey, setPanelAnimKey] = useState(0);
+  const [panelExiting, setPanelExiting] = useState(false);
+  const panelExitTimerRef = useRef<number | null>(null);
   const prevPendingRef = useRef(0);
   const lastSyncedRequestIdRef = useRef<string | null>(null);
   const selectedAgentRef = useRef<AgentKind | null>(null);
@@ -1501,10 +1515,19 @@ export function App() {
 
     setBusyDecision(decision);
     try {
-      if (alwaysApprove) {
-        await setSessionAutoApprove(request.session, true);
-      }
-      const nextSnapshot = await resolvePermissionRequest(request.id, decision, note);
+      const resolveWork = (async () => {
+        if (alwaysApprove) {
+          await setSessionAutoApprove(request.session, true);
+        }
+        return resolvePermissionRequest(request.id, decision, note);
+      })();
+      // Hold the snapshot update until the resolve feedback animation can play.
+      const [, nextSnapshot] = await Promise.all([
+        new Promise<void>((resolve) => {
+          window.setTimeout(resolve, RESOLVE_FEEDBACK_MS);
+        }),
+        resolveWork,
+      ]);
       applySnapshot(nextSnapshot);
       if (nextSnapshot.pendingCount === 0) {
         collapseIsland(true);
@@ -1591,6 +1614,8 @@ export function App() {
   async function navigateToSession(sessionId: string) {
     const seq = ++navigationSeqRef.current;
     setSessionRequests([]);
+    setNavDirection("forward");
+    setPanelAnimKey((key) => key + 1);
     expandIsland();
     setPanelView({ kind: "session", sessionId });
     try {
@@ -1604,15 +1629,21 @@ export function App() {
   }
 
   function navigateToSubagent(sessionId: string, agentId: string) {
+    setNavDirection("forward");
+    setPanelAnimKey((key) => key + 1);
     setPanelView({ kind: "subagent", sessionId, agentId });
   }
 
   function navigateToSubagentList(sessionId: string) {
+    setNavDirection("forward");
+    setPanelAnimKey((key) => key + 1);
     setPanelView({ kind: "subagentList", sessionId });
   }
 
   function navigateBack() {
     ++navigationSeqRef.current;
+    setNavDirection("back");
+    setPanelAnimKey((key) => key + 1);
     setPanelView({ kind: "home" });
   }
 
@@ -1654,6 +1685,10 @@ export function App() {
     if (transitionTimerRef.current !== null) {
       window.clearTimeout(transitionTimerRef.current);
       transitionTimerRef.current = null;
+    }
+    if (panelExitTimerRef.current !== null) {
+      window.clearTimeout(panelExitTimerRef.current);
+      panelExitTimerRef.current = null;
     }
   }
 
@@ -1756,6 +1791,13 @@ export function App() {
   async function expandIsland() {
     clearIdleTimer();
     holdCompactAfterSubviewOpenRef.current = false;
+    if (panelExitTimerRef.current !== null) {
+      window.clearTimeout(panelExitTimerRef.current);
+      panelExitTimerRef.current = null;
+    }
+    if (panelExiting) {
+      setPanelExiting(false);
+    }
 
     const next = beginExpand(phaseRef.current);
     if (next === phaseRef.current) return;
@@ -1847,6 +1889,21 @@ export function App() {
     clearIdleTimer();
     setMenuOpen(false);
 
+    // Fade panel content out before the native window shrink starts.
+    if (phaseRef.current === "expanded" && !panelExiting) {
+      setPanelExiting(true);
+      panelExitTimerRef.current = window.setTimeout(() => {
+        panelExitTimerRef.current = null;
+        setPanelExiting(false);
+        collapseIslandNow(releaseFocus);
+      }, PANEL_EXIT_MS);
+      return;
+    }
+
+    collapseIslandNow(releaseFocus);
+  }
+
+  function collapseIslandNow(releaseFocus = false) {
     const next = beginCollapse(phaseRef.current);
     if (next === phaseRef.current) {
       if (releaseFocus) {
@@ -1872,6 +1929,7 @@ export function App() {
     frozenCollapseLeftWidthRef.current = collapseMetrics.leftWidth;
     setPresentationPhase(next);
     ++navigationSeqRef.current;
+    setNavDirection(null);
     setPanelView({ kind: "home" });
 
     const compactWidth = collapseCompactWidth();
@@ -2458,16 +2516,26 @@ export function App() {
   function openTokensPage(backTarget: "home" | "settings-main") {
     setMenuOpen(false);
     setTokensBackTarget(backTarget);
+    setNavDirection("forward");
+    setPanelAnimKey((key) => key + 1);
     setPanelView({ kind: "settings", page: "tokens" });
   }
 
   function handleOpenTokensFromCounter() {
     if (panelView.kind === "settings" && panelView.page === "tokens") return;
-    if (isIdleExpanded) {
+    // Kick off the settings-size resize before mounting the tokens page so the
+    // native animation starts with a light DOM. TokenHeatmapView further defers
+    // its dense grid/charts until COLLAPSE_ANIMATION_MS elapses.
+    if (phaseRef.current === "expanded" && panelView.kind !== "settings") {
       lastNativePresentationKeyRef.current = expandedPresentationKey(false, false, true);
-      syncNativeIslandPresentation("expanded", undefined, false, undefined, false, true).catch(
-        () => undefined,
-      );
+      syncNativeIslandPresentation(
+        "expanded",
+        undefined,
+        false,
+        undefined,
+        false,
+        true,
+      ).catch(() => undefined);
     }
     openTokensPage(panelView.kind === "settings" ? "settings-main" : "home");
   }
@@ -2478,6 +2546,8 @@ export function App() {
 
   function navigateBackFromTokens() {
     if (tokensBackTarget === "settings-main") {
+      setNavDirection("back");
+      setPanelAnimKey((key) => key + 1);
       setPanelView({ kind: "settings", page: "main" });
     } else {
       navigateBack();
@@ -2487,6 +2557,8 @@ export function App() {
   function openUsagePage(backTarget: "home" | "settings-main") {
     setMenuOpen(false);
     setUsageBackTarget(backTarget);
+    setNavDirection("forward");
+    setPanelAnimKey((key) => key + 1);
     setPanelView({ kind: "settings", page: "usage" });
   }
 
@@ -2496,6 +2568,8 @@ export function App() {
 
   function navigateBackFromUsage() {
     if (usageBackTarget === "settings-main") {
+      setNavDirection("back");
+      setPanelAnimKey((key) => key + 1);
       setPanelView({ kind: "settings", page: "main" });
     } else {
       navigateBack();
@@ -2504,12 +2578,16 @@ export function App() {
 
   function handleOpenSettings() {
     setMenuOpen(false);
+    setNavDirection("forward");
+    setPanelAnimKey((key) => key + 1);
     setPanelView({ kind: "settings", page: "main" });
   }
 
   function openHooksPage(backTarget: "home" | "settings-main") {
     setMenuOpen(false);
     setHooksBackTarget(backTarget);
+    setNavDirection("forward");
+    setPanelAnimKey((key) => key + 1);
     setPanelView({ kind: "settings", page: "hooks" });
   }
 
@@ -2523,6 +2601,8 @@ export function App() {
 
   function navigateBackFromHooks() {
     if (hooksBackTarget === "settings-main") {
+      setNavDirection("back");
+      setPanelAnimKey((key) => key + 1);
       setPanelView({ kind: "settings", page: "main" });
     } else {
       navigateBack();
@@ -2585,6 +2665,11 @@ export function App() {
   const nativeExpandedPlan = isPlanExpanded && !isSettingsExpanded;
   const nativeExpandedSettings = isSettingsExpanded;
   const isSubview = isExpandedChrome && panelView.kind !== "home";
+  const panelGlowAgent =
+    selectedAgentRequest?.agent ?? selectedAgent ?? sessions[0]?.agent ?? null;
+  const panelGlow = panelGlowAgent
+    ? PANEL_GLOW[panelGlowAgent]
+    : "rgba(111, 220, 255, 0.14)";
   const menuBarLogoSize = isExpanded ? 36 : isMicro ? 24 : 34;
   const subviewSession =
     panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList"
@@ -2904,7 +2989,8 @@ export function App() {
   return (
     <main className="stage">
       <section
-        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isPlanExpanded ? "is-plan" : ""} ${isSettingsExpanded ? "is-settings" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList" ? "is-session-subview" : ""}`}
+        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isPlanExpanded ? "is-plan" : ""} ${isSettingsExpanded ? "is-settings" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList" ? "is-session-subview" : ""}${panelExiting ? " is-panel-exiting" : ""}`}
+        style={{ "--panel-glow": panelGlow } as CSSProperties}
         aria-label="Atoll"
         tabIndex={0}
         onClick={handleIslandClick}
@@ -3217,7 +3303,14 @@ export function App() {
         </header>
 
         {!isPresentationTransition ? (
-          <div className="island-panel">{renderPanel()}</div>
+          <div
+            className="island-panel"
+            data-nav={navDirection ?? undefined}
+          >
+            <div key={panelAnimKey} className="island-panel-content">
+              {renderPanel()}
+            </div>
+          </div>
         ) : null}
         {updateNotice ? (
           <UpdateNotice version={updateNotice} onDismiss={dismissUpdateNotice} />
@@ -3509,7 +3602,7 @@ function SessionListView({
         onPointerMove={handleListPointerMove}
         onPointerLeave={() => setHoveredSessionId(null)}
       >
-        {sessions.map((session) => {
+        {sessions.map((session, sessionIndex) => {
           const sessionColor = getSessionColor(session.sessionId);
           const isHovered = hoveredSessionId === session.sessionId;
           return (
@@ -3517,6 +3610,7 @@ function SessionListView({
               key={session.sessionId}
               data-session-id={session.sessionId}
               className={`session-item ${session.pinned ? "is-pinned" : ""} ${isHovered ? "is-hovered" : ""}`}
+              style={{ "--stagger-i": Math.min(sessionIndex, 8) } as CSSProperties}
             >
               <div
                 className="session-item-main"
@@ -4383,10 +4477,25 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
   const tone = sessionColor.tone;
   const risk = useMemo(() => assessRisk(request.command), [request.command]);
   const mascotMood: ClawdMood = risk === "danger" ? "worried" : "alert";
+  const resolvingClass =
+    busyDecision === "approved"
+      ? " is-resolving-approve"
+      : busyDecision === "denied"
+        ? " is-resolving-deny"
+        : "";
 
   return (
-    <div className={`approval-view ${risk ? `is-${risk}` : ""}`}>
-      <div className="request-main">
+    <div
+      className={`approval-view is-arrive ${risk ? `is-${risk}` : ""}${resolvingClass}`}
+      style={
+        {
+          "--approval-glow": sessionColor.accent
+            ? `${sessionColor.accent}59`
+            : "rgba(111, 220, 255, 0.35)",
+        } as CSSProperties
+      }
+    >
+      <div className="request-main stagger-child" style={{ "--stagger-i": 0 } as CSSProperties}>
         <div className="request-kicker">
           <span className="kicker-label">
             <AgentMascot
@@ -4416,7 +4525,7 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
         </div>
       </div>
 
-      <div className="approval-footer">
+      <div className="approval-footer stagger-child" style={{ "--stagger-i": 1 } as CSSProperties}>
         <div className={`decision-row ${request.supportsAlways ? "has-always" : ""}`}>
           <button
             className="decision-button deny"
@@ -5384,7 +5493,7 @@ function IdleView({
               </button>
             </div>
           ) : null}
-          <div className="idle-content">
+          <div className="idle-content stagger-child" style={{ "--stagger-i": 0 } as CSSProperties}>
             <span className="idle-dot" />
             <span className="idle-text">Waiting for requests…</span>
           </div>
@@ -5395,7 +5504,7 @@ function IdleView({
 
   return (
     <div className="idle-view setup-view">
-      <div className="setup-card">
+      <div className="setup-card stagger-child" style={{ "--stagger-i": 0 } as CSSProperties}>
         <div className="setup-head">
           <div className="idle-icon setup-icon">
             <Download size={16} />
@@ -5409,7 +5518,8 @@ function IdleView({
         </div>
         <button
           type="button"
-          className="install-button"
+          className="install-button stagger-child"
+          style={{ "--stagger-i": 1 } as CSSProperties}
           onClick={onOpenHooks}
           data-no-drag
         >

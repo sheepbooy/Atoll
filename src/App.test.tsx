@@ -7,7 +7,24 @@ import {
   clearConfiguredHookAgentsForTests,
   markHookAgentConfigured,
 } from "./hookAgentsConfigured";
+import {
+  COLLAPSE_ANIMATION_MS,
+  PANEL_EXIT_MS,
+  RESOLVE_FEEDBACK_MS,
+} from "./islandPresentation";
 import type { SessionSummary, SubagentSummary } from "./tauri";
+
+async function flushPanelExit() {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(PANEL_EXIT_MS);
+  });
+}
+
+async function flushCollapseAnimation() {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(PANEL_EXIT_MS + COLLAPSE_ANIMATION_MS);
+  });
+}
 
 const connectedHookHealth = {
   claude: {
@@ -390,10 +407,11 @@ describe("App", () => {
     expect(fireEvent.mouseDown(collapseButton)).toBe(false);
     fireEvent.click(collapseButton);
     expect(collapseButton).not.toHaveFocus();
+    await flushPanelExit();
     expect(container.querySelector(".is-closing")).not.toBeNull();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(420);
+      await vi.advanceTimersByTimeAsync(COLLAPSE_ANIMATION_MS);
     });
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
       "compact",
@@ -406,7 +424,7 @@ describe("App", () => {
     expect(container.querySelector(".is-compact")).not.toBeNull();
 
     fireEvent.click(screen.getByLabelText("Atoll"));
-    await vi.advanceTimersByTimeAsync(420);
+    await vi.advanceTimersByTimeAsync(COLLAPSE_ANIMATION_MS);
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
       "expanded",
       expect.any(Number),
@@ -683,6 +701,7 @@ describe("App", () => {
 
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Collapse Atoll" }));
+    await flushPanelExit();
     expect(container.querySelector(".is-closing")).not.toBeNull();
 
     await act(async () => {
@@ -699,7 +718,7 @@ describe("App", () => {
     });
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(420);
+      await vi.advanceTimersByTimeAsync(COLLAPSE_ANIMATION_MS);
     });
 
     const compactAnimatedCalls = bridge.setIslandPresentation.mock.calls.filter(
@@ -781,6 +800,7 @@ describe("App", () => {
 
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Open Claude" }));
+    await flushPanelExit();
     expect(container.querySelector(".is-closing")).not.toBeNull();
     expect(bridge.openAgentApp).toHaveBeenCalledWith(
       "claude",
@@ -789,7 +809,7 @@ describe("App", () => {
     );
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(420);
+      await vi.advanceTimersByTimeAsync(COLLAPSE_ANIMATION_MS);
     });
 
     const compactAnimatedCalls = bridge.setIslandPresentation.mock.calls.filter(
@@ -851,6 +871,7 @@ describe("App", () => {
 
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Open Cursor" }));
+    await flushPanelExit();
     expect(container.querySelector(".is-closing")).not.toBeNull();
     expect(bridge.openAgentApp).toHaveBeenCalledWith(
       "cursor",
@@ -859,7 +880,7 @@ describe("App", () => {
     );
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(420);
+      await vi.advanceTimersByTimeAsync(COLLAPSE_ANIMATION_MS);
     });
 
     expect(container.querySelector(".is-compact")).not.toBeNull();
@@ -905,9 +926,7 @@ describe("App", () => {
 
     fireEvent.click(collapseButton);
     emitIslandHover?.({ hovering: true, cursorOverWindow: true });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(420);
-    });
+    await flushCollapseAnimation();
 
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
       "compact",
@@ -921,7 +940,7 @@ describe("App", () => {
 
     emitIslandHover?.({ hovering: false, cursorOverWindow: false });
     fireEvent.pointerEnter(screen.getByLabelText("Atoll"));
-    await vi.advanceTimersByTimeAsync(420);
+    await vi.advanceTimersByTimeAsync(COLLAPSE_ANIMATION_MS);
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
       "expanded",
       expect.any(Number),
@@ -998,11 +1017,15 @@ describe("App", () => {
     fireEvent.pointerEnter(island);
     fireEvent.focus(approveButton);
     bridge.setIslandPresentation.mockClear();
-    fireEvent.click(approveButton);
 
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
-      await vi.advanceTimersByTimeAsync(420);
+      fireEvent.click(approveButton);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(
+          RESOLVE_FEEDBACK_MS + PANEL_EXIT_MS + COLLAPSE_ANIMATION_MS,
+        );
+      });
       expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
         "dormant",
         undefined,
@@ -1331,7 +1354,9 @@ describe("App", () => {
 
     bridge.setIslandPresentation.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Collapse Atoll" }));
-    expect(bridge.setIslandPresentation).toHaveBeenCalledWith("micro", 72);
+    await waitFor(() =>
+      expect(bridge.setIslandPresentation).toHaveBeenCalledWith("micro", 72),
+    );
 
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,
@@ -1472,9 +1497,7 @@ describe("App", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       fireEvent.click(screen.getByRole("button", { name: "Open Claude" }));
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(420);
-      });
+      await flushCollapseAnimation();
       expect(container.querySelector(".is-compact")).not.toBeNull();
 
       bridge.setIslandPresentation.mockClear();
@@ -1844,6 +1867,7 @@ describe("App", () => {
 
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Collapse Atoll" }));
+    await flushPanelExit();
     expect(container.querySelector(".is-closing")).not.toBeNull();
 
     await act(async () => {
@@ -1854,7 +1878,7 @@ describe("App", () => {
     });
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(420);
+      await vi.advanceTimersByTimeAsync(COLLAPSE_ANIMATION_MS);
     });
     vi.useRealTimers();
 

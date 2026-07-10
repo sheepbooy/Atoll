@@ -59,13 +59,24 @@
   /* Timing */
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  /* Mirrors the Rust window-resize easing (ease_out_cubic). Everything that
-     must stay glued to the native window frame while it grows/shrinks uses
-     this curve + --duration-expand so the frame and DOM never drift apart. */
-  --ease-window: cubic-bezier(0.33, 1, 0.68, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Expand mirrors Rust ease_out_back (~2% overshoot). Collapse stays cubic.
+     Browser-demo width/height transitions use this curve; Tauri size is native. */
+  --ease-window: cubic-bezier(0.34, 1.2, 0.64, 1);
+  --ease-window-collapse: cubic-bezier(0.33, 1, 0.68, 1);
+  --duration-instant: 100ms;
   --duration-fast: 150ms;
+  --duration-quick: 180ms;
+  --duration-snappy: 220ms;
   --duration-normal: 280ms;
+  --duration-settle: 260ms;
+  --duration-soft: 300ms;
   --duration-expand: 420ms;
+  --duration-slow: 560ms;
+  --stagger-step: 45ms;
+  --panel-exit-ms: 120ms;
+  --resolve-feedback-ms: 240ms;
 
   /* Radii */
   --radius-sm: 8px;
@@ -74,8 +85,14 @@
   --radius-pill: 999px;
 
   /* Depth */
-  --shadow-menu: 0 18px 50px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06);
-  --shadow-card: 0 6px 22px rgba(0, 0, 0, 0.32);
+  --shadow-1: 0 4px 14px rgba(0, 0, 0, 0.28);
+  --shadow-2: 0 6px 22px rgba(0, 0, 0, 0.32);
+  --shadow-3: 0 18px 50px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-menu: var(--shadow-3);
+  --shadow-card: var(--shadow-2);
+
+  /* Panel ambient glow — overridden per-agent from App */
+  --panel-glow: rgba(111, 220, 255, 0.14);
 
   /* Type */
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -268,6 +285,63 @@ kbd {
   50% { opacity: 1; }
 }
 
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translate3d(8px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translate3d(-8px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes sheen-sweep {
+  0% { transform: translateX(-120%) skewX(-18deg); opacity: 0; }
+  20% { opacity: 0.55; }
+  100% { transform: translateX(160%) skewX(-18deg); opacity: 0; }
+}
+
+@keyframes approval-glow-pulse {
+  0% { box-shadow: 0 0 0 0 var(--approval-glow, rgba(111, 220, 255, 0.35)); }
+  70% { box-shadow: 0 0 0 10px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+@keyframes approval-resolve-out {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 0; transform: translate3d(0, -10px, 0); }
+}
+
+@keyframes panel-exit {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 0; transform: translate3d(0, 6px, 0); }
+}
+
+@keyframes stagger-in {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes heatmap-cell-in {
+  from { opacity: 0; transform: scale(0.7); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes trend-draw {
+  from { stroke-dashoffset: var(--trend-length, 1000); }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes menu-scale-in {
+  from { opacity: 0; transform: scale(0.94) translate3d(0, -4px, 0); }
+  to { opacity: 1; transform: scale(1) translate3d(0, 0, 0); }
+}
+
 /* ─── Stage ───────────────────────────────────────────────────── */
 
 .stage {
@@ -298,8 +372,24 @@ kbd {
     width var(--duration-expand) var(--ease-window),
     height var(--duration-expand) var(--ease-window),
     border-radius var(--duration-expand) var(--ease-window),
-    box-shadow 300ms ease;
+    box-shadow var(--duration-soft) ease;
   will-change: width, height, border-radius;
+}
+
+/* Gradient hairline border — bright top edge, soft bottom */
+.island::after {
+  content: "";
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-soft) ease;
+  z-index: 2;
 }
 
 .is-compact:not(.is-dormant) .island {
@@ -315,25 +405,13 @@ kbd {
   background:
     radial-gradient(60% 40% at 30% 120%, rgba(155, 232, 180, 0.05), transparent 60%),
     radial-gradient(60% 40% at 70% 120%, rgba(122, 212, 240, 0.05), transparent 60%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.02);
   opacity: 0;
   transition: opacity 400ms ease;
   pointer-events: none;
-}
-
-/* Bottom accent line — breathes when something is pending */
-.island::after {
-  content: "";
-  position: absolute;
-  left: 14%;
-  right: 14%;
-  bottom: 0;
-  height: 2px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 300ms ease;
+  z-index: 1;
 }
 
 .island.has-pending::after {
@@ -348,7 +426,7 @@ kbd {
   will-change: border-radius;
   transition:
     border-radius var(--duration-expand) var(--ease-window),
-    box-shadow 300ms ease;
+    box-shadow var(--duration-soft) ease;
 }
 
 .tauri-runtime .island.is-opening {
@@ -371,8 +449,15 @@ kbd {
   width: min(560px, 100vw);
   height: min(360px, 100vh);
   border-radius: 0 0 22px 22px;
-  background: #000;
+  background:
+    radial-gradient(90% 55% at 50% 110%, var(--panel-glow), transparent 62%),
+    #000;
   overflow: hidden;
+}
+
+.island.is-expanded::after {
+  /* Keep pending edge glow above the noise layer when expanded */
+  z-index: 3;
 }
 
 .island.is-expanded::before {
@@ -396,7 +481,9 @@ kbd {
 .tauri-runtime .island.is-expanded {
   width: 100%;
   height: 100%;
-  background: #000;
+  background:
+    radial-gradient(90% 55% at 50% 110%, var(--panel-glow), transparent 62%),
+    #000;
 }
 
 .tauri-runtime .island.is-expanded::before {
@@ -2413,7 +2500,7 @@ kbd {
 }
 
 .is-closing .listener-dot {
-  animation: header-content-out 180ms ease both;
+  animation: header-content-out var(--duration-quick) ease both;
 }
 
 .listener-dot.online {
@@ -2907,7 +2994,7 @@ kbd {
   display: flex;
   flex-direction: column;
   animation: token-reel-spin 400ms cubic-bezier(0.12, 0.95, 0.18, 1) forwards;
-  will-change: transform;
+  will-change: transform, filter;
 }
 
 .token-odo-reel-digit {
@@ -2921,12 +3008,15 @@ kbd {
 @keyframes token-reel-spin {
   0% {
     transform: translate3d(0, 0, 0);
+    filter: blur(0.3px);
   }
   78% {
     transform: translate3d(0, calc(var(--reel-steps) * -1.12em + 0.06em), 0);
+    filter: blur(0.3px);
   }
   100% {
     transform: translate3d(0, calc(var(--reel-steps) * -1.12em), 0);
+    filter: blur(0);
   }
 }
 
@@ -3251,7 +3341,8 @@ kbd {
   backdrop-filter: blur(24px) saturate(1.3);
   -webkit-backdrop-filter: blur(24px) saturate(1.3);
   box-shadow: var(--shadow-menu);
-  animation: fade-in-up 180ms var(--ease-out);
+  transform-origin: top right;
+  animation: menu-scale-in var(--duration-quick) var(--ease-pop);
 }
 
 .more-menu button {
@@ -3332,7 +3423,7 @@ kbd {
     rgba(8, 9, 11, 0.52);
   backdrop-filter: blur(8px) saturate(1.1);
   -webkit-backdrop-filter: blur(8px) saturate(1.1);
-  animation: update-notice-layer-in 220ms var(--ease-out) both;
+  animation: update-notice-layer-in var(--duration-snappy) var(--ease-out) both;
 }
 
 .update-notice-card {
@@ -3350,7 +3441,7 @@ kbd {
     0 18px 40px rgba(0, 0, 0, 0.42),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
   text-align: center;
-  animation: fade-in-up 260ms var(--ease-out) both;
+  animation: fade-in-up var(--duration-settle) var(--ease-out) both;
 }
 
 .update-notice-icon-wrap {
@@ -3425,6 +3516,7 @@ kbd {
 /* ─── Island Panel ────────────────────────────────────────────── */
 
 .island-panel {
+  position: relative;
   height: calc(100% - 36px);
   padding: 12px 16px 16px;
   opacity: 0;
@@ -3436,6 +3528,60 @@ kbd {
   transition:
     opacity var(--duration-normal) var(--ease-window),
     transform var(--duration-expand) var(--ease-window);
+}
+
+/* Soft film grain — static CSS noise (no SVG feTurbulence; that filter
+   re-rasterizes every frame during native window resize and causes jank). */
+.island-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.04;
+  z-index: 0;
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 1px,
+      rgba(255, 255, 255, 0.015) 1px,
+      rgba(255, 255, 255, 0.015) 2px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 1px,
+      rgba(0, 0, 0, 0.02) 1px,
+      rgba(0, 0, 0, 0.02) 2px
+    );
+  background-size: 3px 3px;
+  mix-blend-mode: overlay;
+}
+
+.island-panel-content {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  min-height: 0;
+}
+
+.island-panel[data-nav="forward"] .island-panel-content {
+  animation: slide-in-right var(--duration-snappy) var(--ease-out) both;
+}
+
+.island-panel[data-nav="back"] .island-panel-content {
+  animation: slide-in-left var(--duration-snappy) var(--ease-out) both;
+}
+
+.island.is-panel-exiting .island-panel {
+  animation: panel-exit var(--panel-exit-ms) var(--ease-out) forwards;
+  pointer-events: none;
+}
+
+/* Staggered cascade for direct panel children / marked blocks */
+.stagger-child {
+  animation: stagger-in var(--duration-normal) var(--ease-out) both;
+  animation-delay: calc(var(--stagger-i, 0) * var(--stagger-step));
 }
 
 .tauri-runtime .island-panel {
@@ -3452,7 +3598,7 @@ kbd {
   opacity: 1;
   pointer-events: auto;
   transform: translate3d(0, 0, 0);
-  transition-delay: 200ms;
+  transition-delay: 80ms;
 }
 
 .tauri-runtime .is-expanded .island-panel {
@@ -3470,6 +3616,7 @@ kbd {
   opacity: 0;
   pointer-events: none;
   transition: none;
+  animation: none;
 }
 
 .is-closing .island-panel {
@@ -3571,6 +3718,45 @@ kbd {
   min-height: 0;
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 14px;
+  animation: scale-in var(--duration-snappy) var(--ease-pop) both;
+  border-radius: var(--radius-md);
+}
+
+.approval-view.is-arrive {
+  animation:
+    scale-in var(--duration-snappy) var(--ease-pop) both,
+    approval-glow-pulse 720ms var(--ease-out);
+}
+
+.approval-view.is-danger {
+  --approval-glow: var(--risk-danger-glow);
+}
+
+.approval-view.is-danger .risk-pill.danger {
+  animation: danger-flash 900ms ease-in-out 1;
+}
+
+.approval-view.is-resolving-approve,
+.approval-view.is-resolving-deny {
+  animation: approval-resolve-out var(--resolve-feedback-ms) var(--ease-out) forwards;
+  pointer-events: none;
+}
+
+.approval-view.is-resolving-approve .decision-button.approve::after,
+.approval-view.is-resolving-deny .decision-button.deny::after,
+.approval-view.is-resolving-approve .decision-button.always-approve::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.45),
+    transparent
+  );
+  animation: sheen-sweep var(--resolve-feedback-ms) var(--ease-out) forwards;
+  pointer-events: none;
 }
 
 /* Risk halo at the top of the card */
@@ -3583,7 +3769,7 @@ kbd {
   height: 80px;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 300ms ease;
+  transition: opacity var(--duration-soft) ease;
   background: radial-gradient(60% 100% at 50% 0%, var(--risk-danger-glow), transparent 70%);
 }
 
@@ -4034,13 +4220,13 @@ kbd {
   overflow: hidden;
   transition:
     filter var(--duration-fast) ease,
-    transform var(--duration-fast) ease,
+    transform var(--duration-fast) var(--ease-pop),
     box-shadow var(--duration-fast) ease;
 }
 
 .decision-button:hover:not(:disabled) {
   filter: brightness(1.07);
-  transform: translateY(-1px);
+  transform: translateY(-1px) scale(1.02);
 }
 
 .decision-button:active:not(:disabled) {
@@ -4168,6 +4354,8 @@ kbd {
   background: transparent;
   text-align: left;
   transition: transform var(--duration-fast) ease;
+  animation: stagger-in var(--duration-normal) var(--ease-out) both;
+  animation-delay: calc(var(--stagger-i, 0) * var(--stagger-step));
 }
 
 .session-item::before {
@@ -6020,6 +6208,28 @@ kbd {
   padding: 12px 16px 14px;
 }
 
+.token-heatmap-placeholder {
+  flex: 1 1 auto;
+  min-height: 120px;
+  border-radius: 8px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.04),
+    rgba(255, 255, 255, 0.015)
+  );
+}
+
+.token-heatmap-charts--pending {
+  flex: 1 1 auto;
+  min-height: 160px;
+  border-radius: 8px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.03),
+    transparent
+  );
+}
+
 .token-heatmap-view::-webkit-scrollbar {
   display: none;
 }
@@ -6138,6 +6348,14 @@ kbd {
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.08);
   image-rendering: pixelated;
+}
+
+/* Only play cell cascade after the settings window has finished resizing. */
+.token-heatmap-view.is-settled .token-heatmap-cell {
+  animation: heatmap-cell-in var(--duration-normal) var(--ease-out) both;
+  animation-delay: calc(
+    (var(--heat-row, 0) * 7 + var(--heat-col, 0)) * 8ms + 40ms
+  );
 }
 
 .token-heatmap-cell.is-outside {
@@ -6399,6 +6617,25 @@ kbd {
   cursor: crosshair;
 }
 
+.token-heatmap-trend-line {
+  stroke-dasharray: var(--trend-length, 1000);
+  stroke-dashoffset: 0;
+}
+
+.token-heatmap-view.is-settled .token-heatmap-trend-line {
+  stroke-dashoffset: var(--trend-length, 1000);
+  animation: trend-draw 900ms var(--ease-out-quint) both;
+}
+
+.token-heatmap-trend-area {
+  opacity: 1;
+}
+
+.token-heatmap-view.is-settled .token-heatmap-trend-area {
+  opacity: 0;
+  animation: fade-in-up var(--duration-slow) var(--ease-out) 200ms both;
+}
+
 .token-heatmap-trend-hover {
   color: rgba(255, 255, 255, 0.7);
   font-family: var(--font-mono);
@@ -6417,6 +6654,7 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   .island,
   .island-panel,
+  .island-panel-content,
   .island-header,
   .agent-slot,
   .agent-dot,
@@ -6424,7 +6662,11 @@ kbd {
   .header-metrics,
   .pending-badge-slot,
   .pending-badge,
-  .token-odo {
+  .token-odo,
+  .stagger-child,
+  .session-item,
+  .decision-button,
+  .approval-view {
     transition-duration: 1ms !important;
     transition-delay: 0ms !important;
   }
@@ -6460,7 +6702,23 @@ kbd {
   .codex,
   .codex *,
   .cursor-mascot,
-  .cursor-mascot * {
+  .cursor-mascot *,
+  .more-menu,
+  .island-panel-content,
+  .stagger-child,
+  .session-item,
+  .approval-view,
+  .approval-view.is-arrive,
+  .approval-view.is-resolving-approve,
+  .approval-view.is-resolving-deny,
+  .decision-button::after,
+  .token-heatmap-cell,
+  .token-heatmap-view.is-settled .token-heatmap-cell,
+  .token-heatmap-trend-line,
+  .token-heatmap-view.is-settled .token-heatmap-trend-line,
+  .token-heatmap-trend-area,
+  .token-heatmap-view.is-settled .token-heatmap-trend-area,
+  .island.is-panel-exiting .island-panel {
     animation: none !important;
   }
 }
