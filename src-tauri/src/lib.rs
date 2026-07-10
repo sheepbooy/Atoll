@@ -601,6 +601,12 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
     let token_usage_by_model = lock_state(&state.session_token_usage_by_model);
     let known_sessions = lock_state(&state.known_sessions);
     let pinned = lock_state(&state.pinned_sessions);
+    let cursor_subagent_conversation_ids: HashSet<String> = lock_state(
+        &state.cursor_subagent_conversations,
+    )
+    .keys()
+    .cloned()
+    .collect();
     let online = compute_listening_online(app);
     let hook_health = cached_hook_health(app, state);
     let mut snapshot = snapshot_from(
@@ -611,6 +617,7 @@ pub(crate) fn build_snapshot(app: &AppHandle, state: &AppState) -> IslandSnapsho
         &known_sessions,
         &pinned,
         online,
+        &cursor_subagent_conversation_ids,
     );
     drop(pinned);
     drop(known_sessions);
@@ -3508,9 +3515,22 @@ fn resolve_complete_transcript_path_from_main(
 }
 
 fn bind_cursor_subagent_conversation(state: &AppState, conv_id: &str, parent_session_id: &str) {
+    if conv_id.is_empty() || conv_id == parent_session_id {
+        return;
+    }
     if let Ok(mut map) = state.cursor_subagent_conversations.lock() {
         map.insert(conv_id.to_string(), parent_session_id.to_string());
     }
+    // Rewrite any requests that were attributed to the subagent's own conversation
+    // so they do not surface as a duplicate top-level session row.
+    if let Ok(mut requests) = state.requests.lock() {
+        for request in requests.iter_mut() {
+            if request.session == conv_id {
+                request.session = parent_session_id.to_string();
+            }
+        }
+    }
+    purge_tracked_session(state, conv_id, None);
 }
 
 fn unbind_cursor_subagent_conversation(state: &AppState, conv_id: Option<&str>) {
@@ -6912,6 +6932,7 @@ fn snapshot_from(
     known_sessions: &HashMap<String, KnownSession>,
     pinned_sessions: &HashSet<String>,
     online: bool,
+    excluded_session_ids: &HashSet<String>,
 ) -> IslandSnapshot {
     let visible: Vec<&PermissionRequest> = requests
         .iter()
@@ -6928,6 +6949,9 @@ fn snapshot_from(
         .cloned();
     let archived_count = requests.iter().filter(|r| r.archived).count();
     let mut sessions = build_session_summaries(&visible);
+    // Cursor subagent conversations are nested under their parent; never list them
+    // as independent top-level sessions.
+    sessions.retain(|session| !excluded_session_ids.contains(&session.session_id));
 
     for session in sessions.iter_mut() {
         if let Some(info) = known_sessions.get(&session.session_id) {
@@ -6978,6 +7002,9 @@ fn snapshot_from(
             HashMap::new();
         for request in requests.iter().filter(|r| r.archived) {
             if active_session_ids.contains(request.session.as_str()) {
+                continue;
+            }
+            if excluded_session_ids.contains(&request.session) {
                 continue;
             }
             if is_codex_internal_session(
@@ -7051,6 +7078,9 @@ fn snapshot_from(
 
         for (session_id, info) in known_sessions {
             if existing_ids.contains(session_id.as_str()) {
+                continue;
+            }
+            if excluded_session_ids.contains(session_id) {
                 continue;
             }
             if is_codex_internal_session(&info.agent, &info.cwd, info.transcript_path.as_deref()) {
@@ -7306,6 +7336,7 @@ mod core_tests {
             &HashMap::new(),
             &HashSet::new(),
             true,
+            &HashSet::new(),
         );
 
         assert_eq!(snapshot.sessions.len(), 1);
@@ -7321,6 +7352,7 @@ mod core_tests {
             &HashMap::new(),
             &HashSet::new(),
             true,
+            &HashSet::new(),
         );
 
         assert!(snapshot.sessions.is_empty());
@@ -7367,6 +7399,7 @@ mod core_tests {
             &known_sessions,
             &HashSet::new(),
             true,
+            &HashSet::new(),
         );
 
         assert_eq!(snapshot.sessions.len(), 1);
@@ -7675,6 +7708,7 @@ mod core_tests {
             &known_sessions,
             &HashSet::new(),
             true,
+            &HashSet::new(),
         );
 
         let request_session = snapshot
@@ -7835,6 +7869,7 @@ mod core_tests {
             &HashMap::new(),
             &HashSet::new(),
             true,
+            &HashSet::new(),
         );
 
         assert_eq!(snapshot.daily_tokens.input_tokens, 300);
@@ -7867,6 +7902,7 @@ mod core_tests {
                 &known,
                 &pinned,
                 true,
+                &HashSet::new(),
             );
 
             assert_eq!(
@@ -7920,6 +7956,7 @@ mod core_tests {
             &known,
             &pinned,
             true,
+            &HashSet::new(),
         );
 
         assert_eq!(snapshot.sessions.len(), 1);
@@ -8043,6 +8080,7 @@ mod core_tests {
             &known,
             &pinned,
             true,
+            &HashSet::new(),
         );
 
         assert!(snapshot.sessions.is_empty());
@@ -8318,6 +8356,7 @@ mod core_tests {
             &HashMap::new(),
             &HashSet::new(),
             true,
+            &HashSet::new(),
         );
 
         assert!(snapshot.sessions.is_empty());
@@ -8773,6 +8812,7 @@ mod core_tests {
             &HashMap::new(),
             &HashSet::new(),
             true,
+            &HashSet::new(),
         );
         assert_eq!(snapshot.daily_tokens.input_tokens, 500);
         assert_eq!(snapshot.daily_tokens.output_tokens, 120);
@@ -9340,6 +9380,140 @@ mod cursor_subagent_tests {
             }),
         );
         assert!(parent.is_none());
+    }
+
+    #[test]
+    fn cursor_subagent_pretooluse_request_attributes_to_parent() {
+        let state = test_app_state();
+        register_subagent_start(
+            &state,
+            &json!({
+                "subagent_id": "sub-abc",
+                "conversation_id": "conv-parent",
+                "subagent_type": "explore"
+            }),
+            AgentKind::Cursor,
+        );
+
+        let payload = json!({
+            "hook_event_name": "preToolUse",
+            "conversation_id": "conv-subagent",
+            "cwd": "/tmp/project",
+            "tool_name": "Shell",
+            "tool_input": { "command": "echo hi" },
+            "tool_use_id": "tool-1"
+        });
+        let mut request = hook_bridge::permission_request_from_cursor_payload(
+            "req-1".into(),
+            payload.clone(),
+            "2026-01-01T00:00:00Z".into(),
+        )
+        .expect("cursor request");
+        assert_eq!(request.session, "conv-subagent");
+
+        hook_bridge::attribute_cursor_request_to_parent_session(&state, &payload, &mut request);
+        assert_eq!(request.session, "conv-parent");
+    }
+
+    #[test]
+    fn bind_cursor_subagent_conversation_rewrites_ghost_requests() {
+        let state = test_app_state();
+        register_known_session(
+            &state,
+            "conv-subagent",
+            AgentKind::Cursor,
+            "/tmp/project",
+            Some("/tmp/project/sub.jsonl"),
+        );
+        {
+            let mut requests = state.requests.lock().expect("lock");
+            requests.push(PermissionRequest {
+                id: "req-ghost".into(),
+                tool_use_id: None,
+                agent: AgentKind::Cursor,
+                session: "conv-subagent".into(),
+                command: "Bash: echo".into(),
+                detail: "echo".into(),
+                cwd: "/tmp/project".into(),
+                requested_at: "2026-06-10T08:00:00Z".into(),
+                status: PermissionStatus::Approved,
+                archived: false,
+                supports_always: false,
+                transcript_path: None,
+                tool_input: None,
+            });
+        }
+
+        bind_cursor_subagent_conversation(&state, "conv-subagent", "conv-parent");
+
+        let requests = state.requests.lock().expect("lock");
+        assert_eq!(requests[0].session, "conv-parent");
+        assert!(!state
+            .known_sessions
+            .lock()
+            .expect("lock")
+            .contains_key("conv-subagent"));
+        assert_eq!(
+            state
+                .cursor_subagent_conversations
+                .lock()
+                .expect("lock")
+                .get("conv-subagent")
+                .map(String::as_str),
+            Some("conv-parent")
+        );
+    }
+
+    #[test]
+    fn snapshot_excludes_bound_subagent_conversation_ids() {
+        let requests = vec![PermissionRequest {
+            id: "req-parent".into(),
+            tool_use_id: None,
+            agent: AgentKind::Cursor,
+            session: "conv-parent".into(),
+            command: "Bash: ls".into(),
+            detail: "ls".into(),
+            cwd: "/tmp/project".into(),
+            requested_at: "2026-06-10T08:00:00Z".into(),
+            status: PermissionStatus::Approved,
+            archived: false,
+            supports_always: false,
+            transcript_path: None,
+            tool_input: None,
+        }];
+        let mut known_sessions = HashMap::new();
+        known_sessions.insert(
+            "conv-subagent".into(),
+            KnownSession {
+                agent: AgentKind::Cursor,
+                cwd: "/tmp/project".into(),
+                transcript_path: Some("/tmp/sub.jsonl".into()),
+                last_activity: "2026-06-10T08:01:00Z".into(),
+                host: platform::SessionHost::CursorIde,
+                conversation_id: Some("conv-subagent".into()),
+            },
+        );
+        let mut excluded = HashSet::new();
+        excluded.insert("conv-subagent".into());
+
+        let snapshot = snapshot_from(
+            &requests,
+            &HashMap::new(),
+            900,
+            &HashMap::new(),
+            &known_sessions,
+            &HashSet::new(),
+            true,
+            &excluded,
+        );
+
+        let session_ids: Vec<&str> = snapshot
+            .sessions
+            .iter()
+            .map(|session| session.session_id.as_str())
+            .collect();
+        assert_eq!(session_ids, vec!["conv-parent"]);
+        assert!(!session_ids.contains(&"conv-subagent"));
     }
 
     #[test]

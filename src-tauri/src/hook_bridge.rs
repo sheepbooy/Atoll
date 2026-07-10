@@ -837,6 +837,18 @@ pub(crate) fn cursor_stop_should_ingest_tokens(state: &AppState, payload: &Value
     !cursor_lifecycle_token_seen(state, &session_id)
 }
 
+/// Attribute a Cursor permission request to its parent session when the event
+/// belongs to a subagent (avoids duplicate top-level session rows).
+pub(crate) fn attribute_cursor_request_to_parent_session(
+    state: &AppState,
+    payload: &Value,
+    request: &mut PermissionRequest,
+) {
+    if let Some(parent_id) = resolve_cursor_subagent_parent(state, payload) {
+        request.session = parent_id;
+    }
+}
+
 /// Register or refresh a Cursor session from observer hooks and optionally ingest tokens.
 fn observe_cursor_session(
     app: &AppHandle,
@@ -1025,9 +1037,13 @@ fn process_cursor_observer_event(
             observe_cursor_session(&app, &state, &payload, None, false, "preToolUse")?;
             if let Some(mut request) = permission_request_from_cursor_payload(
                 uuid::Uuid::new_v4().to_string(),
-                payload,
+                payload.clone(),
                 crate::iso_timestamp_now(),
             ) {
+                // Subagent tool events carry their own conversation_id; attribute
+                // them to the parent session so they do not appear as a duplicate
+                // top-level row in the active session list.
+                attribute_cursor_request_to_parent_session(&state, &payload, &mut request);
                 request.status = PermissionStatus::Approved;
                 request.detail = format!("{} Auto-approved.", request.detail);
                 let session_id = request.session.clone();
