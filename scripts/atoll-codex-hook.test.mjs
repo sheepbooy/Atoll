@@ -107,6 +107,36 @@ for (const hookEventName of ["PostToolUse", "Stop", "SubagentStart", "SubagentSt
   }
 }
 
+{
+  const slowPermissionServer = http.createServer((_request, response) => {
+    setTimeout(() => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(expectedPermissionResponse));
+    }, 2000);
+  });
+  await new Promise((resolve) =>
+    slowPermissionServer.listen(0, "127.0.0.1", resolve),
+  );
+
+  try {
+    const { port } = slowPermissionServer.address();
+    const startedAt = Date.now();
+    const { stdout, stderr, exitCode } = await runHook(permissionPayload, {
+      ATOLL_HOOK_URL: `http://127.0.0.1:${port}/codex/hook`,
+      ATOLL_HOOK_TOKEN: "env-token",
+      ATOLL_CODEX_HOOK_TIMEOUT_MS: "200",
+    });
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.equal(stderr, "");
+    assert.equal(exitCode, 0);
+    assert(elapsedMs >= 2000, `expected to wait for approval, took ${elapsedMs}ms`);
+    assert.deepEqual(JSON.parse(stdout), expectedPermissionResponse);
+  } finally {
+    await new Promise((resolve) => slowPermissionServer.close(resolve));
+  }
+}
+
 async function runHook(payload, env = {}) {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "atoll-codex-hook-test-"));
   try {

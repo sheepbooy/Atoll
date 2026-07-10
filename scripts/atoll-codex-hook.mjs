@@ -15,16 +15,22 @@ const MAX_STDIN_BYTES = 2 * 1024 * 1024;
 try {
   const rawPayload = await readStdin(STDIN_TIMEOUT_MS);
   const payload = (rawPayload || "").replace(/^\uFEFF/, "");
+  const hookEventName = hookEventNameFromPayload(payload);
+  // PermissionRequest must block until the user decides. Observer events use a
+  // short timeout so Stop/PostToolUse cannot stall the Codex turn.
+  const useShortTimeout = hookEventName !== "PermissionRequest";
   let text;
   let timeout;
-  const controller = new AbortController();
+  const controller = useShortTimeout ? new AbortController() : null;
   try {
-    timeout = setTimeout(() => controller.abort(), hookTimeoutMs);
+    if (controller) {
+      timeout = setTimeout(() => controller.abort(), hookTimeoutMs);
+    }
     const response = await fetch(hookUrl, {
       method: "POST",
       headers: { "content-type": "application/json", ...hookAuthHeaders(hookConfig.token) },
       body: payload || "{}",
-      signal: controller.signal,
+      ...(controller ? { signal: controller.signal } : {}),
     });
 
     if (!response.ok) {
