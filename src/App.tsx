@@ -1847,6 +1847,9 @@ export function App() {
       try {
         await nativeTransition;
         if (phaseRef.current === "opening") {
+          if (notchMetricsHydrated) {
+            initialNativePresentationSyncedRef.current = true;
+          }
           setPresentationPhase(finishExpand("opening"));
         }
       } catch {
@@ -2539,6 +2542,7 @@ export function App() {
     // native animation starts with a light DOM. TokenHeatmapView further defers
     // its dense grid/charts until COLLAPSE_ANIMATION_MS elapses.
     if (phaseRef.current === "expanded" && panelView.kind !== "settings") {
+      const previousKey = lastNativePresentationKeyRef.current;
       lastNativePresentationKeyRef.current = expandedPresentationKey(false, false, true);
       syncNativeIslandPresentation(
         "expanded",
@@ -2547,7 +2551,9 @@ export function App() {
         undefined,
         false,
         true,
-      ).catch(() => undefined);
+      ).catch(() => {
+        lastNativePresentationKeyRef.current = previousKey;
+      });
     }
     openTokensPage(panelView.kind === "settings" ? "settings-main" : "home");
   }
@@ -2592,6 +2598,20 @@ export function App() {
     setMenuOpen(false);
     setNavDirection("forward");
     setPanelAnimKey((key) => key + 1);
+    if (phaseRef.current === "expanded" && panelView.kind !== "settings") {
+      const previousKey = lastNativePresentationKeyRef.current;
+      lastNativePresentationKeyRef.current = expandedPresentationKey(false, false, true);
+      syncNativeIslandPresentation(
+        "expanded",
+        undefined,
+        false,
+        undefined,
+        false,
+        true,
+      ).catch(() => {
+        lastNativePresentationKeyRef.current = previousKey;
+      });
+    }
     setPanelView({ kind: "settings", page: "main" });
   }
 
@@ -2769,6 +2789,7 @@ export function App() {
         nativeExpandedSettings,
       );
       if (lastNativePresentationKeyRef.current === key) return;
+      const previousKey = lastNativePresentationKeyRef.current;
       lastNativePresentationKeyRef.current = key;
       syncNativeIslandPresentation(
         "expanded",
@@ -2777,7 +2798,9 @@ export function App() {
         undefined,
         nativeExpandedPlan,
         nativeExpandedSettings,
-      ).catch(() => undefined);
+      ).catch(() => {
+        lastNativePresentationKeyRef.current = previousKey;
+      });
     }
   }, [
     phase,

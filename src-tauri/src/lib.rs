@@ -1289,12 +1289,7 @@ async fn set_island_presentation(
     }
 
     if animate == Some(false) {
-        if snap == Some(true)
-            && matches!(
-                mode,
-                IslandWindowMode::Micro | IslandWindowMode::Compact | IslandWindowMode::Dormant
-            )
-        {
+        if snap == Some(true) {
             let saved_compact_width = *state
                 .compact_width
                 .lock()
@@ -1308,6 +1303,9 @@ async fn set_island_presentation(
                 .compact_left_width
                 .lock()
                 .map_err(|error| error.to_string())?;
+            let expanded_idle = expanded_idle.unwrap_or(false);
+            let expanded_plan = expanded_plan.unwrap_or(false);
+            let expanded_settings = expanded_settings.unwrap_or(false);
             // apply_island_window_mode touches AppKit; must run on the main thread.
             let (sync_tx, sync_rx) =
                 std::sync::mpsc::sync_channel::<Result<Option<HomeWindowBounds>, String>>(0);
@@ -1319,6 +1317,9 @@ async fn set_island_presentation(
                         mode,
                         presentation_width,
                         compact_left_width,
+                        expanded_idle,
+                        expanded_plan,
+                        expanded_settings,
                     )
                     .map_err(|error| error.to_string());
                     let _ = sync_tx.send(result);
@@ -6252,9 +6253,15 @@ pub fn run() {
                 } else {
                     IslandWindowMode::Compact
                 };
-                if let Ok(Some(home)) =
-                    apply_island_window_mode(&window, initial_mode, COMPACT_WINDOW_WIDTH, 0.0)
-                {
+                if let Ok(Some(home)) = apply_island_window_mode(
+                    &window,
+                    initial_mode,
+                    COMPACT_WINDOW_WIDTH,
+                    0.0,
+                    false,
+                    false,
+                    false,
+                ) {
                     eprintln!("[Atoll] step: island window mode applied");
                     let state = app.state::<AppState>();
                     if let Ok(mut home_bounds) = state.home_bounds.lock() {
@@ -6754,6 +6761,9 @@ fn apply_island_window_mode(
     mode: IslandWindowMode,
     compact_width: f64,
     compact_left_width: f64,
+    expanded_idle: bool,
+    expanded_plan: bool,
+    expanded_settings: bool,
 ) -> tauri::Result<Option<HomeWindowBounds>> {
     let monitor = window
         .primary_monitor()
@@ -6777,9 +6787,9 @@ fn apply_island_window_mode(
         mode,
         compact_width,
         notch,
-        false,
-        false,
-        false,
+        expanded_idle,
+        expanded_plan,
+        expanded_settings,
     ))?;
     platform::set_island_cursor_events_ignored(window, is_collapsed_pass_through_mode(mode));
 
@@ -6788,9 +6798,9 @@ fn apply_island_window_mode(
         scale_factor,
         compact_width,
         notch,
-        false,
-        false,
-        false,
+        expanded_idle,
+        expanded_plan,
+        expanded_settings,
     );
     let logical_window_size = window_size.to_logical::<f64>(scale_factor);
     let left_pane_width = if compact_left_width > 0.0 {
