@@ -602,6 +602,13 @@ kbd {
   height: calc(100% - var(--notch-height, 0px));
 }
 
+.is-expanded.is-idle .island-panel-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
 .is-expanded.is-idle .idle-view {
   height: auto;
   width: 100%;
