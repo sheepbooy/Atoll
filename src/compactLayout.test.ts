@@ -14,6 +14,8 @@ import {
   computeCompactLeftWidth,
   computeCompactSideColumnBudget,
   computeMaxCompactIconLimit,
+  computeMicroWindowWidth,
+  MICRO_WINDOW_MIN_WIDTH,
   type CompactHeaderLayout,
 } from "./compactLayout";
 
@@ -163,6 +165,15 @@ describe("compactLayout", () => {
       1,
     );
     expect(width).toBeLessThanOrEqual(COMPACT_MAX_WINDOW_WIDTH);
+  });
+
+  it("uses the idle micro width when no sessions are active", () => {
+    expect(computeMicroWindowWidth(0, 0, 0)).toBe(MICRO_WINDOW_MIN_WIDTH);
+  });
+
+  it("widens the micro island when sessions and tokens are present", () => {
+    const width = computeMicroWindowWidth(1, 12_345, 0);
+    expect(width).toBeGreaterThan(MICRO_WINDOW_MIN_WIDTH);
   });
 });
 

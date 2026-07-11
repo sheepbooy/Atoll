@@ -105,6 +105,7 @@ import {
   computeCompactHeaderLayout,
   computeCompactLeftPaneWidth,
   computeMaxCompactIconLimit,
+  computeMicroWindowWidth,
   MIN_MAX_COMPACT_ICONS,
 } from "./compactLayout";
 import { TokenCounter } from "./TokenCounter";
@@ -500,8 +501,7 @@ function deriveSessionMood(
 
 // Keep in sync with COMPACT_WINDOW_HEIGHT in src-tauri/src/lib.rs.
 const COMPACT_WINDOW_HEIGHT = 36;
-// Keep in sync with MICRO_WINDOW_WIDTH / MICRO_WINDOW_HEIGHT in src-tauri/src/lib.rs.
-const MICRO_WINDOW_WIDTH = 72;
+// Keep in sync with MICRO_WINDOW_HEIGHT in src-tauri/src/lib.rs.
 const MICRO_WINDOW_HEIGHT = 24;
 // Keep in sync with NOTCH_COVER_PADDING in src-tauri/src/lib.rs.
 const NOTCH_COVER_PADDING = 16;
@@ -588,8 +588,12 @@ function compactPresentationKey(
   return mode === "dormant" ? "dormant" : `compact:${width}:${leftWidth}`;
 }
 
-function microPresentationWidth(): number {
-  return MICRO_WINDOW_WIDTH;
+function microPresentationWidth(
+  sessionCount: number,
+  tokenTotal: number,
+  tokenCompactLevel: number,
+): number {
+  return computeMicroWindowWidth(sessionCount, tokenTotal, tokenCompactLevel);
 }
 
 function shouldRestInMicro(usesMicro: boolean): boolean {
@@ -965,6 +969,14 @@ export function App() {
   collapsedWindowWidthRef.current = collapsedWindowWidth;
   const compactLeftPaneWidthRef = useRef(compactLeftPaneWidth);
   compactLeftPaneWidthRef.current = compactLeftPaneWidth;
+  const microPresentationWidthRef = useRef(
+    computeMicroWindowWidth(0, 0, 0),
+  );
+  microPresentationWidthRef.current = microPresentationWidth(
+    sessions.length,
+    activeSessionTokenTotal,
+    compactHeaderLayout.tokenCompactLevel,
+  );
 
   useEffect(() => {
     if (!hookHealthHydrated) return;
@@ -1746,7 +1758,7 @@ export function App() {
 
     clearIdleTimer();
     setPresentationPhase("micro");
-    const microWidth = microPresentationWidth();
+    const microWidth = microPresentationWidthRef.current;
     lastNativePresentationKeyRef.current = compactPresentationKey(
       "micro",
       microWidth,
@@ -1943,7 +1955,7 @@ export function App() {
         ? "compact"
         : naturalCollapseMode;
     const collapsePresentationWidth =
-      collapseMode === "micro" ? microPresentationWidth() : compactWidth;
+      collapseMode === "micro" ? microPresentationWidthRef.current : compactWidth;
 
     lastNativePresentationKeyRef.current = compactPresentationKey(
       collapseMode,
@@ -1953,7 +1965,7 @@ export function App() {
 
     const nativeTransition =
       collapseMode === "micro"
-        ? setIslandPresentation("micro", microPresentationWidth())
+        ? setIslandPresentation("micro", microPresentationWidthRef.current)
         : collapseMode === "dormant"
           ? setIslandPresentation("dormant")
           : setIslandPresentation(
@@ -1972,7 +1984,7 @@ export function App() {
           if (collapseMode === "micro") {
             await setIslandPresentation(
               "micro",
-              microPresentationWidth(),
+              microPresentationWidthRef.current,
               undefined,
               undefined,
               false,
@@ -2719,7 +2731,7 @@ export function App() {
     }
 
     if (phase === "micro") {
-      const microWidth = microPresentationWidth();
+      const microWidth = microPresentationWidthRef.current;
       const key = compactPresentationKey("micro", microWidth, 0);
       if (lastNativePresentationKeyRef.current === key) return;
       lastNativePresentationKeyRef.current = key;
@@ -3051,10 +3063,12 @@ export function App() {
             </span>
             {showCollapsedActivityStrip ? (
               <>
-                <span
-                  className={`listener-dot ${snapshot.online ? "online" : ""}`}
-                  title={snapshot.online ? "Listening" : "Offline"}
-                />
+                {!isMicro ? (
+                  <span
+                    className={`listener-dot ${snapshot.online ? "online" : ""}`}
+                    title={snapshot.online ? "Listening" : "Offline"}
+                  />
+                ) : null}
                 <CompactSessionStack
                   sessions={compactLeftSessions}
                   overflowCount={compactLeftOverflow}

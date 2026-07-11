@@ -1386,7 +1386,7 @@ describe("App", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("hides the Windows micro listener dot after the last active session disappears", async () => {
+  it("does not render the Windows micro listener dot while sessions are active", async () => {
     Object.defineProperty(window, "__TAURI_INTERNALS__", {
       configurable: true,
       value: {},
@@ -1427,8 +1427,9 @@ describe("App", () => {
 
     const { container } = render(<App />);
     await waitFor(() =>
-      expect(container.querySelector(".listener-dot.online")).not.toBeNull(),
+      expect(container.querySelector(".is-micro")).not.toBeNull(),
     );
+    expect(container.querySelector(".listener-dot")).toBeNull();
 
     await act(async () => {
       emitSnapshot?.({
@@ -1441,6 +1442,63 @@ describe("App", () => {
     await waitFor(() =>
       expect(container.querySelector(".listener-dot")).toBeNull(),
     );
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: originalUserAgent,
+    });
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+  });
+
+  it("uses a wider micro island when an active session is present", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {},
+    });
+    const originalUserAgent = navigator.userAgent;
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    });
+    bridge.usesMicroIsland.mockResolvedValue(true);
+    const activeTokens = {
+      inputTokens: 12_345,
+      outputTokens: 678,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    };
+    const session = {
+      sessionId: "session-micro-width",
+      agent: "claude" as const,
+      cwd: "/tmp/project",
+      pendingCount: 0,
+      totalCount: 1,
+      lastActivity: "2026-06-10T08:00:00Z",
+      transcriptPath: null,
+      pinned: false,
+      sessionHost: "claudeCode" as const,
+      activeSubagents: [],
+    };
+    bridge.getSnapshot.mockResolvedValue({
+      ...emptySnapshot,
+      online: true,
+      sessions: [session],
+      activeSessionTokens: activeTokens,
+      hookHealth: connectedHookHealth,
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      const microCalls = bridge.setIslandPresentation.mock.calls.filter(
+        (call) => call[0] === "micro",
+      );
+      expect(
+        microCalls.some(
+          (call) => typeof call[1] === "number" && call[1] > 72,
+        ),
+      ).toBe(true);
+    });
 
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,

@@ -1267,11 +1267,13 @@ async fn set_island_presentation(
     };
 
     if let Some(width) = compact_width {
-        let mut saved_width = state
-            .compact_width
-            .lock()
-            .map_err(|error| error.to_string())?;
-        *saved_width = sanitize_compact_width(width);
+        if should_persist_compact_width(mode) {
+            let mut saved_width = state
+                .compact_width
+                .lock()
+                .map_err(|error| error.to_string())?;
+            *saved_width = sanitize_compact_width(width);
+        }
     }
 
     if let Some(left_width) = compact_left_width {
@@ -1293,10 +1295,15 @@ async fn set_island_presentation(
                 IslandWindowMode::Micro | IslandWindowMode::Compact | IslandWindowMode::Dormant
             )
         {
-            let compact_width = *state
+            let saved_compact_width = *state
                 .compact_width
                 .lock()
                 .map_err(|error| error.to_string())?;
+            let presentation_width = resolve_presentation_width(
+                mode,
+                compact_width,
+                saved_compact_width,
+            );
             let compact_left_width = *state
                 .compact_left_width
                 .lock()
@@ -1310,7 +1317,7 @@ async fn set_island_presentation(
                     let result = apply_island_window_mode(
                         &frame_window,
                         mode,
-                        compact_width,
+                        presentation_width,
                         compact_left_width,
                     )
                     .map_err(|error| error.to_string());
@@ -1331,10 +1338,15 @@ async fn set_island_presentation(
 
     let generation = state.presentation_generation.fetch_add(1, Ordering::SeqCst) + 1;
     let presentation_generation = Arc::clone(&state.presentation_generation);
-    let compact_width = *state
+    let saved_compact_width = *state
         .compact_width
         .lock()
         .map_err(|error| error.to_string())?;
+    let presentation_width = resolve_presentation_width(
+        mode,
+        compact_width,
+        saved_compact_width,
+    );
     let compact_left_width = *state
         .compact_left_width
         .lock()
@@ -1354,7 +1366,7 @@ async fn set_island_presentation(
             generation,
             &presentation_generation,
             home_bounds,
-            compact_width,
+            presentation_width,
             compact_left_width,
             expanded_idle,
             expanded_plan,
@@ -7044,7 +7056,7 @@ fn island_window_logical_size(
         // Windows-only super-collapsed strip; keeps a minimal top-edge footprint
         // so full-screen apps stay clickable underneath.
         IslandWindowMode::Micro => {
-            let w = compact_width.max(MICRO_WINDOW_WIDTH);
+            let w = sanitize_micro_width(compact_width);
             LogicalSize::new(w, MICRO_WINDOW_HEIGHT)
         }
         // Dormant sits within the menu-bar band. On notched displays the pill
@@ -7109,6 +7121,32 @@ fn sanitize_compact_width(width: f64) -> f64 {
         return COMPACT_WINDOW_WIDTH;
     }
     width.clamp(MIN_COMPACT_WINDOW_WIDTH, EXPANDED_WINDOW_WIDTH)
+}
+
+fn sanitize_micro_width(width: f64) -> f64 {
+    if !width.is_finite() {
+        return MICRO_WINDOW_WIDTH;
+    }
+    width.clamp(MICRO_WINDOW_WIDTH, EXPANDED_WINDOW_WIDTH)
+}
+
+fn should_persist_compact_width(mode: IslandWindowMode) -> bool {
+    !matches!(mode, IslandWindowMode::Micro)
+}
+
+fn resolve_presentation_width(
+    mode: IslandWindowMode,
+    width_param: Option<f64>,
+    saved_compact_width: f64,
+) -> f64 {
+    if matches!(mode, IslandWindowMode::Micro) {
+        return width_param
+            .map(sanitize_micro_width)
+            .unwrap_or(MICRO_WINDOW_WIDTH);
+    }
+    width_param
+        .map(sanitize_compact_width)
+        .unwrap_or(saved_compact_width)
 }
 
 /// A display has a camera housing ("notch") when the two menu-bar halves
@@ -9339,16 +9377,16 @@ mod core_tests {
 
     #[test]
     fn micro_window_is_a_thin_top_strip() {
-        let micro = island_window_logical_size(
+        let wide = island_window_logical_size(
             IslandWindowMode::Micro,
-            132.0,
+            104.0,
             NotchMetrics::default(),
             false,
             false,
             false,
         );
-        assert_eq!(micro.width, 132.0);
-        assert_eq!(micro.height, MICRO_WINDOW_HEIGHT);
+        assert_eq!(wide.width, 104.0);
+        assert_eq!(wide.height, MICRO_WINDOW_HEIGHT);
         let narrow = island_window_logical_size(
             IslandWindowMode::Micro,
             48.0,
@@ -9358,6 +9396,32 @@ mod core_tests {
             false,
         );
         assert_eq!(narrow.width, MICRO_WINDOW_WIDTH);
+    }
+
+    #[test]
+    fn micro_presentation_width_does_not_clamp_to_saved_compact_width() {
+        assert_eq!(
+            resolve_presentation_width(IslandWindowMode::Micro, Some(104.0), 220.0),
+            104.0
+        );
+        assert_eq!(
+            resolve_presentation_width(IslandWindowMode::Micro, None, 220.0),
+            MICRO_WINDOW_WIDTH
+        );
+        assert_eq!(
+            resolve_presentation_width(IslandWindowMode::Compact, None, 220.0),
+            220.0
+        );
+        assert_eq!(
+            resolve_presentation_width(IslandWindowMode::Compact, Some(180.0), 220.0),
+            180.0
+        );
+    }
+
+    #[test]
+    fn micro_mode_skips_compact_width_persistence() {
+        assert!(!should_persist_compact_width(IslandWindowMode::Micro));
+        assert!(should_persist_compact_width(IslandWindowMode::Compact));
     }
 
     #[test]
