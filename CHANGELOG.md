@@ -2,6 +2,12 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.47] - 2026-07-12
+
+### 修复
+- **Windows Small folded island**：修复有活跃 session 时 Atoll logo、绿色呼吸灯与 session 图标重叠；micro 宽度与 compact 宽度解耦，有 session 时自动加宽 micro 条
+- **Windows 展开岛空闲文案**：居中显示 idle 文本
+
 ## [0.1.46] - 2026-07-10
 
 ### 改进
