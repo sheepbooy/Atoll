@@ -821,7 +821,7 @@ describe("App", () => {
     vi.useRealTimers();
   });
 
-  it("keeps compact when opening Cursor from a session subview on Windows micro island", async () => {
+  it("collapses to micro when opening Cursor from a session subview on Windows micro island", async () => {
     Object.defineProperty(window, "__TAURI_INTERNALS__", {
       configurable: true,
       value: {},
@@ -883,29 +883,23 @@ describe("App", () => {
       await vi.advanceTimersByTimeAsync(COLLAPSE_ANIMATION_MS);
     });
 
-    expect(container.querySelector(".is-compact")).not.toBeNull();
-    expect(container.querySelector(".is-micro")).toBeNull();
+    expect(container.querySelector(".is-micro")).not.toBeNull();
+    expect(container.querySelector(".is-compact")).toBeNull();
     expect(
       bridge.setIslandPresentation.mock.calls.some(
-        (call) => call[0] === "compact" && call[5] === true,
+        (call) => call[0] === "micro" && call[5] === true,
       ),
     ).toBe(true);
     expect(
-      bridge.setIslandPresentation.mock.calls.some((call) => call[0] === "micro"),
-    ).toBe(false);
-
-    bridge.setIslandPresentation.mockClear();
-    emitIslandHover?.({ hovering: false, cursorOverWindow: false });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-    });
-    expect(container.querySelector(".is-compact")).not.toBeNull();
-    expect(container.querySelector(".is-micro")).toBeNull();
-    expect(
-      bridge.setIslandPresentation.mock.calls.some((call) => call[0] === "micro"),
+      bridge.setIslandPresentation.mock.calls.some((call) => call[0] === "compact"),
     ).toBe(false);
 
     vi.useRealTimers();
+    fireEvent.pointerEnter(screen.getByLabelText("Atoll"));
+    await waitFor(() =>
+      expect(container.querySelector(".is-expanded")).not.toBeNull(),
+    );
+
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,
       value: originalUserAgent,
@@ -1386,7 +1380,7 @@ describe("App", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("does not render the Windows micro listener dot while sessions are active", async () => {
+  it("shows listener dot without session logos in Windows micro island", async () => {
     Object.defineProperty(window, "__TAURI_INTERNALS__", {
       configurable: true,
       value: {},
@@ -1429,7 +1423,9 @@ describe("App", () => {
     await waitFor(() =>
       expect(container.querySelector(".is-micro")).not.toBeNull(),
     );
-    expect(container.querySelector(".listener-dot")).toBeNull();
+    expect(container.querySelector(".listener-dot")).not.toBeNull();
+    expect(container.querySelector(".compact-session-dot")).toBeNull();
+    expect(container.querySelector(".header-agent-logo")).toBeNull();
 
     await act(async () => {
       emitSnapshot?.({
@@ -1442,6 +1438,59 @@ describe("App", () => {
     await waitFor(() =>
       expect(container.querySelector(".listener-dot")).toBeNull(),
     );
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: originalUserAgent,
+    });
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+  });
+
+  it("shows Atoll logo instead of dead agent mascot in Windows micro island", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {},
+    });
+    const originalUserAgent = navigator.userAgent;
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    });
+    bridge.usesMicroIsland.mockResolvedValue(true);
+    const session = {
+      sessionId: "session-micro-dead-logo",
+      agent: "claude" as const,
+      cwd: "/tmp/project",
+      pendingCount: 0,
+      totalCount: 1,
+      lastActivity: "2026-06-10T08:00:00Z",
+      transcriptPath: null,
+      pinned: false,
+      sessionHost: "claudeCode" as const,
+      activeSubagents: [],
+    };
+    bridge.getSnapshot.mockResolvedValue({
+      ...emptySnapshot,
+      online: true,
+      sessions: [session],
+      hookHealth: {
+        claude: {
+          installed: true,
+          scriptFound: false,
+          settingsPath: "",
+          scriptPath: "",
+        },
+        codex: connectedHookHealth.codex,
+        cursor: connectedHookHealth.cursor,
+      },
+    });
+
+    const { container } = render(<App />);
+    await waitFor(() =>
+      expect(container.querySelector(".is-micro")).not.toBeNull(),
+    );
+    expect(container.querySelector(".atoll-logo")).not.toBeNull();
+    expect(container.querySelector(".header-agent-logo")).toBeNull();
 
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,
@@ -1517,63 +1566,61 @@ describe("App", () => {
       configurable: true,
       value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
     });
+    window.localStorage.setItem("atoll.foldedIslandSize", "regular");
     bridge.usesMicroIsland.mockResolvedValue(true);
-    const session = {
-      sessionId: "session-shrink-race",
-      agent: "claude" as const,
-      cwd: "/tmp/project",
-      pendingCount: 0,
-      totalCount: 1,
-      lastActivity: "2026-06-10T08:00:00Z",
-      transcriptPath: null,
-    };
     bridge.getSnapshot.mockResolvedValue({
       online: true,
       pendingCount: 0,
       activeRequest: null,
       recent: [],
-      sessions: [session],
+      sessions: [],
       hookHealth: connectedHookHealth,
     });
-    bridge.getSessionRequests.mockResolvedValue([]);
-    bridge.getSessionTranscript.mockResolvedValue([]);
 
-    const user = userEvent.setup();
     const { container } = render(<App />);
     await waitFor(() => expect(emitIslandHover).not.toBeNull());
+    await waitFor(() =>
+      expect(container.querySelector(".is-compact")).not.toBeNull(),
+    );
 
     fireEvent.pointerEnter(screen.getByLabelText("Atoll"));
     await waitFor(() =>
       expect(container.querySelector(".is-expanded")).not.toBeNull(),
     );
-
-    await user.click(await screen.findByRole("button", { name: /project/i }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Open Claude" })).toBeInTheDocument(),
+      expect(screen.getByRole("button", { name: /More options/i })).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Settings/i }));
+    const toggle = await screen.findByRole("switch", {
+      name: /Small folded island/i,
+    });
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(toggle).toHaveAttribute("aria-checked", "true"),
     );
 
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      fireEvent.click(screen.getByRole("button", { name: "Open Claude" }));
-      await flushCollapseAnimation();
-      expect(container.querySelector(".is-compact")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Atoll" }));
+    await flushCollapseAnimation();
+    expect(container.querySelector(".is-micro")).not.toBeNull();
 
-      bridge.setIslandPresentation.mockClear();
-      emitIslandHover?.({ hovering: false, cursorOverWindow: false });
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(250);
-      });
-      emitIslandHover?.({ hovering: false, cursorOverWindow: true });
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(300);
-      });
+    bridge.setIslandPresentation.mockClear();
+    emitIslandHover?.({ hovering: false, cursorOverWindow: false });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    emitIslandHover?.({ hovering: false, cursorOverWindow: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
 
-      expect(
-        bridge.setIslandPresentation.mock.calls.some((call) => call[0] === "micro"),
-      ).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(
+      bridge.setIslandPresentation.mock.calls.some((call) => call[0] === "micro"),
+    ).toBe(false);
+
+    vi.useRealTimers();
 
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,

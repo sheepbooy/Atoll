@@ -320,7 +320,7 @@ export function computeCollapsedWindowWidth(
 export const MICRO_WINDOW_MIN_WIDTH = 72;
 /** Windows micro header slots — keep in sync with .is-micro rules in styles.css. */
 export const MICRO_LOGO_SLOT = 24;
-export const MICRO_SESSION_SLOT = 14;
+export const MICRO_LISTENER_SLOT = 6;
 export const MICRO_OUTER_PADDING = 10;
 export const MICRO_HEADER_GAP = 3;
 export const MICRO_INNER_GAP = 2;
@@ -346,7 +346,7 @@ export function computeMicroWindowWidth(
     MICRO_OUTER_PADDING +
     MICRO_LOGO_SLOT +
     MICRO_INNER_GAP +
-    MICRO_SESSION_SLOT +
+    MICRO_LISTENER_SLOT +
     MICRO_HEADER_GAP +
     MICRO_TOKEN_MARK_SLOT +
     tokenWidth;

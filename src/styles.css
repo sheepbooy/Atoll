@@ -706,7 +706,7 @@ kbd {
 }
 
 .is-micro .listener-dot {
-  display: none;
+  flex: 0 0 auto;
 }
 
 .is-micro .compact-session-stack {

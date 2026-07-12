@@ -779,6 +779,12 @@ export function App() {
       }),
     [hookHealthAnalysis, atollActivity, hookHealthHydrated],
   );
+  const collapsedHeaderLogo = useMemo((): HeaderLogoDisplay => {
+    if (phase !== "micro" || headerLogo.kind === "atoll") {
+      return headerLogo;
+    }
+    return { kind: "atoll", activity: "dead" };
+  }, [headerLogo, phase]);
   const dailyTokens = snapshot.dailyTokens ?? ZERO_TOKEN_USAGE;
   const dailyTokenTotal = dailyTokens.inputTokens + dailyTokens.outputTokens;
   const activeSessionTokens = snapshot.activeSessionTokens ?? ZERO_TOKEN_USAGE;
@@ -1435,6 +1441,20 @@ export function App() {
       nextSize,
     );
     setFoldedIslandSize(nextSize);
+
+    if (
+      phaseRef.current === "opening" ||
+      phaseRef.current === "closing" ||
+      phaseRef.current === "expanded"
+    ) {
+      return;
+    }
+
+    if (small && phaseRef.current === "compact") {
+      shrinkToMicro().catch(() => undefined);
+    } else if (!small && phaseRef.current === "micro") {
+      promoteToCompact({ skipExpand: true }).catch(() => undefined);
+    }
   }
 
   async function handleChangeLaunchAtLogin(enabled: boolean) {
@@ -1953,8 +1973,7 @@ export function App() {
     const wasSessionSubview =
       leavingPanel === "session" || leavingPanel === "subagent" || leavingPanel === "subagentList";
     const collapseMode =
-      wasSessionSubview &&
-      (naturalCollapseMode === "dormant" || naturalCollapseMode === "micro")
+      wasSessionSubview && naturalCollapseMode === "dormant"
         ? "compact"
         : naturalCollapseMode;
     const collapsePresentationWidth =
@@ -2021,9 +2040,8 @@ export function App() {
             width: compactWidth,
             leftWidth: compactLeftWidth,
           };
-          if (wasSessionSubview) {
+          if (wasSessionSubview && naturalCollapseMode === "dormant") {
             suppressPostCollapseSyncRef.current = true;
-            holdCompactAfterSubviewOpenRef.current = true;
           }
           setPresentationPhase(collapseMode === "micro" ? "micro" : "compact");
         }
@@ -2077,7 +2095,14 @@ export function App() {
     if (phaseRef.current !== "closing") {
       suppressHoverExpandRef.current = false;
     }
-    scheduleIdleCollapse();
+    if (
+      phaseRef.current === "compact" &&
+      shouldRestInMicro(usesMicroIslandRef.current)
+    ) {
+      scheduleShrinkToMicro();
+    } else {
+      scheduleIdleCollapse();
+    }
   }
 
   function handleIslandClick(event: MouseEvent<HTMLElement>) {
@@ -3075,7 +3100,7 @@ export function App() {
               >
                 <span className="atoll-indicator-inner">
                   <HeaderLogo
-                    display={headerLogo}
+                    display={collapsedHeaderLogo}
                     size={menuBarLogoSize}
                     idleIntervalSec={idleIntervalSec * 60}
                     idleDurationSec={idleDurationSec * 60}
@@ -3086,18 +3111,18 @@ export function App() {
             </span>
             {showCollapsedActivityStrip ? (
               <>
+                <span
+                  className={`listener-dot ${snapshot.online ? "online" : ""}`}
+                  title={snapshot.online ? "Listening" : "Offline"}
+                />
                 {!isMicro ? (
-                  <span
-                    className={`listener-dot ${snapshot.online ? "online" : ""}`}
-                    title={snapshot.online ? "Listening" : "Offline"}
+                  <CompactSessionStack
+                    sessions={compactLeftSessions}
+                    overflowCount={compactLeftOverflow}
+                    activeRequest={activeRequest}
+                    justResolved={justResolved}
                   />
                 ) : null}
-                <CompactSessionStack
-                  sessions={compactLeftSessions}
-                  overflowCount={compactLeftOverflow}
-                  activeRequest={activeRequest}
-                  justResolved={justResolved}
-                />
               </>
             ) : panelView.kind === "subagent" ? (
               <SessionSubviewNav
