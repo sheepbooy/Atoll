@@ -2,6 +2,15 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.48] - 2026-07-13
+
+### 新增
+- **中英文切换**：设置页 Display 分区新增 English/中文 语言切换，主应用壳层 UI 支持全量中英双语，偏好持久化到 localStorage
+
+### 修复
+- **Windows Small folded island**：修复小折叠岛收起与 micro header 布局异常
+- **设置/Token 子页**：首次打开设置或 Token 子页时同步原生窗口尺寸，避免展开尺寸不正确
+
 ## [0.1.47] - 2026-07-12
 
 ### 修复
