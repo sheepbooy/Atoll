@@ -6,6 +6,7 @@
 
 ### 修复
 - **Hooks 安装**：恢复 Windows `where.exe` 与 Unix `command -v` 静默探测 Node.js，修复 0.1.16/0.1.46 为消黑窗移除系统探测后 GUI 进程找不到 Node 的回归
+- **macOS Release CI**：跳过不稳定的 Tauri `bundle_dmg.sh`，改为 ad-hoc 签名后用 `hdiutil` 生成 DMG
 
 ## [0.1.48] - 2026-07-13
 

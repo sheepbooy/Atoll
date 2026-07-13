@@ -62,13 +62,26 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm run tauri -- build --target aarch64-apple-darwin
+        # Skip Tauri's bundle_dmg.sh — it is flaky on GitHub-hosted macOS runners.
+        # We create the DMG with hdiutil after ad-hoc signing instead.
+        run: npm run tauri -- build --target aarch64-apple-darwin --bundles app
 
       - name: Ad-hoc sign .app
         run: |
           APP="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Atoll.app"
           codesign --force --deep --sign - "$APP"
           codesign --verify --strict "$APP" && echo "ad-hoc sign OK"
+
+      - name: Create DMG
+        run: |
+          APP="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Atoll.app"
+          DMG_DIR="src-tauri/target/aarch64-apple-darwin/release/bundle/dmg"
+          mkdir -p "$DMG_DIR"
+          DMG="$DMG_DIR/Atoll-aarch64.dmg"
+          rm -f "$DMG"
+          hdiutil create -volname "Atoll" -srcfolder "$APP" -ov -format UDZO "$DMG"
+          test -f "$DMG" || { echo "dmg not created"; exit 1; }
+          ls -la "$DMG_DIR"
 
       - name: Stage macOS artifacts
         run: |
