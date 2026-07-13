@@ -1991,4 +1991,18 @@ describe("App", () => {
       expect(container.querySelector(".compact-session-dot")).not.toBeNull(),
     );
   });
+
+  it("switches the settings language to Chinese", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Settings/i }));
+
+    const chineseButton = await screen.findByRole("button", { name: "中文" });
+    fireEvent.click(chineseButton);
+
+    await waitFor(() => {
+      expect(screen.getByText("语言")).toBeInTheDocument();
+      expect(screen.getByText("通用")).toBeInTheDocument();
+    });
+  });
 });

@@ -1,0 +1,83 @@
+{
+  "title": "Agent 钩子",
+  "section": {
+    "agents": "Agent"
+  },
+  "bulk": {
+    "installAll": "全部安装",
+    "uninstallAll": "全部卸载"
+  },
+  "action": {
+    "install": "安装",
+    "installing": "安装中…",
+    "uninstall": "卸载"
+  },
+  "status": {
+    "connected": "已连接",
+    "needsRetrust": "需重新信任",
+    "shimMissing": "垫片缺失",
+    "notInstalled": "未安装"
+  },
+  "summary": {
+    "notConnected": "未连接",
+    "allConnected": "全部 Agent 已连接",
+    "partialRetrust": "已连接 {{connected}}/{{total}} — 需重新信任",
+    "partial": "已连接 {{connected}}/{{total}}"
+  },
+  "attention": {
+    "checking": "正在检查 Agent 钩子",
+    "notInstalled": "Agent 钩子未安装",
+    "allConnected": "全部 Agent 钩子已连接",
+    "disconnected_one": "{{agents}} 钩子缺失或过期 — 请在 Agent 钩子中重新连接",
+    "disconnected_other": "{{agents}} 钩子缺失或过期 — 请在 Agent 钩子中重新连接",
+    "retrust_one": "{{agents}} 钩子已由 Atoll 更新 — 请在 Agent 钩子中重新信任",
+    "retrust_other": "{{agents}} 钩子已由 Atoll 更新 — 请在 Agent 钩子中重新信任",
+    "mixed": "{{agents}} 钩子需要处理 — 请检查 Agent 钩子"
+  },
+  "note": {
+    "claude": "适用于 Claude Code CLI 与 Desktop。安装后：在 Claude Desktop 中使用 Ask 权限，重启 Claude，然后触发一次 Bash 权限。",
+    "codex": "适用于 Codex CLI 与 Desktop。安装后：在 Codex Desktop 或通过 /hooks 信任 Atoll 钩子，重启 Codex，然后触发一次 shell 权限。",
+    "cursor": "适用于 Cursor IDE Agent 与 Ask 模式。安装后：在 Cursor 设置中确认钩子，重启 Cursor，然后在 Agent 或 Ask 模式中发送消息验证。"
+  },
+  "register": {
+    "withPath": "在 {{path}} 中注册钩子。{{note}}",
+    "claude": "注册 Claude Code 权限审批钩子。{{note}}",
+    "codex": "注册 Codex 权限审批钩子。{{note}}",
+    "cursor": "注册 Cursor 权限审批钩子。{{note}}"
+  },
+  "checklist": {
+    "claudeTitle": "Claude Desktop 检查清单",
+    "claudeNode": "安装钩子前请在本机安装 Node.js。",
+    "claudePermissions": "在 Claude Desktop 中将权限设为 Ask permissions。",
+    "claudeRestart": "安装钩子后退出并重新打开 Claude Desktop。",
+    "claudeVerify": "在本地 Code 会话中触发一次 Bash 权限以验证。",
+    "codexTitle": "Codex Desktop 检查清单",
+    "codexNode": "安装钩子前请在本机安装 Node.js。",
+    "codexTrust": "在 Codex Desktop 或 CLI 中打开 /hooks 并信任 Atoll 钩子。",
+    "codexRestart": "安装钩子后退出并重新打开 Codex Desktop。",
+    "codexVerify": "在本地会话中触发一次 shell 权限以验证。",
+    "cursorTitle": "Cursor 检查清单",
+    "cursorNode": "安装钩子前请在本机安装 Node.js。",
+    "cursorSettings": "在 Cursor 中打开 设置 → Hooks 并确认 Atoll 钩子已加载。",
+    "cursorRestart": "安装钩子后重启 Cursor。",
+    "cursorVerify": "在 Agent 或 Ask 模式中发送消息以验证。"
+  },
+  "warning": {
+    "scriptMissing": "应用包中缺少钩子脚本。若安装失败请重新安装 Atoll。",
+    "nodeNotFound": "在配置的钩子路径未找到 Node.js。请安装 Node.js 后重新安装钩子。",
+    "devBuildPath": "钩子指向开发构建路径。请从 Atoll.app 重新安装钩子，然后在 Codex 中重新信任。"
+  },
+  "retrust": {
+    "codex": "Codex 可能仍在使用旧版缓存的 Atoll 钩子脚本。在 Atoll 中点击重新安装钩子，或在 Codex 中打开 /hooks 重新批准 Atoll 钩子，然后重启 Codex。",
+    "claude": "Atoll 自上次批准后已更新 Claude 钩子脚本。请重新打开 Claude Code / Claude Desktop 权限并重新允许 Atoll 钩子，然后重启 Claude。",
+    "cursor": "Atoll 自上次加载后已更新 Cursor 钩子脚本。请重新打开 Cursor 设置 → Hooks 以重新加载，然后重启 Cursor。",
+    "default": "Atoll 自上次信任后已更新此钩子脚本。请在 Agent 应用中重新确认，然后重启。"
+  },
+  "error": {
+    "installFailed": "{{agentLabel}} 钩子安装失败：{{message}}",
+    "unknown": "未知错误",
+    "codexNotSaved": "Codex 钩子未保存。请检查 ~/.codex/hooks.json 的权限。",
+    "cursorNotSaved": "Cursor 钩子未保存。请检查 ~/.cursor/hooks.json 的权限。",
+    "installPartial": "无法为以下 Agent 安装钩子：{{agents}}。"
+  }
+}

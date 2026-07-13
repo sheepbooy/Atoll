@@ -1,0 +1,128 @@
+{
+  "app": {
+    "name": "Atoll"
+  },
+  "header": {
+    "dragWindow": "Drag window",
+    "hoverToOpen": "Hover to open",
+    "collapse": "Collapse Atoll",
+    "moreOptions": "More options",
+    "listening": "Listening",
+    "offline": "Offline",
+    "listeningForAgents": "Listening for agents",
+    "pendingAria": "{{count}} pending"
+  },
+  "update": {
+    "available": "Update available: v{{version}}",
+    "checking": "Checking…",
+    "checkForUpdates": "Check for updates",
+    "downloading": "Downloading… {{percent}}%",
+    "updateTo": "Update to v{{version}}",
+    "noticeTitle": "You're up to date",
+    "noticeDesc": "Atoll v{{version}} is the latest version.",
+    "ok": "OK"
+  },
+  "menu": {
+    "agentHooks": "Agent hooks",
+    "archiveAll": "Archive all",
+    "settings": "Settings",
+    "quit": "Quit Atoll"
+  },
+  "agent": {
+    "claude": "Claude",
+    "codex": "Codex",
+    "cursor": "Cursor",
+    "gemini": "Gemini",
+    "other": "Agent"
+  },
+  "nav": {
+    "back": "Back",
+    "settings": "Settings",
+    "subagents": "Subagents",
+    "openClaude": "Open Claude",
+    "openCodex": "Open Codex",
+    "openCursor": "Open Cursor",
+    "terminal": "Terminal",
+    "tokenActivity": "Token activity",
+    "displayPricing": "Display & pricing"
+  },
+  "approval": {
+    "commandRequest": "Command request",
+    "riskHigh": "High risk",
+    "riskReview": "Review",
+    "deny": "Deny",
+    "denying": "Denying...",
+    "approve": "Approve",
+    "approving": "Approving...",
+    "always": "Always",
+    "alwaysTitle": "Approve this and all future requests for this session",
+    "viewSession": "View session"
+  },
+  "plan": {
+    "questionsKicker": "Plan questions",
+    "typeResponse": "Type your response:",
+    "placeholderFreeform": "Type a freeform reply...",
+    "other": "Other...",
+    "placeholderAnswer": "Type your answer...",
+    "backToOptions": "Back to options",
+    "replyFreely": "Reply freely instead",
+    "submit": "Submit",
+    "submitting": "Submitting...",
+    "readyToBuild": "Ready to build",
+    "readyMessage": "Agent is ready to start building",
+    "continuePlanning": "Continue Planning",
+    "sending": "Sending...",
+    "agreeToBuild": "Agree to Build"
+  },
+  "session": {
+    "count_one": "{{count}} session",
+    "count_other": "{{count}} sessions",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "archive": "Archive",
+    "cursorSession": "Cursor session",
+    "subagentDone": "{{agentType}} (done)",
+    "viewAllSubagents": "View all subagents",
+    "archiveCompletedSubagents": "Archive completed subagents"
+  },
+  "time": {
+    "agoSeconds": "{{seconds}}s ago",
+    "agoMinutes": "{{minutes}}m ago",
+    "agoHours": "{{hours}}h ago"
+  },
+  "chat": {
+    "loading": "Loading conversation...",
+    "noHistory": "No conversation history.",
+    "transcriptUnavailable": "Transcript unavailable.",
+    "usingTool": "Using {{toolName}}..."
+  },
+  "subagent": {
+    "listTitle": "Subagents ({{count}})",
+    "runningBadge": "{{count}} running",
+    "archiveCompleted": "Archive completed",
+    "archiving": "Archiving...",
+    "running": "Running",
+    "done": "Done",
+    "started": "Started {{timeAgo}}",
+    "finished": "· Finished {{timeAgo}}",
+    "noTranscriptPath": "No transcript path available.",
+    "loading": "Loading...",
+    "archive": "Archive"
+  },
+  "idle": {
+    "waiting": "Waiting for requests…",
+    "setupTitle": "Connect your agents",
+    "setupDescription": "Install hooks for Claude Code, Codex, and other local agents from one place.",
+    "openHooks": "Open agent hooks",
+    "reconnect": "Reconnect",
+    "reconnectDisconnectedDetail": "Hooks were removed or changed outside Atoll. Reconnect to restore approvals.",
+    "reconnectRetrustDetail": "Atoll updated the hook script. Re-confirm trust in the agent app to restore approvals.",
+    "reconnectTitleNeedAttention": "{{agents}} need attention",
+    "reconnectTitleDisconnected": "{{agents}} disconnected",
+    "reconnectTitleRetrust": "{{agents}} needs re-trust"
+  },
+  "displayMode": {
+    "tokens": "Tokens",
+    "cost": "Cost"
+  }
+}

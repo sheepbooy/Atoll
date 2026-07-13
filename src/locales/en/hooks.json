@@ -1,0 +1,83 @@
+{
+  "title": "Agent hooks",
+  "section": {
+    "agents": "Agents"
+  },
+  "bulk": {
+    "installAll": "Install all",
+    "uninstallAll": "Uninstall all"
+  },
+  "action": {
+    "install": "Install",
+    "installing": "Installing…",
+    "uninstall": "Uninstall"
+  },
+  "status": {
+    "connected": "Connected",
+    "needsRetrust": "Needs re-trust",
+    "shimMissing": "Shim missing",
+    "notInstalled": "Not installed"
+  },
+  "summary": {
+    "notConnected": "Not connected",
+    "allConnected": "All agents connected",
+    "partialRetrust": "{{connected}} of {{total}} connected — re-trust needed",
+    "partial": "{{connected}} of {{total}} connected"
+  },
+  "attention": {
+    "checking": "Checking agent hooks",
+    "notInstalled": "Agent hooks are not installed",
+    "allConnected": "All agent hooks connected",
+    "disconnected_one": "{{agents}} hook missing or outdated — reconnect in Agent hooks",
+    "disconnected_other": "{{agents}} hooks missing or outdated — reconnect in Agent hooks",
+    "retrust_one": "{{agents}} hook updated by Atoll — re-trust in Agent hooks",
+    "retrust_other": "{{agents}} hooks updated by Atoll — re-trust in Agent hooks",
+    "mixed": "{{agents}} hooks need attention — check Agent hooks"
+  },
+  "note": {
+    "claude": "Works with Claude Code CLI and Desktop. After install: use Ask permissions in Claude Desktop, restart Claude, then trigger a Bash permission once.",
+    "codex": "Works with Codex CLI and Desktop. After install: trust the Atoll hook in Codex Desktop or via /hooks, restart Codex, then trigger one shell permission.",
+    "cursor": "Works with Cursor IDE Agent and Ask modes. After install: confirm hooks in Cursor Settings, restart Cursor, then send a message in Agent or Ask mode to verify."
+  },
+  "register": {
+    "withPath": "Registers hooks in {{path}}. {{note}}",
+    "claude": "Registers Claude Code hooks for permission approval. {{note}}",
+    "codex": "Registers Codex hooks for permission approval. {{note}}",
+    "cursor": "Registers Cursor hooks for permission approval. {{note}}"
+  },
+  "checklist": {
+    "claudeTitle": "Claude Desktop checklist",
+    "claudeNode": "Install Node.js on this machine before installing hooks.",
+    "claudePermissions": "In Claude Desktop, set permissions to Ask permissions.",
+    "claudeRestart": "Quit and reopen Claude Desktop after installing hooks.",
+    "claudeVerify": "Trigger one Bash permission in a local Code session to verify.",
+    "codexTitle": "Codex Desktop checklist",
+    "codexNode": "Install Node.js on this machine before installing hooks.",
+    "codexTrust": "In Codex Desktop or CLI, open /hooks and trust the Atoll hook.",
+    "codexRestart": "Quit and reopen Codex Desktop after installing hooks.",
+    "codexVerify": "Trigger one shell permission in a local session to verify.",
+    "cursorTitle": "Cursor checklist",
+    "cursorNode": "Install Node.js on this machine before installing hooks.",
+    "cursorSettings": "In Cursor, open Settings → Hooks and confirm Atoll hooks are loaded.",
+    "cursorRestart": "Restart Cursor after installing hooks.",
+    "cursorVerify": "Send a message in Agent or Ask mode to verify."
+  },
+  "warning": {
+    "scriptMissing": "Hook script missing from the app bundle. Reinstall Atoll if install fails.",
+    "nodeNotFound": "Node.js not found at the configured hook path. Install Node.js, then reinstall hooks.",
+    "devBuildPath": "Hook points to a dev build path. Reinstall hooks from Atoll.app, then trust again in Codex."
+  },
+  "retrust": {
+    "codex": "Codex may still be using an older cached copy of the Atoll hook script. Click Reinstall hooks in Atoll, or open /hooks in Codex and re-approve the Atoll hook, then restart Codex.",
+    "claude": "Atoll updated the Claude hook script since it was last approved. Reopen Claude Code / Claude Desktop permissions and re-allow the Atoll hook, then restart Claude.",
+    "cursor": "Atoll updated the Cursor hook script since it was last loaded. Reopen Cursor Settings → Hooks to reload it, then restart Cursor.",
+    "default": "Atoll updated this hook script since it was last trusted. Re-confirm it in the agent app, then restart."
+  },
+  "error": {
+    "installFailed": "{{agentLabel}} hook install failed: {{message}}",
+    "unknown": "Unknown error",
+    "codexNotSaved": "Codex hooks were not saved. Check permissions on ~/.codex/hooks.json.",
+    "cursorNotSaved": "Cursor hooks were not saved. Check permissions on ~/.cursor/hooks.json.",
+    "installPartial": "Could not install hooks for: {{agents}}."
+  }
+}

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { UsageDisplayMode } from "./displayPrefs";
 import type { ModelPricingEntry } from "./pricing";
 import { PricingSettings } from "./PricingSettings";
@@ -13,6 +14,8 @@ function SettingsDisplayToggle({
   mode: UsageDisplayMode;
   onChange: (mode: UsageDisplayMode) => void;
 }) {
+  const { t } = useTranslation("common");
+
   return (
     <div className="settings-card">
       <div className="settings-card-head">
@@ -24,7 +27,7 @@ function SettingsDisplayToggle({
             onClick={() => onChange("tokens")}
             data-no-drag
           >
-            Tokens
+            {t("displayMode.tokens")}
           </button>
           <button
             type="button"
@@ -32,7 +35,7 @@ function SettingsDisplayToggle({
             onClick={() => onChange("cost")}
             data-no-drag
           >
-            Cost
+            {t("displayMode.cost")}
           </button>
         </div>
       </div>
@@ -66,39 +69,41 @@ export function UsageSettingsView({
   pricingModels,
   onPricingModelsChange,
 }: UsageSettingsViewProps) {
+  const { t } = useTranslation("settings");
+
   return (
     <div className="settings-view" data-no-drag>
       <div className="settings-body">
         <div className="settings-section">
-          <span className="settings-section-label">Display</span>
+          <span className="settings-section-label">{t("section.display")}</span>
           <SettingsDisplayToggle
-            label="Folded counter"
-            desc="Active session counter in the folded island."
+            label={t("usagePage.foldedCounterLabel")}
+            desc={t("usagePage.foldedCounterDesc")}
             mode={foldedCounterDisplay}
             onChange={onChangeFoldedCounterDisplay}
           />
           <SettingsDisplayToggle
-            label="Expanded counter"
-            desc="Today's total in the expanded island header."
+            label={t("usagePage.expandedCounterLabel")}
+            desc={t("usagePage.expandedCounterDesc")}
             mode={expandedCounterDisplay}
             onChange={onChangeExpandedCounterDisplay}
           />
           <SettingsDisplayToggle
-            label="Settings badge"
-            desc="Summary shown on the Token activity entry card."
+            label={t("usagePage.settingsBadgeLabel")}
+            desc={t("usagePage.settingsBadgeDesc")}
             mode={settingsBadgeDisplay}
             onChange={onChangeSettingsBadgeDisplay}
           />
           <SettingsDisplayToggle
-            label="Heatmap page"
-            desc="Daily totals, tooltips, and trend charts on Token activity."
+            label={t("usagePage.heatmapLabel")}
+            desc={t("usagePage.heatmapDesc")}
             mode={heatmapDisplay}
             onChange={onChangeHeatmapDisplay}
           />
         </div>
 
         <div className="settings-section">
-          <span className="settings-section-label">Pricing</span>
+          <span className="settings-section-label">{t("section.pricing")}</span>
           <PricingSettings models={pricingModels} onModelsChange={onPricingModelsChange} />
         </div>
       </div>

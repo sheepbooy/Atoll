@@ -1,11 +1,12 @@
 import React from "react";
+import { withTranslation, type WithTranslation } from "react-i18next";
 import { quitAtoll } from "./tauri";
 
 interface State {
   failed: boolean;
 }
 
-export class AppErrorBoundary extends React.Component<React.PropsWithChildren, State> {
+class AppErrorBoundaryBase extends React.Component<React.PropsWithChildren<WithTranslation>, State> {
   state: State = { failed: false };
 
   static getDerivedStateFromError(): State {
@@ -21,19 +22,23 @@ export class AppErrorBoundary extends React.Component<React.PropsWithChildren, S
       return this.props.children;
     }
 
+    const { t } = this.props;
+
     return (
       <main className="atoll-recovery" role="alert">
-        <strong>Atoll needs to reload</strong>
-        <span>The interface stopped unexpectedly. Pending approvals remain in the agent.</span>
+        <strong>{t("boundary.title", { ns: "errors" })}</strong>
+        <span>{t("boundary.description", { ns: "errors" })}</span>
         <div>
           <button type="button" onClick={() => window.location.reload()}>
-            Reload
+            {t("boundary.reload", { ns: "errors" })}
           </button>
           <button type="button" onClick={() => void quitAtoll()}>
-            Quit
+            {t("boundary.quit", { ns: "errors" })}
           </button>
         </div>
       </main>
     );
   }
 }
+
+export const AppErrorBoundary = withTranslation()(AppErrorBoundaryBase);

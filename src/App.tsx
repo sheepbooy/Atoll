@@ -12,6 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -61,10 +62,8 @@ import {
 } from "./appUpdate";
 import {
   analyzeHookHealth,
-  CLAUDE_DESKTOP_HOOK_NOTE,
-  CODEX_DESKTOP_HOOK_NOTE,
-  CURSOR_HOOK_NOTE,
   deriveHeaderLogoDisplay,
+  hookAgentNote,
   hookAttentionTitle,
   hookRetrustNote,
   hookStatusIssue,
@@ -73,6 +72,12 @@ import {
   type HeaderLogoDisplay,
   type HookAgentKey,
 } from "./hookHealth";
+import {
+  changeAppLanguage,
+  readLanguage,
+  type AppLanguage,
+} from "./i18n";
+import i18n from "./i18n";
 import {
   markAllHookAgentsConfigured,
   markHookAgentConfigured,
@@ -481,10 +486,9 @@ function assessRisk(command: string): RiskLevel | null {
   return null;
 }
 
-const riskLabels: Record<RiskLevel, string> = {
-  danger: "High risk",
-  caution: "Review",
-};
+function localizedRiskLabel(risk: RiskLevel): string {
+  return i18n.t(risk === "danger" ? "approval.riskHigh" : "approval.riskReview");
+}
 
 function deriveSessionMood(
   session: SessionSummary,
@@ -632,6 +636,9 @@ function expandedPresentationKey(
 }
 
 export function App() {
+  const { t, i18n: i18nInstance } = useTranslation();
+  const { t: tSettings } = useTranslation("settings");
+  const [language, setLanguage] = useState<AppLanguage>(() => readLanguage());
   const [snapshot, setSnapshot] = useState<IslandSnapshot>(initialSnapshot);
   const snapshotRef = useRef(initialSnapshot);
   const initialSupportsMicroIsland = usesMicroIslandSync();
@@ -807,25 +814,41 @@ export function App() {
       heatmapDisplay,
     ];
     const costCount = modes.filter((mode) => mode === "cost").length;
-    if (costCount === 0) return "Tokens";
-    if (costCount === modes.length) return "Cost";
-    return `${costCount} cost`;
+    if (costCount === 0) return tSettings("usage.summaryTokens");
+    if (costCount === modes.length) return tSettings("usage.summaryCost");
+    return tSettings("usage.summaryMixedCost", { count: costCount });
   }, [
     foldedCounterDisplay,
     expandedCounterDisplay,
     settingsBadgeDisplay,
     heatmapDisplay,
+    tSettings,
+    i18nInstance.language,
   ]);
   const settingsTodayLabel = useMemo(
     () =>
       settingsBadgeDisplay === "cost"
         ? dailyCostTotal > 0
-          ? `${formatCompactCost(dailyCostTotal, 0, dailyCostTotal)} today`
-          : "No priced usage"
+          ? tSettings("usage.todayCost", {
+              amount: formatCompactCost(dailyCostTotal, 0, dailyCostTotal),
+            })
+          : tSettings("usage.noPricedUsage")
         : dailyTokenTotal > 0
-          ? `${formatCompactTokenCount(dailyTokenTotal, dailyTokenTotal >= 1_000 ? 1 : 0, dailyTokenTotal)} today`
-          : "No usage yet",
-    [settingsBadgeDisplay, dailyCostTotal, dailyTokenTotal],
+          ? tSettings("usage.todayTokens", {
+              amount: formatCompactTokenCount(
+                dailyTokenTotal,
+                dailyTokenTotal >= 1_000 ? 1 : 0,
+                dailyTokenTotal,
+              ),
+            })
+          : tSettings("usage.noUsageYet"),
+    [
+      settingsBadgeDisplay,
+      dailyCostTotal,
+      dailyTokenTotal,
+      tSettings,
+      i18nInstance.language,
+    ],
   );
   const maxCompactIconLimit = useMemo(
     () => computeMaxCompactIconLimit(notchMetrics),
@@ -2200,7 +2223,13 @@ export function App() {
         collapseIsland(true);
       }
     } catch (error) {
-      setHookInstallError(formatHookInstallError("Claude Code", error));
+      setHookInstallError(
+        i18n.t("error.installFailed", {
+          ns: "hooks",
+          agentLabel: "Claude Code",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
     } finally {
       setHookBusy(false);
     }
@@ -2218,10 +2247,18 @@ export function App() {
       if (status.installed) {
         setHookInstallError(null);
       } else {
-        setHookInstallError("Codex hooks were not saved. Check permissions on ~/.codex/hooks.json.");
+        setHookInstallError(
+          i18n.t("error.codexNotSaved", { ns: "hooks" }),
+        );
       }
     } catch (error) {
-      setHookInstallError(formatHookInstallError("Codex", error));
+      setHookInstallError(
+        i18n.t("error.installFailed", {
+          ns: "hooks",
+          agentLabel: "Codex",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
     } finally {
       setHookBusy(false);
     }
@@ -2251,10 +2288,21 @@ export function App() {
         !cursorStatus.installed ? "Cursor" : null,
       ].filter(Boolean);
       if (failures.length > 0) {
-        setHookInstallError(`Could not install hooks for: ${failures.join(", ")}.`);
+        setHookInstallError(
+          i18n.t("error.installPartial", {
+            ns: "hooks",
+            agents: failures.join(", "),
+          }),
+        );
       }
     } catch (error) {
-      setHookInstallError(formatHookInstallError("Agent hooks", error));
+      setHookInstallError(
+        i18n.t("error.installFailed", {
+          ns: "hooks",
+          agentLabel: t("menu.agentHooks"),
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
     } finally {
       setHookBusy(false);
     }
@@ -2350,10 +2398,18 @@ export function App() {
       if (status.installed) {
         setHookInstallError(null);
       } else {
-        setHookInstallError("Cursor hooks were not saved. Check permissions on ~/.cursor/hooks.json.");
+        setHookInstallError(
+          i18n.t("error.cursorNotSaved", { ns: "hooks" }),
+        );
       }
     } catch (error) {
-      setHookInstallError(formatHookInstallError("Cursor", error));
+      setHookInstallError(
+        i18n.t("error.installFailed", {
+          ns: "hooks",
+          agentLabel: "Cursor",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
     } finally {
       setHookBusy(false);
     }
@@ -2383,14 +2439,26 @@ export function App() {
     }
   }
 
+  async function handleChangeLanguage(nextLanguage: AppLanguage) {
+    setLanguage(nextLanguage);
+    await changeAppLanguage(nextLanguage);
+  }
+
   const hookMenuAgents: HookMenuAgent[] = [
     {
       key: "claude",
       label: "Claude Code",
       status: claudeHookStatus,
       note: claudeHookStatus.settingsPath
-        ? `Registers hooks in ${claudeHookStatus.settingsPath}. ${CLAUDE_DESKTOP_HOOK_NOTE}`
-        : `Registers Claude Code hooks for permission approval. ${CLAUDE_DESKTOP_HOOK_NOTE}`,
+        ? i18n.t("register.withPath", {
+            ns: "hooks",
+            path: claudeHookStatus.settingsPath,
+            note: hookAgentNote("claude"),
+          })
+        : i18n.t("register.claude", {
+            ns: "hooks",
+            note: hookAgentNote("claude"),
+          }),
       onInstall: handleInstallClaudeHooks,
       onUninstall: handleUninstallClaudeHooks,
     },
@@ -2399,8 +2467,15 @@ export function App() {
       label: "Codex",
       status: codexHookStatus,
       note: codexHookStatus.settingsPath
-        ? `Registers hooks in ${codexHookStatus.settingsPath}. ${CODEX_DESKTOP_HOOK_NOTE}`
-        : `Registers Codex hooks for permission approval. ${CODEX_DESKTOP_HOOK_NOTE}`,
+        ? i18n.t("register.withPath", {
+            ns: "hooks",
+            path: codexHookStatus.settingsPath,
+            note: hookAgentNote("codex"),
+          })
+        : i18n.t("register.codex", {
+            ns: "hooks",
+            note: hookAgentNote("codex"),
+          }),
       onInstall: handleInstallCodexHooks,
       onUninstall: handleUninstallCodexHooks,
     },
@@ -2409,8 +2484,15 @@ export function App() {
       label: "Cursor",
       status: cursorHookStatus,
       note: cursorHookStatus.settingsPath
-        ? `Registers hooks in ${cursorHookStatus.settingsPath}. ${CURSOR_HOOK_NOTE}`
-        : `Registers Cursor hooks for permission approval. ${CURSOR_HOOK_NOTE}`,
+        ? i18n.t("register.withPath", {
+            ns: "hooks",
+            path: cursorHookStatus.settingsPath,
+            note: hookAgentNote("cursor"),
+          })
+        : i18n.t("register.cursor", {
+            ns: "hooks",
+            note: hookAgentNote("cursor"),
+          }),
       onInstall: handleInstallCursorHooks,
       onUninstall: handleUninstallCursorHooks,
     },
@@ -2968,6 +3050,9 @@ export function App() {
           usageDisplaySummary={usageDisplaySummary}
           hooksSummary={hooksSetupSummary}
           hooksNeedAttention={hooksNeedAttention}
+          hooksAllConnected={hookHealthAnalysis.allConnected}
+          language={language}
+          onChangeLanguage={handleChangeLanguage}
         />
       );
     }
@@ -3051,7 +3136,7 @@ export function App() {
       <section
         className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isPlanExpanded ? "is-plan" : ""} ${isSettingsExpanded ? "is-settings" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList" ? "is-session-subview" : ""}${panelExiting ? " is-panel-exiting" : ""}`}
         style={{ "--panel-glow": panelGlow } as CSSProperties}
-        aria-label="Atoll"
+        aria-label={t("app.name")}
         tabIndex={0}
         onClick={handleIslandClick}
         onPointerEnter={handlePointerEnter}
@@ -3062,7 +3147,7 @@ export function App() {
         <header
           className="island-header"
           onMouseDown={startWindowDrag}
-          title={isExpanded ? "Drag window" : "Hover to open"}
+          title={isExpanded ? t("header.dragWindow") : t("header.hoverToOpen")}
         >
           <div
             className={`header-main ${showPanelAgentTabs ? "has-agent-tabs" : ""}${isSubview ? " has-subview-nav" : ""}`}
@@ -3072,7 +3157,7 @@ export function App() {
                 className={`atoll-indicator is-app-${appLogoState} ${snapshot.online ? "is-online" : "is-offline"}${hooksNeedAttention ? " is-hook-attention" : ""}`}
                 title={
                   updateAvailable
-                    ? `Update available: v${updateVersion}`
+                    ? t("update.available", { version: updateVersion })
                     : hookAttention
                 }
                 role={hooksNeedAttention ? "button" : undefined}
@@ -3113,7 +3198,7 @@ export function App() {
               <>
                 <span
                   className={`listener-dot ${snapshot.online ? "online" : ""}`}
-                  title={snapshot.online ? "Listening" : "Offline"}
+                  title={snapshot.online ? t("header.listening") : t("header.offline")}
                 />
                 {!isMicro ? (
                   <CompactSessionStack
@@ -3175,17 +3260,17 @@ export function App() {
             ) : panelView.kind === "settings" && panelView.page === "hooks" ? (
               <HooksSubviewNav
                 onBack={navigateBackFromHooks}
-                backLabel={hooksBackTarget === "settings-main" ? "Settings" : "Back"}
+                backLabel={hooksBackTarget === "settings-main" ? t("nav.settings") : t("nav.back")}
               />
             ) : panelView.kind === "settings" && panelView.page === "tokens" ? (
               <TokensSubviewNav
                 onBack={navigateBackFromTokens}
-                backLabel={tokensBackTarget === "settings-main" ? "Settings" : "Back"}
+                backLabel={tokensBackTarget === "settings-main" ? t("nav.settings") : t("nav.back")}
               />
             ) : panelView.kind === "settings" && panelView.page === "usage" ? (
               <UsageSubviewNav
                 onBack={navigateBackFromUsage}
-                backLabel={usageBackTarget === "settings-main" ? "Settings" : "Back"}
+                backLabel={usageBackTarget === "settings-main" ? t("nav.settings") : t("nav.back")}
               />
             ) : panelView.kind === "settings" ? (
               <SettingsSubviewNav onBack={navigateBack} />
@@ -3246,7 +3331,7 @@ export function App() {
                 <span className="pending-badge-slot">
                   <span
                     className="pending-badge"
-                    aria-label={`${snapshot.pendingCount} pending`}
+                    aria-label={t("header.pendingAria", { count: snapshot.pendingCount })}
                   >
                     {snapshot.pendingCount}
                   </span>
@@ -3280,7 +3365,7 @@ export function App() {
               className="icon-button"
               type="button"
               onClick={() => collapseIsland(true)}
-              aria-label="Collapse Atoll"
+              aria-label={t("header.collapse")}
               tabIndex={isExpandedChrome ? 0 : -1}
             >
               <ChevronUp size={16} />
@@ -3289,7 +3374,7 @@ export function App() {
               className={`icon-button${updateAvailable ? " has-update" : ""}`}
               type="button"
               onClick={() => setMenuOpen((open) => !open)}
-              aria-label="More options"
+              aria-label={t("header.moreOptions")}
               aria-expanded={menuOpen}
               tabIndex={isExpandedChrome ? 0 : -1}
             >
@@ -3303,7 +3388,7 @@ export function App() {
                   onClick={handleOpenHooks}
                 >
                   <Download size={14} />
-                  Agent hooks
+                  {t("menu.agentHooks")}
                 </button>
                 <button
                   type="button"
@@ -3311,7 +3396,7 @@ export function App() {
                   onClick={handleArchiveAll}
                 >
                   <Archive size={14} />
-                  Archive all
+                  {t("menu.archiveAll")}
                 </button>
                 <button
                   type="button"
@@ -3319,12 +3404,14 @@ export function App() {
                   onClick={handleOpenSettings}
                 >
                   <Settings2 size={14} />
-                  Settings
+                  {t("menu.settings")}
                 </button>
                 {updateDownloading ? (
                   <button type="button" role="menuitem" disabled>
                     <RefreshCw size={14} />
-                    Downloading… {Math.round(updateDownloadProgress * 100)}%
+                    {t("update.downloading", {
+                      percent: Math.round(updateDownloadProgress * 100),
+                    })}
                   </button>
                 ) : updateAvailable ? (
                   <button
@@ -3334,7 +3421,7 @@ export function App() {
                     onClick={handleInstallUpdate}
                   >
                     <ArrowUpCircle size={14} />
-                    Update to v{updateVersion}
+                    {t("update.updateTo", { version: updateVersion })}
                   </button>
                 ) : (
                   <button
@@ -3344,7 +3431,7 @@ export function App() {
                     disabled={updateChecking}
                   >
                     <RefreshCw size={14} />
-                    {updateChecking ? "Checking…" : "Check for updates"}
+                    {updateChecking ? t("update.checking") : t("update.checkForUpdates")}
                   </button>
                 )}
                 <div className="menu-separator" />
@@ -3355,7 +3442,7 @@ export function App() {
                   onClick={handleQuit}
                 >
                   <Power size={14} />
-                  Quit Atoll
+                  {t("menu.quit")}
                 </button>
               </div>
             ) : null}
@@ -3389,6 +3476,8 @@ function UpdateNotice({
   version: string;
   onDismiss: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div
       className="update-notice-layer"
@@ -3407,13 +3496,13 @@ function UpdateNotice({
           <CircleCheck size={28} strokeWidth={1.75} />
         </div>
         <p id="update-notice-title" className="update-notice-title">
-          You're up to date
+          {t("update.noticeTitle")}
         </p>
         <p id="update-notice-desc" className="update-notice-desc">
-          Atoll <span className="update-notice-version">v{version}</span> is the latest version.
+          {t("update.noticeDesc", { version })}
         </p>
         <button type="button" className="update-notice-button" onClick={onDismiss}>
-          OK
+          {t("update.ok")}
         </button>
       </div>
     </div>
@@ -3496,10 +3585,12 @@ function AgentTabBar({
   online,
   onSelectAgent,
 }: AgentTabBarProps) {
+  const { t } = useTranslation();
+
   if (agents.length === 0) {
     return (
       <span className="agent-tabs-empty">
-        {online ? "Listening for agents" : "Offline"}
+        {online ? t("header.listeningForAgents") : t("header.offline")}
       </span>
     );
   }
@@ -3612,6 +3703,7 @@ function SessionListView({
   onPinSession,
   onViewSubagentList,
 }: SessionListViewProps) {
+  const { t } = useTranslation();
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -3656,7 +3748,7 @@ function SessionListView({
     <div className="session-list-view">
       <div className="session-list-header">
         <Layers size={12} />
-        <span>{sessions.length} session{sessions.length > 1 ? "s" : ""}</span>
+        <span>{t("session.count", { count: sessions.length })}</span>
       </div>
       <div
         ref={listRef}
@@ -3723,7 +3815,13 @@ function SessionListView({
                                       key={sub.agentId}
                                       className={`subagent-chip ${subagentColor.tone} ${sub.completedAt ? "is-completed" : ""}`}
                                       type="button"
-                                      title={sub.completedAt ? `${sub.agentType} (done)` : sub.agentType}
+                                      title={
+                                        sub.completedAt
+                                          ? t("session.subagentDone", {
+                                              agentType: sub.agentType,
+                                            })
+                                          : sub.agentType
+                                      }
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         onSelectSubagent(session.sessionId, sub.agentId);
@@ -3755,7 +3853,7 @@ function SessionListView({
                                   <button
                                     type="button"
                                     className="subagent-view-all-btn"
-                                    title="View all subagents"
+                                    title={t("session.viewAllSubagents")}
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       onViewSubagentList(session.sessionId);
@@ -3767,7 +3865,7 @@ function SessionListView({
                                 <button
                                   type="button"
                                   className="subagent-bulk-archive-btn"
-                                  title="Archive completed subagents"
+                                  title={t("session.archiveCompletedSubagents")}
                                   disabled={!hasCompleted}
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -3795,7 +3893,7 @@ function SessionListView({
                 <button
                   type="button"
                   className="session-action-btn"
-                  title={session.pinned ? "Unpin" : "Pin"}
+                  title={session.pinned ? t("session.unpin") : t("session.pin")}
                   onClick={(e) => { e.stopPropagation(); onPinSession(session.sessionId, !session.pinned); }}
                 >
                   {session.pinned ? <PinOff size={12} /> : <Pin size={12} />}
@@ -3803,7 +3901,7 @@ function SessionListView({
                 <button
                   type="button"
                   className="session-action-btn"
-                  title="Archive"
+                  title={t("session.archive")}
                   onClick={(e) => { e.stopPropagation(); onArchiveSession(session.sessionId); }}
                 >
                   <Archive size={12} />
@@ -3846,6 +3944,46 @@ interface SettingsViewProps {
   usageDisplaySummary: string;
   hooksSummary: string;
   hooksNeedAttention: boolean;
+  hooksAllConnected: boolean;
+  language: AppLanguage;
+  onChangeLanguage: (language: AppLanguage) => void;
+}
+
+function SettingsLanguageToggle({
+  language,
+  onChange,
+}: {
+  language: AppLanguage;
+  onChange: (language: AppLanguage) => void;
+}) {
+  const { t } = useTranslation("settings");
+
+  return (
+    <div className="settings-card">
+      <div className="settings-card-head">
+        <span className="settings-card-title">{t("display.languageLabel")}</span>
+        <div className="settings-segmented" role="group" aria-label={t("display.languageLabel")}>
+          <button
+            type="button"
+            className={`settings-segment${language === "en" ? " is-active" : ""}`}
+            onClick={() => onChange("en")}
+            data-no-drag
+          >
+            {t("display.languageEnglish")}
+          </button>
+          <button
+            type="button"
+            className={`settings-segment${language === "zh-CN" ? " is-active" : ""}`}
+            onClick={() => onChange("zh-CN")}
+            data-no-drag
+          >
+            {t("display.languageChinese")}
+          </button>
+        </div>
+      </div>
+      <span className="settings-card-desc">{t("display.languageDesc")}</span>
+    </div>
+  );
 }
 
 function SettingsToggle({
@@ -3960,15 +4098,20 @@ function SettingsView({
   usageDisplaySummary,
   hooksSummary,
   hooksNeedAttention,
+  hooksAllConnected,
+  language,
+  onChangeLanguage,
 }: SettingsViewProps) {
+  const { t } = useTranslation("settings");
+
   return (
     <div className="settings-view" data-no-drag>
       <div className="settings-body">
         <div className="settings-section">
-          <span className="settings-section-label">General</span>
+          <span className="settings-section-label">{t("section.general")}</span>
           <SettingsToggle
-            label="Launch at login"
-            desc="Start Atoll automatically when you log in. Requires the installed Atoll.app from Applications."
+            label={t("general.launchAtLoginLabel")}
+            desc={t("general.launchAtLoginDesc")}
             checked={launchAtLogin}
             disabled={launchAtLoginBusy}
             onChange={onChangeLaunchAtLogin}
@@ -3976,7 +4119,7 @@ function SettingsView({
         </div>
 
         <div className="settings-section">
-          <span className="settings-section-label">Usage</span>
+          <span className="settings-section-label">{t("section.usage")}</span>
           <button
             type="button"
             className="settings-nav-card"
@@ -3984,9 +4127,9 @@ function SettingsView({
             data-no-drag
           >
             <div className="settings-nav-card-copy">
-              <span className="settings-card-title">Display & pricing</span>
+              <span className="settings-card-title">{t("usage.displayPricingTitle")}</span>
               <span className="settings-card-desc">
-                Choose tokens or cost for each counter, and edit model rates.
+                {t("usage.displayPricingDesc")}
               </span>
             </div>
             <div className="settings-nav-card-meta">
@@ -4003,9 +4146,9 @@ function SettingsView({
             data-no-drag
           >
             <div className="settings-nav-card-copy">
-              <span className="settings-card-title">Token activity</span>
+              <span className="settings-card-title">{t("usage.tokenActivityTitle")}</span>
               <span className="settings-card-desc">
-                Daily token heatmap and usage history.
+                {t("usage.tokenActivityDesc")}
               </span>
             </div>
             <div className="settings-nav-card-meta">
@@ -4018,7 +4161,7 @@ function SettingsView({
         </div>
 
         <div className="settings-section">
-          <span className="settings-section-label">Integrations</span>
+          <span className="settings-section-label">{t("section.integrations")}</span>
           <button
             type="button"
             className="settings-nav-card"
@@ -4026,15 +4169,15 @@ function SettingsView({
             data-no-drag
           >
             <div className="settings-nav-card-copy">
-              <span className="settings-card-title">Agent hooks</span>
+              <span className="settings-card-title">{t("integrations.agentHooksTitle")}</span>
               <span className="settings-card-desc">
-                Connect Claude Code, Codex, and future local agents.
+                {t("integrations.agentHooksDesc")}
               </span>
             </div>
             <div className="settings-nav-card-meta">
               <span
                 className={`settings-hook-badge is-summary${
-                  hooksNeedAttention ? " is-missing" : hooksSummary === "All agents connected" ? " is-installed" : ""
+                  hooksNeedAttention ? " is-missing" : hooksAllConnected ? " is-installed" : ""
                 }`}
               >
                 {hooksSummary}
@@ -4045,73 +4188,74 @@ function SettingsView({
         </div>
 
         <div className="settings-section">
-          <span className="settings-section-label">Display</span>
+          <span className="settings-section-label">{t("section.display")}</span>
+          <SettingsLanguageToggle language={language} onChange={onChangeLanguage} />
           {showFoldedIslandSizeSetting ? (
             <SettingsToggle
-              label="Small folded island"
-              desc="Use the smaller Windows folded island so pages under the top-center edge stay easier to click."
+              label={t("display.smallFoldedIslandLabel")}
+              desc={t("display.smallFoldedIslandDesc")}
               checked={foldedIslandSize === "small"}
               onChange={onChangeFoldedIslandSize}
             />
           ) : null}
           <SettingsSlider
-            label="Folded icon limit"
+            label={t("display.foldedIconLimitLabel")}
             value={maxCompactIcons}
             min={MIN_MAX_COMPACT_ICONS}
             max={maxCompactIconLimit}
             desc={
               maxCompactIconLimit < ABSOLUTE_MAX_COMPACT_ICONS
-                ? `Up to ${maxCompactIconLimit} icons fit on this display; extras spill to the right beside tokens.`
-                : "Max session icons in compact mode; extras spill to the right beside tokens."
+                ? t("display.foldedIconLimitDescLimited", { limit: maxCompactIconLimit })
+                : t("display.foldedIconLimitDescDefault")
             }
             onChange={onChangeMaxCompactIcons}
           />
           <SettingsSlider
-            label="Subagent display limit"
+            label={t("display.subagentDisplayLimitLabel")}
             value={maxSubagentDisplay}
             min={MIN_MAX_SUBAGENT_DISPLAY}
             max={MAX_MAX_SUBAGENT_DISPLAY}
-            desc="Max subagent chips shown per session; extras collapse to ×N."
+            desc={t("display.subagentDisplayLimitDesc")}
             onChange={onChangeMaxSubagentDisplay}
           />
           <SettingsSlider
-            label="Session auto-archive"
+            label={t("display.sessionAutoArchiveLabel")}
             value={retentionMinutes}
             min={MIN_RETENTION_MINUTES}
             max={MAX_RETENTION_MINUTES}
-            unit=" min"
-            desc="Minutes before idle sessions are auto-archived. Pinned sessions are exempt."
+            unit={t("display.unitMinutes")}
+            desc={t("display.sessionAutoArchiveDesc")}
             onChange={onChangeRetentionMinutes}
           />
           <SettingsSlider
-            label="Subagent auto-archive"
+            label={t("display.subagentAutoArchiveLabel")}
             value={subagentRetentionMinutes}
             min={MIN_RETENTION_MINUTES}
             max={MAX_RETENTION_MINUTES}
-            unit=" min"
-            desc="Minutes after completion before subagents are auto-archived."
+            unit={t("display.unitMinutes")}
+            desc={t("display.subagentAutoArchiveDesc")}
             onChange={onChangeSubagentRetentionMinutes}
           />
         </div>
 
         <div className="settings-section">
-          <span className="settings-section-label">Mascot</span>
+          <span className="settings-section-label">{t("section.mascot")}</span>
           <SettingsSlider
-            label="Activity interval"
+            label={t("mascot.activityIntervalLabel")}
             value={idleIntervalSec}
             min={MIN_IDLE_INTERVAL_MIN}
             max={MAX_IDLE_INTERVAL_MIN}
-            unit=" min"
-            desc="Minutes between random mascot activity switches."
+            unit={t("display.unitMinutes")}
+            desc={t("mascot.activityIntervalDesc")}
             onChange={onChangeIdleInterval}
           />
           <SettingsSlider
-            label="Activity duration"
+            label={t("mascot.activityDurationLabel")}
             value={idleDurationSec}
             min={MIN_IDLE_DURATION_MIN}
             max={MAX_IDLE_DURATION_MIN}
-            unit=" min"
-            desc="How long each activity plays before switching."
+            unit={t("display.unitMinutes")}
+            desc={t("mascot.activityDurationDesc")}
             onChange={onChangeIdleDuration}
           />
         </div>
@@ -4211,6 +4355,7 @@ function getOriginalQuestions(toolInput: unknown): unknown[] {
 const OTHER_SENTINEL = "__atoll_other__";
 
 function PlanQuestionCard({ request, onResolve }: PlanQuestionCardProps) {
+  const { t } = useTranslation();
   const questions = useMemo(() => parsePlanQuestions(request.toolInput), [request.toolInput]);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [otherActive, setOtherActive] = useState<Record<string, boolean>>({});
@@ -4323,7 +4468,7 @@ function PlanQuestionCard({ request, onResolve }: PlanQuestionCardProps) {
         <div className="request-kicker">
           <span className="kicker-label">
             <HelpCircle size={14} />
-            Plan questions
+            {t("plan.questionsKicker")}
           </span>
           <span className={`agent-label ${getSessionColor(request.session).tone}`}>
             {agentLabels[request.agent]}
@@ -4332,12 +4477,12 @@ function PlanQuestionCard({ request, onResolve }: PlanQuestionCardProps) {
         {useFreeResponse ? (
           <div className="plan-questions">
             <div className="plan-question-block">
-              <p className="plan-question-text">Type your response:</p>
+              <p className="plan-question-text">{t("plan.typeResponse")}</p>
               <textarea
                 className="plan-other-input plan-free-response"
                 value={freeResponse}
                 onChange={(e) => setFreeResponse((e.target as HTMLTextAreaElement).value)}
-                placeholder="Type a freeform reply..."
+                placeholder={t("plan.placeholderFreeform")}
                 rows={4}
                 disabled={busy}
               />
@@ -4373,14 +4518,14 @@ function PlanQuestionCard({ request, onResolve }: PlanQuestionCardProps) {
                     onClick={() => toggleOption(question, OTHER_SENTINEL)}
                     disabled={busy}
                   >
-                    <span className="plan-option-label">Other...</span>
+                    <span className="plan-option-label">{t("plan.other")}</span>
                   </button>
                 </div>
                 {otherActive[question.question] && (
                   <input
                     type="text"
                     className="plan-other-input"
-                    placeholder="Type your answer..."
+                    placeholder={t("plan.placeholderAnswer")}
                     value={otherText[question.question] || ""}
                     onChange={(e) =>
                       setOtherText((c) => ({
@@ -4403,7 +4548,7 @@ function PlanQuestionCard({ request, onResolve }: PlanQuestionCardProps) {
           onClick={() => setUseFreeResponse((v) => !v)}
           disabled={busy}
         >
-          {useFreeResponse ? "Back to options" : "Reply freely instead"}
+          {useFreeResponse ? t("plan.backToOptions") : t("plan.replyFreely")}
         </button>
         <div className="decision-row">
           <button
@@ -4413,7 +4558,7 @@ function PlanQuestionCard({ request, onResolve }: PlanQuestionCardProps) {
             disabled={busy}
           >
             <X size={16} />
-            <span>{busy ? "Denying..." : "Deny"}</span>
+            <span>{busy ? t("approval.denying") : t("approval.deny")}</span>
           </button>
           <button
             className="decision-button approve"
@@ -4422,7 +4567,7 @@ function PlanQuestionCard({ request, onResolve }: PlanQuestionCardProps) {
             disabled={busy}
           >
             <Check size={16} />
-            <span>{busy ? "Submitting..." : "Submit"}</span>
+            <span>{busy ? t("plan.submitting") : t("plan.submit")}</span>
           </button>
         </div>
       </div>
@@ -4436,6 +4581,7 @@ interface PlanApprovalCardProps {
 }
 
 function PlanApprovalCard({ request, onResolve }: PlanApprovalCardProps) {
+  const { t } = useTranslation();
   const sessionColor = getSessionColor(request.session);
   const [busy, setBusy] = useState(false);
   const planContent = useMemo(() => parsePlanContent(request.toolInput), [request.toolInput]);
@@ -4484,11 +4630,11 @@ function PlanApprovalCard({ request, onResolve }: PlanApprovalCardProps) {
               accentDark={sessionColor.accentDark}
               size={18}
             />
-            Ready to build
+            {t("plan.readyToBuild")}
           </span>
           <span className={`agent-label ${sessionColor.tone}`}>{agentLabels[request.agent]}</span>
         </div>
-        <p className="plan-approval-message">Agent is ready to start building</p>
+        <p className="plan-approval-message">{t("plan.readyMessage")}</p>
         {planContent ? (
           <div className="plan-preview" onClick={handlePlanPreviewClick}>
             <div className="plan-preview-md">
@@ -4506,7 +4652,7 @@ function PlanApprovalCard({ request, onResolve }: PlanApprovalCardProps) {
             disabled={busy}
           >
             <HelpCircle size={16} />
-            <span>{busy ? "Sending..." : "Continue Planning"}</span>
+            <span>{busy ? t("plan.sending") : t("plan.continuePlanning")}</span>
           </button>
           <button
             className="decision-button approve"
@@ -4515,7 +4661,7 @@ function PlanApprovalCard({ request, onResolve }: PlanApprovalCardProps) {
             disabled={busy}
           >
             <Hammer size={16} />
-            <span>{busy ? "Approving..." : "Agree to Build"}</span>
+            <span>{busy ? t("approval.approving") : t("plan.agreeToBuild")}</span>
           </button>
         </div>
       </div>
@@ -4534,6 +4680,7 @@ interface ApprovalCardProps {
 }
 
 function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAlwaysApprove, onViewSession }: ApprovalCardProps) {
+  const { t } = useTranslation();
   const session = sessions.find((s) => s.sessionId === request.session);
   const sessionColor = getSessionColor(request.session);
   const tone = sessionColor.tone;
@@ -4567,13 +4714,13 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
               accentDark={sessionColor.accentDark}
               size={18}
             />
-            Command request
+            {t("approval.commandRequest")}
           </span>
           <span className="kicker-tags">
             {risk ? (
               <span className={`risk-pill ${risk}`}>
                 <TriangleAlert size={11} />
-                {riskLabels[risk]}
+                {localizedRiskLabel(risk)}
               </span>
             ) : null}
             <span className={`agent-label ${tone}`}>{agentLabels[request.agent]}</span>
@@ -4596,7 +4743,7 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
             disabled={busyDecision !== null}
           >
             <X size={16} />
-            <span>{busyDecision === "denied" ? "Denying..." : "Deny"}</span>
+            <span>{busyDecision === "denied" ? t("approval.denying") : t("approval.deny")}</span>
             <kbd className="decision-kbd" aria-hidden="true">{DECISION_SHORTCUTS.deny}</kbd>
           </button>
           <button
@@ -4606,7 +4753,7 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
             disabled={busyDecision !== null}
           >
             <Check size={16} />
-            <span>{busyDecision === "approved" ? "Approving..." : "Approve"}</span>
+            <span>{busyDecision === "approved" ? t("approval.approving") : t("approval.approve")}</span>
             <kbd className="decision-kbd" aria-hidden="true">{DECISION_SHORTCUTS.approve}</kbd>
           </button>
           {request.supportsAlways ? (
@@ -4615,10 +4762,10 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
               type="button"
               onClick={onAlwaysApprove}
               disabled={busyDecision !== null}
-              title="Approve this and all future requests for this session"
+              title={t("approval.alwaysTitle")}
             >
               <CheckCheck size={16} />
-              <span>Always</span>
+              <span>{t("approval.always")}</span>
               <kbd className="decision-kbd" aria-hidden="true">{DECISION_SHORTCUTS.always}</kbd>
             </button>
           ) : null}
@@ -4629,7 +4776,7 @@ function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAl
             className="view-session-link"
             onClick={() => onViewSession(request.session)}
           >
-            View session
+            {t("approval.viewSession")}
             <ChevronRight size={12} />
           </button>
         ) : null}
@@ -4651,17 +4798,17 @@ interface SessionSubviewNavProps {
 
 function sessionJumpLabel(agent?: AgentKind, sessionHost?: SessionHost): string {
   if (agent === "claude") {
-    if (sessionHost === "claudeCli") return "Terminal";
-    return "Open Claude";
+    if (sessionHost === "claudeCli") return i18n.t("nav.terminal");
+    return i18n.t("nav.openClaude");
   }
   if (agent === "codex") {
-    if (sessionHost === "codexCli") return "Terminal";
-    return "Open Codex";
+    if (sessionHost === "codexCli") return i18n.t("nav.terminal");
+    return i18n.t("nav.openCodex");
   }
   if (agent === "cursor") {
-    return "Open Cursor";
+    return i18n.t("nav.openCursor");
   }
-  return "Terminal";
+  return i18n.t("nav.terminal");
 }
 
 function SessionSubviewNav({
@@ -4672,11 +4819,13 @@ function SessionSubviewNav({
   onBack,
   onOpenExternal,
 }: SessionSubviewNavProps) {
+  const { t } = useTranslation();
+
   return (
     <div className="session-detail-nav" data-no-drag>
       <button type="button" className="back-button" onClick={onBack}>
         <ArrowLeft size={13} />
-        <span>Back</span>
+        <span>{t("nav.back")}</span>
       </button>
       <button
         type="button"
@@ -4695,15 +4844,17 @@ interface SettingsSubviewNavProps {
 }
 
 function SettingsSubviewNav({ onBack }: SettingsSubviewNavProps) {
+  const { t } = useTranslation();
+
   return (
     <div className="settings-subview-nav" data-no-drag>
       <button type="button" className="back-button" onClick={onBack}>
         <ArrowLeft size={13} />
-        <span>Back</span>
+        <span>{t("nav.back")}</span>
       </button>
       <span className="settings-header-title">
         <Settings2 size={14} />
-        <span>Settings</span>
+        <span>{t("nav.settings")}</span>
       </span>
     </div>
   );
@@ -4719,6 +4870,7 @@ interface SessionChatViewProps {
 }
 
 function SessionChatView({ sessionId, transcriptPath, requests, agent }: SessionChatViewProps) {
+  const { t } = useTranslation();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loadFailed, setLoadFailed] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -4797,10 +4949,10 @@ function SessionChatView({ sessionId, transcriptPath, requests, agent }: Session
         {messages.length === 0 && requests.length === 0 ? (
           <div className="chat-empty">
             {loadFailed
-              ? "Transcript unavailable."
+              ? t("chat.transcriptUnavailable")
               : pollWhileActive || transcriptPath
-                ? "Loading conversation..."
-                : "No conversation history."}
+                ? t("chat.loading")
+                : t("chat.noHistory")}
           </div>
         ) : null}
         {messages.map((msg, i) => (
@@ -4847,6 +4999,7 @@ const SubagentListRow = memo(function SubagentListRow({
   onSelectSubagent,
   style,
 }: SubagentListRowProps) {
+  const { t } = useTranslation();
   const completed = Boolean(subagent.completedAt);
   const color = getSubagentColor(subagent.agentId);
   const mood = getSubagentMood(subagent.agentId, completed);
@@ -4888,10 +5041,10 @@ const SubagentListRow = memo(function SubagentListRow({
       <div className="subagent-list-item-trail">
         {completed ? (
           <span className="subagent-status-badge done">
-            <Check size={10} /> Done
+            <Check size={10} /> {t("subagent.done")}
           </span>
         ) : (
-          <span className="subagent-status-badge running">Running</span>
+          <span className="subagent-status-badge running">{t("subagent.running")}</span>
         )}
         <ChevronRight size={14} />
       </div>
@@ -4905,6 +5058,7 @@ function SubagentListView({
   onSelectSubagent,
   onArchiveCompletedSubagents,
 }: SubagentListViewProps) {
+  const { t } = useTranslation();
   const listRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
@@ -5005,10 +5159,12 @@ function SubagentListView({
         <div className="subagent-list-title-row">
           <Layers size={14} />
           <span className="subagent-list-title">
-            Subagents ({subagents.length})
+            {t("subagent.listTitle", { count: subagents.length })}
           </span>
           {runningCount > 0 ? (
-            <span className="subagent-list-running-badge">{runningCount} running</span>
+            <span className="subagent-list-running-badge">
+              {t("subagent.runningBadge", { count: runningCount })}
+            </span>
           ) : null}
         </div>
         {hasCompleted ? (
@@ -5019,7 +5175,9 @@ function SubagentListView({
             disabled={archiveBusy}
           >
             <Archive size={12} />
-            <span>{archiveBusy ? "Archiving..." : "Archive completed"}</span>
+            <span>
+              {archiveBusy ? t("subagent.archiving") : t("subagent.archiveCompleted")}
+            </span>
           </button>
         ) : null}
       </div>
@@ -5090,6 +5248,7 @@ function SubagentDetailView({
   transcriptPath,
   onArchive,
 }: SubagentDetailViewProps) {
+  const { t } = useTranslation();
   const subagentColor = getSubagentColor(agentId);
   const subagentMood = getSubagentMood(agentId, Boolean(completedAt));
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -5156,15 +5315,17 @@ function SubagentDetailView({
           <h2 className={`subagent-detail-title ${subagentColor.tone}`}>{agentType}</h2>
           {completedAt ? (
             <span className="subagent-status-badge done">
-              <Check size={10} /> Done
+              <Check size={10} /> {t("subagent.done")}
             </span>
           ) : (
-            <span className="subagent-status-badge running">Running</span>
+            <span className="subagent-status-badge running">{t("subagent.running")}</span>
           )}
         </div>
         <p className="subagent-detail-subtitle">
-          Started {timeAgo(startedAt)}
-          {completedAt ? ` · Finished ${timeAgo(completedAt)}` : ""}
+          {t("subagent.started", { timeAgo: timeAgo(startedAt) })}
+          {completedAt
+            ? ` ${t("subagent.finished", { timeAgo: timeAgo(completedAt) })}`
+            : ""}
         </p>
         {lastMessage && messages.length === 0 ? (
           <p className="subagent-last-message">{lastMessage}</p>
@@ -5175,10 +5336,10 @@ function SubagentDetailView({
           {messages.length === 0 && !lastMessage ? (
             <div className="chat-empty">
               {!transcriptPath
-                ? "No transcript path available."
+                ? t("subagent.noTranscriptPath")
                 : loadFailed && completedAt
-                  ? "Transcript unavailable."
-                  : "Loading..."}
+                  ? t("chat.transcriptUnavailable")
+                  : t("subagent.loading")}
             </div>
           ) : null}
           {messages.map((msg, i) => (
@@ -5195,7 +5356,7 @@ function SubagentDetailView({
             disabled={archiveBusy}
           >
             <Archive size={14} />
-            <span>{archiveBusy ? "Archiving..." : "Archive"}</span>
+            <span>{archiveBusy ? t("subagent.archiving") : t("subagent.archive")}</span>
           </button>
         </div>
       ) : null}
@@ -5222,14 +5383,10 @@ interface HooksViewProps {
   onUninstallAll: () => void;
 }
 
-function formatHookInstallError(agentLabel: string, error: unknown): string {
-  const message =
-    typeof error === "string"
-      ? error
-      : error instanceof Error
-        ? error.message
-        : "Unknown error";
-  return `${agentLabel} hook install failed: ${message}`;
+function formatHookInstallErrorMessage(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (error instanceof Error) return error.message;
+  return i18n.t("error.unknown", { ns: "hooks" });
 }
 
 function TokensSubviewNav({
@@ -5239,6 +5396,8 @@ function TokensSubviewNav({
   onBack: () => void;
   backLabel: string;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="settings-subview-nav" data-no-drag>
       <button type="button" className="back-button" onClick={onBack}>
@@ -5247,7 +5406,7 @@ function TokensSubviewNav({
       </button>
       <span className="settings-header-title">
         <Activity size={14} />
-        <span>Token activity</span>
+        <span>{t("nav.tokenActivity")}</span>
       </span>
     </div>
   );
@@ -5260,6 +5419,8 @@ function UsageSubviewNav({
   onBack: () => void;
   backLabel: string;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="settings-subview-nav" data-no-drag>
       <button type="button" className="back-button" onClick={onBack}>
@@ -5268,7 +5429,7 @@ function UsageSubviewNav({
       </button>
       <span className="settings-header-title">
         <CircleDollarSign size={14} />
-        <span>Display & pricing</span>
+        <span>{t("nav.displayPricing")}</span>
       </span>
     </div>
   );
@@ -5281,6 +5442,8 @@ function HooksSubviewNav({
   onBack: () => void;
   backLabel: string;
 }) {
+  const { t } = useTranslation("hooks");
+
   return (
     <div className="settings-subview-nav" data-no-drag>
       <button type="button" className="back-button" onClick={onBack}>
@@ -5289,7 +5452,7 @@ function HooksSubviewNav({
       </button>
       <span className="settings-header-title">
         <Download size={14} />
-        <span>Agent hooks</span>
+        <span>{t("title")}</span>
       </span>
     </div>
   );
@@ -5302,6 +5465,7 @@ function HooksView({
   onInstallAll,
   onUninstallAll,
 }: HooksViewProps) {
+  const { t } = useTranslation("hooks");
   const installedCount = agents.filter((agent) => agent.status?.installed).length;
   const missingCount = agents.filter(
     (agent) => agent.status && !agent.status.installed,
@@ -5311,7 +5475,7 @@ function HooksView({
     <div className="settings-view" data-no-drag>
       <div className="settings-body">
         <div className="settings-section">
-          <span className="settings-section-label">Agents</span>
+          <span className="settings-section-label">{t("section.agents")}</span>
           {hookInstallError ? (
             <span className="settings-card-desc settings-hook-warning">{hookInstallError}</span>
           ) : null}
@@ -5326,7 +5490,7 @@ function HooksView({
                   data-no-drag
                 >
                   <Download size={13} />
-                  Install all
+                  {t("bulk.installAll")}
                 </button>
               ) : null}
               {installedCount > 1 ? (
@@ -5338,7 +5502,7 @@ function HooksView({
                   data-no-drag
                 >
                   <Trash2 size={13} />
-                  Uninstall all
+                  {t("bulk.uninstallAll")}
                 </button>
               ) : null}
             </div>
@@ -5366,11 +5530,11 @@ function HooksView({
                   >
                     {ready
                       ? needsRetrust
-                        ? "Needs re-trust"
-                        : "Connected"
+                        ? t("status.needsRetrust")
+                        : t("status.connected")
                       : installed
-                        ? "Shim missing"
-                        : "Not installed"}
+                        ? t("status.shimMissing")
+                        : t("status.notInstalled")}
                   </span>
                 </div>
                 {agent.status?.settingsPath ? (
@@ -5383,34 +5547,34 @@ function HooksView({
                 ) : null}
                 {agent.key === "claude" ? (
                   <details className="settings-hook-desktop-note">
-                    <summary>Claude Desktop checklist</summary>
+                    <summary>{t("checklist.claudeTitle")}</summary>
                     <ul>
-                      <li>Install Node.js on this machine before installing hooks.</li>
-                      <li>In Claude Desktop, set permissions to Ask permissions.</li>
-                      <li>Quit and reopen Claude Desktop after installing hooks.</li>
-                      <li>Trigger one Bash permission in a local Code session to verify.</li>
+                      <li>{t("checklist.claudeNode")}</li>
+                      <li>{t("checklist.claudePermissions")}</li>
+                      <li>{t("checklist.claudeRestart")}</li>
+                      <li>{t("checklist.claudeVerify")}</li>
                     </ul>
                   </details>
                 ) : null}
                 {agent.key === "codex" ? (
                   <details className="settings-hook-desktop-note">
-                    <summary>Codex Desktop checklist</summary>
+                    <summary>{t("checklist.codexTitle")}</summary>
                     <ul>
-                      <li>Install Node.js on this machine before installing hooks.</li>
-                      <li>In Codex Desktop or CLI, open /hooks and trust the Atoll hook.</li>
-                      <li>Quit and reopen Codex Desktop after installing hooks.</li>
-                      <li>Trigger one shell permission in a local session to verify.</li>
+                      <li>{t("checklist.codexNode")}</li>
+                      <li>{t("checklist.codexTrust")}</li>
+                      <li>{t("checklist.codexRestart")}</li>
+                      <li>{t("checklist.codexVerify")}</li>
                     </ul>
                   </details>
                 ) : null}
                 {agent.key === "cursor" ? (
                   <details className="settings-hook-desktop-note">
-                    <summary>Cursor checklist</summary>
+                    <summary>{t("checklist.cursorTitle")}</summary>
                     <ul>
-                      <li>Install Node.js on this machine before installing hooks.</li>
-                      <li>In Cursor, open Settings → Hooks and confirm Atoll hooks are loaded.</li>
-                      <li>Restart Cursor after installing hooks.</li>
-                      <li>Send a message in Agent or Ask mode to verify.</li>
+                      <li>{t("checklist.cursorNode")}</li>
+                      <li>{t("checklist.cursorSettings")}</li>
+                      <li>{t("checklist.cursorRestart")}</li>
+                      <li>{t("checklist.cursorVerify")}</li>
                     </ul>
                   </details>
                 ) : null}
@@ -5426,7 +5590,7 @@ function HooksView({
                 ) : null}
                 {scriptMissing ? (
                   <span className="settings-card-desc settings-hook-warning">
-                    Hook script missing from the app bundle. Reinstall Atoll if install fails.
+                    {t("warning.scriptMissing")}
                   </span>
                 ) : null}
                 <div className="settings-hook-actions">
@@ -5439,7 +5603,7 @@ function HooksView({
                       data-no-drag
                     >
                       <Trash2 size={13} />
-                      Uninstall
+                      {t("action.uninstall")}
                     </button>
                   ) : (
                     <button
@@ -5450,7 +5614,7 @@ function HooksView({
                       data-no-drag
                     >
                       <Download size={13} />
-                      {hookBusy ? "Installing…" : "Install"}
+                      {hookBusy ? t("action.installing") : t("action.install")}
                     </button>
                   )}
                 </div>
@@ -5519,19 +5683,29 @@ function IdleView({
   retrustAgents,
   onOpenHooks,
 }: IdleViewProps) {
+  const { t } = useTranslation();
+
   if (!needsHookSetup) {
     const hasDisconnected = disconnectedAgents.length > 0;
     const hasRetrust = retrustAgents.length > 0;
     const reconnectTitle =
       hasDisconnected && hasRetrust
-        ? `${[...disconnectedAgents, ...retrustAgents].map((agent) => agent.label).join(", ")} need attention`
+        ? t("idle.reconnectTitleNeedAttention", {
+            agents: [...disconnectedAgents, ...retrustAgents]
+              .map((agent) => agent.label)
+              .join(", "),
+          })
         : hasDisconnected
-          ? `${disconnectedAgents.map((agent) => agent.label).join(", ")} disconnected`
-          : `${retrustAgents.map((agent) => agent.label).join(", ")} needs re-trust`;
+          ? t("idle.reconnectTitleDisconnected", {
+              agents: disconnectedAgents.map((agent) => agent.label).join(", "),
+            })
+          : t("idle.reconnectTitleRetrust", {
+              agents: retrustAgents.map((agent) => agent.label).join(", "),
+            });
     const reconnectDetail = hasDisconnected
-      ? "Hooks were removed or changed outside Atoll. Reconnect to restore approvals."
+      ? t("idle.reconnectDisconnectedDetail")
       : hasRetrust
-        ? "Atoll updated the hook script. Re-confirm trust in the agent app to restore approvals."
+        ? t("idle.reconnectRetrustDetail")
         : "";
     return (
       <div className={`idle-view${needsReconnect ? " idle-view--alert" : ""}`}>
@@ -5551,13 +5725,13 @@ function IdleView({
                 onClick={onOpenHooks}
                 data-no-drag
               >
-                Reconnect
+                {t("idle.reconnect")}
               </button>
             </div>
           ) : null}
           <div className="idle-content stagger-child" style={{ "--stagger-i": 0 } as CSSProperties}>
             <span className="idle-dot" />
-            <span className="idle-text">Waiting for requests…</span>
+            <span className="idle-text">{t("idle.waiting")}</span>
           </div>
         </div>
       </div>
@@ -5572,10 +5746,8 @@ function IdleView({
             <Download size={16} />
           </div>
           <div className="setup-copy">
-            <h2>Connect your agents</h2>
-            <p>
-              Install hooks for Claude Code, Codex, and other local agents from one place.
-            </p>
+            <h2>{t("idle.setupTitle")}</h2>
+            <p>{t("idle.setupDescription")}</p>
           </div>
         </div>
         <button
@@ -5586,7 +5758,7 @@ function IdleView({
           data-no-drag
         >
           <Download size={14} />
-          <span>Open agent hooks</span>
+          <span>{t("idle.openHooks")}</span>
         </button>
       </div>
     </div>
@@ -5607,7 +5779,7 @@ function isTextEntryActive() {
 
 function sessionDisplayName(cwd: string) {
   if (!cwd || cwd === ".") {
-    return "Cursor session";
+    return i18n.t("session.cursorSession");
   }
   const parts = cwd.split(/[/\\]/).filter(Boolean);
   return parts[parts.length - 1] || cwd;
@@ -5638,7 +5810,11 @@ function ChatBubbleQuestionReadonly({ toolInput }: { toolInput: unknown }) {
 }
 
 function ChatBubble({ message }: { message: ChatMessage }) {
-  const text = message.content || (message.toolName ? `Using ${message.toolName}...` : "");
+  const text =
+    message.content ||
+    (message.toolName
+      ? i18n.t("chat.usingTool", { toolName: message.toolName })
+      : "");
   const hasMarkdown = useMemo(() => /[*_`#\[\]!\n>|]/.test(text), [text]);
   const isQuestion = message.toolName === "AskUserQuestion" && message.toolInput;
 
@@ -5672,11 +5848,15 @@ function ChatBubble({ message }: { message: ChatMessage }) {
 function timeAgo(isoDate: string) {
   const elapsedSeconds = Math.max(1, Math.floor((Date.now() - new Date(isoDate).getTime()) / 1000));
 
-  if (elapsedSeconds < 60) return `${elapsedSeconds}s ago`;
+  if (elapsedSeconds < 60) {
+    return i18n.t("time.agoSeconds", { seconds: elapsedSeconds });
+  }
 
   const elapsedMinutes = Math.floor(elapsedSeconds / 60);
-  if (elapsedMinutes < 60) return `${elapsedMinutes}m ago`;
+  if (elapsedMinutes < 60) {
+    return i18n.t("time.agoMinutes", { minutes: elapsedMinutes });
+  }
 
   const elapsedHours = Math.floor(elapsedMinutes / 60);
-  return `${elapsedHours}h ago`;
+  return i18n.t("time.agoHours", { hours: elapsedHours });
 }

@@ -1,0 +1,66 @@
+{
+  "title": "设置",
+  "section": {
+    "general": "通用",
+    "usage": "用量",
+    "integrations": "集成",
+    "display": "显示",
+    "mascot": "吉祥物",
+    "pricing": "定价"
+  },
+  "general": {
+    "launchAtLoginLabel": "登录时启动",
+    "launchAtLoginDesc": "登录时自动启动 Atoll。需要已安装的 Atoll.app（位于应用程序文件夹）。"
+  },
+  "usage": {
+    "displayPricingTitle": "显示与定价",
+    "displayPricingDesc": "为各计数器选择 Token 或费用，并编辑模型费率。",
+    "tokenActivityTitle": "Token 活动",
+    "tokenActivityDesc": "每日 Token 热力图与使用历史。",
+    "summaryTokens": "Token",
+    "summaryCost": "费用",
+    "summaryMixedCost": "{{count}} 项费用",
+    "todayTokens": "今日 {{amount}}",
+    "todayCost": "今日 {{amount}}",
+    "noPricedUsage": "无已定价用量",
+    "noUsageYet": "暂无用量"
+  },
+  "integrations": {
+    "agentHooksTitle": "Agent 钩子",
+    "agentHooksDesc": "连接 Claude Code、Codex 及未来的本地 Agent。"
+  },
+  "display": {
+    "languageLabel": "语言",
+    "languageDesc": "选择界面语言。",
+    "languageEnglish": "English",
+    "languageChinese": "中文",
+    "smallFoldedIslandLabel": "小型折叠岛",
+    "smallFoldedIslandDesc": "使用较小的 Windows 折叠岛，便于点击顶部居中边缘下方的页面。",
+    "foldedIconLimitLabel": "折叠图标上限",
+    "foldedIconLimitDescDefault": "紧凑模式下最大会话图标数；超出部分显示在 Token 右侧。",
+    "foldedIconLimitDescLimited": "此显示器最多容纳 {{limit}} 个图标；超出部分显示在 Token 右侧。",
+    "subagentDisplayLimitLabel": "子 Agent 显示上限",
+    "subagentDisplayLimitDesc": "每个会话最多显示的子 Agent 芯片数；超出部分折叠为 ×N。",
+    "sessionAutoArchiveLabel": "会话自动归档",
+    "sessionAutoArchiveDesc": "空闲会话自动归档前的分钟数。已固定的会话除外。",
+    "subagentAutoArchiveLabel": "子 Agent 自动归档",
+    "subagentAutoArchiveDesc": "子 Agent 完成后自动归档前的分钟数。",
+    "unitMinutes": " 分钟"
+  },
+  "mascot": {
+    "activityIntervalLabel": "活动间隔",
+    "activityIntervalDesc": "吉祥物随机活动切换之间的分钟数。",
+    "activityDurationLabel": "活动时长",
+    "activityDurationDesc": "每次活动播放的时长，之后切换。"
+  },
+  "usagePage": {
+    "foldedCounterLabel": "折叠计数器",
+    "foldedCounterDesc": "折叠岛中的活跃会话计数器。",
+    "expandedCounterLabel": "展开计数器",
+    "expandedCounterDesc": "展开岛顶栏中的今日总计。",
+    "settingsBadgeLabel": "设置徽章",
+    "settingsBadgeDesc": "Token 活动入口卡片上显示的摘要。",
+    "heatmapLabel": "热力图页面",
+    "heatmapDesc": "Token 活动页中的每日总计、提示与趋势图。"
+  }
+}

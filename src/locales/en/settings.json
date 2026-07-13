@@ -1,0 +1,66 @@
+{
+  "title": "Settings",
+  "section": {
+    "general": "General",
+    "usage": "Usage",
+    "integrations": "Integrations",
+    "display": "Display",
+    "mascot": "Mascot",
+    "pricing": "Pricing"
+  },
+  "general": {
+    "launchAtLoginLabel": "Launch at login",
+    "launchAtLoginDesc": "Start Atoll automatically when you log in. Requires the installed Atoll.app from Applications."
+  },
+  "usage": {
+    "displayPricingTitle": "Display & pricing",
+    "displayPricingDesc": "Choose tokens or cost for each counter, and edit model rates.",
+    "tokenActivityTitle": "Token activity",
+    "tokenActivityDesc": "Daily token heatmap and usage history.",
+    "summaryTokens": "Tokens",
+    "summaryCost": "Cost",
+    "summaryMixedCost": "{{count}} cost",
+    "todayTokens": "{{amount}} today",
+    "todayCost": "{{amount}} today",
+    "noPricedUsage": "No priced usage",
+    "noUsageYet": "No usage yet"
+  },
+  "integrations": {
+    "agentHooksTitle": "Agent hooks",
+    "agentHooksDesc": "Connect Claude Code, Codex, and future local agents."
+  },
+  "display": {
+    "languageLabel": "Language",
+    "languageDesc": "Choose the interface language.",
+    "languageEnglish": "English",
+    "languageChinese": "中文",
+    "smallFoldedIslandLabel": "Small folded island",
+    "smallFoldedIslandDesc": "Use the smaller Windows folded island so pages under the top-center edge stay easier to click.",
+    "foldedIconLimitLabel": "Folded icon limit",
+    "foldedIconLimitDescDefault": "Max session icons in compact mode; extras spill to the right beside tokens.",
+    "foldedIconLimitDescLimited": "Up to {{limit}} icons fit on this display; extras spill to the right beside tokens.",
+    "subagentDisplayLimitLabel": "Subagent display limit",
+    "subagentDisplayLimitDesc": "Max subagent chips shown per session; extras collapse to ×N.",
+    "sessionAutoArchiveLabel": "Session auto-archive",
+    "sessionAutoArchiveDesc": "Minutes before idle sessions are auto-archived. Pinned sessions are exempt.",
+    "subagentAutoArchiveLabel": "Subagent auto-archive",
+    "subagentAutoArchiveDesc": "Minutes after completion before subagents are auto-archived.",
+    "unitMinutes": " min"
+  },
+  "mascot": {
+    "activityIntervalLabel": "Activity interval",
+    "activityIntervalDesc": "Minutes between random mascot activity switches.",
+    "activityDurationLabel": "Activity duration",
+    "activityDurationDesc": "How long each activity plays before switching."
+  },
+  "usagePage": {
+    "foldedCounterLabel": "Folded counter",
+    "foldedCounterDesc": "Active session counter in the folded island.",
+    "expandedCounterLabel": "Expanded counter",
+    "expandedCounterDesc": "Today's total in the expanded island header.",
+    "settingsBadgeLabel": "Settings badge",
+    "settingsBadgeDesc": "Summary shown on the Token activity entry card.",
+    "heatmapLabel": "Heatmap page",
+    "heatmapDesc": "Daily totals, tooltips, and trend charts on Token activity."
+  }
+}

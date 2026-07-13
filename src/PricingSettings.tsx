@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ModelPricingEntry, ModelRate, PricingResponse } from "./pricing";
 import {
   getPricing,
@@ -14,15 +15,15 @@ interface PricingSettingsProps {
   onModelsChange: (models: ModelPricingEntry[]) => void;
 }
 
-function formatCatalogAge(iso: string): string {
+function formatCatalogAge(iso: string, t: (key: string, options?: Record<string, unknown>) => string): string {
   const parsed = Date.parse(iso);
   if (!Number.isFinite(parsed)) return iso;
   const ageMs = Date.now() - parsed;
-  if (ageMs < 60_000) return "just now";
+  if (ageMs < 60_000) return t("pricing.justNow");
   const hours = Math.floor(ageMs / 3_600_000);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return t("pricing.hoursAgo", { hours });
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return t("pricing.daysAgo", { days });
 }
 
 function RateField({
@@ -64,6 +65,7 @@ function PricingModelEditor({
   onCancel: () => void;
   onSave: () => void;
 }) {
+  const { t } = useTranslation("tokens");
   const editorRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -72,31 +74,33 @@ function PricingModelEditor({
 
   return (
     <div className="pricing-editor" ref={editorRef}>
-      <span className="settings-section-label">Edit {model.displayName}</span>
+      <span className="settings-section-label">
+        {t("pricing.editModel", { name: model.displayName })}
+      </span>
       <div className="pricing-rate-grid">
         <RateField
-          label="Input / 1M"
+          label={t("pricing.inputPerM")}
           value={draftRate.inputPerMillion}
           onChange={(value) =>
             onDraftChange({ ...draftRate, inputPerMillion: value })
           }
         />
         <RateField
-          label="Output / 1M"
+          label={t("pricing.outputPerM")}
           value={draftRate.outputPerMillion}
           onChange={(value) =>
             onDraftChange({ ...draftRate, outputPerMillion: value })
           }
         />
         <RateField
-          label="Cache read / 1M"
+          label={t("pricing.cacheReadPerM")}
           value={draftRate.cacheReadPerMillion}
           onChange={(value) =>
             onDraftChange({ ...draftRate, cacheReadPerMillion: value })
           }
         />
         <RateField
-          label="Cache write / 1M"
+          label={t("pricing.cacheWritePerM")}
           value={draftRate.cacheWritePerMillion}
           onChange={(value) =>
             onDraftChange({ ...draftRate, cacheWritePerMillion: value })
@@ -111,7 +115,7 @@ function PricingModelEditor({
           onClick={onCancel}
           data-no-drag
         >
-          Cancel
+          {t("pricing.cancel")}
         </button>
         <button
           type="button"
@@ -120,7 +124,7 @@ function PricingModelEditor({
           onClick={onSave}
           data-no-drag
         >
-          Save
+          {t("pricing.save")}
         </button>
       </div>
     </div>
@@ -128,6 +132,7 @@ function PricingModelEditor({
 }
 
 export function PricingSettings({ models, onModelsChange }: PricingSettingsProps) {
+  const { t } = useTranslation("tokens");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftRate, setDraftRate] = useState<ModelRate | null>(null);
   const [busy, setBusy] = useState(false);
@@ -164,7 +169,7 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
       const response = await refreshPricing();
       applyResponse(response);
     } catch {
-      setLastRefreshError("refresh failed");
+      setLastRefreshError(t("update.refreshFailed", { ns: "errors" }));
     } finally {
       setRefreshing(false);
     }
@@ -230,10 +235,12 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
       <div className="pricing-refresh-row">
         <span className="settings-card-desc">
           {lastRefreshError
-            ? "Refresh failed"
+            ? t("pricing.refreshFailed")
             : catalogFetchedAt
-              ? `Last refreshed · ${formatCatalogAge(catalogFetchedAt)}`
-              : "Never refreshed"}
+              ? t("pricing.lastRefreshed", {
+                  age: formatCatalogAge(catalogFetchedAt, t),
+                })
+              : t("pricing.neverRefreshed")}
         </span>
         <button
           type="button"
@@ -242,13 +249,12 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
           onClick={handleRefreshCatalog}
           data-no-drag
         >
-          {refreshing ? "Refreshing…" : "Refresh pricing"}
+          {refreshing ? t("pricing.refreshing") : t("pricing.refreshPricing")}
         </button>
       </div>
 
       <p className="settings-card-desc pricing-settings-note">
-        Only usage with a known model and rate is priced. Older history and usage
-        without model metadata are excluded from cost totals.
+        {t("pricing.note")}
       </p>
 
       <div className="pricing-model-list">
@@ -274,7 +280,11 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
                           : " is-installed"
                     }`}
                   >
-                    {model.isUnpriced ? "Unpriced" : model.isCustom ? "Custom" : "Default"}
+                    {model.isUnpriced
+                      ? t("pricing.unpriced")
+                      : model.isCustom
+                        ? t("pricing.custom")
+                        : t("pricing.default")}
                   </span>
                   {isEditing ? null : (
                     <>
@@ -288,7 +298,7 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
                         }}
                         data-no-drag
                       >
-                        Edit
+                        {t("pricing.edit")}
                       </button>
                       {model.isCustom ? (
                         <button
@@ -298,7 +308,7 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
                           onClick={() => handleReset(model.modelId)}
                           data-no-drag
                         >
-                          Reset
+                          {t("pricing.reset")}
                         </button>
                       ) : null}
                       <button
@@ -308,7 +318,7 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
                         onClick={() => handleDelete(model.modelId)}
                         data-no-drag
                       >
-                        Delete
+                        {t("pricing.delete")}
                       </button>
                     </>
                   )}
@@ -334,9 +344,9 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
 
       {hiddenModels.length > 0 ? (
         <div className="pricing-hidden-section">
-          <span className="settings-section-label">Hidden models</span>
+          <span className="settings-section-label">{t("pricing.hiddenModels")}</span>
           <p className="settings-card-desc pricing-settings-note">
-            Deleted models stay hidden here. Restore to show them in the list again.
+            {t("pricing.hiddenModelsDesc")}
           </p>
           <div className="pricing-model-list">
             {hiddenModels.map((model) => (
@@ -347,7 +357,9 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
                     <span className="settings-card-desc">{model.modelId}</span>
                   </div>
                   <div className="pricing-model-meta">
-                    <span className="settings-hook-badge is-summary is-hidden">Hidden</span>
+                    <span className="settings-hook-badge is-summary is-hidden">
+                      {t("pricing.hidden")}
+                    </span>
                     <button
                       type="button"
                       className="settings-inline-button"
@@ -355,7 +367,7 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
                       onClick={() => handleRestore(model.modelId)}
                       data-no-drag
                     >
-                      Restore
+                      {t("pricing.restore")}
                     </button>
                   </div>
                 </div>
@@ -373,7 +385,7 @@ export function PricingSettings({ models, onModelsChange }: PricingSettingsProps
           onClick={() => refreshModels()}
           data-no-drag
         >
-          Load pricing
+          {t("pricing.loadPricing")}
         </button>
       ) : null}
     </div>

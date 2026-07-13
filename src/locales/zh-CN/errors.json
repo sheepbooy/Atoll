@@ -1,0 +1,13 @@
+{
+  "boundary": {
+    "title": "Atoll 需要重新加载",
+    "description": "界面意外停止。待处理的审批仍保留在 Agent 中。",
+    "reload": "重新加载",
+    "quit": "退出"
+  },
+  "update": {
+    "checkTimedOut": "更新检查超时",
+    "noPendingUpdate": "无待安装更新。请先再次检查更新。",
+    "refreshFailed": "刷新失败"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "boundary": {
+    "title": "Atoll needs to reload",
+    "description": "The interface stopped unexpectedly. Pending approvals remain in the agent.",
+    "reload": "Reload",
+    "quit": "Quit"
+  },
+  "update": {
+    "checkTimedOut": "Update check timed out",
+    "noPendingUpdate": "No pending update. Check for updates again before installing.",
+    "refreshFailed": "refresh failed"
+  }
+}

@@ -2,6 +2,7 @@ import type { ModelRate } from "./pricing";
 import { byModelCostUsd } from "./pricing";
 import type { TokenUsage } from "./tauri";
 import type { UsageDisplayMode } from "./displayPrefs";
+import { resolveIntlLocale } from "./i18n";
 
 export const HEATMAP_WEEKS = 26;
 
@@ -59,7 +60,7 @@ export function formatHeatmapDate(dateKey: string): string {
   ) {
     return dateKey;
   }
-  return date.toLocaleDateString("en-US", {
+  return date.toLocaleDateString(resolveIntlLocale(), {
     weekday: "short",
     month: "short",
     day: "numeric",

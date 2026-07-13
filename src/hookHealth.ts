@@ -1,4 +1,5 @@
 import type { AtollActivity } from "./AtollLogo";
+import i18n from "./i18n";
 import type { HookHealthSnapshot, HookStatus } from "./tauri";
 import { EMPTY_HOOK_HEALTH } from "./tauri";
 
@@ -34,7 +35,7 @@ export function isHookReady(status: HookStatus | null | undefined): boolean {
 export function hookStatusIssue(status: HookStatus | null | undefined): string | null {
   if (!status?.installed) return null;
   if (status.nodeFound === false) {
-    return "Node.js not found at the configured hook path. Install Node.js, then reinstall hooks.";
+    return i18n.t("warning.nodeNotFound", { ns: "hooks" });
   }
   if (
     status.scriptPath.includes("/target/debug/") ||
@@ -42,7 +43,7 @@ export function hookStatusIssue(status: HookStatus | null | undefined): string |
     status.scriptPath.includes("\\target\\debug\\") ||
     status.scriptPath.includes("\\target\\release\\")
   ) {
-    return "Hook points to a dev build path. Reinstall hooks from Atoll.app, then trust again in Codex.";
+    return i18n.t("warning.devBuildPath", { ns: "hooks" });
   }
   return null;
 }
@@ -146,13 +147,21 @@ export function analyzeHookHealth(
   const needsReconnect =
     connectedCount > 0 && (disconnectedAgents.length > 0 || retrustAgents.length > 0);
 
-  let summary = "Not connected";
+  let summary = i18n.t("summary.notConnected", { ns: "hooks" });
   if (connectedCount > 0 && disconnectedAgents.length === 0 && retrustAgents.length === 0) {
-    summary = "All agents connected";
+    summary = i18n.t("summary.allConnected", { ns: "hooks" });
   } else if (connectedCount > 0 && disconnectedAgents.length === 0) {
-    summary = `${connectedCount} of ${totalCount} connected — re-trust needed`;
+    summary = i18n.t("summary.partialRetrust", {
+      ns: "hooks",
+      connected: connectedCount,
+      total: totalCount,
+    });
   } else if (connectedCount > 0) {
-    summary = `${connectedCount} of ${totalCount} connected`;
+    summary = i18n.t("summary.partial", {
+      ns: "hooks",
+      connected: connectedCount,
+      total: totalCount,
+    });
   }
 
   return {
@@ -173,47 +182,50 @@ export function hookAttentionTitle(
   hookHealthKnown = true,
 ): string {
   if (!hookHealthKnown) {
-    return "Checking agent hooks";
+    return i18n.t("attention.checking", { ns: "hooks" });
   }
   if (analysis.needsFirstTimeSetup) {
-    return "Agent hooks are not installed";
+    return i18n.t("attention.notInstalled", { ns: "hooks" });
   }
   if (analysis.needsReconnect) {
     const disconnectedNames = analysis.disconnectedAgents.map((agent) => agent.label);
     const retrustNames = analysis.retrustAgents.map((agent) => agent.label);
     if (disconnectedNames.length > 0 && retrustNames.length === 0) {
-      return `${disconnectedNames.join(", ")} hook${disconnectedNames.length > 1 ? "s" : ""} missing or outdated — reconnect in Agent hooks`;
+      return i18n.t("attention.disconnected", {
+        ns: "hooks",
+        count: disconnectedNames.length,
+        agents: disconnectedNames.join(", "),
+      });
     }
     if (disconnectedNames.length === 0 && retrustNames.length > 0) {
-      return `${retrustNames.join(", ")} hook${retrustNames.length > 1 ? "s" : ""} updated by Atoll — re-trust in Agent hooks`;
+      return i18n.t("attention.retrust", {
+        ns: "hooks",
+        count: retrustNames.length,
+        agents: retrustNames.join(", "),
+      });
     }
     const allNames = [...disconnectedNames, ...retrustNames].join(", ");
-    return `${allNames} hooks need attention — check Agent hooks`;
+    return i18n.t("attention.mixed", { ns: "hooks", agents: allNames });
   }
-  return "All agent hooks connected";
+  return i18n.t("attention.allConnected", { ns: "hooks" });
 }
 
-export const CLAUDE_DESKTOP_HOOK_NOTE =
-  "Works with Claude Code CLI and Desktop. After install: use Ask permissions in Claude Desktop, restart Claude, then trigger a Bash permission once.";
-
-export const CODEX_DESKTOP_HOOK_NOTE =
-  "Works with Codex CLI and Desktop. After install: trust the Atoll hook in Codex Desktop or via /hooks, restart Codex, then trigger one shell permission.";
-
-export const CURSOR_HOOK_NOTE =
-  "Works with Cursor IDE Agent and Ask modes. After install: confirm hooks in Cursor Settings, restart Cursor, then send a message in Agent or Ask mode to verify.";
+export function hookAgentNote(agentKey: HookAgentKey): string {
+  return i18n.t(`note.${agentKey}`, { ns: "hooks" });
+}
 
 /** Guidance shown when an agent's hook script changed after Atoll updated, so
  * the agent's previously cached trust decision is stale. */
 export function hookRetrustNote(agentKey: HookAgentKey): string {
   switch (agentKey) {
     case "codex":
-      return "Codex may still be using an older cached copy of the Atoll hook script. Click Reinstall hooks in Atoll, or open /hooks in Codex and re-approve the Atoll hook, then restart Codex.";
+      return i18n.t("retrust.codex", { ns: "hooks" });
     case "claude":
-      return "Atoll updated the Claude hook script since it was last approved. Reopen Claude Code / Claude Desktop permissions and re-allow the Atoll hook, then restart Claude.";
+      return i18n.t("retrust.claude", { ns: "hooks" });
     case "cursor":
-      return "Atoll updated the Cursor hook script since it was last loaded. Reopen Cursor Settings → Hooks to reload it, then restart Cursor.";
+      return i18n.t("retrust.cursor", { ns: "hooks" });
     default:
-      return "Atoll updated this hook script since it was last trusted. Re-confirm it in the agent app, then restart.";
+      return i18n.t("retrust.default", { ns: "hooks" });
   }
 }
 

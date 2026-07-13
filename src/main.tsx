@@ -1,10 +1,12 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { I18nextProvider } from "react-i18next";
 import { App } from "./App";
 import { AppErrorBoundary } from "./AppErrorBoundary";
 import { BrandExportPage, getBrandExportMode } from "./BrandExport";
 import { CursorMascotPreviewPage, getCursorPreviewMode } from "./CursorMascotPreview";
 import { getDemoMode } from "./demoSnapshot";
+import i18n from "./i18n";
 import "./styles.css";
 
 if ("__TAURI_INTERNALS__" in window) {
@@ -35,9 +37,11 @@ if (getBrandExportMode()) {
 } else {
   root.render(
     <React.StrictMode>
-      <AppErrorBoundary>
-        <App />
-      </AppErrorBoundary>
+      <I18nextProvider i18n={i18n}>
+        <AppErrorBoundary>
+          <App />
+        </AppErrorBoundary>
+      </I18nextProvider>
     </React.StrictMode>,
   );
 }

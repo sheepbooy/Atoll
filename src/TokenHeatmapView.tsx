@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useTranslation } from "react-i18next";
 import { formatCompactCost } from "./costFormat";
 import { formatCompactTokenCount } from "./tokenCounterFormat";
 import type { UsageDisplayMode } from "./displayPrefs";
 import { COLLAPSE_ANIMATION_MS } from "./islandPresentation";
+import { resolveIntlLocale } from "./i18n";
 import type { ModelRate } from "./pricing";
 import { byModelCostUsd } from "./pricing";
 import {
@@ -23,7 +25,7 @@ import {
 } from "./tokenHeatmap";
 import { getTokenHistory, type TokenHistoryResponse, type TokenUsage } from "./tauri";
 
-const WEEKDAY_LABELS = ["Mon", "", "Wed", "", "Fri", "", "Sun"];
+const WEEKDAY_LABELS_FALLBACK = ["Mon", "", "Wed", "", "Fri", "", "Sun"];
 
 const AGENT_DOT_CLASS: Record<string, string> = {
   claude: "is-claude",
@@ -62,6 +64,11 @@ export function TokenHeatmapView({
   displayMode = "tokens",
   pricingRates = {},
 }: TokenHeatmapViewProps) {
+  const { t } = useTranslation("tokens");
+  const weekdayLabels = (t("heatmap.weekdays", {
+    returnObjects: true,
+  }) as string[]) ?? WEEKDAY_LABELS_FALLBACK;
+  const formatCount = (value: number) => value.toLocaleString(resolveIntlLocale());
   const [history, setHistory] = useState<TokenHistoryResponse | null>(null);
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   // Defer dense grid/SVG charts until the settings window resize finishes so
@@ -173,27 +180,24 @@ export function TokenHeatmapView({
       <div className={`token-heatmap-view${settled ? " is-settled" : ""}`}>
         <div className="token-heatmap-top">
           {hasUnpricedHistory ? (
-            <p className="token-heatmap-empty">
-              Older days without model metadata are not priced. Only new usage with known
-              models appears in cost mode.
-            </p>
+            <p className="token-heatmap-empty">{t("heatmap.unpricedHistory")}</p>
           ) : null}
 
           <div className="token-heatmap-summary">
             <div className="token-heatmap-stat">
-              <span className="token-heatmap-stat-label">Today</span>
+              <span className="token-heatmap-stat-label">{t("heatmap.today")}</span>
               <span className="token-heatmap-stat-value">
                 {formatSummaryValue(summary.today)}
               </span>
             </div>
             <div className="token-heatmap-stat">
-              <span className="token-heatmap-stat-label">7-day</span>
+              <span className="token-heatmap-stat-label">{t("heatmap.sevenDay")}</span>
               <span className="token-heatmap-stat-value">
                 {formatSummaryValue(summary.sevenDay)}
               </span>
             </div>
             <div className="token-heatmap-stat">
-              <span className="token-heatmap-stat-label">Best day</span>
+              <span className="token-heatmap-stat-label">{t("heatmap.bestDay")}</span>
               <span className="token-heatmap-stat-value">
                 {summary.best.total > 0 ? formatSummaryValue(summary.best.total) : "—"}
               </span>
@@ -201,7 +205,7 @@ export function TokenHeatmapView({
           </div>
 
           {!hasHistory ? (
-            <p className="token-heatmap-empty">Recording starts today.</p>
+            <p className="token-heatmap-empty">{t("heatmap.recordingStarts")}</p>
           ) : null}
 
           {chartsReady && grid ? (
@@ -209,7 +213,7 @@ export function TokenHeatmapView({
               <div className="token-heatmap-scroll" ref={scrollRef}>
                 <div className="token-heatmap-grid-wrap">
                   <div className="token-heatmap-weekdays" aria-hidden="true">
-                    {WEEKDAY_LABELS.map((label, index) => (
+                    {weekdayLabels.map((label, index) => (
                       <span key={`${label}-${index}`} className="token-heatmap-weekday">
                         {label}
                       </span>
@@ -219,7 +223,9 @@ export function TokenHeatmapView({
                     className="token-heatmap-grid"
                     role="grid"
                     aria-label={
-                      displayMode === "cost" ? "Daily cost activity" : "Daily token activity"
+                      displayMode === "cost"
+                        ? t("heatmap.dailyCostActivity")
+                        : t("heatmap.dailyTokenActivity")
                     }
                   >
                     {grid.rows[0].map((_, weekIndex) => (
@@ -242,11 +248,17 @@ export function TokenHeatmapView({
                                 } as CSSProperties
                               }
                               role="gridcell"
-                              aria-label={`${formatHeatmapDate(cell.date)}: ${
+                              aria-label={
                                 displayMode === "cost"
-                                  ? formatCompactCost(cell.total, 0, cell.total)
-                                  : `${cell.total.toLocaleString()} tokens`
-                              }`}
+                                  ? t("heatmap.cellCost", {
+                                      date: formatHeatmapDate(cell.date),
+                                      amount: formatCompactCost(cell.total, 0, cell.total),
+                                    })
+                                  : t("heatmap.cellTokens", {
+                                      date: formatHeatmapDate(cell.date),
+                                      count: formatCount(cell.total),
+                                    })
+                              }
                               disabled={!cell.inRange}
                               onMouseEnter={() => setHoveredDate(cell.date)}
                               onMouseLeave={() => setHoveredDate(null)}
@@ -263,13 +275,13 @@ export function TokenHeatmapView({
 
               <div className="token-heatmap-footer">
                 <div className="token-heatmap-legend" aria-hidden="true">
-                  <span>Less</span>
+                  <span>{t("heatmap.less")}</span>
                   <span className="token-heatmap-cell is-level-0" />
                   <span className="token-heatmap-cell is-level-1" />
                   <span className="token-heatmap-cell is-level-2" />
                   <span className="token-heatmap-cell is-level-3" />
                   <span className="token-heatmap-cell is-level-4" />
-                  <span>More</span>
+                  <span>{t("heatmap.more")}</span>
                 </div>
                 {hoveredCell ? (
                   <div className="token-heatmap-tooltip" role="status">
@@ -279,16 +291,23 @@ export function TokenHeatmapView({
                     <span className="token-heatmap-tooltip-total">
                       {displayMode === "cost"
                         ? formatCompactCost(hoveredCell.total, 0, hoveredCell.total)
-                        : `${hoveredCell.total.toLocaleString()} tokens`}
+                        : t("heatmap.tooltipTokens", {
+                            count: formatCount(hoveredCell.total),
+                          })}
                     </span>
                     {displayMode === "tokens" ? (
                       <span className="token-heatmap-tooltip-detail">
-                        in {hoveredCell.usage.inputTokens.toLocaleString()} · out{" "}
-                        {hoveredCell.usage.outputTokens.toLocaleString()}
+                        {t("counter.tooltipIn", {
+                          count: formatCount(hoveredCell.usage.inputTokens),
+                        })}{" "}
+                        ·{" "}
+                        {t("counter.tooltipOut", {
+                          count: formatCount(hoveredCell.usage.outputTokens),
+                        })}
                       </span>
                     ) : (
                       <span className="token-heatmap-tooltip-detail">
-                        Priced from model metadata only.
+                        {t("heatmap.pricedFromMetadata")}
                       </span>
                     )}
                     {Object.keys(hoveredCell.byAgent).length > 0 ? (
@@ -342,6 +361,7 @@ function AgentDonutChart({
   slices: AgentSlice[];
   displayMode: UsageDisplayMode;
 }) {
+  const { t } = useTranslation("tokens");
   const hasData = slices.length > 0;
 
   let offset = 0;
@@ -360,7 +380,7 @@ function AgentDonutChart({
 
   return (
     <div className="token-heatmap-section token-heatmap-section--agents">
-      <span className="token-heatmap-section-label">Agent breakdown</span>
+      <span className="token-heatmap-section-label">{t("heatmap.agentBreakdown")}</span>
       <div className="token-heatmap-agents">
         <svg
           className="token-heatmap-donut"
@@ -418,7 +438,7 @@ function AgentDonutChart({
               </div>
             ))
           ) : (
-            <span className="token-heatmap-no-data">No agent data</span>
+            <span className="token-heatmap-no-data">{t("heatmap.noAgentData")}</span>
           )}
         </div>
       </div>
@@ -439,6 +459,7 @@ function TrendLineChart({
   series: TrendPoint[];
   displayMode: UsageDisplayMode;
 }) {
+  const { t } = useTranslation("tokens");
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const lineRef = useRef<SVGPolylineElement>(null);
   const [trendLength, setTrendLength] = useState(1000);
@@ -477,12 +498,12 @@ function TrendLineChart({
       ? null
       : displayMode === "cost"
         ? formatCompactCost(hovered.total, 0, hovered.total)
-        : hovered.total.toLocaleString();
+        : hovered.total.toLocaleString(resolveIntlLocale());
 
   return (
     <div className="token-heatmap-section token-heatmap-section--trend">
       <div className="token-heatmap-section-header">
-        <span className="token-heatmap-section-label">30-day trend</span>
+        <span className="token-heatmap-section-label">{t("heatmap.trend30Day")}</span>
         {hovered && hoverValue ? (
           <span className="token-heatmap-trend-hover">
             {formatShortDate(hovered.date)} · {hoverValue}
@@ -490,7 +511,7 @@ function TrendLineChart({
         ) : null}
       </div>
       {!hasData ? (
-        <span className="token-heatmap-no-data">No usage in the last 30 days</span>
+        <span className="token-heatmap-no-data">{t("heatmap.noUsage30Days")}</span>
       ) : (
         <svg
           className="token-heatmap-trend-svg"
@@ -546,5 +567,5 @@ function TrendLineChart({
 function formatShortDate(dateKey: string): string {
   const [year, month, day] = dateKey.split("-").map(Number);
   const date = new Date(year, month - 1, day);
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return date.toLocaleDateString(resolveIntlLocale(), { month: "short", day: "numeric" });
 }

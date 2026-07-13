@@ -1,3 +1,5 @@
+import i18n, { resolveIntlLocale } from "./i18n";
+
 export function formatCompactTokenCount(
   value: number,
   compact = 0,
@@ -6,7 +8,8 @@ export function formatCompactTokenCount(
   const abs = Math.abs(value);
   const hintAbs = Math.abs(formatHint);
   const sign = value < 0 ? "-" : "";
-  const fullNumber = () => value.toLocaleString("en-US");
+  const fullNumber = () => value.toLocaleString(resolveIntlLocale());
+
 
   if (compact === 0) {
     return fullNumber();

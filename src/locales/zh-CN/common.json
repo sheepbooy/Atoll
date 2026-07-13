@@ -1,0 +1,128 @@
+{
+  "app": {
+    "name": "Atoll"
+  },
+  "header": {
+    "dragWindow": "拖动窗口",
+    "hoverToOpen": "悬停以展开",
+    "collapse": "收起 Atoll",
+    "moreOptions": "更多选项",
+    "listening": "监听中",
+    "offline": "离线",
+    "listeningForAgents": "正在监听 Agent",
+    "pendingAria": "{{count}} 个待处理"
+  },
+  "update": {
+    "available": "有可用更新：v{{version}}",
+    "checking": "检查中…",
+    "checkForUpdates": "检查更新",
+    "downloading": "下载中… {{percent}}%",
+    "updateTo": "更新到 v{{version}}",
+    "noticeTitle": "已是最新版本",
+    "noticeDesc": "Atoll v{{version}} 已是最新版本。",
+    "ok": "确定"
+  },
+  "menu": {
+    "agentHooks": "Agent 钩子",
+    "archiveAll": "全部归档",
+    "settings": "设置",
+    "quit": "退出 Atoll"
+  },
+  "agent": {
+    "claude": "Claude",
+    "codex": "Codex",
+    "cursor": "Cursor",
+    "gemini": "Gemini",
+    "other": "Agent"
+  },
+  "nav": {
+    "back": "返回",
+    "settings": "设置",
+    "subagents": "子 Agent",
+    "openClaude": "打开 Claude",
+    "openCodex": "打开 Codex",
+    "openCursor": "打开 Cursor",
+    "terminal": "终端",
+    "tokenActivity": "Token 活动",
+    "displayPricing": "显示与定价"
+  },
+  "approval": {
+    "commandRequest": "命令请求",
+    "riskHigh": "高风险",
+    "riskReview": "需审查",
+    "deny": "拒绝",
+    "denying": "拒绝中...",
+    "approve": "批准",
+    "approving": "批准中...",
+    "always": "始终",
+    "alwaysTitle": "批准本次及本会话的所有后续请求",
+    "viewSession": "查看会话"
+  },
+  "plan": {
+    "questionsKicker": "计划问题",
+    "typeResponse": "输入你的回复：",
+    "placeholderFreeform": "输入自由回复...",
+    "other": "其他...",
+    "placeholderAnswer": "输入你的答案...",
+    "backToOptions": "返回选项",
+    "replyFreely": "改为自由回复",
+    "submit": "提交",
+    "submitting": "提交中...",
+    "readyToBuild": "准备构建",
+    "readyMessage": "Agent 已准备好开始构建",
+    "continuePlanning": "继续规划",
+    "sending": "发送中...",
+    "agreeToBuild": "同意构建"
+  },
+  "session": {
+    "count_one": "{{count}} 个会话",
+    "count_other": "{{count}} 个会话",
+    "pin": "固定",
+    "unpin": "取消固定",
+    "archive": "归档",
+    "cursorSession": "Cursor 会话",
+    "subagentDone": "{{agentType}}（已完成）",
+    "viewAllSubagents": "查看全部子 Agent",
+    "archiveCompletedSubagents": "归档已完成的子 Agent"
+  },
+  "time": {
+    "agoSeconds": "{{seconds}} 秒前",
+    "agoMinutes": "{{minutes}} 分钟前",
+    "agoHours": "{{hours}} 小时前"
+  },
+  "chat": {
+    "loading": "加载对话中...",
+    "noHistory": "暂无对话记录。",
+    "transcriptUnavailable": "转录不可用。",
+    "usingTool": "正在使用 {{toolName}}..."
+  },
+  "subagent": {
+    "listTitle": "子 Agent（{{count}}）",
+    "runningBadge": "{{count}} 个运行中",
+    "archiveCompleted": "归档已完成",
+    "archiving": "归档中...",
+    "running": "运行中",
+    "done": "已完成",
+    "started": "开始于 {{timeAgo}}",
+    "finished": "· 完成于 {{timeAgo}}",
+    "noTranscriptPath": "无可用转录路径。",
+    "loading": "加载中...",
+    "archive": "归档"
+  },
+  "idle": {
+    "waiting": "等待请求中…",
+    "setupTitle": "连接你的 Agent",
+    "setupDescription": "在此统一安装 Claude Code、Codex 及其他本地 Agent 的钩子。",
+    "openHooks": "打开 Agent 钩子",
+    "reconnect": "重新连接",
+    "reconnectDisconnectedDetail": "钩子在 Atoll 外被移除或更改。重新连接以恢复审批。",
+    "reconnectRetrustDetail": "Atoll 已更新钩子脚本。请在 Agent 应用中重新确认信任以恢复审批。",
+    "reconnectTitleNeedAttention": "{{agents}} 需要处理",
+    "reconnectTitleDisconnected": "{{agents}} 已断开",
+    "reconnectTitleRetrust": "{{agents}} 需要重新信任"
+  },
+  "displayMode": {
+    "tokens": "Token",
+    "cost": "费用"
+  }
+}
