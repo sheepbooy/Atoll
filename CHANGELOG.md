@@ -2,6 +2,11 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.49] - 2026-07-13
+
+### 修复
+- **Hooks 安装**：恢复 Windows `where.exe` 与 Unix `command -v` 静默探测 Node.js，修复 0.1.16/0.1.46 为消黑窗移除系统探测后 GUI 进程找不到 Node 的回归
+
 ## [0.1.48] - 2026-07-13
 
 ### 新增

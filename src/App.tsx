@@ -2299,7 +2299,7 @@ export function App() {
       setHookInstallError(
         i18n.t("error.installFailed", {
           ns: "hooks",
-          agentLabel: t("menu.agentHooks"),
+          agentLabel: "Agent hooks",
           message: formatHookInstallErrorMessage(error),
         }),
       );

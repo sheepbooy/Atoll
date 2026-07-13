@@ -4901,10 +4901,50 @@ fn normalize_hook_script_path(path: &str) -> String {
 }
 
 #[cfg(windows)]
+fn resolve_node_executable_from_where() -> Option<String> {
+    use std::os::windows::process::CommandExt;
+
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    let output = std::process::Command::new("where.exe")
+        .arg("node")
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .filter(|path| std::path::Path::new(path).exists())
+        .map(normalize_hook_script_path)
+}
+
+#[cfg(not(windows))]
+fn resolve_node_executable_from_shell() -> Option<String> {
+    let output = std::process::Command::new("sh")
+        .args(["-lc", "command -v node"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if path.is_empty() || !std::path::Path::new(&path).exists() {
+        return None;
+    }
+    Some(normalize_hook_script_path(&path))
+}
+
 fn resolve_node_executable_from_path() -> Option<String> {
-    if let Ok(path_var) = std::env::var("PATH") {
-        for dir in std::env::split_paths(&path_var) {
-            let candidate = dir.join("node.exe");
+    if let Some(path_var) = std::env::var_os("PATH") {
+        for directory in std::env::split_paths(&path_var) {
+            #[cfg(windows)]
+            let candidate = directory.join("node.exe");
+            #[cfg(not(windows))]
+            let candidate = directory.join("node");
             if candidate.is_file() {
                 return Some(normalize_hook_script_path(&candidate.to_string_lossy()));
             }
@@ -4916,6 +4956,9 @@ fn resolve_node_executable_from_path() -> Option<String> {
 fn resolve_node_executable() -> Result<String, String> {
     #[cfg(windows)]
     {
+        if let Some(path) = resolve_node_executable_from_where() {
+            return Ok(path);
+        }
         if let Some(path) = resolve_node_executable_from_path() {
             return Ok(path);
         }
@@ -4936,13 +4979,11 @@ fn resolve_node_executable() -> Result<String, String> {
 
     #[cfg(not(windows))]
     {
-        if let Some(path_var) = std::env::var_os("PATH") {
-            for directory in std::env::split_paths(&path_var) {
-                let candidate = directory.join("node");
-                if candidate.is_file() {
-                    return Ok(normalize_hook_script_path(&candidate.to_string_lossy()));
-                }
-            }
+        if let Some(path) = resolve_node_executable_from_shell() {
+            return Ok(path);
+        }
+        if let Some(path) = resolve_node_executable_from_path() {
+            return Ok(path);
         }
         Err("Node.js not found. Install Node.js and ensure it is on PATH, then retry.".into())
     }
@@ -10665,7 +10706,8 @@ mod hook_script_path_tests {
 mod codex_hooks_tests {
     use super::{
         extract_node_script_path, format_hook_command, has_atoll_codex_hooks,
-        remove_atoll_codex_hooks, upsert_codex_hook_events,
+        normalize_hook_script_path, remove_atoll_codex_hooks, resolve_node_executable,
+        upsert_codex_hook_events,
     };
     use serde_json::json;
 
@@ -10852,6 +10894,31 @@ mod codex_hooks_tests {
             ),
             Some(r"C:/Program Files/Atoll/scripts/atoll-claude-hook.mjs".into())
         );
+    }
+
+    #[test]
+    fn resolve_node_executable_finds_standard_windows_install() {
+        #[cfg(windows)]
+        {
+            let standard = r"C:\Program Files\nodejs\node.exe";
+            if std::path::Path::new(standard).exists() {
+                let resolved = resolve_node_executable().expect("node should resolve");
+                assert_eq!(resolved, normalize_hook_script_path(standard));
+            }
+        }
+    }
+
+    #[test]
+    fn resolve_node_executable_from_where_returns_existing_path() {
+        #[cfg(windows)]
+        {
+            use super::resolve_node_executable_from_where;
+
+            if std::path::Path::new(r"C:\Program Files\nodejs\node.exe").exists() {
+                let resolved = resolve_node_executable_from_where().expect("where should find node");
+                assert!(std::path::Path::new(&resolved).exists());
+            }
+        }
     }
 }
 
