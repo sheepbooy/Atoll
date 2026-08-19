@@ -2,6 +2,14 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.50] - 2026-08-19
+
+### 改进
+- **Agent mascot**：Cursor 改为带指针的正面像素方块，Codex 改为屏幕中央带 `>_` 表情的终端；与 Claude（Clawd）同一套像素语法但剪影不同，动画改为身体部件运动、影子钉地
+
+### 修复
+- **Compact session 图标**：刘海两侧 session 图标间距与对齐更均衡
+
 ## [0.1.49] - 2026-07-13
 
 ### 修复
