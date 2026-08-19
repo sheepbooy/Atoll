@@ -118,6 +118,7 @@ export function BrandExportPage() {
                   agent={agent.id}
                   mood="calm"
                   size={64}
+                  animated={false}
                   accent={AGENT_ACCENT[agent.id]?.accent}
                   accentDark={AGENT_ACCENT[agent.id]?.accentDark}
                 />
@@ -130,43 +131,46 @@ export function BrandExportPage() {
         </div>
       </section>
 
-      <section style={{ marginTop: 40 }}>
-        <h2 style={{ fontSize: 14, letterSpacing: "0.08em", opacity: 0.65 }}>
-          CURSOR CUBE — ALL MOODS
-        </h2>
-        <div
-          style={{
-            display: "flex",
-            gap: 20,
-            alignItems: "flex-end",
-            flexWrap: "wrap",
-          }}
-        >
-          {MASCOT_MOODS.map(({ mood, label }) => (
-            <figure key={mood} style={{ margin: 0, textAlign: "center" }}>
-              <div
-                style={{
-                  width: 88,
-                  height: 88,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  margin: "0 auto 8px",
-                }}
-              >
-                <AgentMascot
-                  agent="cursor"
-                  mood={mood}
-                  size={72}
-                  accent={AGENT_ACCENT.cursor.accent}
-                  accentDark={AGENT_ACCENT.cursor.accentDark}
-                />
-              </div>
-              <figcaption style={{ fontSize: 11, opacity: 0.75 }}>{label}</figcaption>
-            </figure>
-          ))}
-        </div>
-      </section>
+      {(["cursor", "codex"] as const).map((agent) => (
+        <section key={agent} style={{ marginTop: 40 }}>
+          <h2 style={{ fontSize: 14, letterSpacing: "0.08em", opacity: 0.65 }}>
+            {agent === "cursor" ? "CURSOR CUBE" : "CODEX TERMINAL"} — ALL MOODS
+          </h2>
+          <div
+            style={{
+              display: "flex",
+              gap: 20,
+              alignItems: "flex-end",
+              flexWrap: "wrap",
+            }}
+          >
+            {MASCOT_MOODS.map(({ mood, label }) => (
+              <figure key={mood} style={{ margin: 0, textAlign: "center" }}>
+                <div
+                  style={{
+                    width: 88,
+                    height: 88,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    margin: "0 auto 8px",
+                  }}
+                >
+                  <AgentMascot
+                    agent={agent}
+                    mood={mood}
+                    size={72}
+                    animated={false}
+                    accent={AGENT_ACCENT[agent].accent}
+                    accentDark={AGENT_ACCENT[agent].accentDark}
+                  />
+                </div>
+                <figcaption style={{ fontSize: 11, opacity: 0.75 }}>{label}</figcaption>
+              </figure>
+            ))}
+          </div>
+        </section>
+      ))}
 
       <section style={{ marginTop: 40 }}>
         <h2 style={{ fontSize: 14, letterSpacing: "0.08em", opacity: 0.65 }}>
@@ -198,6 +202,7 @@ export function BrandExportPage() {
                   agent={agent}
                   mood="calm"
                   size={96}
+                  animated={false}
                   accent={AGENT_ACCENT[agent]?.accent}
                   accentDark={AGENT_ACCENT[agent]?.accentDark}
                 />

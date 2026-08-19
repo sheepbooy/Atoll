@@ -6,9 +6,9 @@
 }
 
 @keyframes clawd-alert-hop {
-  0%, 100% { transform: translateY(0); }
-  30% { transform: translateY(-13%); }
-  60% { transform: translateY(0); }
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  30% { transform: translateY(-13%) scaleY(1.04); }
+  60% { transform: translateY(0) scaleY(0.94); }
 }
 
 @keyframes clawd-claw-wave-l {
@@ -31,9 +31,31 @@
   96% { transform: scaleY(0.15); }
 }
 
+@keyframes clawd-twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.3); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes clawd-heart-rise {
+  0% { opacity: 0; transform: translateY(10%) scale(0.6); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-45%) scale(1.1); }
+}
+
+@keyframes clawd-leg-step {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-16%); }
+}
+
 @keyframes codex-cursor-blink {
   0%, 45% { opacity: 1; }
   50%, 100% { opacity: 0.12; }
+}
+
+@keyframes cursor-cube-tilt {
+  0%, 60%, 100% { transform: rotate(0deg); }
+  30% { transform: rotate(-2deg); }
+  45% { transform: rotate(2deg); }
 }
 
 .agent-mascot-grid {
@@ -86,26 +108,41 @@
   height: 100%;
 }
 
-.agent-mascot-slot .clawd-claw,
-.agent-mascot-slot .clawd-leg,
-.agent-mascot-slot .clawd-bang,
-.agent-mascot-slot .codex-leg,
-.agent-mascot-slot .codex-bang,
-.agent-mascot-slot .codex-cursor {
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-.agent-mascot-slot .clawd-eye {
+.agent-mascot-slot .clawd-body,
+.agent-mascot-slot .codex-body,
+.agent-mascot-slot .cursor-mascot-body {
   transform-box: fill-box;
   transform-origin: center bottom;
 }
 
-.agent-mascot-slot .clawd.is-calm {
+.agent-mascot-slot .clawd-claw,
+.agent-mascot-slot .clawd-leg,
+.agent-mascot-slot .clawd-bang,
+.agent-mascot-slot .codex-claw,
+.agent-mascot-slot .codex-leg,
+.agent-mascot-slot .codex-cursor,
+.agent-mascot-slot .cursor-mascot-claw,
+.agent-mascot-slot .cursor-mascot-leg,
+.agent-mascot-slot .cursor-mascot-bang,
+.agent-mascot-slot .cursor-mascot-cube {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.agent-mascot-slot .clawd-eye,
+.agent-mascot-slot .codex-eye {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}
+
+.agent-mascot-slot .clawd.is-calm .clawd-body,
+.agent-mascot-slot .codex.is-calm .codex-body,
+.agent-mascot-slot .cursor-mascot.is-calm .cursor-mascot-body {
   animation: clawd-float 2.8s ease-in-out infinite;
 }
 
-.agent-mascot-slot .clawd.is-calm .clawd-eye {
+.agent-mascot-slot .clawd.is-calm .clawd-eye,
+.agent-mascot-slot .codex.is-calm .codex-eye {
   animation: clawd-eye-blink 4.2s ease-in-out infinite;
 }
 
@@ -113,7 +150,9 @@
   animation-delay: 0.4s;
 }
 
-.agent-mascot-slot .clawd.is-alert {
+.agent-mascot-slot .clawd.is-alert .clawd-body,
+.agent-mascot-slot .codex.is-alert .codex-body,
+.agent-mascot-slot .cursor-mascot.is-alert .cursor-mascot-body {
   animation: clawd-alert-hop 0.85s ease-in-out infinite;
 }
 
@@ -127,72 +166,45 @@
   animation: clawd-claw-wave-r 0.5s ease-in-out infinite;
 }
 
-.agent-mascot-slot .clawd.is-alert .clawd-bang {
-  animation: clawd-bang-pop 0.7s ease-in-out infinite;
+.agent-mascot-slot .codex.is-alert .codex-claw-left {
+  transform-origin: center bottom;
+  animation: clawd-claw-wave-l 0.5s ease-in-out infinite;
 }
 
-.agent-mascot-slot .codex .codex-svg {
-  filter:
-    drop-shadow(0 0 1px var(--codex-glow-inner, rgba(158, 220, 255, 0.75)))
-    drop-shadow(0 0 6px var(--codex-glow-outer, rgba(56, 168, 220, 0.28)));
+.agent-mascot-slot .codex.is-alert .codex-claw-right {
+  transform-origin: left center;
+  animation: clawd-claw-wave-r 0.5s ease-in-out infinite;
 }
 
-.agent-mascot-slot .cursor-mascot .cursor-mascot-svg {
-  filter:
-    drop-shadow(0 0 1px var(--glow-inner, rgba(196, 181, 253, 0.75)))
-    drop-shadow(0 0 6px var(--glow-outer, rgba(124, 95, 212, 0.28)));
+.agent-mascot-slot .cursor-mascot.is-alert .cursor-mascot-claw-left {
+  transform-origin: right bottom;
+  animation: clawd-claw-wave-l 0.5s ease-in-out infinite;
 }
 
-.agent-mascot-slot .cursor-mascot.is-calm .cursor-mascot-figure {
-  animation: clawd-float 2.8s ease-in-out infinite;
+.agent-mascot-slot .cursor-mascot.is-alert .cursor-mascot-claw-right {
+  transform-origin: left center;
+  animation: clawd-claw-wave-r 0.5s ease-in-out infinite;
 }
 
-.agent-mascot-slot .cursor-mascot.is-alert .cursor-mascot-figure {
-  animation: clawd-alert-hop 0.85s ease-in-out infinite;
-}
-
+.agent-mascot-slot .clawd.is-alert .clawd-bang,
 .agent-mascot-slot .cursor-mascot.is-alert .cursor-mascot-bang {
   animation: clawd-bang-pop 0.7s ease-in-out infinite;
 }
 
-.agent-mascot-slot .cursor-mascot.is-happy .cursor-mascot-figure {
-  animation: clawd-float 2.8s ease-in-out infinite;
-}
-
-.agent-mascot-slot .cursor-mascot-star-0 {
-  animation: cursor-star-twinkle 1.2s ease-in-out infinite;
-}
-
-.agent-mascot-slot .cursor-mascot-star-1 {
-  animation: cursor-star-twinkle 1.2s ease-in-out infinite 0.4s;
-}
-
-.agent-mascot-slot .cursor-mascot-star-2 {
-  animation: cursor-star-twinkle 1.2s ease-in-out infinite 0.8s;
-}
-
-.agent-mascot-slot .cursor-mascot-heart {
-  animation: cursor-heart-rise 1.8s ease-out infinite;
-}
-
-@keyframes cursor-star-twinkle {
-  0%, 100% { opacity: 0; transform: scale(0.3); }
-  50% { opacity: 1; transform: scale(1); }
-}
-
-@keyframes cursor-heart-rise {
-  0% { opacity: 0; transform: translateY(10%) scale(0.6); }
-  25% { opacity: 1; }
-  100% { opacity: 0; transform: translateY(-45%) scale(1.1); }
-}
-
-.agent-mascot-slot .codex.is-calm {
-  animation: clawd-float 2.8s ease-in-out infinite;
+.agent-mascot-slot .cursor-mascot.is-alert .cursor-mascot-cube {
+  transform-origin: center bottom;
+  animation: cursor-cube-tilt 0.85s ease-in-out infinite;
 }
 
 .agent-mascot-slot .codex-cursor {
   animation: codex-cursor-blink 1.1s step-end infinite;
 }
+
+.agent-mascot-slot .cursor-mascot-star { opacity: 0; }
+.agent-mascot-slot .cursor-mascot-star-0 { animation: clawd-twinkle 1.2s ease-in-out infinite; }
+.agent-mascot-slot .cursor-mascot-star-1 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.4s; }
+.agent-mascot-slot .cursor-mascot-star-2 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.8s; }
+.agent-mascot-slot .cursor-mascot-heart { animation: clawd-heart-rise 1.8s ease-out infinite; }
 
 .agent-mascot-card figcaption {
   font-size: 0.8125rem;
@@ -232,14 +244,20 @@
   .agent-mascot-slot .clawd,
   .agent-mascot-slot .codex,
   .agent-mascot-slot .cursor-mascot,
-  .agent-mascot-slot .cursor-mascot-figure,
+  .agent-mascot-slot .clawd-body,
+  .agent-mascot-slot .codex-body,
+  .agent-mascot-slot .cursor-mascot-body,
   .agent-mascot-slot .cursor-mascot-bang,
+  .agent-mascot-slot .cursor-mascot-cube,
   .agent-mascot-slot .cursor-mascot-star-0,
   .agent-mascot-slot .cursor-mascot-star-1,
   .agent-mascot-slot .cursor-mascot-star-2,
   .agent-mascot-slot .cursor-mascot-heart,
   .agent-mascot-slot .clawd-eye,
+  .agent-mascot-slot .codex-eye,
   .agent-mascot-slot .clawd-claw,
+  .agent-mascot-slot .codex-claw,
+  .agent-mascot-slot .cursor-mascot-claw,
   .agent-mascot-slot .clawd-bang,
   .agent-mascot-slot .codex-cursor {
     animation: none !important;

@@ -134,7 +134,7 @@
   line-height: 1;
 }
 
-.compact-bar-preview .compact-session-dot .clawd.is-alert {
+.compact-bar-preview .compact-session-dot .clawd.is-alert .clawd-body {
   animation: clawd-alert-hop 0.85s ease-in-out infinite;
 }
 

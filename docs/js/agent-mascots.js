@@ -10,8 +10,6 @@
       mood: "calm",
       accent: "#61d8f7",
       accentDark: "#3d9fb8",
-      glowInner: "rgba(158, 220, 255, 0.75)",
-      glowOuter: "rgba(97, 216, 247, 0.28)",
     },
     gemini: {
       type: "clawd",
@@ -59,14 +57,15 @@
 
   function codexPalette(accent, accentDark) {
     const dark = accentDark || mixHex(accent, "#000000", 0.35);
+    const prompt = mixHex(accent, "#ffffff", 0.55);
     return {
       body: accent,
       bodyTop: mixHex(accent, "#ffffff", 0.18),
       dark,
-      bezel: mixHex(dark, "#000000", 0.22),
-      bezelRim: mixHex(accent, "#ffffff", 0.12),
-      outline: mixHex(accent, "#ffffff", 0.42),
-      prompt: mixHex(accent, "#ffffff", 0.55),
+      screen: "#0c1018",
+      prompt,
+      eye: prompt,
+      blush: mixHex(accent, "#ffffff", 0.45),
     };
   }
 
@@ -102,27 +101,29 @@
           <rect class="clawd-eye" x="76" y="12" width="8" height="16" fill="${EYE}"/>
           ${blush}
           ${legs}
+          ${bang}
         </g>
-        ${bang}
       </svg>
     </span>`;
   }
 
   function renderCodex(palette, mood) {
-    return `<span class="codex is-${mood}" aria-hidden="true" style="--codex-glow-inner:${palette.glowInner};--codex-glow-outer:${palette.glowOuter}">
-      <svg class="codex-svg" viewBox="${VIEWBOX}" preserveAspectRatio="xMidYMid meet">
-        <ellipse cx="68" cy="92" rx="34" ry="5" fill="rgba(0,0,0,0.32)"/>
-        <g class="codex-body" shape-rendering="crispEdges">
-          <rect x="38" y="-5" width="32" height="6" fill="${palette.body}" stroke="${palette.outline}" stroke-width="2.5"/>
-          <rect x="16" y="0" width="88" height="56" fill="${palette.body}" stroke="${palette.outline}" stroke-width="2.5"/>
-          <rect x="16" y="0" width="88" height="6" fill="${palette.bodyTop}"/>
-          <rect class="codex-screen" x="18" y="5" width="84" height="49" fill="${palette.bezel}" stroke="${palette.bezelRim}" stroke-width="2.5"/>
-          <rect x="20" y="7" width="80" height="45" fill="#0c1018"/>
-          <text x="60" y="30" text-anchor="middle" dominant-baseline="central" fill="${palette.prompt}" font-family="ui-monospace,monospace" font-size="38" font-weight="700">
-            <tspan>&gt;</tspan><tspan class="codex-cursor">_</tspan>
-          </text>
-          <rect class="codex-leg codex-leg-0" x="38" y="56" width="9.6" height="20" fill="${palette.dark}" stroke="${palette.outline}" stroke-width="2.5"/>
-          <rect class="codex-leg codex-leg-1" x="72" y="56" width="9.6" height="20" fill="${palette.dark}" stroke="${palette.outline}" stroke-width="2.5"/>
+    return `<span class="codex is-${mood}" aria-hidden="true">
+      <svg class="codex-svg" viewBox="${VIEWBOX}" preserveAspectRatio="xMidYMid meet" shape-rendering="crispEdges">
+        <ellipse class="codex-shadow" cx="68" cy="92" rx="32" ry="4" fill="rgba(0,0,0,0.18)"/>
+        <g class="codex-body">
+          <rect class="codex-chassis" x="24" y="8" width="64" height="48" fill="${palette.body}"/>
+          <rect x="24" y="8" width="64" height="8" fill="${palette.bodyTop}"/>
+          <rect class="codex-screen" x="32" y="18" width="48" height="28" fill="${palette.screen}"/>
+          <rect class="codex-screen-glow" x="32" y="18" width="48" height="28" fill="${palette.prompt}"/>
+          <g class="codex-prompt">
+            <rect x="43" y="24" width="8" height="4" fill="${palette.prompt}"/>
+            <rect x="47" y="28" width="8" height="4" fill="${palette.prompt}"/>
+            <rect x="43" y="32" width="8" height="4" fill="${palette.prompt}"/>
+            <rect class="codex-cursor" x="57" y="32" width="12" height="4" fill="${palette.prompt}"/>
+          </g>
+          <rect class="codex-leg codex-leg-0" x="36" y="56" width="12" height="16" fill="${palette.dark}"/>
+          <rect class="codex-leg codex-leg-1" x="64" y="56" width="12" height="16" fill="${palette.dark}"/>
         </g>
       </svg>
     </span>`;
@@ -138,12 +139,7 @@
     }
 
     if (config.type === "codex") {
-      const palette = {
-        ...codexPalette(config.accent, config.accentDark),
-        glowInner: config.glowInner,
-        glowOuter: config.glowOuter,
-      };
-      return renderCodex(palette, mood);
+      return renderCodex(codexPalette(config.accent, config.accentDark), mood);
     }
 
     return renderClawd(clawdPalette(config.accent, config.accentDark), mood);

@@ -170,7 +170,7 @@ Hook 注册 `PermissionRequest`、`PostToolUse`、`Stop` 等事件，写入 `~/.
 
 ### Agent 形象
 
-每个 Agent 有独立的像素风 mascot，包括 Claude、Codex 与 Cursor 立方体形象；Gemini 复用 Clawd 造型并着色为绿色：
+每个 Agent 有独立的像素风 mascot：Claude 是宽身四腿生物，Codex 是带屏幕的双腿终端，Cursor 是带指针的方块；Gemini 复用 Clawd 造型并着色为绿色：
 
 <p align="center">
   <img src="docs/assets/agent-mascots.png" alt="Claude / Codex / Cursor / Gemini mascots" width="420" />

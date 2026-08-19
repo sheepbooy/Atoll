@@ -248,7 +248,7 @@
   background: linear-gradient(135deg, #7cd7f2, #6fdcff);
 }
 
-.approval-preview .mascot-slot .clawd.is-alert {
+.approval-preview .mascot-slot .clawd.is-alert .clawd-body {
   animation: clawd-alert-hop 0.85s ease-in-out infinite;
 }
 
@@ -276,7 +276,7 @@
   .approval-preview .mascot-slot .clawd-bang,
   .approval-preview .mascot-slot .codex-cursor,
   .approval-preview .mascot-slot .cursor-mascot,
-  .approval-preview .mascot-slot .cursor-mascot-figure,
+  .approval-preview .mascot-slot .cursor-mascot-body,
   .approval-preview .mascot-slot .cursor-mascot-bang {
     animation: none !important;
   }

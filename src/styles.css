@@ -719,18 +719,9 @@ kbd {
 }
 
 .is-micro .compact-session-dot .clawd,
-.is-micro .compact-session-dot .codex {
-  transform: scale(0.6);
-  transform-origin: center center;
-}
-
+.is-micro .compact-session-dot .codex,
 .is-micro .compact-session-dot .cursor-mascot {
-  transform: scale(0.78);
-  transform-origin: center center;
-}
-
-.is-micro .compact-session-dot .cursor-mascot .cursor-mascot-svg {
-  transform: scale(1.08);
+  transform: scale(0.6);
   transform-origin: center center;
 }
 
@@ -967,21 +958,6 @@ kbd {
   height: 100%;
 }
 
-.header-agent-logo.cursor-mascot {
-  overflow: visible;
-  transform-origin: center center;
-  transform: scale(1.18);
-}
-
-.is-compact:not(.is-expanded) .header-agent-logo.cursor-mascot,
-.is-closing:not(.is-expanded) .header-agent-logo.cursor-mascot {
-  transform: scale(1.34);
-}
-
-.is-micro .atoll-indicator .header-agent-logo.cursor-mascot {
-  transform: scale(1.14);
-}
-
 .atoll-indicator.is-hook-attention {
   cursor: pointer;
 }
@@ -1054,18 +1030,10 @@ kbd {
     drop-shadow(0 1px 3px rgba(0, 0, 0, 0.38));
 }
 
-.header-agent-logo.cursor-mascot.is-dead {
-  overflow: visible;
-}
-
-.cursor-mascot-eyes-dead line,
-.cursor-mascot-eyes line {
+.clawd-body line,
+.codex-body line,
+.cursor-mascot-body line {
   shape-rendering: geometricPrecision;
-}
-
-.cursor-mascot-figure {
-  transform-box: fill-box;
-  transform-origin: center;
 }
 
 .is-dormant .atoll-indicator {
@@ -1284,78 +1252,37 @@ kbd {
 }
 
 /* Breathing glow for compact session dots — mirrors atoll-breathe */
-.compact-session-dot .cursor-mascot .cursor-mascot-svg {
-  transform: scale(1.16);
-  transform-origin: center center;
-}
-
-.compact-session-dot .clawd.is-calm {
-  animation: session-dot-breathe 3.2s ease-in-out infinite;
-}
-
-.compact-session-dot .clawd.is-sleeping {
-  animation: session-dot-breathe 3.6s ease-in-out infinite;
-}
-
-.compact-session-dot .clawd.is-alert {
-  animation-name: clawd-alert-hop;
-  animation-duration: 0.85s;
-}
-
-.compact-session-dot .clawd.is-happy {
-  animation-name: clawd-bounce;
-  animation-duration: 0.6s;
-}
-
-.compact-session-dot .clawd.is-worried {
-  animation-name: clawd-tremble;
-  animation-duration: 0.5s;
-}
-
-.compact-session-dot .codex.is-calm {
-  animation: session-dot-breathe 3.2s ease-in-out infinite;
-}
-
-.compact-session-dot .codex.is-sleeping {
-  animation: session-dot-breathe 3.6s ease-in-out infinite;
-}
-
-.compact-session-dot .codex.is-alert {
-  animation-name: clawd-alert-hop;
-  animation-duration: 0.85s;
-}
-
-.compact-session-dot .codex.is-happy {
-  animation-name: clawd-bounce;
-  animation-duration: 0.6s;
-}
-
-.compact-session-dot .codex.is-worried {
-  animation-name: clawd-tremble;
-  animation-duration: 0.5s;
-}
-
+.compact-session-dot .clawd.is-calm,
+.compact-session-dot .codex.is-calm,
 .compact-session-dot .cursor-mascot.is-calm {
   animation: session-dot-breathe 3.2s ease-in-out infinite;
 }
 
+.compact-session-dot .clawd.is-sleeping,
+.compact-session-dot .codex.is-sleeping,
 .compact-session-dot .cursor-mascot.is-sleeping {
   animation: session-dot-breathe 3.6s ease-in-out infinite;
 }
 
-.compact-session-dot .cursor-mascot.is-alert {
-  animation-name: clawd-alert-hop;
-  animation-duration: 0.85s;
+.compact-session-dot .clawd.is-calm .clawd-body,
+.compact-session-dot .codex.is-calm .codex-body,
+.compact-session-dot .cursor-mascot.is-calm .cursor-mascot-body,
+.compact-session-dot .clawd.is-sleeping .clawd-body,
+.compact-session-dot .codex.is-sleeping .codex-body,
+.compact-session-dot .cursor-mascot.is-sleeping .cursor-mascot-body {
+  animation: none;
 }
 
-.compact-session-dot .cursor-mascot.is-happy {
-  animation-name: clawd-bounce;
-  animation-duration: 0.6s;
-}
-
+.compact-session-dot .clawd.is-alert,
+.compact-session-dot .codex.is-alert,
+.compact-session-dot .cursor-mascot.is-alert,
+.compact-session-dot .clawd.is-happy,
+.compact-session-dot .codex.is-happy,
+.compact-session-dot .cursor-mascot.is-happy,
+.compact-session-dot .clawd.is-worried,
+.compact-session-dot .codex.is-worried,
 .compact-session-dot .cursor-mascot.is-worried {
-  animation-name: clawd-tremble;
-  animation-duration: 0.5s;
+  animation: none;
 }
 
 @keyframes session-dot-breathe {
@@ -2123,11 +2050,28 @@ kbd {
 
 /* ─── Clawd Mascot ────────────────────────────────────────────── */
 
-@keyframes clawd-float { 0%, 100% { transform: translateY(6%); } 50% { transform: translateY(-6%); } }
-@keyframes clawd-float-slow { 0%, 100% { transform: translateY(2%); } 50% { transform: translateY(9%); } }
-@keyframes clawd-alert-hop { 0%, 100% { transform: translateY(0); } 30% { transform: translateY(-13%); } 60% { transform: translateY(0); } }
-@keyframes clawd-bounce { 0%, 100% { transform: translateY(9%) scale(1); } 40% { transform: translateY(-16%) scale(1.04); } 70% { transform: translateY(0) scale(0.99); } }
-@keyframes clawd-tremble { 0%, 100% { transform: translate(-3%, 2%); } 50% { transform: translate(3%, 2%); } }
+@keyframes clawd-float {
+  0%, 100% { transform: translateY(6%); }
+  50% { transform: translateY(-6%); }
+}
+@keyframes clawd-float-slow {
+  0%, 100% { transform: translateY(2%); }
+  50% { transform: translateY(9%); }
+}
+@keyframes clawd-alert-hop {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  30% { transform: translateY(-13%) scaleY(1.04); }
+  60% { transform: translateY(0) scaleY(0.94); }
+}
+@keyframes clawd-bounce {
+  0%, 100% { transform: translateY(9%) scale(1, 1); }
+  40% { transform: translateY(-16%) scale(1.04, 1.06); }
+  70% { transform: translateY(0) scale(0.99, 0.94); }
+}
+@keyframes clawd-tremble {
+  0%, 100% { transform: translate(-3%, 2%); }
+  50% { transform: translate(3%, 2%); }
+}
 @keyframes clawd-claw-wave-l { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-24deg); } }
 @keyframes clawd-claw-wave-r { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(24deg); } }
 @keyframes clawd-leg-step { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-16%); } }
@@ -2136,8 +2080,20 @@ kbd {
 @keyframes clawd-zzz-rise { 0% { opacity: 0; transform: translate(0, 10%); } 40% { opacity: 1; } 100% { opacity: 0; transform: translate(30%, -70%); } }
 @keyframes clawd-sweat-fall { 0% { opacity: 0; transform: translateY(-40%); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(160%); } }
 @keyframes clawd-bang-pop { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-14%) scale(1.14); } }
+@keyframes codex-cursor-blink { 0%, 45% { opacity: 1; } 50%, 100% { opacity: 0.12; } }
+@keyframes codex-screen-flash {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 0.18; }
+}
+@keyframes cursor-cube-tilt {
+  0%, 60%, 100% { transform: rotate(0deg); }
+  30% { transform: rotate(-2deg); }
+  45% { transform: rotate(2deg); }
+}
 
-.clawd {
+.clawd,
+.codex,
+.cursor-mascot {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2145,7 +2101,18 @@ kbd {
   will-change: transform;
 }
 
-.clawd-svg { overflow: visible; }
+.clawd-svg,
+.codex-svg,
+.cursor-mascot-svg {
+  overflow: visible;
+}
+
+.clawd-body,
+.codex-body,
+.cursor-mascot-body {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}
 
 .clawd-claw,
 .clawd-leg,
@@ -2153,17 +2120,57 @@ kbd {
 .clawd-heart,
 .clawd-z,
 .clawd-sweat,
-.clawd-bang {
+.clawd-bang,
+.codex-claw,
+.codex-leg,
+.codex-star,
+.codex-heart,
+.codex-z,
+.codex-sweat,
+.codex-bang,
+.codex-cursor,
+.cursor-mascot-claw,
+.cursor-mascot-leg,
+.cursor-mascot-star,
+.cursor-mascot-heart,
+.cursor-mascot-z,
+.cursor-mascot-sweat,
+.cursor-mascot-bang,
+.cursor-mascot-cube {
   transform-box: fill-box;
   transform-origin: center;
 }
 
-.clawd.is-calm { animation: clawd-float 2.8s ease-in-out infinite; }
-.clawd.is-sleeping { animation: clawd-float-slow 3.6s ease-in-out infinite; }
-.clawd.is-alert { animation: clawd-alert-hop 0.85s ease-in-out infinite; }
-.clawd.is-happy { animation: clawd-bounce 0.6s ease-in-out infinite; }
-.clawd.is-worried { animation: clawd-tremble 0.5s ease-in-out infinite; }
-.clawd.is-sad { transform: translateY(8%); }
+.clawd.is-calm .clawd-body,
+.codex.is-calm .codex-body,
+.cursor-mascot.is-calm .cursor-mascot-body {
+  animation: clawd-float 2.8s ease-in-out infinite;
+}
+.clawd.is-sleeping .clawd-body,
+.codex.is-sleeping .codex-body,
+.cursor-mascot.is-sleeping .cursor-mascot-body {
+  animation: clawd-float-slow 3.6s ease-in-out infinite;
+}
+.clawd.is-alert .clawd-body,
+.codex.is-alert .codex-body,
+.cursor-mascot.is-alert .cursor-mascot-body {
+  animation: clawd-alert-hop 0.85s ease-in-out infinite;
+}
+.clawd.is-happy .clawd-body,
+.codex.is-happy .codex-body,
+.cursor-mascot.is-happy .cursor-mascot-body {
+  animation: clawd-bounce 0.6s ease-in-out infinite;
+}
+.clawd.is-worried .clawd-body,
+.codex.is-worried .codex-body,
+.cursor-mascot.is-worried .cursor-mascot-body {
+  animation: clawd-tremble 0.5s ease-in-out infinite;
+}
+.clawd.is-sad .clawd-body,
+.codex.is-sad .codex-body,
+.cursor-mascot.is-sad .cursor-mascot-body {
+  transform: translateY(8%);
+}
 
 @keyframes mascot-dead-slump {
   0%, 100% { transform: translateY(6%) rotate(-1deg); }
@@ -2177,137 +2184,121 @@ kbd {
 }
 
 .clawd.is-alert .clawd-claw-left,
-.clawd.is-happy .clawd-claw-left { transform-origin: right center; animation: clawd-claw-wave-l 0.5s ease-in-out infinite; }
+.clawd.is-happy .clawd-claw-left {
+  transform-origin: right center;
+  animation: clawd-claw-wave-l 0.5s ease-in-out infinite;
+}
 .clawd.is-alert .clawd-claw-right,
-.clawd.is-happy .clawd-claw-right { transform-origin: left center; animation: clawd-claw-wave-r 0.5s ease-in-out infinite; }
-
-.clawd.is-happy .clawd-leg-0 { animation: clawd-leg-step 0.3s ease-in-out infinite; }
-.clawd.is-happy .clawd-leg-1 { animation: clawd-leg-step 0.3s ease-in-out infinite 0.07s; }
-.clawd.is-happy .clawd-leg-2 { animation: clawd-leg-step 0.3s ease-in-out infinite 0.14s; }
-.clawd.is-happy .clawd-leg-3 { animation: clawd-leg-step 0.3s ease-in-out infinite 0.21s; }
-
-.clawd-star { opacity: 0; }
-.clawd-star-0 { animation: clawd-twinkle 1.2s ease-in-out infinite; }
-.clawd-star-1 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.4s; }
-.clawd-star-2 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.8s; }
-.clawd-heart { animation: clawd-heart-rise 1.8s ease-out infinite; }
-.clawd-z { opacity: 0; }
-.clawd-z-0 { animation: clawd-zzz-rise 2.4s ease-in-out infinite; }
-.clawd-z-1 { animation: clawd-zzz-rise 2.4s ease-in-out infinite 0.5s; }
-.clawd-z-2 { animation: clawd-zzz-rise 2.4s ease-in-out infinite 1s; }
-.clawd-sweat { animation: clawd-sweat-fall 1.3s ease-in-out infinite; }
-.clawd-bang { animation: clawd-bang-pop 0.7s ease-in-out infinite; }
-
-/* Codex — same silhouette as Clawd, terminal screen face */
-.codex {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 0;
-  will-change: transform;
+.clawd.is-happy .clawd-claw-right {
+  transform-origin: left center;
+  animation: clawd-claw-wave-r 0.5s ease-in-out infinite;
 }
 
-.codex-svg { overflow: visible; }
-
-.codex .codex-svg {
-  filter:
-    drop-shadow(0 0 1px var(--codex-glow-inner, rgba(158, 220, 255, 0.75)))
-    drop-shadow(0 0 6px var(--codex-glow-outer, rgba(56, 168, 220, 0.28)));
+.codex.is-alert .codex-claw-left,
+.codex.is-happy .codex-claw-left {
+  transform-origin: center bottom;
+  animation: clawd-claw-wave-l 0.5s ease-in-out infinite;
+}
+.codex.is-alert .codex-claw-right,
+.codex.is-happy .codex-claw-right {
+  transform-origin: left center;
+  animation: clawd-claw-wave-r 0.5s ease-in-out infinite;
 }
 
-.codex-claw,
-.codex-leg,
-.codex-star,
-.codex-heart,
-.codex-z,
-.codex-sweat,
-.codex-bang,
-.codex-cursor {
-  transform-box: fill-box;
-  transform-origin: center;
+.cursor-mascot.is-alert .cursor-mascot-claw-left,
+.cursor-mascot.is-happy .cursor-mascot-claw-left {
+  transform-origin: right bottom;
+  animation: clawd-claw-wave-l 0.5s ease-in-out infinite;
+}
+.cursor-mascot.is-alert .cursor-mascot-claw-right,
+.cursor-mascot.is-happy .cursor-mascot-claw-right {
+  transform-origin: left center;
+  animation: clawd-claw-wave-r 0.5s ease-in-out infinite;
 }
 
-.codex.is-calm { animation: clawd-float 2.8s ease-in-out infinite; }
-.codex.is-sleeping { animation: clawd-float-slow 3.6s ease-in-out infinite; }
-.codex.is-alert { animation: clawd-alert-hop 0.85s ease-in-out infinite; }
-.codex.is-happy { animation: clawd-bounce 0.6s ease-in-out infinite; }
-.codex.is-worried { animation: clawd-tremble 0.5s ease-in-out infinite; }
-.codex.is-sad { transform: translateY(8%); }
-
+.clawd.is-happy .clawd-leg-0,
+.codex.is-happy .codex-leg-0,
+.cursor-mascot.is-happy .cursor-mascot-leg-0,
 .codex.is-alert .codex-leg-0,
-.codex.is-happy .codex-leg-0 { animation: clawd-leg-step 0.3s ease-in-out infinite; }
+.cursor-mascot.is-alert .cursor-mascot-leg-0 {
+  animation: clawd-leg-step 0.3s ease-in-out infinite;
+}
+.clawd.is-happy .clawd-leg-1,
+.codex.is-happy .codex-leg-1,
+.cursor-mascot.is-happy .cursor-mascot-leg-1,
 .codex.is-alert .codex-leg-1,
-.codex.is-happy .codex-leg-1 { animation: clawd-leg-step 0.3s ease-in-out infinite 0.12s; }
+.cursor-mascot.is-alert .cursor-mascot-leg-1 {
+  animation: clawd-leg-step 0.3s ease-in-out infinite 0.07s;
+}
+.clawd.is-happy .clawd-leg-2,
+.codex.is-happy .codex-leg-2,
+.cursor-mascot.is-happy .cursor-mascot-leg-2,
+.codex.is-alert .codex-leg-2,
+.cursor-mascot.is-alert .cursor-mascot-leg-2 {
+  animation: clawd-leg-step 0.3s ease-in-out infinite 0.14s;
+}
+.clawd.is-happy .clawd-leg-3,
+.codex.is-happy .codex-leg-3,
+.cursor-mascot.is-happy .cursor-mascot-leg-3,
+.codex.is-alert .codex-leg-3,
+.cursor-mascot.is-alert .cursor-mascot-leg-3 {
+  animation: clawd-leg-step 0.3s ease-in-out infinite 0.21s;
+}
+
+.clawd-star,
+.codex-star,
+.cursor-mascot-star { opacity: 0; }
+.clawd-star-0,
+.codex-star-0,
+.cursor-mascot-star-0 { animation: clawd-twinkle 1.2s ease-in-out infinite; }
+.clawd-star-1,
+.codex-star-1,
+.cursor-mascot-star-1 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.4s; }
+.clawd-star-2,
+.codex-star-2,
+.cursor-mascot-star-2 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.8s; }
+.clawd-heart,
+.codex-heart,
+.cursor-mascot-heart { animation: clawd-heart-rise 1.8s ease-out infinite; }
+.clawd-z,
+.codex-z,
+.cursor-mascot-z { opacity: 0; }
+.clawd-z-0,
+.codex-z-0,
+.cursor-mascot-z-0 { animation: clawd-zzz-rise 2.4s ease-in-out infinite; }
+.clawd-z-1,
+.codex-z-1,
+.cursor-mascot-z-1 { animation: clawd-zzz-rise 2.4s ease-in-out infinite 0.5s; }
+.clawd-z-2,
+.codex-z-2,
+.cursor-mascot-z-2 { animation: clawd-zzz-rise 2.4s ease-in-out infinite 1s; }
+.clawd-sweat,
+.codex-sweat,
+.cursor-mascot-sweat { animation: clawd-sweat-fall 1.3s ease-in-out infinite; }
+.clawd-bang,
+.codex-bang,
+.cursor-mascot-bang { animation: clawd-bang-pop 0.7s ease-in-out infinite; }
 
 .codex-cursor {
   animation: codex-cursor-blink 1.1s step-end infinite;
 }
 
-@keyframes codex-cursor-blink {
-  0%, 45% { opacity: 1; }
-  50%, 100% { opacity: 0.12; }
+.codex-screen-glow {
+  opacity: 0;
+  pointer-events: none;
 }
 
-.codex-star { opacity: 0; }
-.codex-star-0 { animation: clawd-twinkle 1.2s ease-in-out infinite; }
-.codex-star-1 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.4s; }
-.codex-star-2 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.8s; }
-.codex-heart { animation: clawd-heart-rise 1.8s ease-out infinite; }
-.codex-z { opacity: 0; }
-.codex-z-0 { animation: clawd-zzz-rise 2.4s ease-in-out infinite; }
-.codex-z-1 { animation: clawd-zzz-rise 2.4s ease-in-out infinite 0.5s; }
-.codex-z-2 { animation: clawd-zzz-rise 2.4s ease-in-out infinite 1s; }
-.codex-sweat { animation: clawd-sweat-fall 1.3s ease-in-out infinite; }
-.codex-bang { animation: clawd-bang-pop 0.7s ease-in-out infinite; }
-
-/* Cursor — isometric cube based on Cursor brand mark */
-.cursor-mascot {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 0;
-  will-change: transform;
+.codex.is-alert .codex-screen-glow {
+  animation: codex-screen-flash 0.85s ease-in-out infinite;
 }
 
-.cursor-mascot-svg { overflow: visible; }
-
-.cursor-mascot .cursor-mascot-svg {
-  filter:
-    drop-shadow(0 0 1px var(--cursor-mascot-glow-inner, rgba(196, 181, 253, 0.75)))
-    drop-shadow(0 0 6px var(--cursor-mascot-glow-outer, rgba(124, 95, 212, 0.28)));
+.cursor-mascot-cube {
+  transform-origin: center bottom;
 }
 
-.cursor-mascot-cube,
-.cursor-mascot-face,
-.cursor-mascot-facet,
-.cursor-mascot-eye-float,
-.cursor-mascot-star,
-.cursor-mascot-heart,
-.cursor-mascot-z,
-.cursor-mascot-sweat,
-.cursor-mascot-bang {
-  transform-box: fill-box;
-  transform-origin: center;
+.cursor-mascot.is-alert .cursor-mascot-cube {
+  animation: cursor-cube-tilt 0.85s ease-in-out infinite;
 }
-
-.cursor-mascot.is-calm .cursor-mascot-figure { animation: clawd-float 2.8s ease-in-out infinite; }
-.cursor-mascot.is-sleeping .cursor-mascot-figure { animation: clawd-float-slow 3.6s ease-in-out infinite; }
-.cursor-mascot.is-alert .cursor-mascot-figure { animation: clawd-alert-hop 0.85s ease-in-out infinite; }
-.cursor-mascot.is-happy .cursor-mascot-figure { animation: clawd-bounce 0.6s ease-in-out infinite; }
-.cursor-mascot.is-worried .cursor-mascot-figure { animation: clawd-tremble 0.5s ease-in-out infinite; }
-.cursor-mascot.is-sad { transform: translateY(8%); }
-
-.cursor-mascot-star { opacity: 0; }
-.cursor-mascot-star-0 { animation: clawd-twinkle 1.2s ease-in-out infinite; }
-.cursor-mascot-star-1 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.4s; }
-.cursor-mascot-star-2 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.8s; }
-.cursor-mascot-heart { animation: clawd-heart-rise 1.8s ease-out infinite; }
-.cursor-mascot-z { opacity: 0; }
-.cursor-mascot-z-0 { animation: clawd-zzz-rise 2.4s ease-in-out infinite; }
-.cursor-mascot-z-1 { animation: clawd-zzz-rise 2.4s ease-in-out infinite 0.5s; }
-.cursor-mascot-z-2 { animation: clawd-zzz-rise 2.4s ease-in-out infinite 1s; }
-.cursor-mascot-sweat { animation: clawd-sweat-fall 1.3s ease-in-out infinite; }
-.cursor-mascot-bang { animation: clawd-bang-pop 0.7s ease-in-out infinite; }
 
 .clawd.is-static,
 .clawd.is-static *,
@@ -2329,20 +2320,11 @@ kbd {
     height var(--duration-expand) var(--ease-window);
 }
 
-.agent-slot .cursor-mascot {
-  transform: scale(1.28);
-  transform-origin: center center;
-}
-
 .is-expanded .agent-slot .clawd,
 .is-expanded .agent-slot .codex,
 .is-expanded .agent-slot .cursor-mascot {
   width: 40px;
   height: 35px;
-}
-
-.is-expanded .agent-slot .cursor-mascot {
-  transform: scale(1.16);
 }
 
 .idle-logo {
@@ -2377,11 +2359,6 @@ kbd {
   height: 18px;
 }
 
-.clawd-stack-item .cursor-mascot {
-  transform: scale(1.28);
-  transform-origin: center center;
-}
-
 .clawd-stack-more {
   margin-left: 3px;
   color: var(--text-secondary);
@@ -2411,11 +2388,6 @@ kbd {
 .session-clawd .cursor-mascot {
   width: 34px;
   height: 30px;
-}
-
-.session-clawd .cursor-mascot {
-  transform: scale(1.12);
-  transform-origin: center center;
 }
 
 /* ─── Header Copy ─────────────────────────────────────────────── */

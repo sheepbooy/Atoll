@@ -27,7 +27,7 @@ export function CursorMascotPreviewPage() {
         <p className="cursor-preview-eyebrow">Atoll Agent Mascot</p>
         <h1 className="cursor-preview-title">Cursor Cube</h1>
         <p className="cursor-preview-subtitle">
-          等距立方体 · 左脸表情 · 品牌凹槽 · 七种 mood
+          正面像素方块 · 指针 · 两腿
         </p>
       </header>
 
