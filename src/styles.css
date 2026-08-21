@@ -2080,10 +2080,9 @@ kbd {
 @keyframes clawd-zzz-rise { 0% { opacity: 0; transform: translate(0, 10%); } 40% { opacity: 1; } 100% { opacity: 0; transform: translate(30%, -70%); } }
 @keyframes clawd-sweat-fall { 0% { opacity: 0; transform: translateY(-40%); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(160%); } }
 @keyframes clawd-bang-pop { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-14%) scale(1.14); } }
-@keyframes codex-cursor-blink { 0%, 45% { opacity: 1; } 50%, 100% { opacity: 0.12; } }
-@keyframes codex-screen-flash {
-  0%, 100% { opacity: 0; }
-  50% { opacity: 0.18; }
+@keyframes official-mark-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.78; }
 }
 @keyframes cursor-cube-tilt {
   0%, 60%, 100% { transform: rotate(0deg); }
@@ -2121,22 +2120,19 @@ kbd {
 .clawd-z,
 .clawd-sweat,
 .clawd-bang,
-.codex-claw,
-.codex-leg,
 .codex-star,
 .codex-heart,
 .codex-z,
 .codex-sweat,
 .codex-bang,
-.codex-cursor,
-.cursor-mascot-claw,
-.cursor-mascot-leg,
+.codex-mark,
 .cursor-mascot-star,
 .cursor-mascot-heart,
 .cursor-mascot-z,
 .cursor-mascot-sweat,
 .cursor-mascot-bang,
-.cursor-mascot-cube {
+.cursor-mascot-cube,
+.cursor-mascot-mark {
   transform-box: fill-box;
   transform-origin: center;
 }
@@ -2194,54 +2190,16 @@ kbd {
   animation: clawd-claw-wave-r 0.5s ease-in-out infinite;
 }
 
-.codex.is-alert .codex-claw-left,
-.codex.is-happy .codex-claw-left {
-  transform-origin: center bottom;
-  animation: clawd-claw-wave-l 0.5s ease-in-out infinite;
-}
-.codex.is-alert .codex-claw-right,
-.codex.is-happy .codex-claw-right {
-  transform-origin: left center;
-  animation: clawd-claw-wave-r 0.5s ease-in-out infinite;
-}
-
-.cursor-mascot.is-alert .cursor-mascot-claw-left,
-.cursor-mascot.is-happy .cursor-mascot-claw-left {
-  transform-origin: right bottom;
-  animation: clawd-claw-wave-l 0.5s ease-in-out infinite;
-}
-.cursor-mascot.is-alert .cursor-mascot-claw-right,
-.cursor-mascot.is-happy .cursor-mascot-claw-right {
-  transform-origin: left center;
-  animation: clawd-claw-wave-r 0.5s ease-in-out infinite;
-}
-
-.clawd.is-happy .clawd-leg-0,
-.codex.is-happy .codex-leg-0,
-.cursor-mascot.is-happy .cursor-mascot-leg-0,
-.codex.is-alert .codex-leg-0,
-.cursor-mascot.is-alert .cursor-mascot-leg-0 {
+.clawd.is-happy .clawd-leg-0 {
   animation: clawd-leg-step 0.3s ease-in-out infinite;
 }
-.clawd.is-happy .clawd-leg-1,
-.codex.is-happy .codex-leg-1,
-.cursor-mascot.is-happy .cursor-mascot-leg-1,
-.codex.is-alert .codex-leg-1,
-.cursor-mascot.is-alert .cursor-mascot-leg-1 {
+.clawd.is-happy .clawd-leg-1 {
   animation: clawd-leg-step 0.3s ease-in-out infinite 0.07s;
 }
-.clawd.is-happy .clawd-leg-2,
-.codex.is-happy .codex-leg-2,
-.cursor-mascot.is-happy .cursor-mascot-leg-2,
-.codex.is-alert .codex-leg-2,
-.cursor-mascot.is-alert .cursor-mascot-leg-2 {
+.clawd.is-happy .clawd-leg-2 {
   animation: clawd-leg-step 0.3s ease-in-out infinite 0.14s;
 }
-.clawd.is-happy .clawd-leg-3,
-.codex.is-happy .codex-leg-3,
-.cursor-mascot.is-happy .cursor-mascot-leg-3,
-.codex.is-alert .codex-leg-3,
-.cursor-mascot.is-alert .cursor-mascot-leg-3 {
+.clawd.is-happy .clawd-leg-3 {
   animation: clawd-leg-step 0.3s ease-in-out infinite 0.21s;
 }
 
@@ -2279,17 +2237,13 @@ kbd {
 .codex-bang,
 .cursor-mascot-bang { animation: clawd-bang-pop 0.7s ease-in-out infinite; }
 
-.codex-cursor {
-  animation: codex-cursor-blink 1.1s step-end infinite;
+.codex.is-alert .codex-mark {
+  animation: official-mark-pulse 0.85s ease-in-out infinite;
 }
 
-.codex-screen-glow {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.codex.is-alert .codex-screen-glow {
-  animation: codex-screen-flash 0.85s ease-in-out infinite;
+.codex.is-sleeping .codex-mark,
+.cursor-mascot.is-sleeping .cursor-mascot-mark {
+  opacity: 0.72;
 }
 
 .cursor-mascot-cube {

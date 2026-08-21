@@ -134,7 +134,7 @@ export function BrandExportPage() {
       {(["cursor", "codex"] as const).map((agent) => (
         <section key={agent} style={{ marginTop: 40 }}>
           <h2 style={{ fontSize: 14, letterSpacing: "0.08em", opacity: 0.65 }}>
-            {agent === "cursor" ? "CURSOR CUBE" : "CODEX TERMINAL"} — ALL MOODS
+            {agent === "cursor" ? "CURSOR" : "CODEX"} — ALL MOODS
           </h2>
           <div
             style={{
@@ -208,7 +208,7 @@ export function BrandExportPage() {
                 />
               </div>
               <figcaption style={{ fontSize: 12, opacity: 0.8 }}>
-                {agent === "claude" ? "Clawd" : agent === "codex" ? "Codex" : "Cursor Cube"}
+                {agent === "claude" ? "Clawd" : agent === "codex" ? "Codex" : "Cursor"}
               </figcaption>
             </figure>
           ))}

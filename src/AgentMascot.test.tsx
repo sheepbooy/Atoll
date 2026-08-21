@@ -48,28 +48,33 @@ describe("AgentMascot", () => {
     expect(container.querySelector(".codex.is-static")).not.toBeNull();
   });
 
-  it("gives cursor a cube-and-pointer silhouette, not Clawd's wide body", () => {
+  it("renders the official Cursor 2.5D cube mark", () => {
     const cursor = render(<AgentMascot agent="cursor" mood="calm" animated={false} />);
-    expect(cursor.container.querySelectorAll(".cursor-mascot-claw")).toHaveLength(2);
-    expect(cursor.container.querySelectorAll(".cursor-mascot-leg")).toHaveLength(2);
-    expect(cursor.container.querySelector(".cursor-mascot-pointer")).not.toBeNull();
-    expect(cursor.container.querySelector(".cursor-mascot-face-front")?.getAttribute("width")).toBe("56");
-    expect(cursor.container.querySelector(".cursor-mascot-face-side")).not.toBeNull();
+    expect(cursor.container.querySelector(".cursor-mascot-mark")).not.toBeNull();
+    expect(cursor.container.querySelector(".cursor-mascot-cube")).not.toBeNull();
+    expect(cursor.container.querySelectorAll(".cursor-mascot-mark path")).toHaveLength(5);
+    expect(cursor.container.querySelector(".cursor-mascot-pointer-head")).not.toBeNull();
+    expect(cursor.container.querySelector(".cursor-mascot-claw")).toBeNull();
+    expect(cursor.container.querySelector(".cursor-mascot-leg")).toBeNull();
   });
 
-  it("gives codex a simple screen-and-legs silhouette", () => {
+  it("renders the official Codex blossom-and-prompt mark", () => {
     const codex = render(<AgentMascot agent="codex" mood="calm" animated={false} />);
-    expect(codex.container.querySelectorAll(".codex-claw")).toHaveLength(0);
-    expect(codex.container.querySelectorAll(".codex-leg")).toHaveLength(2);
-    expect(codex.container.querySelector(".codex-chassis")?.getAttribute("width")).toBe("64");
-    expect(codex.container.querySelector(".codex-chassis")?.getAttribute("height")).toBe("48");
-    expect(codex.container.querySelector(".codex-screen")).not.toBeNull();
-    expect(codex.container.querySelector(".codex-prompt")).not.toBeNull();
-    expect(codex.container.querySelector(".codex-cursor")).not.toBeNull();
-    expect(codex.container.querySelector(".codex-cursor")).not.toBeNull();
-    expect(codex.container.querySelector(".codex-chin")).toBeNull();
-    expect(codex.container.querySelector(".codex-stand")).toBeNull();
-    expect(codex.container.querySelector(".codex-keyboard")).toBeNull();
+    expect(codex.container.querySelector(".codex-mark")).not.toBeNull();
+    expect(codex.container.querySelectorAll(".codex-mark path")).toHaveLength(1);
+    expect(codex.container.querySelector(".codex-mark path")?.getAttribute("fill-rule")).toBe("evenodd");
+    expect(codex.container.querySelector(".codex-chassis")).toBeNull();
+    expect(codex.container.querySelector(".codex-screen")).toBeNull();
+    expect(codex.container.querySelector(".codex-leg")).toBeNull();
+    expect(codex.container.querySelector(".codex-mark path")?.getAttribute("fill")).toBe("#f4f4f4");
+  });
+
+  it("recolors official marks for offline and error moods", () => {
+    const deadCodex = render(<AgentMascot agent="codex" mood="dead" animated={false} />);
+    expect(deadCodex.container.querySelector(".codex-mark path")?.getAttribute("fill")).toBe("#8a8a8a");
+
+    const sickCursor = render(<AgentMascot agent="cursor" mood="worried" animated={false} />);
+    expect(sickCursor.container.querySelector(".cursor-mascot-face-bottom")?.getAttribute("fill")).toBe("#6d8a6d");
   });
 
   it("does not attach glow CSS variables", () => {

@@ -1,5 +1,4 @@
 import { CursorMascot } from "./CursorMascot";
-import { AGENT_ACCENT } from "./AgentMascot";
 import type { ClawdMood } from "./ClawdMascot";
 
 const MOODS: { mood: ClawdMood; label: string; hint: string }[] = [
@@ -18,27 +17,19 @@ export function getCursorPreviewMode(): boolean {
 }
 
 export function CursorMascotPreviewPage() {
-  const accent = AGENT_ACCENT.cursor.accent;
-  const accentDark = AGENT_ACCENT.cursor.accentDark;
-
   return (
     <main className="cursor-preview">
       <header className="cursor-preview-header">
         <p className="cursor-preview-eyebrow">Atoll Agent Mascot</p>
-        <h1 className="cursor-preview-title">Cursor Cube</h1>
+        <h1 className="cursor-preview-title">Cursor</h1>
         <p className="cursor-preview-subtitle">
-          正面像素方块 · 指针 · 两腿
+          官方 2.5D 立方体图标 · 七种 mood
         </p>
       </header>
 
       <section className="cursor-preview-hero" aria-label="Cursor calm">
         <div className="cursor-preview-hero-stage">
-          <CursorMascot
-            mood="calm"
-            size={160}
-            accent={accent}
-            accentDark={accentDark}
-          />
+          <CursorMascot mood="calm" size={160} />
         </div>
         <p className="cursor-preview-hero-caption">calm — 默认态</p>
       </section>
@@ -47,12 +38,7 @@ export function CursorMascotPreviewPage() {
         {MOODS.map(({ mood, label, hint }) => (
           <figure key={mood} className="cursor-preview-card">
             <div className="cursor-preview-card-stage">
-              <CursorMascot
-                mood={mood}
-                size={112}
-                accent={accent}
-                accentDark={accentDark}
-              />
+              <CursorMascot mood={mood} size={112} />
             </div>
             <figcaption className="cursor-preview-card-label">{label}</figcaption>
             <p className="cursor-preview-card-hint">{hint}</p>
@@ -61,7 +47,7 @@ export function CursorMascotPreviewPage() {
       </section>
 
       <footer className="cursor-preview-footer">
-        accent {accent} · accentDark {accentDark}
+        official cube · cursor.com/brand
       </footer>
     </main>
   );

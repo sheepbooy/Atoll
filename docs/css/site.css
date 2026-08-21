@@ -1028,8 +1028,14 @@ section {
   overflow: hidden;
 }
 
+.agent-card-mascot--codex {
+  background: rgba(97, 216, 247, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(97, 216, 247, 0.16);
+}
+
 .agent-card-mascot .mascot-slot,
-.agent-card-mascot .cursor-mascot {
+.agent-card-mascot .cursor-mascot,
+.agent-card-mascot .codex {
   width: 48px;
   height: 48px;
 }

@@ -2,14 +2,14 @@
   const VIEWBOX = "-20 -34 152 136";
   const LEGS = [16, 30.4, 72, 86.4];
   const EYE = "#1a1a1a";
+  const CODEX_PATH =
+    "M8.086.457a6.105 6.105 0 013.046-.415c1.333.153 2.521.72 3.564 1.7a.117.117 0 00.107.029c1.408-.346 2.762-.224 4.061.366l.063.03.154.076c1.357.703 2.33 1.77 2.918 3.198.278.679.418 1.388.421 2.126a5.655 5.655 0 01-.18 1.631.167.167 0 00.04.155 5.982 5.982 0 011.578 2.891c.385 1.901-.01 3.615-1.183 5.14l-.182.22a6.063 6.063 0 01-2.934 1.851.162.162 0 00-.108.102c-.255.736-.511 1.364-.987 1.992-1.199 1.582-2.962 2.462-4.948 2.451-1.583-.008-2.986-.587-4.21-1.736a.145.145 0 00-.14-.032c-.518.167-1.04.191-1.604.185a5.924 5.924 0 01-2.595-.622 6.058 6.058 0 01-2.146-1.781c-.203-.269-.404-.522-.551-.821a7.74 7.74 0 01-.495-1.283 6.11 6.11 0 01-.017-3.064.166.166 0 00.008-.074.115.115 0 00-.037-.064 5.958 5.958 0 01-1.38-2.202 5.196 5.196 0 01-.333-1.589 6.915 6.915 0 01.188-2.132c.45-1.484 1.309-2.648 2.577-3.493.282-.188.55-.334.802-.438.286-.12.573-.22.861-.304a.129.129 0 00.087-.087A6.016 6.016 0 015.635 2.31C6.315 1.464 7.132.846 8.086.457zm-.804 7.85a.848.848 0 00-1.473.842l1.694 2.965-1.688 2.848a.849.849 0 001.46.864l1.94-3.272a.849.849 0 00.007-.854l-1.94-3.393zm5.446 6.24a.849.849 0 000 1.695h4.848a.849.849 0 000-1.696h-4.848z";
 
   const AGENTS = {
     claude: { type: "clawd", mood: "calm" },
     codex: {
       type: "codex",
       mood: "calm",
-      accent: "#61d8f7",
-      accentDark: "#3d9fb8",
     },
     gemini: {
       type: "clawd",
@@ -20,8 +20,6 @@
     cursor: {
       type: "cursor",
       mood: "calm",
-      accent: "#a78bfa",
-      accentDark: "#7c5fd4",
     },
   };
 
@@ -38,7 +36,7 @@
   function mixHex(from, to, amount) {
     const parse = (hex) => {
       const value = Number.parseInt(hex.slice(1), 16);
-      return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+      return [(value >> 16) & 255, (value >> 8) & 255, (value >> 0) & 255];
     };
     const [r1, g1, b1] = parse(from);
     const [r2, g2, b2] = parse(to);
@@ -55,18 +53,11 @@
     };
   }
 
-  function codexPalette(accent, accentDark) {
-    const dark = accentDark || mixHex(accent, "#000000", 0.35);
-    const prompt = mixHex(accent, "#ffffff", 0.55);
-    return {
-      body: accent,
-      bodyTop: mixHex(accent, "#ffffff", 0.18),
-      dark,
-      screen: "#0c1018",
-      prompt,
-      eye: prompt,
-      blush: mixHex(accent, "#ffffff", 0.45),
-    };
+  function codexFill(mood) {
+    if (mood === "dead") return "#8a8a8a";
+    if (mood === "worried") return "#7cb97c";
+    if (mood === "sleeping") return "#a8b0b4";
+    return "#f4f4f4";
   }
 
   function renderClawd(palette, mood) {
@@ -107,23 +98,17 @@
     </span>`;
   }
 
-  function renderCodex(palette, mood) {
+  function renderCodex(mood) {
+    const fill = codexFill(mood);
     return `<span class="codex is-${mood}" aria-hidden="true">
-      <svg class="codex-svg" viewBox="${VIEWBOX}" preserveAspectRatio="xMidYMid meet" shape-rendering="crispEdges">
+      <svg class="codex-svg" viewBox="${VIEWBOX}" preserveAspectRatio="xMidYMid meet">
         <ellipse class="codex-shadow" cx="68" cy="92" rx="32" ry="4" fill="rgba(0,0,0,0.18)"/>
         <g class="codex-body">
-          <rect class="codex-chassis" x="24" y="8" width="64" height="48" fill="${palette.body}"/>
-          <rect x="24" y="8" width="64" height="8" fill="${palette.bodyTop}"/>
-          <rect class="codex-screen" x="32" y="18" width="48" height="28" fill="${palette.screen}"/>
-          <rect class="codex-screen-glow" x="32" y="18" width="48" height="28" fill="${palette.prompt}"/>
-          <g class="codex-prompt">
-            <rect x="43" y="24" width="8" height="4" fill="${palette.prompt}"/>
-            <rect x="47" y="28" width="8" height="4" fill="${palette.prompt}"/>
-            <rect x="43" y="32" width="8" height="4" fill="${palette.prompt}"/>
-            <rect class="codex-cursor" x="57" y="32" width="12" height="4" fill="${palette.prompt}"/>
+          <g class="codex-mark">
+            <g transform="translate(56 38) scale(2.7) translate(-12 -12)">
+              <path fill="${fill}" fill-rule="evenodd" clip-rule="evenodd" d="${CODEX_PATH}"/>
+            </g>
           </g>
-          <rect class="codex-leg codex-leg-0" x="36" y="56" width="12" height="16" fill="${palette.dark}"/>
-          <rect class="codex-leg codex-leg-1" x="64" y="56" width="12" height="16" fill="${palette.dark}"/>
         </g>
       </svg>
     </span>`;
@@ -135,11 +120,11 @@
     const mood = moodOverride || config.mood;
 
     if (config.type === "cursor" && window.AtollCursorMascot) {
-      return window.AtollCursorMascot.render(mood, size || 79, false);
+      return window.AtollCursorMascot.render(mood, size || 79);
     }
 
     if (config.type === "codex") {
-      return renderCodex(codexPalette(config.accent, config.accentDark), mood);
+      return renderCodex(mood);
     }
 
     return renderClawd(clawdPalette(config.accent, config.accentDark), mood);

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Cursor Cube — 像素形象预览</title>
+  <title>Cursor — 官方图标预览</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     body {
@@ -110,14 +110,13 @@
       transform-box: fill-box;
       transform-origin: center bottom;
     }
-    .cursor-mascot-claw,
-    .cursor-mascot-leg,
     .cursor-mascot-star,
     .cursor-mascot-heart,
     .cursor-mascot-z,
     .cursor-mascot-sweat,
     .cursor-mascot-bang,
-    .cursor-mascot-cube {
+    .cursor-mascot-cube,
+    .cursor-mascot-mark {
       transform-box: fill-box;
       transform-origin: center;
     }
@@ -127,20 +126,6 @@
     .cursor-mascot.is-happy .cursor-mascot-body { animation: bounce 0.6s ease-in-out infinite; }
     .cursor-mascot.is-worried .cursor-mascot-body { animation: tremble 0.5s ease-in-out infinite; }
     .cursor-mascot.is-sad .cursor-mascot-body { transform: translateY(8%); }
-    .cursor-mascot.is-alert .cursor-mascot-claw-left,
-    .cursor-mascot.is-happy .cursor-mascot-claw-left {
-      transform-origin: right bottom;
-      animation: claw-l 0.5s ease-in-out infinite;
-    }
-    .cursor-mascot.is-alert .cursor-mascot-claw-right,
-    .cursor-mascot.is-happy .cursor-mascot-claw-right {
-      transform-origin: left center;
-      animation: claw-r 0.5s ease-in-out infinite;
-    }
-    .cursor-mascot.is-happy .cursor-mascot-leg-0 { animation: leg-step 0.3s ease-in-out infinite; }
-    .cursor-mascot.is-happy .cursor-mascot-leg-1 { animation: leg-step 0.3s ease-in-out infinite 0.07s; }
-    .cursor-mascot.is-happy .cursor-mascot-leg-2 { animation: leg-step 0.3s ease-in-out infinite 0.14s; }
-    .cursor-mascot.is-happy .cursor-mascot-leg-3 { animation: leg-step 0.3s ease-in-out infinite 0.21s; }
     .cursor-mascot.is-alert .cursor-mascot-cube {
       transform-origin: center bottom;
       animation: cube-tilt 0.85s ease-in-out infinite;
@@ -188,18 +173,18 @@
 <body>
   <header>
     <p class="eyebrow">Atoll Agent Mascot</p>
-    <h1>Cursor Cube</h1>
-    <p class="subtitle">正面像素方块 · 指针 · 两腿 · 七种 mood</p>
+    <h1>Cursor</h1>
+    <p class="subtitle">官方 2.5D 立方体图标 · 七种 mood</p>
   </header>
 
   <section class="hero">
     <div class="hero-stage" id="hero"></div>
-    <p class="hero-caption">calm — 默认态（带眨眼动画）</p>
+    <p class="hero-caption">calm — 默认态</p>
   </section>
 
   <div class="grid" id="grid"></div>
 
-  <footer>accent #a78bfa · accentDark #7c5fd4 · 双击本文件即可离线查看</footer>
+  <footer>official 2.5D cube · cursor.com/brand · 双击本文件即可离线查看</footer>
 
   <script src="js/cursor-mascot.js"></script>
   <script>

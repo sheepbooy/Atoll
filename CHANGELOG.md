@@ -2,6 +2,11 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.51] - 2026-08-21
+
+### 改进
+- **Agent 图标**：Codex / Cursor 改为官方品牌标（Codex 花瓣 `>_`、Cursor 2.5D 立方体），Claude 仍为像素 Clawd；同步更新 README 与官网预览
+
 ## [0.1.50] - 2026-08-19
 
 ### 改进

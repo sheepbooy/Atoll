@@ -266,15 +266,15 @@
   animation: clawd-bang-pop 0.7s ease-in-out infinite;
 }
 
-.approval-preview .mascot-slot .codex-cursor {
-  animation: codex-cursor-blink 1.1s step-end infinite;
+.approval-preview .mascot-slot .codex.is-alert .codex-mark {
+  animation: official-mark-pulse 0.85s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .approval-preview .mascot-slot .clawd,
   .approval-preview .mascot-slot .clawd-claw,
   .approval-preview .mascot-slot .clawd-bang,
-  .approval-preview .mascot-slot .codex-cursor,
+  .approval-preview .mascot-slot .codex-mark,
   .approval-preview .mascot-slot .cursor-mascot,
   .approval-preview .mascot-slot .cursor-mascot-body,
   .approval-preview .mascot-slot .cursor-mascot-bang {

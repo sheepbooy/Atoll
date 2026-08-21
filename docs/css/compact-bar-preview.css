@@ -152,15 +152,15 @@
   animation: clawd-bang-pop 0.7s ease-in-out infinite;
 }
 
-.compact-bar-preview .compact-session-dot .codex-cursor {
-  animation: codex-cursor-blink 1.1s step-end infinite;
+.compact-bar-preview .compact-session-dot .codex.is-alert .codex-mark {
+  animation: official-mark-pulse 0.85s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .compact-bar-preview .clawd,
   .compact-bar-preview .clawd-claw,
   .compact-bar-preview .clawd-bang,
-  .compact-bar-preview .codex-cursor {
+  .compact-bar-preview .codex-mark {
     animation: none !important;
   }
 }

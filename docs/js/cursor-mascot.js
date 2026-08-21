@@ -1,101 +1,40 @@
 (function () {
-  const EYE = "#1a1a1a";
-  const DEAD_EYE = "#050505";
-  const SICK = "#7cb97c";
-  const SICK_DARK = "#5a8b5a";
   const VIEWBOX = { x: -20, y: -34, w: 152, h: 136 };
   const ASPECT = VIEWBOX.w / VIEWBOX.h;
-  const ACCENT = "#a78bfa";
-  const ACCENT_DARK = "#7c5fd4";
-  const LEFT_X = 40;
-  const RIGHT_X = 64;
-  const EYE_Y = 18;
-  const EYE_W = 8;
-  const EYE_H = 16;
-
-  function parseHex(hex) {
-    const value = Number.parseInt(hex.replace("#", ""), 16);
-    if (Number.isNaN(value)) return null;
-    return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
-  }
-
-  function mixHex(a, b, weight) {
-    const left = parseHex(a);
-    const right = parseHex(b);
-    if (!left || !right) return a;
-    const mix = (l, r) => Math.round(l * (1 - weight) + r * weight);
-    const rgb = [mix(left[0], right[0]), mix(left[1], right[1]), mix(left[2], right[2])];
-    return `#${rgb.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
-  }
+  const CUBE = {
+    bottom: { fill: "#72716D", d: "M483.395 490.5L566 538.297C565.493 539.178 564.757 539.93 563.845 540.456L486.636 585.13C484.632 586.29 482.159 586.29 480.154 585.13L402.945 540.456C402.034 539.93 401.297 539.178 400.79 538.297L483.395 490.5Z" },
+    left: { fill: "#55544F", d: "M483.395 395V490.5L400.79 538.297C400.282 537.416 400 536.398 400 535.346V445.654C400 443.545 401.122 441.6 402.945 440.544L480.15 395.87C481.154 395.29 482.273 395 483.391 395H483.395Z" },
+    right: { fill: "#43413C", d: "M565.996 442.703C565.489 441.822 564.752 441.07 563.841 440.544L486.632 395.87C485.632 395.29 484.513 395 483.395 395V490.5L566 538.297C566.507 537.416 566.789 536.398 566.789 535.346V445.654C566.789 444.598 566.511 443.588 566 442.703H565.996Z" },
+    stem: { fill: "#D6D5D2", d: "M560.218 446.049C560.686 446.858 560.751 447.896 560.218 448.82L485.235 578.974C484.732 579.855 483.392 579.493 483.392 578.479V492.713C483.392 492.029 483.209 491.37 482.877 490.794L560.215 446.045H560.218V446.049Z" },
+    head: { fill: "#FFFFFF", d: "M560.218 446.049L482.88 490.797C482.552 490.224 482.073 489.737 481.48 489.394L407.369 446.511C406.49 446.006 406.851 444.663 407.862 444.663H557.824C558.889 444.663 559.754 445.239 560.218 446.049Z" },
+  };
+  const CUBE_DEAD = {
+    bottom: "#7a7a7a",
+    left: "#5c5c5c",
+    right: "#484848",
+    stem: "#c8c8c8",
+    head: "#e8e8e8",
+  };
+  const CUBE_SICK = {
+    bottom: "#6d8a6d",
+    left: "#4f6b4f",
+    right: "#3c523c",
+    stem: "#c5d6c5",
+    head: "#f4fff4",
+  };
 
   function paletteFor(mood) {
-    if (mood === "dead") {
-      return {
-        front: "#8a8a8a",
-        top: "#9a9a9a",
-        side: "#666666",
-        blush: "#b0b4b8",
-        sparkle: "#c8ccd0",
-        sweat: "#a0a4a8",
-        eye: DEAD_EYE,
-      };
-    }
-    if (mood === "worried") {
-      return {
-        front: SICK,
-        top: mixHex(SICK, "#ffffff", 0.18),
-        side: SICK_DARK,
-        blush: "#d4f5d4",
-        sparkle: "#e8ffe8",
-        sweat: "#a8d8a8",
-        eye: EYE,
-      };
-    }
+    if (mood === "dead") return { ...CUBE_DEAD, sparkle: "#c8ccd0", sweat: "#a0a4a8" };
+    if (mood === "worried") return { ...CUBE_SICK, sparkle: "#e8ffe8", sweat: "#a8d8a8" };
     return {
-      front: ACCENT,
-      top: mixHex(ACCENT, "#ffffff", 0.28),
-      side: ACCENT_DARK,
-      blush: mixHex(ACCENT, "#ffffff", 0.45),
-      sparkle: mixHex(ACCENT, "#ffffff", 0.62),
-      sweat: mixHex(ACCENT, "#ffffff", 0.35),
-      eye: EYE,
+      bottom: CUBE.bottom.fill,
+      left: CUBE.left.fill,
+      right: CUBE.right.fill,
+      stem: CUBE.stem.fill,
+      head: CUBE.head.fill,
+      sparkle: "#f5f3ff",
+      sweat: "#c4b5fd",
     };
-  }
-
-  function face(mood, blinking, eyeFill, blush) {
-    const eyeH = blinking ? 2.4 : EYE_H;
-    let eyes = "";
-    if (mood === "dead") {
-      eyes = `
-        <line x1="${LEFT_X - 2}" y1="${EYE_Y - 2}" x2="${LEFT_X + EYE_W + 2}" y2="${EYE_Y + EYE_H + 2}" stroke="${eyeFill}" stroke-width="3.2" stroke-linecap="round"/>
-        <line x1="${LEFT_X + EYE_W + 2}" y1="${EYE_Y - 2}" x2="${LEFT_X - 2}" y2="${EYE_Y + EYE_H + 2}" stroke="${eyeFill}" stroke-width="3.2" stroke-linecap="round"/>
-        <line x1="${RIGHT_X - 2}" y1="${EYE_Y - 2}" x2="${RIGHT_X + EYE_W + 2}" y2="${EYE_Y + EYE_H + 2}" stroke="${eyeFill}" stroke-width="3.2" stroke-linecap="round"/>
-        <line x1="${RIGHT_X + EYE_W + 2}" y1="${EYE_Y - 2}" x2="${RIGHT_X - 2}" y2="${EYE_Y + EYE_H + 2}" stroke="${eyeFill}" stroke-width="3.2" stroke-linecap="round"/>`;
-    } else if (mood === "worried") {
-      eyes = `
-        <line x1="${LEFT_X}" y1="${EYE_Y}" x2="${LEFT_X + EYE_W}" y2="${EYE_Y + EYE_H}" stroke="${eyeFill}" stroke-width="2.4" stroke-linecap="round"/>
-        <line x1="${LEFT_X + EYE_W}" y1="${EYE_Y}" x2="${LEFT_X}" y2="${EYE_Y + EYE_H}" stroke="${eyeFill}" stroke-width="2.4" stroke-linecap="round"/>
-        <line x1="${RIGHT_X}" y1="${EYE_Y}" x2="${RIGHT_X + EYE_W}" y2="${EYE_Y + EYE_H}" stroke="${eyeFill}" stroke-width="2.4" stroke-linecap="round"/>
-        <line x1="${RIGHT_X + EYE_W}" y1="${EYE_Y}" x2="${RIGHT_X}" y2="${EYE_Y + EYE_H}" stroke="${eyeFill}" stroke-width="2.4" stroke-linecap="round"/>`;
-    } else if (mood === "sleeping") {
-      eyes = `<rect x="${LEFT_X}" y="${EYE_Y + 4}" width="${EYE_W + 1.6}" height="2.4" fill="${eyeFill}"/><rect x="${RIGHT_X}" y="${EYE_Y + 4}" width="${EYE_W + 1.6}" height="2.4" fill="${eyeFill}"/>`;
-    } else {
-      eyes = `<rect x="${LEFT_X}" y="${EYE_Y}" width="${EYE_W}" height="${eyeH}" fill="${eyeFill}"/><rect x="${RIGHT_X}" y="${EYE_Y}" width="${EYE_W}" height="${eyeH}" fill="${eyeFill}"/>`;
-    }
-
-    const brows =
-      mood === "sad"
-        ? `<rect x="${LEFT_X - 4}" y="${EYE_Y - 4}" width="12" height="2.4" fill="${eyeFill}" transform="rotate(-15 ${LEFT_X + 2} ${EYE_Y - 2.8})"/>
-           <rect x="${RIGHT_X}" y="${EYE_Y - 4}" width="12" height="2.4" fill="${eyeFill}" transform="rotate(15 ${RIGHT_X + 6} ${EYE_Y - 2.8})"/>`
-        : "";
-
-    const cheeks =
-      mood === "happy" || mood === "alert"
-        ? `<ellipse cx="${LEFT_X - 6}" cy="46" rx="6" ry="3.2" fill="${blush}" opacity="0.65"/>
-           <ellipse cx="${RIGHT_X + EYE_W + 6}" cy="46" rx="6" ry="3.2" fill="${blush}" opacity="0.65"/>`
-        : "";
-
-    return eyes + brows + cheeks;
   }
 
   function star(className, fill) {
@@ -129,64 +68,38 @@
     return "";
   }
 
-  function render(mood, size, blinking) {
+  function cubeMarkup(palette) {
+    return `
+      <g class="cursor-mascot-cube cursor-mascot-mark">
+        <g transform="translate(56 40) scale(0.345) translate(-482.5 -491.5)">
+          <path fill="${palette.bottom}" d="${CUBE.bottom.d}"/>
+          <path fill="${palette.left}" d="${CUBE.left.d}"/>
+          <path fill="${palette.right}" d="${CUBE.right.d}"/>
+          <path fill="${palette.stem}" d="${CUBE.stem.d}"/>
+          <path class="cursor-mascot-pointer-head" fill="${palette.head}" d="${CUBE.head.d}"/>
+        </g>
+      </g>`;
+  }
+
+  function render(mood, size) {
     const palette = paletteFor(mood);
     const width = size * ASPECT;
 
     return `
       <span class="cursor-mascot is-${mood}" style="width:${width}px;height:${size}px">
-        <svg class="cursor-mascot-svg" width="100%" height="100%" viewBox="${VIEWBOX.x} ${VIEWBOX.y} ${VIEWBOX.w} ${VIEWBOX.h}" preserveAspectRatio="xMidYMid meet" shape-rendering="crispEdges">
+        <svg class="cursor-mascot-svg" width="100%" height="100%" viewBox="${VIEWBOX.x} ${VIEWBOX.y} ${VIEWBOX.w} ${VIEWBOX.h}" preserveAspectRatio="xMidYMid meet">
           <ellipse class="cursor-mascot-shadow" cx="68" cy="92" rx="32" ry="4" fill="rgba(0,0,0,0.18)"/>
           <g class="cursor-mascot-body">
-            <g class="cursor-mascot-claw cursor-mascot-claw-left cursor-mascot-pointer">
-              <rect x="16" y="-14" width="8" height="8" fill="${palette.front}"/>
-              <rect x="16" y="-6" width="16" height="8" fill="${palette.front}"/>
-              <rect x="16" y="2" width="8" height="12" fill="${palette.front}"/>
-              <rect x="24" y="2" width="8" height="8" fill="${palette.front}"/>
-            </g>
-            <rect class="cursor-mascot-claw cursor-mascot-claw-right" x="100" y="28" width="10" height="14" fill="${palette.side}"/>
-            <g class="cursor-mascot-cube">
-              <rect class="cursor-mascot-face-front" x="28" y="6" width="56" height="56" fill="${palette.front}"/>
-              <rect class="cursor-mascot-face-top" x="28" y="6" width="56" height="10" fill="${palette.top}"/>
-              <rect class="cursor-mascot-face-side" x="84" y="14" width="16" height="48" fill="${palette.side}"/>
-            </g>
-            ${face(mood, blinking, palette.eye, palette.blush)}
-            <rect class="cursor-mascot-leg cursor-mascot-leg-0" x="38" y="62" width="12" height="16" fill="${palette.side}"/>
-            <rect class="cursor-mascot-leg cursor-mascot-leg-1" x="66" y="62" width="12" height="16" fill="${palette.side}"/>
+            ${cubeMarkup(palette)}
             ${extras(mood, palette)}
           </g>
         </svg>
       </span>`;
   }
 
-  const blinkTimers = new WeakMap();
-
   function mount(element, mood, size) {
     if (!element) return;
-    const existing = blinkTimers.get(element);
-    if (existing) {
-      window.clearTimeout(existing);
-      blinkTimers.delete(element);
-    }
-
-    element.innerHTML = render(mood, size, false);
-
-    if (mood === "sleeping" || mood === "dead") {
-      return;
-    }
-
-    const loop = () => {
-      element.innerHTML = render(mood, size, true);
-      const timer = window.setTimeout(() => {
-        element.innerHTML = render(mood, size, false);
-        const nextTimer = window.setTimeout(loop, 3000 + Math.random() * 2500);
-        blinkTimers.set(element, nextTimer);
-      }, 150);
-      blinkTimers.set(element, timer);
-    };
-
-    const startTimer = window.setTimeout(loop, 2500 + Math.random() * 2500);
-    blinkTimers.set(element, startTimer);
+    element.innerHTML = render(mood, size);
   }
 
   window.AtollCursorMascot = { render, mount, paletteFor };
