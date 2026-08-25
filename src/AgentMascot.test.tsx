@@ -52,7 +52,11 @@ describe("AgentMascot", () => {
     const cursor = render(<AgentMascot agent="cursor" mood="calm" animated={false} />);
     expect(cursor.container.querySelector(".cursor-mascot-mark")).not.toBeNull();
     expect(cursor.container.querySelector(".cursor-mascot-cube")).not.toBeNull();
-    expect(cursor.container.querySelectorAll(".cursor-mascot-mark path")).toHaveLength(5);
+    expect(cursor.container.querySelectorAll(".cursor-mascot-outline path")).toHaveLength(5);
+    expect(cursor.container.querySelectorAll(".cursor-mascot-mark path")).toHaveLength(10);
+    expect(
+      cursor.container.querySelector(".cursor-mascot-outline path")?.getAttribute("vector-effect"),
+    ).toBe("non-scaling-stroke");
     expect(cursor.container.querySelector(".cursor-mascot-pointer-head")).not.toBeNull();
     expect(cursor.container.querySelector(".cursor-mascot-claw")).toBeNull();
     expect(cursor.container.querySelector(".cursor-mascot-leg")).toBeNull();
@@ -75,6 +79,37 @@ describe("AgentMascot", () => {
 
     const sickCursor = render(<AgentMascot agent="cursor" mood="worried" animated={false} />);
     expect(sickCursor.container.querySelector(".cursor-mascot-face-bottom")?.getAttribute("fill")).toBe("#6d8a6d");
+  });
+
+  it("paints a session-colored outline on Cursor cubes", () => {
+    const cursor = render(
+      <AgentMascot agent="cursor" mood="calm" accent="#ff8175" animated={false} />,
+    );
+    const cursorEl = cursor.container.querySelector(".cursor-mascot") as HTMLElement;
+    expect(cursorEl.style.getPropertyValue("--cursor-outline")).toBe("#ff8175");
+  });
+
+  it("recolors Codex blossoms with the session accent", () => {
+    const codex = render(
+      <AgentMascot agent="codex" mood="calm" accent="#ff8175" animated={false} />,
+    );
+    expect(codex.container.querySelector(".codex-mark path")?.getAttribute("fill")).toBe(
+      "#ff8175",
+    );
+
+    const sleeping = render(
+      <AgentMascot agent="codex" mood="sleeping" accent="#80b0f8" animated={false} />,
+    );
+    expect(sleeping.container.querySelector(".codex-mark path")?.getAttribute("fill")).toBe(
+      "#80b0f8",
+    );
+
+    const dead = render(
+      <AgentMascot agent="codex" mood="dead" accent="#ff8175" animated={false} />,
+    );
+    expect(dead.container.querySelector(".codex-mark path")?.getAttribute("fill")).toBe(
+      "#8a8a8a",
+    );
   });
 
   it("does not attach glow CSS variables", () => {

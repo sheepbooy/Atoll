@@ -121,6 +121,24 @@
   transform-origin: center;
 }
 
+.agent-mascot-slot .cursor-mascot {
+  --cursor-outline: #f4f0e8;
+  color: var(--cursor-outline);
+}
+
+.agent-mascot-slot .cursor-mascot-cube {
+  transform-origin: center bottom;
+}
+
+.agent-mascot-slot .cursor-mascot-outline path {
+  fill: none;
+  stroke: var(--cursor-outline, #f4f0e8);
+  stroke-width: 2.4px;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
 .agent-mascot-slot .clawd-eye {
   transform-box: fill-box;
   transform-origin: center bottom;

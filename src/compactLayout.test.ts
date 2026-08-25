@@ -144,27 +144,38 @@ describe("compactLayout", () => {
   it("adds non-notch header gap between left sessions and right metrics", () => {
     const layout = computeCompactHeaderLayout(NO_NOTCH, 2, 8, 12_345, 0);
     const width = computeCollapsedWindowWidth(NO_NOTCH, 2, 8, 12_345, 0);
+    const empty = computeCollapsedWindowWidth(NO_NOTCH, 0, 8, 0, 0);
 
+    expect(layout.leftIconCount).toBe(2);
     expect(layout.rightIconCount).toBe(0);
     expect(width).toBeLessThanOrEqual(COMPACT_MAX_WINDOW_WIDTH);
-    expect(width).toBeGreaterThanOrEqual(120 + COMPACT_HEADER_GAP);
+    expect(width).toBeGreaterThan(empty);
+    expect(width).toBeLessThan(240);
   });
 
-  it("keeps icons left-packed on non-notched displays", () => {
+  it("keeps all session icons on the left on non-notched displays", () => {
+    const two = computeCollapsedWindowWidth(NO_NOTCH, 2, 8, 12_345, 0);
     const layout = computeCompactHeaderLayout(NO_NOTCH, 4, 8, 12_345, 0);
+    const width = computeCollapsedWindowWidth(NO_NOTCH, 4, 8, 12_345, 0);
 
     expect(layout.leftIconCount).toBe(4);
     expect(layout.rightIconCount).toBe(0);
     expect(layout.overflowCount).toBe(0);
+    expect(width).toBeGreaterThan(two);
+    expect(width - two).toBe(2 * 24 + 2 * 4);
   });
 
-  it("includes metrics gap when sessions spill to the right on non-notch displays", () => {
+  it("hugs packed session logos on no-notch instead of stretching the pill", () => {
     const withToken = computeCollapsedWindowWidth(NO_NOTCH, 10, 4, 12_345, 0);
     const withoutToken = computeCollapsedWindowWidth(NO_NOTCH, 10, 4, 0, 0);
     const layout = computeCompactHeaderLayout(NO_NOTCH, 10, 4, 12_345, 0);
 
-    expect(layout.rightIconCount).toBeGreaterThan(0);
-    expect(withToken - withoutToken).toBeGreaterThan(COMPACT_METRICS_GAP);
+    expect(layout.leftIconCount).toBe(4);
+    expect(layout.rightIconCount).toBe(0);
+    expect(layout.overflowCount).toBe(6);
+    expect(withToken).toBeGreaterThan(withoutToken);
+    expect(withToken).toBeLessThan(280);
+    expect(withoutToken).toBeLessThan(280);
   });
 
   it("keeps collapsed width within the compact window cap on notch screens", () => {

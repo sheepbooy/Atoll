@@ -51,11 +51,11 @@ export function cursorCubePalette(mood: ClawdMood): CursorCubePalette {
   return CURSOR_CUBE_OFFICIAL;
 }
 
-export function codexMarkFill(mood: ClawdMood): string {
+export function codexMarkFill(mood: ClawdMood, accent?: string): string {
   if (mood === "dead") return "#8a8a8a";
   if (mood === "worried") return "#7cb97c";
-  if (mood === "sleeping") return "#a8b0b4";
-  return "#f4f4f4";
+  if (mood === "sleeping") return accent || "#a8b0b4";
+  return accent || "#f4f4f4";
 }
 
 export function CodexOfficialMark({ fill, className }: { fill: string; className?: string }) {
@@ -68,6 +68,10 @@ export function CodexOfficialMark({ fill, className }: { fill: string; className
   );
 }
 
+const CURSOR_CUBE_PATH_KEYS = Object.keys(
+  CURSOR_CUBE_PATHS,
+) as Array<keyof typeof CURSOR_CUBE_PATHS>;
+
 export function CursorOfficialMark({
   palette,
   className,
@@ -78,6 +82,20 @@ export function CursorOfficialMark({
   return (
     <g className={className}>
       <g transform="translate(56 40) scale(0.345) translate(-482.5 -491.5)">
+        {/* WKWebView ignores CSS filter on <g>; paint a non-scaling stroke behind fills. */}
+        <g className="cursor-mascot-outline" aria-hidden="true">
+          {CURSOR_CUBE_PATH_KEYS.map((key) => (
+            <path
+              key={key}
+              d={CURSOR_CUBE_PATHS[key]}
+              fill="none"
+              strokeWidth={2.4}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+        </g>
         <path className="cursor-mascot-face-bottom" fill={palette.bottom} d={CURSOR_CUBE_PATHS.bottom} />
         <path className="cursor-mascot-face-left" fill={palette.left} d={CURSOR_CUBE_PATHS.left} />
         <path className="cursor-mascot-face-right" fill={palette.right} d={CURSOR_CUBE_PATHS.right} />

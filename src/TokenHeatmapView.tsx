@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { formatCompactCost } from "./costFormat";
 import { formatCompactTokenCount } from "./tokenCounterFormat";
@@ -10,6 +10,7 @@ import { byModelCostUsd } from "./pricing";
 import {
   aggregateByAgent,
   buildHeatmapGrid,
+  buildTrendGeometry,
   buildTrendSeries,
   dayDisplayTotal,
   formatHeatmapDate,
@@ -449,8 +450,7 @@ function AgentDonutChart({
 /* ── Trend line chart ──────────────────────────────────────────── */
 
 const TREND_HEIGHT = 140;
-const TREND_PADDING_TOP = 8;
-const TREND_PADDING_BOTTOM = 4;
+const TREND_PAD = { top: 10, right: 10, bottom: 8, left: 10 };
 
 function TrendLineChart({
   series,
@@ -460,45 +460,72 @@ function TrendLineChart({
   displayMode: UsageDisplayMode;
 }) {
   const { t } = useTranslation("tokens");
+  const gradientId = `trend-fill-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-  const lineRef = useRef<SVGPolylineElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const lineRef = useRef<SVGPathElement>(null);
   const [trendLength, setTrendLength] = useState(1000);
+  const [viewSize, setViewSize] = useState({ width: 320, height: TREND_HEIGHT });
 
-  const maxVal = Math.max(...series.map((p) => p.total), 1);
-  const chartHeight = TREND_HEIGHT - TREND_PADDING_TOP - TREND_PADDING_BOTTOM;
-  const count = series.length;
   const hasData = series.some((p) => p.total > 0);
+  const geometry = useMemo(
+    () =>
+      buildTrendGeometry(
+        series.map((point) => point.total),
+        viewSize.width,
+        viewSize.height,
+        TREND_PAD,
+      ),
+    [series, viewSize.height, viewSize.width],
+  );
 
-  function x(i: number) {
-    return count > 1 ? (i / (count - 1)) * 100 : 50;
-  }
-  function y(value: number) {
-    return TREND_PADDING_TOP + chartHeight - (value / maxVal) * chartHeight;
-  }
-
-  const linePoints = series.map((p, i) => `${x(i)},${y(p.total)}`).join(" ");
-  const areaPoints = `0,${TREND_HEIGHT} ${linePoints} 100,${TREND_HEIGHT}`;
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (!rect) return;
+      const width = Math.max(1, rect.width);
+      const height = Math.max(1, rect.height);
+      setViewSize((prev) =>
+        prev.width === width && prev.height === height ? prev : { width, height },
+      );
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const el = lineRef.current;
-    if (!el || !hasData) return;
+    if (!el || !hasData || !geometry.linePath) return;
     try {
       setTrendLength(el.getTotalLength());
     } catch {
       setTrendLength(1000);
     }
-  }, [linePoints, hasData]);
+  }, [geometry.linePath, hasData]);
 
   const firstLabel = series.length > 0 ? formatShortDate(series[0].date) : "";
   const lastLabel = series.length > 0 ? formatShortDate(series[series.length - 1].date) : "";
 
   const hovered = hoverIndex !== null ? series[hoverIndex] : null;
+  const hoverPoint = hoverIndex !== null ? geometry.points[hoverIndex] : null;
   const hoverValue =
     hovered == null
       ? null
       : displayMode === "cost"
         ? formatCompactCost(hovered.total, 0, hovered.total)
         : hovered.total.toLocaleString(resolveIntlLocale());
+
+  const gridYs = [
+    TREND_PAD.top,
+    TREND_PAD.top + (viewSize.height - TREND_PAD.top - TREND_PAD.bottom) / 2,
+    viewSize.height - TREND_PAD.bottom,
+  ];
+  const plotLeft = TREND_PAD.left;
+  const plotRight = viewSize.width - TREND_PAD.right;
+  const columnWidth =
+    series.length > 0 ? (plotRight - plotLeft) / Math.max(series.length, 1) : 0;
 
   return (
     <div className="token-heatmap-section token-heatmap-section--trend">
@@ -514,45 +541,70 @@ function TrendLineChart({
         <span className="token-heatmap-no-data">{t("heatmap.noUsage30Days")}</span>
       ) : (
         <svg
+          ref={svgRef}
           className="token-heatmap-trend-svg"
-          viewBox={`0 0 100 ${TREND_HEIGHT}`}
+          viewBox={`0 0 ${viewSize.width} ${viewSize.height}`}
           preserveAspectRatio="none"
           onMouseLeave={() => setHoverIndex(null)}
           style={{ "--trend-length": trendLength } as CSSProperties}
         >
-          <polygon
-            className="token-heatmap-trend-area"
-            points={areaPoints}
-            fill="rgba(255,255,255,0.06)"
-          />
-          <polyline
-            ref={lineRef}
-            className="token-heatmap-trend-line"
-            points={linePoints}
-            fill="none"
-            stroke="rgba(255,255,255,0.5)"
-            strokeWidth="1"
-            vectorEffect="non-scaling-stroke"
-          />
-          {series.map((p, i) => (
-            <rect
-              key={p.date}
-              x={x(i) - 100 / count / 2}
-              y={0}
-              width={100 / count}
-              height={TREND_HEIGHT}
-              fill="transparent"
-              onMouseEnter={() => setHoverIndex(i)}
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--accent-violet)" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="var(--accent-violet)" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {gridYs.map((y) => (
+            <line
+              key={y}
+              className="token-heatmap-trend-grid"
+              x1={plotLeft}
+              x2={plotRight}
+              y1={y}
+              y2={y}
             />
           ))}
-          {hoverIndex !== null ? (
-            <circle
-              cx={x(hoverIndex)}
-              cy={y(series[hoverIndex].total)}
-              r="2"
-              fill="#fff"
-              vectorEffect="non-scaling-stroke"
-            />
+          <path
+            className="token-heatmap-trend-area"
+            d={geometry.areaPath}
+            fill={`url(#${gradientId})`}
+          />
+          <path
+            ref={lineRef}
+            className="token-heatmap-trend-line"
+            d={geometry.linePath}
+            fill="none"
+          />
+          {series.map((point, i) => {
+            const cx = geometry.points[i]?.x ?? plotLeft + columnWidth * (i + 0.5);
+            return (
+              <rect
+                key={point.date}
+                x={cx - columnWidth / 2}
+                y={0}
+                width={columnWidth}
+                height={viewSize.height}
+                fill="transparent"
+                onMouseEnter={() => setHoverIndex(i)}
+              />
+            );
+          })}
+          {hoverPoint ? (
+            <>
+              <line
+                className="token-heatmap-trend-hover-rule"
+                x1={hoverPoint.x}
+                x2={hoverPoint.x}
+                y1={TREND_PAD.top}
+                y2={viewSize.height - TREND_PAD.bottom}
+              />
+              <circle
+                className="token-heatmap-trend-hover-dot"
+                cx={hoverPoint.x}
+                cy={hoverPoint.y}
+                r="3.5"
+              />
+            </>
           ) : null}
         </svg>
       )}

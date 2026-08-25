@@ -295,3 +295,108 @@ export function buildTrendSeries(
 
   return result;
 }
+
+export interface TrendChartPadding {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export interface TrendChartPoint {
+  x: number;
+  y: number;
+}
+
+export interface TrendGeometry {
+  linePath: string;
+  areaPath: string;
+  points: TrendChartPoint[];
+}
+
+/** Map daily totals into a monotone cubic SVG path in pixel space. */
+export function buildTrendGeometry(
+  values: number[],
+  width: number,
+  height: number,
+  pad: TrendChartPadding,
+): TrendGeometry {
+  const innerW = Math.max(width - pad.left - pad.right, 0);
+  const innerH = Math.max(height - pad.top - pad.bottom, 0);
+  const maxVal = Math.max(...values, 1);
+  const count = values.length;
+  const points: TrendChartPoint[] = values.map((value, index) => ({
+    x: pad.left + (count > 1 ? (index / (count - 1)) * innerW : innerW / 2),
+    y: pad.top + innerH - (value / maxVal) * innerH,
+  }));
+
+  if (count === 0 || width <= 0 || height <= 0) {
+    return { linePath: "", areaPath: "", points };
+  }
+
+  const linePath = monotoneCubicPath(points);
+  const first = points[0];
+  const last = points[count - 1];
+  const baseline = height - pad.bottom;
+  const areaPath = `${linePath} L ${last.x} ${baseline} L ${first.x} ${baseline} Z`;
+  return { linePath, areaPath, points };
+}
+
+function monotoneCubicPath(points: TrendChartPoint[]): string {
+  if (points.length === 0) return "";
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  if (points.length === 2) {
+    return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+  }
+
+  const n = points.length;
+  const dx: number[] = [];
+  const slope: number[] = [];
+  for (let i = 0; i < n - 1; i += 1) {
+    const span = points[i + 1].x - points[i].x;
+    dx[i] = span;
+    slope[i] = span === 0 ? 0 : (points[i + 1].y - points[i].y) / span;
+  }
+
+  const tangent = new Array<number>(n);
+  tangent[0] = slope[0];
+  tangent[n - 1] = slope[n - 2];
+  for (let i = 1; i < n - 1; i += 1) {
+    if (slope[i - 1] * slope[i] <= 0) {
+      tangent[i] = 0;
+    } else {
+      const h1 = dx[i - 1];
+      const h2 = dx[i];
+      const w1 = 2 * h2 + h1;
+      const w2 = h2 + 2 * h1;
+      tangent[i] = (w1 + w2) / (w1 / slope[i - 1] + w2 / slope[i]);
+    }
+  }
+
+  for (let i = 0; i < n - 1; i += 1) {
+    if (Math.abs(slope[i]) < 1e-12) {
+      tangent[i] = 0;
+      tangent[i + 1] = 0;
+      continue;
+    }
+    const a = tangent[i] / slope[i];
+    const b = tangent[i + 1] / slope[i];
+    const sum = a * a + b * b;
+    if (sum > 9) {
+      const t = 3 / Math.sqrt(sum);
+      tangent[i] = t * a * slope[i];
+      tangent[i + 1] = t * b * slope[i];
+    }
+  }
+
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 0; i < n - 1; i += 1) {
+    const h = dx[i];
+    const c1x = points[i].x + h / 3;
+    const c1y = points[i].y + (tangent[i] * h) / 3;
+    const c2x = points[i + 1].x - h / 3;
+    const c2y = points[i + 1].y - (tangent[i + 1] * h) / 3;
+    d += ` C ${c1x} ${c1y} ${c2x} ${c2y} ${points[i + 1].x} ${points[i + 1].y}`;
+  }
+  return d;
+}

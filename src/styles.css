@@ -868,6 +868,12 @@ kbd {
   overflow: hidden;
 }
 
+/* Cube outline must paint outside the 34×33 clip used for crab legs. */
+.is-compact:not(.is-dormant) .atoll-indicator:has(.cursor-mascot),
+.is-closing:not(.is-dormant) .atoll-indicator:has(.cursor-mascot) {
+  overflow: visible;
+}
+
 .is-compact:not(.is-dormant) .atoll-indicator-inner,
 .is-closing:not(.is-dormant) .atoll-indicator-inner {
   transform: translateY(-3px);
@@ -956,6 +962,10 @@ kbd {
 .header-agent-logo.codex,
 .header-agent-logo.cursor-mascot {
   height: 100%;
+}
+
+.header-agent-logo.cursor-mascot {
+  overflow: visible;
 }
 
 .atoll-indicator.is-hook-attention {
@@ -1136,7 +1146,7 @@ kbd {
   flex: 0 1 auto;
   justify-content: flex-start;
   overflow: visible;
-  gap: 6px;
+  gap: 4px;
 }
 
 .is-compact:not(.is-dormant) .island-header,
@@ -1144,7 +1154,7 @@ kbd {
   grid-template-columns: auto auto;
   justify-content: space-between;
   align-items: center;
-  gap: var(--compact-header-gap, 18px);
+  gap: var(--compact-header-gap, 8px);
   padding: 1px 8px 2px;
   height: var(--compact-height);
 }
@@ -1153,6 +1163,9 @@ kbd {
 .is-closing:not(.is-dormant) .header-main {
   height: var(--compact-height);
 }
+
+/* No-notch compact: pack logos with the same 4px gap as the rest of the row.
+   Do not stretch the pill or use space-evenly — that made 2–4 icons look sparse. */
 
 .compact-session-stack--right {
   margin-right: 0;
@@ -1220,34 +1233,42 @@ kbd {
 
 .compact-session-dot.coral {
   --dot-glow: rgba(255, 129, 117, 0.4);
+  --cursor-outline: #ff8175;
   background: none;
 }
 .compact-session-dot.cyan {
   --dot-glow: rgba(111, 220, 255, 0.4);
+  --cursor-outline: #6fdcff;
   background: none;
 }
 .compact-session-dot.lime {
   --dot-glow: rgba(178, 234, 126, 0.4);
+  --cursor-outline: #b2ea7e;
   background: none;
 }
 .compact-session-dot.neutral {
   --dot-glow: rgba(205, 193, 255, 0.4);
+  --cursor-outline: #cdc1ff;
   background: none;
 }
 .compact-session-dot.amber {
   --dot-glow: rgba(240, 192, 96, 0.4);
+  --cursor-outline: #f0c060;
   background: none;
 }
 .compact-session-dot.pink {
   --dot-glow: rgba(247, 160, 200, 0.4);
+  --cursor-outline: #f7a0c8;
   background: none;
 }
 .compact-session-dot.teal {
   --dot-glow: rgba(112, 216, 200, 0.4);
+  --cursor-outline: #70d8c8;
   background: none;
 }
 .compact-session-dot.blue {
   --dot-glow: rgba(128, 176, 248, 0.4);
+  --cursor-outline: #80b0f8;
   background: none;
 }
 
@@ -2246,8 +2267,23 @@ kbd {
   opacity: 0.72;
 }
 
+.cursor-mascot {
+  --cursor-outline: #f4f0e8;
+  color: var(--cursor-outline);
+  overflow: visible;
+}
+
 .cursor-mascot-cube {
   transform-origin: center bottom;
+}
+
+.cursor-mascot-outline {
+  pointer-events: none;
+}
+
+.cursor-mascot-outline path {
+  fill: none;
+  stroke: var(--cursor-outline, #f4f0e8);
 }
 
 .cursor-mascot.is-alert .cursor-mascot-cube {
@@ -2335,6 +2371,7 @@ kbd {
   width: 34px;
   height: 30px;
   flex: 0 0 auto;
+  overflow: visible;
 }
 
 .session-clawd .clawd,
@@ -6548,11 +6585,33 @@ kbd {
   height: 100%;
   border-radius: 6px;
   cursor: crosshair;
+  overflow: visible;
+}
+
+.token-heatmap-trend-grid {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1;
 }
 
 .token-heatmap-trend-line {
+  stroke: var(--accent-violet);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   stroke-dasharray: var(--trend-length, 1000);
   stroke-dashoffset: 0;
+}
+
+.token-heatmap-trend-hover-rule {
+  stroke: rgba(255, 255, 255, 0.28);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.token-heatmap-trend-hover-dot {
+  fill: #fff;
+  stroke: var(--accent-violet);
+  stroke-width: 1.5;
 }
 
 .token-heatmap-view.is-settled .token-heatmap-trend-line {

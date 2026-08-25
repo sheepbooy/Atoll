@@ -18,7 +18,7 @@ export const COMPACT_OVERFLOW_SLOT = 28;
 export const COMPACT_OUTER_PADDING = 8;
 export const COMPACT_NOTCH_INNER_GAP = 6;
 /** Space between left sessions and right metrics on non-notched displays. */
-export const COMPACT_HEADER_GAP = 18;
+export const COMPACT_HEADER_GAP = 8;
 export const COMPACT_PENDING_BADGE_SLOT = 28;
 /** Space between right session icons and the token counter in header-metrics. */
 export const COMPACT_METRICS_GAP = 10;
@@ -174,8 +174,8 @@ export function computeCompactHeaderLayout(
       if (rightWidth + COMPACT_NOTCH_INNER_GAP > paneBudgets.right + 0.5) continue;
     }
 
-    // Notch bars should split session icons across both visible wings.
-    // Non-notch bars keep packing left (no invisible center to balance around).
+    // Notch bars split icons around the camera housing. No-notch bars keep
+    // every session on the left so CSS can space them evenly in one row.
     const sidePreference = notchMetrics.hasNotch
       ? -Math.abs(left - right) * 1_000 + left
       : left * 1_000 + right * 100;
@@ -185,7 +185,7 @@ export function computeCompactHeaderLayout(
       tokenLevel * 10_000 +
       (tokenLevel === 0 ? 5_000 : 0) +
       sidePreference -
-      (overflowOnLeft ? 30_000 : 0);
+      (notchMetrics.hasNotch && overflowOnLeft ? 30_000 : 0);
 
     if (score > bestScore) {
       bestScore = score;

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateByAgent,
   buildHeatmapGrid,
+  buildTrendGeometry,
   buildTrendSeries,
   formatHeatmapDate,
   heatmapLevel,
@@ -126,6 +127,38 @@ describe("tokenHeatmap", () => {
     expect(series[0].total).toBe(0);
   });
 
+  it("builds a monotone cubic trend path that stays within the value range", () => {
+    const pad = { top: 8, right: 10, bottom: 8, left: 10 };
+    const values = [0, 40, 10, 80, 20];
+    const geometry = buildTrendGeometry(values, 200, 100, pad);
+
+    expect(geometry.points).toHaveLength(values.length);
+    expect(geometry.linePath.startsWith("M ")).toBe(true);
+    expect(geometry.linePath).toContain(" C ");
+    expect(geometry.areaPath.endsWith(" Z")).toBe(true);
+    expect(geometry.points[0].x).toBeCloseTo(pad.left);
+    expect(geometry.points[values.length - 1].x).toBeCloseTo(200 - pad.right);
+
+    const maxVal = Math.max(...values);
+    const innerH = 100 - pad.top - pad.bottom;
+    const baseline = 100 - pad.bottom;
+    const top = pad.top;
+    for (const point of geometry.points) {
+      expect(point.y).toBeGreaterThanOrEqual(top - 0.01);
+      expect(point.y).toBeLessThanOrEqual(baseline + 0.01);
+    }
+
+    const samples = sampleCubicPath(geometry.linePath);
+    expect(samples.length).toBeGreaterThan(values.length);
+    for (const sample of samples) {
+      expect(sample.y).toBeGreaterThanOrEqual(top - 0.5);
+      expect(sample.y).toBeLessThanOrEqual(baseline + 0.5);
+    }
+
+    const peak = geometry.points[3];
+    expect(peak.y).toBeCloseTo(top + innerH - (80 / maxVal) * innerH);
+  });
+
   it("merges byModel with component-wise max", () => {
     const usage = (input: number, output = 0) => ({
       inputTokens: input,
@@ -176,3 +209,48 @@ describe("tokenHeatmap", () => {
     expect(summary.today).toBeCloseTo(2.5, 4);
   });
 });
+
+function sampleCubicPath(path: string): Array<{ x: number; y: number }> {
+  const samples: Array<{ x: number; y: number }> = [];
+  const tokens = path.trim().split(/[ ,]+/);
+  let i = 0;
+  let current = { x: 0, y: 0 };
+
+  const read = () => Number(tokens[i++]);
+
+  while (i < tokens.length) {
+    const command = tokens[i++];
+    if (command === "M") {
+      current = { x: read(), y: read() };
+      samples.push({ ...current });
+    } else if (command === "C") {
+      const c1 = { x: read(), y: read() };
+      const c2 = { x: read(), y: read() };
+      const end = { x: read(), y: read() };
+      for (const t of [0.25, 0.5, 0.75, 1]) {
+        samples.push(cubicBezier(current, c1, c2, end, t));
+      }
+      current = end;
+    } else if (command === "L") {
+      current = { x: read(), y: read() };
+      samples.push({ ...current });
+    } else {
+      break;
+    }
+  }
+  return samples;
+}
+
+function cubicBezier(
+  p0: { x: number; y: number },
+  p1: { x: number; y: number },
+  p2: { x: number; y: number },
+  p3: { x: number; y: number },
+  t: number,
+): { x: number; y: number } {
+  const mt = 1 - t;
+  return {
+    x: mt ** 3 * p0.x + 3 * mt ** 2 * t * p1.x + 3 * mt * t ** 2 * p2.x + t ** 3 * p3.x,
+    y: mt ** 3 * p0.y + 3 * mt ** 2 * t * p1.y + 3 * mt * t ** 2 * p2.y + t ** 3 * p3.y,
+  };
+}

@@ -948,6 +948,9 @@ fn claude_hook_status(app: &AppHandle) -> HookStatus {
         .as_ref()
         .map(|config| has_atoll_claude_hooks(config))
         .unwrap_or(false);
+    if installed {
+        refresh_deployed_hook_assets_if_needed(app, "atoll-claude-hook.mjs");
+    }
     let (script_path, script_found) =
         resolve_hook_script_readiness(app, "atoll-claude-hook.mjs", settings.as_ref());
     build_hook_status(
@@ -4104,7 +4107,9 @@ fn get_claude_hook_status(app: AppHandle) -> Result<HookStatus, String> {
 
 #[tauri::command]
 fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let script_path = resolve_install_hook_script_path(&app, "atoll-claude-hook.mjs")?;
+    let source_script_path = resolve_install_hook_script_path(&app, "atoll-claude-hook.mjs")?;
+    let script_path =
+        materialize_hook_deployment(&app, "atoll-claude-hook.mjs", &source_script_path)?;
 
     if !std::path::Path::new(&script_path).exists() {
         return Err(format!("Hook script not found at: {script_path}"));
@@ -4349,7 +4354,7 @@ fn atoll_local_hooks_dir() -> Option<std::path::PathBuf> {
 
 fn deployed_hook_script_path(script_name: &str) -> Option<String> {
     let path = atoll_local_hooks_dir()?.join(script_name);
-    if path.is_file() {
+    if hook_script_is_usable(&path) {
         Some(normalize_hook_script_path(&path.to_string_lossy()))
     } else {
         None
@@ -4485,18 +4490,59 @@ fn is_windows_file_locked_error(_error: &std::io::Error) -> bool {
     false
 }
 
+fn paths_point_to_same_file(left: &Path, right: &Path) -> bool {
+    match (left.canonicalize(), right.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => left == right,
+    }
+}
+
 /// Copy hook assets into the stable deploy dir. If Windows reports that the
 /// destination is locked (ERROR_SHARING_VIOLATION / os error 32) because Codex,
 /// Cursor, or a live hook invocation still has the runner open, keep the existing
 /// file so install can finish updating hooks.json and launcher config.
+///
+/// Copy via a sibling temp file so `source == dest` cannot truncate the script
+/// to 0 bytes (a classic `fs::copy` self-overwrite bug).
 fn copy_deployed_hook_file(
     source: &std::path::Path,
     dest: &std::path::Path,
     label: &str,
 ) -> Result<(), String> {
-    match std::fs::copy(source, dest) {
-        Ok(_) => Ok(()),
+    if !source.is_file() {
+        return Err(format!(
+            "Cannot copy {label} from missing {}",
+            source.display()
+        ));
+    }
+    if paths_point_to_same_file(source, dest) {
+        return Ok(());
+    }
+
+    let Some(name) = dest.file_name().and_then(|name| name.to_str()) else {
+        return Err(format!("Cannot copy {label} to {}", dest.display()));
+    };
+    let temp = dest.with_file_name(format!(".{name}.tmp"));
+    match std::fs::copy(source, &temp) {
+        Ok(_) => {
+            if let Err(error) = std::fs::rename(&temp, dest) {
+                let _ = std::fs::remove_file(&temp);
+                if dest.is_file() && is_windows_file_locked_error(&error) {
+                    eprintln!(
+                        "Atoll kept existing {label} at {} because the file is in use ({error})",
+                        dest.display()
+                    );
+                    return Ok(());
+                }
+                return Err(format!(
+                    "Cannot copy {label} to {}: {error}",
+                    dest.display()
+                ));
+            }
+            Ok(())
+        }
         Err(error) => {
+            let _ = std::fs::remove_file(&temp);
             if dest.is_file() && is_windows_file_locked_error(&error) {
                 eprintln!(
                     "Atoll kept existing {label} at {} because the file is in use ({error})",
@@ -4514,12 +4560,15 @@ fn copy_deployed_hook_file(
 }
 
 fn materialize_hook_deployment(
-    app: &AppHandle,
+    #[cfg_attr(not(windows), allow(unused_variables))] app: &AppHandle,
     script_name: &str,
     source_script_path: &str,
 ) -> Result<String, String> {
+    static DEPLOY_LOCK: Mutex<()> = Mutex::new(());
+    let _guard = DEPLOY_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+
     let source = std::path::Path::new(source_script_path);
-    if !source.is_file() {
+    if !hook_script_is_usable(source) {
         return Err(format!("Hook script not found at: {source_script_path}"));
     }
 
@@ -4534,7 +4583,7 @@ fn materialize_hook_deployment(
     if let Some(source_dir) = source.parent() {
         let bridge_name = "atoll-hook-bridge.mjs";
         let source_bridge = source_dir.join(bridge_name);
-        if source_bridge.is_file() {
+        if hook_script_is_usable(&source_bridge) {
             let dest_bridge = hooks_dir.join(bridge_name);
             copy_deployed_hook_file(&source_bridge, &dest_bridge, "hook bridge module")?;
         }
@@ -5042,16 +5091,90 @@ fn resolve_node_executable_for_codex() -> Result<String, String> {
     resolve_node_executable()
 }
 
-/// Prefer the bundled hook script from the running Atoll app over dev build paths.
+/// Prefer the bundled/repo hook script over `~/Library/Application Support/Atoll/hooks`.
+/// The local dir is the *destination* of `materialize_hook_deployment`; using it as the
+/// install source lets a 0-byte leftover copy itself and wipe the real script.
 fn resolve_install_hook_script_path(app: &AppHandle, script_name: &str) -> Result<String, String> {
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        let candidate = resource_dir.join("scripts").join(script_name);
-        if candidate.is_file() {
-            return Ok(normalize_hook_script_path(&candidate.to_string_lossy()));
+    let resource_dir = app.path().resource_dir().ok();
+    let exe = std::env::current_exe().ok();
+    first_usable_hook_script(bundled_hook_script_candidates(
+        resource_dir.as_deref(),
+        exe.as_deref(),
+        script_name,
+    ))
+    .ok_or_else(|| format!("Cannot locate hook script: {script_name}"))
+}
+
+fn hook_script_is_usable(path: &Path) -> bool {
+    std::fs::metadata(path)
+        .map(|meta| meta.is_file() && meta.len() > 0)
+        .unwrap_or(false)
+}
+
+fn repo_hook_script_path(script_name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("scripts")
+        .join(script_name)
+}
+
+fn bundled_hook_script_candidates(
+    resource_dir: Option<&Path>,
+    exe: Option<&Path>,
+    script_name: &str,
+) -> Vec<PathBuf> {
+    let mut candidates = vec![repo_hook_script_path(script_name)];
+
+    if let Some(resource_dir) = resource_dir {
+        candidates.push(resource_dir.join("scripts").join(script_name));
+        candidates.push(resource_dir.join(script_name));
+    }
+
+    if let Some(exe) = exe {
+        if let Some(exe_dir) = exe.parent() {
+            candidates.push(exe_dir.join("resources").join("scripts").join(script_name));
+            candidates.push(exe_dir.join("scripts").join(script_name));
+            if exe_dir.file_name().is_some_and(|name| name == "MacOS") {
+                if let Some(contents) = exe_dir.parent() {
+                    candidates.push(
+                        contents
+                            .join("Resources")
+                            .join("scripts")
+                            .join(script_name),
+                    );
+                }
+            }
+        }
+        for ancestor in exe.ancestors().skip(1) {
+            candidates.push(ancestor.join("Resources").join("scripts").join(script_name));
+            candidates.push(ancestor.join("scripts").join(script_name));
+            if ancestor.file_name().is_some_and(|name| name == "src-tauri") {
+                if let Some(repo_root) = ancestor.parent() {
+                    candidates.push(repo_root.join("scripts").join(script_name));
+                }
+            }
+            if ancestor.join("src-tauri").exists() {
+                candidates.push(ancestor.join("scripts").join(script_name));
+                candidates.push(
+                    ancestor
+                        .join("src-tauri")
+                        .join("target")
+                        .join("debug")
+                        .join("scripts")
+                        .join(script_name),
+                );
+            }
         }
     }
-    resolve_hook_script_path(app, script_name)
-        .ok_or_else(|| format!("Cannot locate hook script: {script_name}"))
+
+    candidates
+}
+
+fn first_usable_hook_script(candidates: impl IntoIterator<Item = PathBuf>) -> Option<String> {
+    candidates.into_iter().find_map(|candidate| {
+        hook_script_is_usable(&candidate)
+            .then(|| normalize_hook_script_path(&candidate.to_string_lossy()))
+    })
 }
 
 fn normalize_hook_command_path(path: &str) -> String {
@@ -5591,13 +5714,13 @@ fn resolve_hook_script_readiness(
 ) -> (String, bool) {
     let marker = script_name.trim_end_matches(".mjs");
     let mut script_path = resolve_hook_script_path(app, script_name).unwrap_or_default();
-    let mut script_found = !script_path.is_empty() && std::path::Path::new(&script_path).exists();
+    let mut script_found = !script_path.is_empty() && hook_script_is_usable(Path::new(&script_path));
 
     if !script_found {
         if let Some(configured) =
             config.and_then(|cfg| configured_atoll_hook_script_path(cfg, marker))
         {
-            if std::path::Path::new(&configured).exists() {
+            if hook_script_is_usable(Path::new(&configured)) {
                 script_found = true;
                 if script_path.is_empty() {
                     script_path = configured;
@@ -5610,50 +5733,20 @@ fn resolve_hook_script_readiness(
 }
 
 fn resolve_hook_script_path(app: &AppHandle, script_name: &str) -> Option<String> {
-    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    let mut candidates: Vec<PathBuf> = Vec::new();
 
     if let Some(hooks_dir) = atoll_local_hooks_dir() {
         candidates.push(hooks_dir.join(script_name));
     }
+    let resource_dir = app.path().resource_dir().ok();
+    let exe = std::env::current_exe().ok();
+    candidates.extend(bundled_hook_script_candidates(
+        resource_dir.as_deref(),
+        exe.as_deref(),
+        script_name,
+    ));
 
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        candidates.push(resource_dir.join("scripts").join(script_name));
-    }
-
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(exe_dir) = exe.parent() {
-            candidates.push(exe_dir.join("resources").join("scripts").join(script_name));
-            candidates.push(exe_dir.join("scripts").join(script_name));
-        }
-        for ancestor in exe.ancestors().skip(1) {
-            candidates.push(ancestor.join("Resources").join("scripts").join(script_name));
-            candidates.push(ancestor.join("scripts").join(script_name));
-            if ancestor.file_name().is_some_and(|name| name == "src-tauri") {
-                if let Some(repo_root) = ancestor.parent() {
-                    candidates.push(repo_root.join("scripts").join(script_name));
-                }
-            }
-            if ancestor.join("src-tauri").exists() {
-                candidates.push(ancestor.join("scripts").join(script_name));
-                candidates.push(
-                    ancestor
-                        .join("src-tauri")
-                        .join("target")
-                        .join("debug")
-                        .join("scripts")
-                        .join(script_name),
-                );
-            }
-        }
-    }
-
-    for candidate in candidates {
-        if candidate.is_file() {
-            return Some(normalize_hook_script_path(&candidate.to_string_lossy()));
-        }
-    }
-
-    None
+    first_usable_hook_script(candidates)
 }
 
 #[cfg(windows)]
@@ -8233,6 +8326,77 @@ mod core_tests {
             &deployed_script
         ));
 
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn empty_hook_scripts_are_not_usable() {
+        let dir = std::env::temp_dir().join(format!(
+            "atoll-empty-hook-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let empty = dir.join("atoll-claude-hook.mjs");
+        std::fs::write(&empty, []).expect("empty script");
+        assert!(!hook_script_is_usable(&empty));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn repo_hook_scripts_are_usable_install_sources() {
+        for name in [
+            "atoll-claude-hook.mjs",
+            "atoll-codex-hook.mjs",
+            "atoll-cursor-hook.mjs",
+            "atoll-hook-bridge.mjs",
+        ] {
+            let path = repo_hook_script_path(name);
+            assert!(
+                hook_script_is_usable(&path),
+                "missing usable repo hook script {}",
+                path.display()
+            );
+        }
+    }
+
+    #[test]
+    fn install_source_skips_empty_files_and_finds_repo_script() {
+        let dir = std::env::temp_dir().join(format!(
+            "atoll-hook-source-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let scripts = dir.join("scripts");
+        std::fs::create_dir_all(&scripts).expect("scripts dir");
+        let empty = scripts.join("atoll-claude-hook.mjs");
+        std::fs::write(&empty, []).expect("empty local copy");
+
+        let found = first_usable_hook_script(bundled_hook_script_candidates(
+            Some(dir.as_path()),
+            None,
+            "atoll-claude-hook.mjs",
+        ));
+        assert!(found.is_some());
+        let found = found.expect("repo script");
+        assert!(found.ends_with("scripts/atoll-claude-hook.mjs") || found.ends_with("scripts\\atoll-claude-hook.mjs"));
+        assert_ne!(
+            std::fs::metadata(&found).expect("meta").len(),
+            0,
+            "install source must not be the empty local copy"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn copy_deployed_hook_file_does_not_truncate_when_source_is_destination() {
+        let dir = std::env::temp_dir().join(format!(
+            "atoll-hook-self-copy-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let script = dir.join("atoll-claude-hook.mjs");
+        std::fs::write(&script, "keep me").expect("script");
+        copy_deployed_hook_file(&script, &script, "hook script").expect("self copy");
+        assert_eq!(std::fs::read_to_string(&script).expect("read"), "keep me");
         let _ = std::fs::remove_dir_all(dir);
     }
 

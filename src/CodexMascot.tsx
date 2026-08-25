@@ -15,15 +15,20 @@ export function CodexMascot({
   mood,
   size,
   className,
+  accent,
+  accentDark,
   animated = true,
 }: CodexMascotProps) {
-  const fill = codexMarkFill(mood);
+  const fill = codexMarkFill(mood, accent);
   const extras =
     mood === "dead"
       ? { sparkle: "#b0b8bc", sweat: "#9aa0a4" }
       : mood === "worried"
         ? { sparkle: "#e8ffe8", sweat: "#a8d8a8" }
-        : { sparkle: "#d4f8ff", sweat: "#7cc4ff" };
+        : {
+            sparkle: accent || "#d4f8ff",
+            sweat: accentDark || accent || "#7cc4ff",
+          };
 
   return (
     <span

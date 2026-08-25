@@ -1,6 +1,9 @@
+import type { CSSProperties } from "react";
 import type { ClawdMood } from "./ClawdMascot";
 import { MASCOT_VIEWBOX_ATTR, MascotExtras, MascotShadow, mascotSizeStyle } from "./mascotShared";
 import { CursorOfficialMark, cursorCubePalette } from "./officialMarks";
+
+const CURSOR_OUTLINE_FALLBACK = "#f4f0e8";
 
 interface CursorMascotProps {
   mood: ClawdMood;
@@ -15,6 +18,7 @@ export function CursorMascot({
   mood,
   size,
   className,
+  accent,
   animated = true,
 }: CursorMascotProps) {
   const palette = cursorCubePalette(mood);
@@ -24,11 +28,17 @@ export function CursorMascot({
       : mood === "worried"
         ? { sparkle: "#e8ffe8", sweat: "#a8d8a8" }
         : { sparkle: "#f5f3ff", sweat: "#c4b5fd" };
+  const outline = accent || CURSOR_OUTLINE_FALLBACK;
+  const style = {
+    ...mascotSizeStyle(size),
+    "--cursor-outline": outline,
+    color: outline,
+  } as CSSProperties;
 
   return (
     <span
       className={`cursor-mascot is-${mood}${animated ? "" : " is-static"}${className ? ` ${className}` : ""}`}
-      style={mascotSizeStyle(size)}
+      style={style}
       aria-hidden="true"
     >
       <svg
