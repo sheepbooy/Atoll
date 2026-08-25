@@ -2,6 +2,17 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.52] - 2026-08-25
+
+### 修复
+- **Agent hooks 安装**：安装源改为仓库/app bundle 脚本，忽略本地 0 字节落地文件，避免 `Cannot locate hook script: atoll-claude-hook.mjs`；Claude 与 Codex/Cursor 一样拷到稳定目录
+- **Cursor 立方体描边**：改用 SVG `non-scaling-stroke`，修复 WKWebView 上 CSS filter 描边不生效
+- **无刘海折叠岛间距**：去掉 280px 拉伸与 `space-evenly`，session 图标按内容紧排
+
+### 改进
+- **Codex 会话色**：不同对话的 Codex 花瓣按会话配色上色
+- **30 日用量趋势图**：单调三次曲线、渐变填充与 hover 圆点
+
 ## [0.1.51] - 2026-08-21
 
 ### 改进
