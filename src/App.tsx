@@ -94,6 +94,7 @@ import {
   MICRO_SHRINK_DELAY_MS,
   PANEL_EXIT_MS,
   PresentationPhase,
+  PRESENTATION_SETTLE_FALLBACK_MS,
   RESOLVE_FEEDBACK_MS,
 } from "./islandPresentation";
 import { AgentMascot, AGENT_ACCENT } from "./AgentMascot";
@@ -147,6 +148,7 @@ import {
   TokenUsage,
   onIslandHoverChanged,
   onIslandOpenRequested,
+  onIslandPresentationSettled,
   onCaptureCollapseRequested,
   onCaptureOpenHooksRequested,
   onCaptureScreenshotRequested,
@@ -678,6 +680,11 @@ export function App() {
   const frozenCollapseLeftWidthRef = useRef<number | null>(null);
   const suppressPostCollapseSyncRef = useRef(false);
   const holdCompactAfterSubviewOpenRef = useRef(false);
+  // Closures captured at transition start, run when the native window emits
+  // `island-presentation-settled` (or the 2s fallback fires). Captured by value
+  // so the listener sees the metrics that were current when the transition began.
+  const pendingExpandRef = useRef<(() => Promise<void>) | null>(null);
+  const pendingCollapseRef = useRef<(() => Promise<void>) | null>(null);
   const expandCollapseAnchorRef = useRef<{
     width: number;
     leftWidth: number;
@@ -950,23 +957,42 @@ export function App() {
     return counts;
   }, [sessions]);
 
-  const compactHeaderLayout = useMemo(
-    () =>
-      computeCompactHeaderLayout(
-        notchMetrics,
-        sessions.length,
-        maxCompactIcons,
-        activeSessionTokenTotal,
-        snapshot.pendingCount,
-      ),
-    [
+  const stableHeaderLayoutRef = useRef(
+    computeCompactHeaderLayout(
       notchMetrics,
       sessions.length,
       maxCompactIcons,
       activeSessionTokenTotal,
       snapshot.pendingCount,
-    ],
+    ),
   );
+  const compactHeaderLayout = useMemo(() => {
+    const computed = computeCompactHeaderLayout(
+      notchMetrics,
+      sessions.length,
+      maxCompactIcons,
+      activeSessionTokenTotal,
+      snapshot.pendingCount,
+    );
+    // Hold the pre-transition layout during opening/closing so a session
+    // resolving or pending count changing mid-animation cannot reflow the
+    // header icons. Mirrors the stableLeftWidthRef freeze below.
+    if (
+      phaseRef.current === "opening" ||
+      phaseRef.current === "closing"
+    ) {
+      return stableHeaderLayoutRef.current;
+    }
+    stableHeaderLayoutRef.current = computed;
+    return computed;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    notchMetrics,
+    sessions.length,
+    maxCompactIcons,
+    activeSessionTokenTotal,
+    snapshot.pendingCount,
+  ]);
 
   const computedLeftPaneWidth = useMemo(
     () => computeCompactLeftPaneWidth(compactHeaderLayout),
@@ -1127,6 +1153,25 @@ export function App() {
         scheduleIdleCollapse();
       }),
     );
+    const unsubscribeSettled = manageAsyncUnlisten(
+      onIslandPresentationSettled((mode) => {
+        if (phaseRef.current === "opening" && mode === "expanded") {
+          if (transitionTimerRef.current !== null) {
+            window.clearTimeout(transitionTimerRef.current);
+            transitionTimerRef.current = null;
+          }
+          return runPendingExpand();
+        }
+        if (phaseRef.current === "closing") {
+          if (transitionTimerRef.current !== null) {
+            window.clearTimeout(transitionTimerRef.current);
+            transitionTimerRef.current = null;
+          }
+          return runPendingCollapse();
+        }
+        return Promise.resolve();
+      }),
+    );
     const unsubscribeCapture = manageAsyncUnlisten(
       onCaptureCollapseRequested(() => {
         collapseIsland(true);
@@ -1202,6 +1247,7 @@ export function App() {
       unsubscribe();
       unsubscribeHover();
       unsubscribeOpen();
+      unsubscribeSettled();
       unsubscribeCapture();
       unsubscribeCaptureHooks();
       unsubscribeScreenshot();
@@ -1745,6 +1791,10 @@ export function App() {
       window.clearTimeout(panelExitTimerRef.current);
       panelExitTimerRef.current = null;
     }
+    // Drop any closures waiting on a settled event so a superseded transition
+    // cannot fire its finalize step on the next expand/collapse.
+    pendingExpandRef.current = null;
+    pendingCollapseRef.current = null;
   }
 
   function clearIdleTimer() {
@@ -1883,10 +1933,8 @@ export function App() {
       planExpanded && !settingsExpanded,
       settingsExpanded,
     );
-    transitionTimerRef.current = window.setTimeout(async () => {
-      transitionTimerRef.current = null;
+    pendingExpandRef.current = async () => {
       if (phaseRef.current !== "opening") return;
-
       try {
         await nativeTransition;
         if (phaseRef.current === "opening") {
@@ -1898,7 +1946,21 @@ export function App() {
       } catch {
         setPresentationPhase(usesMicroIslandRef.current ? "micro" : "compact");
       }
-    }, COLLAPSE_ANIMATION_MS);
+    };
+    transitionTimerRef.current = window.setTimeout(async () => {
+      transitionTimerRef.current = null;
+      // 2s fallback: only fires if the native `island-presentation-settled`
+      // event never arrives (e.g. the `animate: false, snap: false`
+      // fire-and-forget presentation path).
+      await runPendingExpand();
+    }, PRESENTATION_SETTLE_FALLBACK_MS);
+  }
+
+  function runPendingExpand() {
+    const finalize = pendingExpandRef.current;
+    pendingExpandRef.current = null;
+    if (!finalize) return Promise.resolve();
+    return finalize();
   }
 
   function collapsePresentationMode(): "micro" | "compact" | "dormant" {
@@ -2019,8 +2081,7 @@ export function App() {
               undefined,
               compactLeftWidth,
             );
-    transitionTimerRef.current = window.setTimeout(async () => {
-      transitionTimerRef.current = null;
+    pendingCollapseRef.current = async () => {
       if (phaseRef.current !== "closing") return;
 
       try {
@@ -2073,9 +2134,24 @@ export function App() {
         setPresentationPhase("expanded");
       } finally {
         releaseFrozenCollapseMetrics();
+        pendingCollapseRef.current = null;
         suppressHoverExpandRef.current = false;
       }
-    }, COLLAPSE_ANIMATION_MS);
+    };
+    transitionTimerRef.current = window.setTimeout(async () => {
+      transitionTimerRef.current = null;
+      // 2s fallback: only fires if the native `island-presentation-settled`
+      // event never arrives (e.g. the `animate: false, snap: false`
+      // fire-and-forget presentation path).
+      await runPendingCollapse();
+    }, PRESENTATION_SETTLE_FALLBACK_MS);
+  }
+
+  function runPendingCollapse() {
+    const finalize = pendingCollapseRef.current;
+    pendingCollapseRef.current = null;
+    if (!finalize) return Promise.resolve();
+    return finalize();
   }
 
   function scheduleIdleCollapse() {

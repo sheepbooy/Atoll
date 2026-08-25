@@ -8,8 +8,8 @@ import {
   markHookAgentConfigured,
 } from "./hookAgentsConfigured";
 import {
-  COLLAPSE_ANIMATION_MS,
   PANEL_EXIT_MS,
+  PRESENTATION_SETTLE_FALLBACK_MS,
   RESOLVE_FEEDBACK_MS,
 } from "./islandPresentation";
 import type { SessionSummary, SubagentSummary } from "./tauri";
@@ -20,9 +20,21 @@ async function flushPanelExit() {
   });
 }
 
-async function flushCollapseAnimation() {
+/** Emit the native settled event and flush the microtask chain it kicks off
+ *  (the listener awaits the mocked `setIslandPresentation` promise). */
+async function emitSettledPhase(mode: string) {
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(PANEL_EXIT_MS + COLLAPSE_ANIMATION_MS);
+    await emitPresentationSettled?.(mode);
+  });
+}
+
+async function flushCollapseAnimation(mode: string = "compact") {
+  await flushPanelExit();
+  await emitSettledPhase(mode);
+  // Drain the 2s fallback timer — it no-ops because the settled event already
+  // ran and nulled the pending closure.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(PRESENTATION_SETTLE_FALLBACK_MS);
   });
 }
 
@@ -94,6 +106,7 @@ async function waitForExpandedPanel(container: HTMLElement) {
   const island = screen.getByLabelText("Atoll");
   fireEvent.pointerEnter(island);
   await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+  await emitSettledPhase("expanded");
   await waitFor(() => expect(container.querySelector(".island-panel")).not.toBeNull(), {
     timeout: 1500,
   });
@@ -175,6 +188,7 @@ const bridge = vi.hoisted(() => ({
   onSnapshotChanged: vi.fn(),
   onIslandHoverChanged: vi.fn(),
   onIslandOpenRequested: vi.fn(),
+  onIslandPresentationSettled: vi.fn(),
   onCaptureCollapseRequested: vi.fn(),
   onCaptureOpenHooksRequested: vi.fn(),
   onCaptureScreenshotRequested: vi.fn(),
@@ -233,6 +247,7 @@ vi.mock("./appUpdate", () => ({
 let emitIslandHover: ((state: { hovering: boolean; cursorOverWindow: boolean }) => void) | null = null;
 let emitSnapshot: ((snapshot: import("./tauri").IslandSnapshot) => void) | null =
   null;
+let emitPresentationSettled: ((mode: string) => void) | null = null;
 
 vi.mock("./tauri", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./tauri")>();
@@ -252,6 +267,7 @@ describe("App", () => {
     clearConfiguredHookAgentsForTests();
     emitIslandHover = null;
     emitSnapshot = null;
+    emitPresentationSettled = null;
     bridge.getSnapshot.mockResolvedValue({
       online: true,
       pendingCount: 1,
@@ -269,6 +285,10 @@ describe("App", () => {
       return () => undefined;
     });
     bridge.onIslandOpenRequested.mockResolvedValue(() => undefined);
+    bridge.onIslandPresentationSettled.mockImplementation(async (callback) => {
+      emitPresentationSettled = callback;
+      return () => undefined;
+    });
     bridge.onCaptureCollapseRequested.mockResolvedValue(() => undefined);
     bridge.onCaptureOpenHooksRequested.mockResolvedValue(() => undefined);
     bridge.onCaptureScreenshotRequested.mockResolvedValue(() => undefined);
@@ -371,7 +391,9 @@ describe("App", () => {
   });
 
   it("renders the command as compact code and contains no demo control", async () => {
-    render(<App />);
+    const { container } = render(<App />);
+    await waitFor(() => expect(container.querySelector(".is-opening, .is-expanded")).not.toBeNull());
+    await emitSettledPhase("expanded");
 
     expect(await screen.findByText(request.command)).toHaveProperty("tagName", "CODE");
     expect(screen.queryByText("Demo")).not.toBeInTheDocument();
@@ -401,6 +423,8 @@ describe("App", () => {
 
   it("collapses to a persistent capsule that can be reopened", async () => {
     const { container } = render(<App />);
+    await waitFor(() => expect(container.querySelector(".is-opening, .is-expanded")).not.toBeNull());
+    await emitSettledPhase("expanded");
     const collapseButton = await screen.findByRole("button", { name: "Collapse Atoll" });
 
     vi.useFakeTimers();
@@ -410,9 +434,7 @@ describe("App", () => {
     await flushPanelExit();
     expect(container.querySelector(".is-closing")).not.toBeNull();
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(COLLAPSE_ANIMATION_MS);
-    });
+    await emitSettledPhase("compact");
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
       "compact",
       expect.any(Number),
@@ -424,7 +446,7 @@ describe("App", () => {
     expect(container.querySelector(".is-compact")).not.toBeNull();
 
     fireEvent.click(screen.getByLabelText("Atoll"));
-    await vi.advanceTimersByTimeAsync(COLLAPSE_ANIMATION_MS);
+    await emitSettledPhase("expanded");
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
       "expanded",
       expect.any(Number),
@@ -453,6 +475,8 @@ describe("App", () => {
     const island = screen.getByLabelText("Atoll");
 
     fireEvent.pointerEnter(island);
+    await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+    await emitSettledPhase("expanded");
     await waitFor(() =>
       expect(container.querySelector(".is-expanded:not(.is-opening)")).not.toBeNull(),
     );
@@ -462,6 +486,11 @@ describe("App", () => {
     expect(moreButton).not.toHaveFocus();
 
     fireEvent.pointerLeave(island);
+    await waitFor(
+      () => expect(container.querySelector(".is-closing")).not.toBeNull(),
+      { timeout: 1500 },
+    );
+    await emitSettledPhase("compact");
     await waitFor(
       () => expect(container.querySelector(".is-compact")).not.toBeNull(),
       { timeout: 1500 },
@@ -494,6 +523,7 @@ describe("App", () => {
 
     fireEvent.pointerEnter(island);
     await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+    await emitSettledPhase("expanded");
 
     await user.click(await screen.findByRole("button", { name: /project/i }));
     await waitFor(() =>
@@ -501,6 +531,11 @@ describe("App", () => {
     );
 
     fireEvent.pointerLeave(island);
+    await waitFor(
+      () => expect(container.querySelector(".is-closing")).not.toBeNull(),
+      { timeout: 1500 },
+    );
+    await emitSettledPhase("compact");
     await waitFor(
       () => expect(container.querySelector(".is-compact")).not.toBeNull(),
       { timeout: 1500 },
@@ -678,6 +713,7 @@ describe("App", () => {
 
     fireEvent.pointerEnter(island);
     await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+    await emitSettledPhase("expanded");
 
     await user.click(await screen.findByRole("button", { name: /project/i }));
     await waitFor(() =>
@@ -717,9 +753,7 @@ describe("App", () => {
       });
     });
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(COLLAPSE_ANIMATION_MS);
-    });
+    await emitSettledPhase("compact");
 
     const compactAnimatedCalls = bridge.setIslandPresentation.mock.calls.filter(
       (call) => call[0] === "compact" && call[4] !== false,
@@ -782,6 +816,7 @@ describe("App", () => {
 
     fireEvent.pointerEnter(island);
     await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+    await emitSettledPhase("expanded");
 
     await user.click(await screen.findByRole("button", { name: /project/i }));
     await waitFor(() =>
@@ -808,9 +843,7 @@ describe("App", () => {
       "session-1",
     );
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(COLLAPSE_ANIMATION_MS);
-    });
+    await emitSettledPhase("compact");
 
     const compactAnimatedCalls = bridge.setIslandPresentation.mock.calls.filter(
       (call) => call[0] === "compact" && call[4] !== false,
@@ -861,6 +894,7 @@ describe("App", () => {
 
     fireEvent.pointerEnter(island);
     await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+    await emitSettledPhase("expanded");
 
     await user.click(await screen.findByRole("button", { name: /cursor-project/i }));
     await waitFor(() =>
@@ -879,9 +913,7 @@ describe("App", () => {
       "session-cursor",
     );
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(COLLAPSE_ANIMATION_MS);
-    });
+    await emitSettledPhase("micro");
 
     expect(container.querySelector(".is-micro")).not.toBeNull();
     expect(container.querySelector(".is-compact")).toBeNull();
@@ -899,6 +931,7 @@ describe("App", () => {
     await waitFor(() =>
       expect(container.querySelector(".is-expanded")).not.toBeNull(),
     );
+    await emitSettledPhase("expanded");
 
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,
@@ -915,12 +948,14 @@ describe("App", () => {
     await waitFor(() =>
       expect(container.querySelector(".is-expanded")).not.toBeNull(),
     );
+    await emitSettledPhase("expanded");
     const collapseButton = await screen.findByRole("button", { name: "Collapse Atoll" });
-    await vi.advanceTimersByTimeAsync(420);
 
     fireEvent.click(collapseButton);
     emitIslandHover?.({ hovering: true, cursorOverWindow: true });
-    await flushCollapseAnimation();
+    await flushPanelExit();
+    expect(container.querySelector(".is-closing")).not.toBeNull();
+    await emitSettledPhase("compact");
 
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
       "compact",
@@ -934,7 +969,7 @@ describe("App", () => {
 
     emitIslandHover?.({ hovering: false, cursorOverWindow: false });
     fireEvent.pointerEnter(screen.getByLabelText("Atoll"));
-    await vi.advanceTimersByTimeAsync(COLLAPSE_ANIMATION_MS);
+    await emitSettledPhase("expanded");
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
       "expanded",
       expect.any(Number),
@@ -949,7 +984,9 @@ describe("App", () => {
   });
 
   it("puts Quit Atoll in the more menu", async () => {
-    render(<App />);
+    const { container } = render(<App />);
+    await waitFor(() => expect(container.querySelector(".is-opening, .is-expanded")).not.toBeNull());
+    await emitSettledPhase("expanded");
 
     fireEvent.click(await screen.findByRole("button", { name: "More options" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Quit Atoll" }));
@@ -962,7 +999,9 @@ describe("App", () => {
       configurable: true,
       value: {},
     });
-    render(<App />);
+    const { container } = render(<App />);
+    await waitFor(() => expect(container.querySelector(".is-opening, .is-expanded")).not.toBeNull());
+    await emitSettledPhase("expanded");
 
     const collapseButton = await screen.findByRole("button", { name: "Collapse Atoll" });
     const moreButton = screen.getByRole("button", { name: "More options" });
@@ -978,7 +1017,9 @@ describe("App", () => {
   });
 
   it("closes the more menu with Escape", async () => {
-    render(<App />);
+    const { container } = render(<App />);
+    await waitFor(() => expect(container.querySelector(".is-opening, .is-expanded")).not.toBeNull());
+    await emitSettledPhase("expanded");
 
     fireEvent.click(await screen.findByRole("button", { name: "More options" }));
     fireEvent.keyDown(document, { key: "Escape" });
@@ -987,7 +1028,9 @@ describe("App", () => {
   });
 
   it("closes the more menu on an outside pointer press", async () => {
-    render(<App />);
+    const { container } = render(<App />);
+    await waitFor(() => expect(container.querySelector(".is-opening, .is-expanded")).not.toBeNull());
+    await emitSettledPhase("expanded");
 
     fireEvent.click(await screen.findByRole("button", { name: "More options" }));
     fireEvent.pointerDown(document.body);
@@ -1005,6 +1048,8 @@ describe("App", () => {
 
   it("automatically collapses after the final approval while still focused and hovered", async () => {
     const { container } = render(<App />);
+    await waitFor(() => expect(container.querySelector(".is-opening, .is-expanded")).not.toBeNull());
+    await emitSettledPhase("expanded");
     const island = screen.getByLabelText("Atoll");
     const approveButton = await screen.findByRole("button", { name: "Approve" });
 
@@ -1016,10 +1061,9 @@ describe("App", () => {
     try {
       fireEvent.click(approveButton);
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(
-          RESOLVE_FEEDBACK_MS + PANEL_EXIT_MS + COLLAPSE_ANIMATION_MS,
-        );
+        await vi.advanceTimersByTimeAsync(RESOLVE_FEEDBACK_MS + PANEL_EXIT_MS);
       });
+      await emitSettledPhase("dormant");
       expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
         "dormant",
         undefined,
@@ -1587,6 +1631,7 @@ describe("App", () => {
     await waitFor(() =>
       expect(container.querySelector(".is-expanded")).not.toBeNull(),
     );
+    await emitSettledPhase("expanded");
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /More options/i })).toBeInTheDocument(),
     );
@@ -1839,13 +1884,15 @@ describe("App", () => {
 
     fireEvent.focus(island);
     await waitFor(() => expect(screen.getByTitle("Drag window")).toBeInTheDocument());
+    await emitSettledPhase("expanded");
     fireEvent.mouseDown(header, { button: 0 });
     await waitFor(() => expect(windowBridge.startDragging).toHaveBeenCalledOnce());
 
     vi.useFakeTimers();
     fireEvent.pointerLeave(island);
     await vi.advanceTimersByTimeAsync(500);
-    await vi.advanceTimersByTimeAsync(420);
+    await flushPanelExit();
+    await emitSettledPhase("dormant");
     // No active sessions → super-collapses into the dormant drawer.
     expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
       "dormant",
@@ -1966,6 +2013,7 @@ describe("App", () => {
 
     fireEvent.pointerEnter(island);
     await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+    await emitSettledPhase("expanded");
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Collapse Atoll" })).toBeInTheDocument(),
     );
@@ -1980,11 +2028,9 @@ describe("App", () => {
         ...baseSnapshot,
         sessions: [cursorSession],
       });
+      await emitPresentationSettled?.("compact");
     });
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(COLLAPSE_ANIMATION_MS);
-    });
     vi.useRealTimers();
 
     await waitFor(() =>
@@ -1993,7 +2039,9 @@ describe("App", () => {
   });
 
   it("switches the settings language to Chinese", async () => {
-    render(<App />);
+    const { container } = render(<App />);
+    await waitFor(() => expect(container.querySelector(".is-opening, .is-expanded")).not.toBeNull());
+    await emitSettledPhase("expanded");
     fireEvent.click(await screen.findByRole("button", { name: /More options/i }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Settings/i }));
 

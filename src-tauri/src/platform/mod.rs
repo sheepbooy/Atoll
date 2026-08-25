@@ -1,6 +1,6 @@
 //! Platform-specific window, focus, and shell integration.
 
-use tauri::{App, AppHandle, LogicalPosition, Monitor, PhysicalSize, WebviewWindow};
+use tauri::{App, AppHandle, LogicalPosition, LogicalSize, Monitor, WebviewWindow};
 
 use crate::{AppState, HomeWindowBounds, NotchMetrics};
 
@@ -181,7 +181,7 @@ pub fn compact_hover_expand_dwell() -> std::time::Duration {
 pub fn set_island_window_frame_now(
     window: &WebviewWindow,
     position: LogicalPosition<f64>,
-    size: PhysicalSize<u32>,
+    size: LogicalSize<f64>,
     scale_factor: f64,
     home: HomeWindowBounds,
 ) -> tauri::Result<()> {
@@ -203,7 +203,7 @@ pub fn set_island_window_frame_now(
 pub fn set_island_window_frame(
     window: &WebviewWindow,
     position: LogicalPosition<f64>,
-    size: PhysicalSize<u32>,
+    size: LogicalSize<f64>,
     scale_factor: f64,
     home: Option<HomeWindowBounds>,
 ) -> tauri::Result<()> {
@@ -219,6 +219,38 @@ pub fn set_island_window_frame(
     {
         window.set_size(size)?;
         window.set_position(position)
+    }
+}
+
+/// Animation frame pacing for the island window resize. macOS reads the
+/// current display's refresh rate (ProMotion = 120 Hz); other platforms
+/// keep the 60 Hz default.
+pub fn display_animation_frame_interval(window: &WebviewWindow) -> std::time::Duration {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::display_animation_frame_interval(window);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = window;
+        std::time::Duration::from_micros(16_667)
+    }
+}
+
+/// Whether the user asked the OS to reduce motion (macOS Accessibility
+/// "Reduce motion" / Windows client-area animation off).
+pub fn prefers_reduced_motion() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::prefers_reduced_motion();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return windows::prefers_reduced_motion();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        false
     }
 }
 

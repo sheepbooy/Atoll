@@ -1,6 +1,7 @@
 use std::process::Command;
+use std::time::Duration;
 
-use tauri::{AppHandle, LogicalPosition, Manager, PhysicalSize, WebviewWindow};
+use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewWindow};
 
 use super::ScreenGeometry;
 use crate::{
@@ -161,8 +162,8 @@ pub fn set_island_cursor_events_ignored(window: &tauri::WebviewWindow, ignore: b
 pub fn set_island_window_frame_now(
     window: &tauri::WebviewWindow,
     position: LogicalPosition<f64>,
-    size: PhysicalSize<u32>,
-    scale_factor: f64,
+    size: LogicalSize<f64>,
+    _scale_factor: f64,
     home: HomeWindowBounds,
 ) -> tauri::Result<()> {
     use objc2_app_kit::NSWindow;
@@ -176,7 +177,7 @@ pub fn set_island_window_frame_now(
         return Ok(());
     }
 
-    let logical_size = size.to_logical::<f64>(scale_factor);
+    let logical_size = size;
     let origin_y = appkit_window_origin_y(
         screen_geometry.origin_y,
         screen_geometry.height,
@@ -216,7 +217,7 @@ pub fn set_island_window_frame_now(
 pub fn set_island_window_frame(
     window: &tauri::WebviewWindow,
     position: LogicalPosition<f64>,
-    size: PhysicalSize<u32>,
+    size: LogicalSize<f64>,
     scale_factor: f64,
     home: Option<HomeWindowBounds>,
 ) -> tauri::Result<()> {
@@ -231,6 +232,60 @@ pub fn set_island_window_frame(
     })?;
 
     Ok(())
+}
+
+/// Animation frame interval derived from the display the island currently
+/// sits on (ProMotion panels report 120). Falls back to 60 Hz when the screen
+/// cannot be resolved, and clamps to a sane range so a misbehaving display
+/// cannot starve the animation thread.
+pub fn display_animation_frame_interval(window: &tauri::WebviewWindow) -> Duration {
+    const FALLBACK_FPS: i64 = 60;
+    let (fps_tx, fps_rx) = std::sync::mpsc::sync_channel::<i64>(1);
+    let probe_window = window.clone();
+    let dispatched = window.run_on_main_thread(move || {
+        let fps = unsafe {
+            let Ok(ns_window_ptr) = probe_window.ns_window() else {
+                return;
+            };
+            if ns_window_ptr.is_null() {
+                return;
+            }
+            use objc2_app_kit::NSWindow;
+            let ns_window = &*(ns_window_ptr.cast::<NSWindow>());
+            match ns_window.screen() {
+                Some(screen) => screen.maximumFramesPerSecond() as i64,
+                None => FALLBACK_FPS,
+            }
+        };
+        let _ = fps_tx.send(fps);
+    });
+    if dispatched.is_err() {
+        return Duration::from_secs_f64(1.0 / FALLBACK_FPS as f64);
+    }
+    let fps = fps_rx
+        .recv_timeout(Duration::from_millis(250))
+        .unwrap_or(FALLBACK_FPS)
+        .clamp(30, 240);
+    Duration::from_secs_f64(1.0 / fps as f64)
+}
+
+/// True when the user enabled "Reduce motion" in Accessibility settings.
+/// `NSWorkspace.accessibilityDisplayShouldReduceMotion` is a category method
+/// not exposed by the objc2-app-kit features we enable, so send it directly.
+pub fn prefers_reduced_motion() -> bool {
+    unsafe {
+        let Some(ws_class) = objc2::runtime::AnyClass::get(c"NSWorkspace") else {
+            return false;
+        };
+        let workspace: *mut objc2::runtime::AnyObject =
+            objc2::msg_send![ws_class, sharedWorkspace];
+        if workspace.is_null() {
+            return false;
+        }
+        let reduce: objc2::runtime::Bool =
+            objc2::msg_send![workspace, accessibilityDisplayShouldReduceMotion];
+        reduce.as_bool()
+    }
 }
 
 fn appkit_window_origin_y(

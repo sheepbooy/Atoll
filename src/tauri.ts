@@ -713,6 +713,19 @@ export async function onIslandOpenRequested(callback: () => void) {
   return listen<void>("island-open-requested", () => callback());
 }
 
+/** Fires when the native window animation finishes or snaps to its target. */
+export async function onIslandPresentationSettled(
+  callback: (mode: string) => void | Promise<void>,
+) {
+  if (!isTauriRuntime()) {
+    return () => undefined;
+  }
+
+  return listen<string>("island-presentation-settled", (event) =>
+    callback(event.payload),
+  );
+}
+
 export async function onCaptureCollapseRequested(callback: () => void) {
   if (!isTauriRuntime()) {
     return () => undefined;

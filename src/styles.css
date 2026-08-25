@@ -61,8 +61,9 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
-  /* Expand mirrors Rust ease_out_back (~2% overshoot). Collapse stays cubic.
-     Browser-demo width/height transitions use this curve; Tauri size is native. */
+  /* Expand mirrors Rust ease_out_spring (damped harmonic oscillator, ~2%
+     overshoot). Collapse stays cubic. This bezier is a visual approximation
+     of the spring step; native Tauri resize uses the real oscillator. */
   --ease-window: cubic-bezier(0.34, 1.2, 0.64, 1);
   --ease-window-collapse: cubic-bezier(0.33, 1, 0.68, 1);
   --duration-instant: 100ms;

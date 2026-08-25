@@ -15,16 +15,17 @@ fn hidden_command(program: &str) -> Command {
     command
 }
 
-use tauri::{AppHandle, LogicalPosition, Manager, Monitor, PhysicalSize, WebviewWindow};
+use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, Monitor, WebviewWindow};
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS, HANDLE};
+use windows::Win32::Foundation::{GetLastError, BOOL, ERROR_ALREADY_EXISTS, HANDLE};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
 };
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow, SetWindowPos, HWND_TOPMOST,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
+    GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow, SetWindowPos,
+    SystemParametersInfoW, HWND_TOPMOST, SPI_GETCLIENTAREAANIMATION,
+    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
 };
 
 use super::SessionHost;
@@ -171,7 +172,7 @@ pub fn monitor_work_area_top(window: &WebviewWindow, monitor: &Monitor) -> f64 {
 pub fn set_island_window_frame_now(
     window: &WebviewWindow,
     position: LogicalPosition<f64>,
-    size: PhysicalSize<u32>,
+    size: LogicalSize<f64>,
     _scale_factor: f64,
     _home: HomeWindowBounds,
 ) -> tauri::Result<()> {
@@ -182,7 +183,7 @@ pub fn set_island_window_frame_now(
 pub fn set_island_window_frame(
     window: &WebviewWindow,
     position: LogicalPosition<f64>,
-    size: PhysicalSize<u32>,
+    size: LogicalSize<f64>,
     scale_factor: f64,
     home: Option<HomeWindowBounds>,
 ) -> tauri::Result<()> {
@@ -191,6 +192,22 @@ pub fn set_island_window_frame(
         return window.set_position(position);
     };
     set_island_window_frame_now(window, position, size, scale_factor, home)
+}
+
+/// True when the user disabled window animations (client-area animation
+/// off in "System > Accessibility > Visual effects"), which Windows treats
+/// as the reduce-motion signal.
+pub fn prefers_reduced_motion() -> bool {
+    unsafe {
+        let mut enabled: BOOL = BOOL(1);
+        let ok = SystemParametersInfoW(
+            SPI_GETCLIENTAREAANIMATION,
+            0,
+            &mut enabled as *mut _ as *mut core::ffi::c_void,
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        );
+        ok.is_ok() && !enabled.as_bool()
+    }
 }
 
 pub fn remember_foreground_window(app: &AppHandle) {

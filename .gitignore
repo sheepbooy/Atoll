@@ -16,6 +16,8 @@ src-tauri/icons/ios/
 coverage/
 .DS_Store
 .mimocode/
+.zcode/
+.claude/
 .worktrees
 .tools/
 .cursor/*

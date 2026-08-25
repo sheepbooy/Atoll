@@ -6,6 +6,9 @@ export type PresentationPhase =
   | "closing";
 
 export const COLLAPSE_ANIMATION_MS = 420;
+/** Fallback for the `island-presentation-settled` event; only the event path
+ *  drives phase transitions, this fires when the event never arrives. */
+export const PRESENTATION_SETTLE_FALLBACK_MS = 2000;
 export const IDLE_COLLAPSE_DELAY_MS = 500;
 /** Fade panel content before native window shrink begins. */
 export const PANEL_EXIT_MS = 120;
