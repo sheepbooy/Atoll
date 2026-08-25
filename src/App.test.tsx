@@ -1420,10 +1420,10 @@ describe("App", () => {
     bridge.getSnapshot.mockResolvedValue(baseSnapshot);
 
     const { container } = render(<App />);
-    await waitFor(() =>
-      expect(container.querySelector(".is-micro")).not.toBeNull(),
-    );
-    expect(container.querySelector(".listener-dot")).not.toBeNull();
+    await waitFor(() => {
+      expect(container.querySelector(".is-micro")).not.toBeNull();
+      expect(container.querySelector(".listener-dot")).not.toBeNull();
+    });
     expect(container.querySelector(".compact-session-dot")).toBeNull();
     expect(container.querySelector(".header-agent-logo")).toBeNull();
 
