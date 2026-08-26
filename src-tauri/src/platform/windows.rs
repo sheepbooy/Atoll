@@ -203,7 +203,7 @@ pub fn prefers_reduced_motion() -> bool {
         let ok = SystemParametersInfoW(
             SPI_GETCLIENTAREAANIMATION,
             0,
-            &mut enabled as *mut _ as *mut core::ffi::c_void,
+            Some(&mut enabled as *mut _ as *mut core::ffi::c_void),
             SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
         );
         ok.is_ok() && !enabled.as_bool()
