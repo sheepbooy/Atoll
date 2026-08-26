@@ -61,7 +61,7 @@ export function codexMarkFill(mood: ClawdMood, accent?: string): string {
 export function CodexOfficialMark({ fill, className }: { fill: string; className?: string }) {
   return (
     <g className={className}>
-      <g transform="translate(56 38) scale(2.7) translate(-12 -12)">
+      <g transform="translate(56 26.4) scale(3.5) translate(-12.15 -8)">
         <path fill={fill} fillRule="evenodd" clipRule="evenodd" d={CODEX_OFFICIAL_PATH} />
       </g>
     </g>
@@ -81,7 +81,7 @@ export function CursorOfficialMark({
 }) {
   return (
     <g className={className}>
-      <g transform="translate(56 40) scale(0.345) translate(-482.5 -491.5)">
+      <g transform="translate(56 37) scale(0.411) translate(-483.5 -490.5)">
         {/* WKWebView ignores CSS filter on <g>; paint a non-scaling stroke behind fills. */}
         <g className="cursor-mascot-outline" aria-hidden="true">
           {CURSOR_CUBE_PATH_KEYS.map((key) => (
