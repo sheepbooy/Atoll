@@ -1,6 +1,6 @@
 import type { AtollActivity } from "./AtollLogo";
 import i18n from "./i18n";
-import type { HookHealthSnapshot, HookStatus } from "./tauri";
+import type { CompetingHook, HookHealthSnapshot, HookStatus } from "./tauri";
 import { EMPTY_HOOK_HEALTH } from "./tauri";
 
 export const HOOK_AGENT_LABELS = {
@@ -92,6 +92,16 @@ export function mergeHookHealthPreferReady(
 /** Hook was installed via Atoll but is now broken (e.g. shim missing after update). */
 export function isHookDrifted(status: HookStatus | null | undefined): boolean {
   return Boolean(status?.installed && !isHookReady(status));
+}
+
+/** Dead competitor hooks (binary missing) on Claude events. These veto Atoll's
+ * permission decisions under Claude Code's most-restrictive-wins merge — the
+ * most common cause of plan approvals not syncing back to Claude. */
+export function deadCompetingHooks(
+  status: HookStatus | null | undefined,
+): CompetingHook[] {
+  if (!status?.competingHooks) return [];
+  return status.competingHooks.filter((hook) => !hook.binaryExists);
 }
 
 /** Agent is absent while at least one other agent remains connected (uninstall or drift).

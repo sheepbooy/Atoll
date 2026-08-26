@@ -67,6 +67,13 @@
     "nodeNotFound": "在配置的钩子路径未找到 Node.js。请安装 Node.js 后重新安装钩子。",
     "devBuildPath": "钩子指向开发构建路径。请从 Atoll.app 重新安装钩子，然后在 Codex 中重新信任。"
   },
+  "competing": {
+    "title": "失效的竞争钩子",
+    "deadWarning_one": "另一个 island 应用的失效钩子注册了同一个 Claude 事件。其二进制文件已缺失，会报错并在 Claude Code 的“最严格优先”合并策略下否决 Atoll 的审批，导致你在 Atoll 的同意无法生效。",
+    "deadWarning_other": "{{count}} 个来自其他 island 应用的失效钩子注册了同一个 Claude 事件。它们的二进制文件已缺失，会报错并在 Claude Code 的“最严格优先”合并策略下否决 Atoll 的审批，导致你在 Atoll 的同意无法生效。",
+    "alive": "仍存活的竞争钩子（应用可能正在运行）——未移除：",
+    "removeDead": "移除失效钩子"
+  },
   "retrust": {
     "codex": "Codex 可能仍在使用旧版缓存的 Atoll 钩子脚本。在 Atoll 中点击重新安装钩子，或在 Codex 中打开 /hooks 重新批准 Atoll 钩子，然后重启 Codex。",
     "claude": "Atoll 自上次批准后已更新 Claude 钩子脚本。请重新打开 Claude Code / Claude Desktop 权限并重新允许 Atoll 钩子，然后重启 Claude。",

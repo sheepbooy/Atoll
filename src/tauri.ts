@@ -320,6 +320,12 @@ export interface TokenHistoryResponse {
   days: TokenHistoryDay[];
 }
 
+export interface CompetingHook {
+  event: string;
+  command: string;
+  binaryExists: boolean;
+}
+
 export interface HookStatus {
   installed: boolean;
   scriptFound: boolean;
@@ -331,6 +337,10 @@ export interface HookStatus {
    * update overwrote the script in place). The agent may be silently ignoring the
    * hook until the user re-confirms trust for it. */
   needsRetrust?: boolean;
+  /** Non-Atoll hooks registered for Claude events. Empty for codex/cursor. Dead
+   * competitor hooks (binary missing or app not running) can veto Atoll's
+   * permission decisions under Claude Code's most-restrictive-wins merge. */
+  competingHooks?: CompetingHook[];
 }
 
 export interface HookHealthSnapshot {
@@ -392,6 +402,7 @@ export function normalizeHookStatus(raw: unknown): HookStatus {
     return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
   }
   const nodeFoundRaw = record.nodeFound ?? record.node_found;
+  const competingHooksRaw = record.competingHooks ?? record.competing_hooks;
   return {
     installed: readBool(record, "installed", "installed"),
     scriptFound: readBool(record, "scriptFound", "script_found"),
@@ -400,6 +411,16 @@ export function normalizeHookStatus(raw: unknown): HookStatus {
     nodePath: readString(record, "nodePath", "node_path"),
     nodeFound: nodeFoundRaw === undefined ? true : Boolean(nodeFoundRaw),
     needsRetrust: readBool(record, "needsRetrust", "needs_retrust"),
+    competingHooks: Array.isArray(competingHooksRaw)
+      ? competingHooksRaw
+          .map((entry) => asRecord(entry))
+          .filter((entry): entry is Record<string, unknown> => entry !== null)
+          .map((entry) => ({
+            event: readString(entry, "event", "event"),
+            command: readString(entry, "command", "command"),
+            binaryExists: readBool(entry, "binaryExists", "binary_exists"),
+          }))
+      : [],
   };
 }
 
@@ -448,6 +469,19 @@ export async function installClaudeHooks(): Promise<HookStatus> {
 export async function uninstallClaudeHooks(): Promise<HookStatus> {
   if (isTauriRuntime()) {
     return normalizeHookStatus(await invoke<HookStatus>("uninstall_claude_hooks"));
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
+/** Remove non-Atoll hooks whose binaries are missing from `~/.claude/settings.json`.
+ * Dead competitor hooks can veto Atoll's permission decisions under Claude Code's
+ * most-restrictive-wins merge. No-op outside Tauri. */
+export async function removeCompetingClaudeHooks(): Promise<HookStatus> {
+  if (isTauriRuntime()) {
+    return normalizeHookStatus(
+      await invoke<HookStatus>("remove_competing_claude_hooks"),
+    );
   }
 
   return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };

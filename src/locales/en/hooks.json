@@ -67,6 +67,13 @@
     "nodeNotFound": "Node.js not found at the configured hook path. Install Node.js, then reinstall hooks.",
     "devBuildPath": "Hook points to a dev build path. Reinstall hooks from Atoll.app, then trust again in Codex."
   },
+  "competing": {
+    "title": "Dead competing hooks",
+    "deadWarning_one": "A dead hook from another island app is registered for the same Claude event. Its binary is missing, so it errors and can veto Atoll's approvals under Claude Code's most-restrictive-wins merge — your approvals in Atoll won't take effect.",
+    "deadWarning_other": "{{count}} dead hooks from other island apps are registered for the same Claude events. Their binaries are missing, so they error and can veto Atoll's approvals under Claude Code's most-restrictive-wins merge — your approvals in Atoll won't take effect.",
+    "alive": "Live competing hooks (app may be running) — not removed:",
+    "removeDead": "Remove dead hooks"
+  },
   "retrust": {
     "codex": "Codex may still be using an older cached copy of the Atoll hook script. Click Reinstall hooks in Atoll, or open /hooks in Codex and re-approve the Atoll hook, then restart Codex.",
     "claude": "Atoll updated the Claude hook script since it was last approved. Reopen Claude Code / Claude Desktop permissions and re-allow the Atoll hook, then restart Claude.",

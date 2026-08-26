@@ -771,6 +771,18 @@ fn route_claude_request(
         .unwrap_or("PreToolUse")
         .to_string();
 
+    crate::debug_agent::log(
+        "H-C",
+        "hook_bridge.rs:route_claude_request",
+        "claude hook received",
+        json!({
+            "event": hook_event_name,
+            "toolName": payload.get("tool_name"),
+            "sessionId": payload.get("session_id"),
+            "cwd": payload.get("cwd"),
+        }),
+    );
+
     match hook_event_name.as_str() {
         "PreToolUse" | "PermissionRequest" => submit_blocking_permission_request(
             app,

@@ -71,6 +71,7 @@ import {
   hookRetrustNote,
   hookStatusIssue,
   isHookReady,
+  deadCompetingHooks,
   mergeHookHealthPreferReady,
   type HeaderLogoDisplay,
   type HookAgentKey,
@@ -200,6 +201,7 @@ import {
   NotchMetrics,
   installClaudeHooks,
   uninstallClaudeHooks,
+  removeCompetingClaudeHooks,
   installCodexHooks,
   uninstallCodexHooks,
   installCursorHooks,
@@ -2470,6 +2472,30 @@ export function App() {
     }
   }
 
+  async function handleRemoveCompetingClaudeHooks() {
+    setMenuOpen(false);
+    setHookBusy(true);
+    try {
+      const status = await removeCompetingClaudeHooks();
+      const nextSnapshot = await getSnapshot().catch(() => null);
+      if (nextSnapshot) {
+        applySnapshot(nextSnapshot);
+      } else {
+        applySnapshot({
+          ...snapshotRef.current,
+          hookHealth: {
+            ...snapshotRef.current.hookHealth,
+            claude: status,
+          },
+        });
+      }
+    } catch {
+      // keep previous status
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
   async function handleUninstallCodexHooks() {
     setMenuOpen(false);
     setHookBusy(true);
@@ -2614,6 +2640,7 @@ export function App() {
           }),
       onInstall: handleInstallClaudeHooks,
       onUninstall: handleUninstallClaudeHooks,
+      onRemoveCompetingHooks: handleRemoveCompetingClaudeHooks,
     },
     {
       key: "codex",
@@ -5649,6 +5676,7 @@ interface HookMenuAgent {
   note?: string;
   onInstall: () => void;
   onUninstall: () => void;
+  onRemoveCompetingHooks?: () => void;
 }
 
 interface HooksViewProps {
@@ -5806,6 +5834,7 @@ function HooksView({
             const ready = isHookReady(agent.status);
             const needsRetrust = ready && Boolean(agent.status?.needsRetrust);
             const statusIssue = hookStatusIssue(agent.status);
+            const deadCompetitors = deadCompetingHooks(agent.status);
             return (
               <div key={agent.key} className="settings-card settings-hook-card">
                 <div className="settings-card-head">
@@ -5885,6 +5914,35 @@ function HooksView({
                   <span className="settings-card-desc settings-hook-warning">
                     {t("warning.scriptMissing")}
                   </span>
+                ) : null}
+                {deadCompetitors.length > 0 && agent.onRemoveCompetingHooks ? (
+                  <div className="settings-hook-competing">
+                    <span className="settings-card-desc settings-hook-warning">
+                      {t("competing.deadWarning", {
+                        count: deadCompetitors.length,
+                      })}
+                    </span>
+                    <ul className="settings-hook-competing-list">
+                      {deadCompetitors.map((hook) => (
+                        <li key={`${hook.event}:${hook.command}`} className="settings-hook-competing-item">
+                          <code>{hook.command}</code>
+                          <span className="settings-hook-competing-event">
+                            {hook.event}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <button
+                      type="button"
+                      className="settings-hook-button"
+                      onClick={agent.onRemoveCompetingHooks}
+                      disabled={hookBusy}
+                      data-no-drag
+                    >
+                      <Trash2 size={13} />
+                      {t("competing.removeDead")}
+                    </button>
+                  </div>
                 ) : null}
                 <div className="settings-hook-actions">
                   {installed ? (

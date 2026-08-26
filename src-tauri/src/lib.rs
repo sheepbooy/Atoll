@@ -894,6 +894,7 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
                 node_path: String::new(),
                 node_found: resolve_node_executable().is_ok(),
                 needs_retrust: false,
+                competing_hooks: Vec::new(),
             },
             codex: HookStatus {
                 installed: false,
@@ -906,6 +907,7 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
                 node_path: String::new(),
                 node_found: resolve_node_executable().is_ok(),
                 needs_retrust: false,
+                competing_hooks: Vec::new(),
             },
             cursor: HookStatus {
                 installed: false,
@@ -918,6 +920,7 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
                 node_path: String::new(),
                 node_found: resolve_node_executable().is_ok(),
                 needs_retrust: false,
+                competing_hooks: Vec::new(),
             },
         };
     }
@@ -980,7 +983,7 @@ fn claude_hook_status(app: &AppHandle) -> HookStatus {
     }
     let (script_path, script_found) =
         resolve_hook_script_readiness(app, "atoll-claude-hook.mjs", settings.as_ref());
-    build_hook_status(
+    let mut status = build_hook_status(
         installed,
         script_found,
         settings_path,
@@ -988,7 +991,12 @@ fn claude_hook_status(app: &AppHandle) -> HookStatus {
         settings.as_ref(),
         "atoll-claude-hook",
         "claude",
-    )
+    );
+    status.competing_hooks = settings
+        .as_ref()
+        .map(|cfg| detect_competing_claude_hooks(cfg))
+        .unwrap_or_default();
+    status
 }
 
 fn codex_hook_status(app: &AppHandle) -> HookStatus {
@@ -1176,6 +1184,7 @@ fn build_hook_status(
         node_path,
         node_found,
         needs_retrust,
+        competing_hooks: Vec::new(),
     }
 }
 
@@ -4240,6 +4249,20 @@ pub(crate) fn emit_subagent_snapshot(app: &AppHandle, state: &AppState) -> bool 
     true
 }
 
+/// A non-Atoll hook registered for the same Claude event as Atoll. When the
+/// owning app is uninstalled or stopped, its binary may still exist but error
+/// on invocation, poisoning Claude Code's "most restrictive wins" hook merge
+/// and vetoing Atoll's approval. `binary_exists` flags hooks whose command
+/// binary is missing on disk (definitely dead); a present binary may still be
+/// dead if its app isn't running, so this is a lower bound.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+struct CompetingHook {
+    event: String,
+    command: String,
+    binary_exists: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct HookStatus {
@@ -4256,6 +4279,12 @@ struct HookStatus {
     /// host may be silently ignoring the hook until the user re-trusts it.
     #[serde(default)]
     needs_retrust: bool,
+    /// Non-Atoll hooks registered for Claude events. Empty for codex/cursor.
+    /// Surfaced so the UI can warn about dead competitor hooks that veto
+    /// Atoll's permission decisions under Claude Code's most-restrictive-wins
+    /// merge. Only populated for the Claude agent.
+    #[serde(default)]
+    competing_hooks: Vec<CompetingHook>,
 }
 
 fn default_node_found() -> bool {
@@ -4280,6 +4309,7 @@ impl Default for HookStatus {
             node_path: String::new(),
             node_found: true,
             needs_retrust: false,
+            competing_hooks: Vec::new(),
         }
     }
 }
@@ -4299,6 +4329,7 @@ fn get_claude_hook_status(app: AppHandle) -> Result<HookStatus, String> {
             node_path: String::new(),
             node_found: resolve_node_executable().is_ok(),
             needs_retrust: false,
+            competing_hooks: Vec::new(),
         });
     }
     Ok(claude_hook_status(&app))
@@ -4479,6 +4510,7 @@ fn uninstall_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
             node_path: String::new(),
             node_found: resolve_node_executable().is_ok(),
             needs_retrust: false,
+            competing_hooks: Vec::new(),
         });
     }
 
@@ -4513,6 +4545,39 @@ fn uninstall_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
     Ok(claude_hook_status(&app))
 }
 
+/// Remove non-Atoll hooks from `~/.claude/settings.json` whose command binary no
+/// longer exists on disk, across the events where a dead competitor can veto
+/// Atoll's permission decision. Preserves Atoll's own hooks and any competitor
+/// whose binary is still present (the app may still be running). Returns the
+/// post-cleanup Claude hook status.
+#[tauri::command]
+fn remove_competing_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
+    let settings_path =
+        claude_settings_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
+    if !settings_path.exists() {
+        return Ok(claude_hook_status(&app));
+    }
+    let content = std::fs::read_to_string(&settings_path)
+        .map_err(|e| format!("Cannot read settings: {e}"))?;
+    let mut settings: Value =
+        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()));
+
+    let removed_any = remove_dead_competing_hooks_from_config(&mut settings);
+
+    if removed_any {
+        let formatted = serde_json::to_string_pretty(&settings)
+            .map_err(|e| format!("Cannot serialize settings: {e}"))?;
+        std::fs::write(&settings_path, formatted)
+            .map_err(|e| format!("Cannot write settings: {e}"))?;
+        let state = app.state::<AppState>();
+        let snapshot = build_snapshot(&app, &state);
+        let _ = app.emit("snapshot-changed", &snapshot);
+        remember_hook_health(&state, &snapshot.hook_health);
+    }
+
+    Ok(claude_hook_status(&app))
+}
+
 fn claude_settings_path() -> Option<std::path::PathBuf> {
     dirs::home_dir().map(|home| home.join(".claude").join("settings.json"))
 }
@@ -4540,6 +4605,7 @@ fn get_codex_hook_status(app: AppHandle) -> Result<HookStatus, String> {
             node_path: String::new(),
             node_found: resolve_node_executable().is_ok(),
             needs_retrust: false,
+            competing_hooks: Vec::new(),
         });
     }
     Ok(codex_hook_status(&app))
@@ -4963,6 +5029,7 @@ fn uninstall_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
             node_path: String::new(),
             node_found: resolve_node_executable().is_ok(),
             needs_retrust: false,
+            competing_hooks: Vec::new(),
         });
     }
 
@@ -5007,6 +5074,7 @@ fn get_cursor_hook_status(app: AppHandle) -> Result<HookStatus, String> {
             node_path: String::new(),
             node_found: resolve_node_executable().is_ok(),
             needs_retrust: false,
+            competing_hooks: Vec::new(),
         });
     }
     Ok(cursor_hook_status(&app))
@@ -5108,6 +5176,7 @@ fn uninstall_cursor_hooks(app: AppHandle) -> Result<HookStatus, String> {
             node_path: String::new(),
             node_found: resolve_node_executable().is_ok(),
             needs_retrust: false,
+            competing_hooks: Vec::new(),
         });
     }
 
@@ -5639,6 +5708,118 @@ fn matcher_group_has_atoll_claude(matcher: &Value) -> bool {
             })
         })
         .unwrap_or(false)
+}
+
+/// Events where a dead competitor hook can veto Atoll's permission decision
+/// under Claude Code's most-restrictive-wins merge. `PermissionRequest` is the
+/// the one that breaks plan approval; the others are observer-style events
+/// where a crashing competitor is less harmful but still noise.
+const COMPETING_CLAUDE_EVENTS: &[&str] = &[
+    "PermissionRequest",
+    "PreToolUse",
+    "Notification",
+    "PermissionDenied",
+];
+
+/// Inspect `~/.claude/settings.json` hooks for non-Atoll entries on events
+/// where a dead competitor can veto Atoll's decision. For each, report whether
+/// the command's binary exists on disk — missing means definitely dead.
+fn detect_competing_claude_hooks(config: &Value) -> Vec<CompetingHook> {
+    let Some(hooks) = config.get("hooks").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for event in COMPETING_CLAUDE_EVENTS {
+        let Some(matchers) = hooks.get(*event).and_then(Value::as_array) else {
+            continue;
+        };
+        for matcher in matchers {
+            let Some(hook_arr) = matcher.get("hooks").and_then(Value::as_array) else {
+                continue;
+            };
+            for hook in hook_arr {
+                let Some(cmd) = hook.get("command").and_then(Value::as_str) else {
+                    continue;
+                };
+                if cmd.contains("atoll-claude-hook") {
+                    continue;
+                }
+                found.push(CompetingHook {
+                    event: event.to_string(),
+                    command: cmd.to_string(),
+                    binary_exists: hook_command_binary_exists(cmd),
+                });
+            }
+        }
+    }
+    found
+}
+
+/// Extract the first token of a hook command (the executable path) and report
+/// whether it exists on disk. Handles single-quoted commands like
+/// `'/path with spaces/bin' --flag`. Node-script commands (`node "/x.mjs"`)
+/// resolve to the node binary; the script path is not checked here — a missing
+/// script surfaces via Atoll's own hook-health checks, not as a competitor.
+fn hook_command_binary_exists(command: &str) -> bool {
+    let trimmed = command.trim();
+    let first = if let Some(rest) = trimmed.strip_prefix('\'') {
+        rest.split('\'').next().unwrap_or("")
+    } else if let Some(rest) = trimmed.strip_prefix('"') {
+        rest.split('"').next().unwrap_or("")
+    } else {
+        trimmed.split_whitespace().next().unwrap_or("")
+    };
+    if first.is_empty() {
+        return false;
+    }
+    Path::new(first).exists()
+}
+
+/// Remove non-Atoll hooks whose binaries are missing from `~/.claude/settings.json`,
+/// across events where a dead competitor can veto Atoll's permission decision.
+/// Mutates `settings` in place. Returns true if any hook was removed.
+fn remove_dead_competing_hooks_from_config(settings: &mut Value) -> bool {
+    let mut removed_any = false;
+    let Some(hooks) = settings.get_mut("hooks").and_then(Value::as_object_mut) else {
+        return false;
+    };
+    for event in COMPETING_CLAUDE_EVENTS {
+        let Some(matchers) = hooks.get_mut(*event).and_then(Value::as_array_mut) else {
+            continue;
+        };
+        for matcher in matchers.iter_mut() {
+            let Some(hook_arr) = matcher.get_mut("hooks").and_then(Value::as_array_mut) else {
+                continue;
+            };
+            let before = hook_arr.len();
+            hook_arr.retain(|hook| {
+                let Some(cmd) = hook.get("command").and_then(Value::as_str) else {
+                    return true;
+                };
+                if cmd.contains("atoll-claude-hook") {
+                    return true;
+                }
+                hook_command_binary_exists(cmd)
+            });
+            removed_any |= hook_arr.len() != before;
+        }
+        matchers.retain(|matcher| {
+            matcher
+                .get("hooks")
+                .and_then(Value::as_array)
+                .map(|arr| !arr.is_empty())
+                .unwrap_or(false)
+        });
+        if matchers.is_empty() {
+            hooks.remove(*event);
+        }
+    }
+    if hooks.is_empty() {
+        if let Some(obj) = settings.as_object_mut() {
+            obj.remove("hooks");
+        }
+    }
+    removed_any
 }
 
 fn upsert_codex_hook_events(existing_hooks: &mut Value, atoll_hooks: &Value) {
@@ -6508,6 +6689,7 @@ pub fn run() {
             get_claude_hook_status,
             install_claude_hooks,
             uninstall_claude_hooks,
+            remove_competing_claude_hooks,
             get_codex_hook_status,
             install_codex_hooks,
             uninstall_codex_hooks,
@@ -11413,8 +11595,9 @@ mod codex_hooks_tests {
 #[cfg(test)]
 mod claude_hooks_tests {
     use super::{
-        format_hook_command, has_atoll_claude_hooks, remove_atoll_claude_hooks,
-        upsert_claude_hook_events,
+        detect_competing_claude_hooks, format_hook_command, has_atoll_claude_hooks,
+        hook_command_binary_exists, remove_atoll_claude_hooks,
+        remove_dead_competing_hooks_from_config, upsert_claude_hook_events,
     };
     use serde_json::json;
 
@@ -11507,6 +11690,116 @@ mod claude_hooks_tests {
             .get("PermissionRequest")
             .and_then(|value| value.as_array());
         assert!(permission.map(|arr| arr.is_empty()).unwrap_or(true));
+    }
+
+    #[test]
+    fn detect_finds_non_atoll_hooks_and_flags_missing_binaries() {
+        // A config with: Atoll (live), a dead competitor (binary missing), and a
+        // real shell command (binary present on Unix test runners).
+        let config = json!({
+            "hooks": {
+                "PermissionRequest": [
+                    { "matcher": "*", "hooks": [
+                        { "type": "command", "command": "/nonexistent/ping-island-bridge --source claude" },
+                        { "type": "command", "command": format_hook_command(None, "/opt/homebrew/bin/node", "/tmp/atoll-claude-hook.mjs") }
+                    ]}
+                ],
+                "Notification": [
+                    { "matcher": "*", "hooks": [
+                        { "type": "command", "command": "/bin/echo hello" }
+                    ]}
+                ]
+            }
+        });
+
+        let competing = detect_competing_claude_hooks(&config);
+        assert_eq!(competing.len(), 2);
+        let ping = competing.iter().find(|c| c.command.contains("ping-island-bridge")).unwrap();
+        assert!(!ping.binary_exists, "ping-island binary should be flagged missing");
+        assert_eq!(ping.event, "PermissionRequest");
+        let echo_hook = competing.iter().find(|c| c.command.contains("/bin/echo")).unwrap();
+        assert!(echo_hook.binary_exists, "/bin/echo binary should be present");
+        assert_eq!(echo_hook.event, "Notification");
+    }
+
+    #[test]
+    fn detect_ignores_atoll_hooks_and_empty_config() {
+        let config = json!({
+            "hooks": {
+                "PermissionRequest": [
+                    { "matcher": "*", "hooks": [
+                        { "type": "command", "command": format_hook_command(None, "/opt/homebrew/bin/node", "/tmp/atoll-claude-hook.mjs") }
+                    ]}
+                ]
+            }
+        });
+        assert!(detect_competing_claude_hooks(&config).is_empty());
+
+        assert!(detect_competing_claude_hooks(&json!({})).is_empty());
+        assert!(detect_competing_claude_hooks(&json!({ "hooks": {} })).is_empty());
+    }
+
+    #[test]
+    fn remove_strips_only_dead_competitors_preserves_atoll_and_live() {
+        // The echo binary exists on the test runner, so it survives cleanup.
+        // The nonexistent competitor binary does not, so it is removed. Atoll's hook is kept.
+        let mut settings = json!({
+            "hooks": {
+                "PermissionRequest": [
+                    { "matcher": "*", "hooks": [
+                        { "type": "command", "command": "/nonexistent/ping-island-bridge --source claude" },
+                        { "type": "command", "command": "/bin/echo hello" },
+                        { "type": "command", "command": format_hook_command(None, "/opt/homebrew/bin/node", "/tmp/atoll-claude-hook.mjs") }
+                    ]}
+                ]
+            }
+        });
+
+        let removed = remove_dead_competing_hooks_from_config(&mut settings);
+        assert!(removed);
+
+        let hooks = settings.get("hooks").unwrap();
+        let pr = hooks.get("PermissionRequest").and_then(|v| v.as_array()).unwrap();
+        let commands: Vec<&str> = pr[0]
+            .get("hooks")
+            .and_then(|v| v.as_array())
+            .unwrap()
+            .iter()
+            .map(|h| h.get("command").and_then(|c| c.as_str()).unwrap_or(""))
+            .collect();
+        assert!(commands.iter().any(|c| c.contains("atoll-claude-hook")), "Atoll hook must survive");
+        assert!(commands.iter().any(|c| c.contains("/bin/echo")), "live competitor must survive");
+        assert!(!commands.iter().any(|c| c.contains("ping-island-bridge")), "dead competitor must be removed");
+    }
+
+    #[test]
+    fn remove_drops_empty_event_after_last_dead_hook_removed() {
+        // An event with ONLY a dead competitor should be removed entirely.
+        let mut settings = json!({
+            "hooks": {
+                "PermissionDenied": [
+                    { "matcher": "*", "hooks": [
+                        { "type": "command", "command": "/nonexistent/ping-island-bridge --source claude" }
+                    ]}
+                ]
+            }
+        });
+
+        let removed = remove_dead_competing_hooks_from_config(&mut settings);
+        assert!(removed);
+        assert!(settings.get("hooks").map(|h| h.as_object().map(|o| o.is_empty()).unwrap_or(true)).unwrap_or(true),
+            "hooks object should be empty or absent after removing the only dead hook");
+    }
+
+    #[test]
+    fn hook_command_binary_exists_handles_quotes_and_empty() {
+        assert!(!hook_command_binary_exists(""));
+        assert!(!hook_command_binary_exists("   "));
+        // /bin/sh exists on all Unix test runners.
+        assert!(hook_command_binary_exists("/bin/sh --flag"));
+        assert!(hook_command_binary_exists("'/bin/sh' --flag"));
+        assert!(hook_command_binary_exists("\"/bin/sh\" --flag"));
+        assert!(!hook_command_binary_exists("/nonexistent/binary --flag"));
     }
 }
 
