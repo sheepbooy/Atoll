@@ -40,6 +40,9 @@ windows = { version = "0.58", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
   "Win32_Security",
+  "Win32_System_DataExchange",
+  "Win32_System_Memory",
+  "Win32_System_Ole",
   "Win32_System_ProcessStatus",
   "Win32_System_Threading",
   "Win32_UI_WindowsAndMessaging",
@@ -47,6 +50,6 @@ windows = { version = "0.58", features = [
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
-objc2-app-kit = { version = "0.3.2", features = ["NSColor", "NSScreen", "NSWindow"] }
-objc2-foundation = { version = "0.3.2", features = ["NSString", "NSError", "NSData"] }
+objc2-app-kit = { version = "0.3.2", features = ["NSColor", "NSScreen", "NSWindow", "NSPasteboard"] }
+objc2-foundation = { version = "0.3.2", features = ["NSString", "NSError", "NSData", "NSArray", "NSDictionary", "NSSet", "NSURL"] }
 objc2-service-management = { version = "0.3.2", features = ["SMAppService"] }

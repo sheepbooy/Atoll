@@ -134,5 +134,13 @@
     "media": "媒体",
     "both": "全部",
     "none": "无"
+  },
+  "clipboard": {
+    "title": "剪贴板历史",
+    "searchPlaceholder": "搜索…",
+    "empty": "复制任何文本即可记录到这里",
+    "disabled": "在设置中开启剪贴板历史",
+    "clear": "清空",
+    "copied": "已复制"
   }
 }

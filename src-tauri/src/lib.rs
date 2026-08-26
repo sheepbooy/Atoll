@@ -14,6 +14,7 @@ use tauri::utils::config::Color;
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalSize, State};
 
 mod capture;
+mod clipboard_history;
 mod debug_agent;
 mod hook_bridge;
 mod hook_trust;
@@ -472,6 +473,10 @@ pub(crate) struct AppState {
     transcript_cache: Mutex<TranscriptCache>,
     /// Whether the Now Playing media card is shown in the idle island.
     media_card_enabled: Mutex<bool>,
+    /// Clipboard history entries (pruned, newest first).
+    clipboard_history: Mutex<Vec<clipboard_history::ClipboardEntry>>,
+    /// Whether clipboard history monitoring is enabled (privacy toggle).
+    clipboard_history_enabled: Mutex<bool>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2723,6 +2728,43 @@ fn persist_retention_minutes(minutes: u64) {
     persist_settings(Some(minutes.clamp(1, 60)), None);
 }
 
+fn load_clipboard_history_enabled() -> bool {
+    let Some(path) = atoll_settings_path() else {
+        return false;
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+        return false;
+    };
+    value
+        .get("clipboardHistoryEnabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn persist_clipboard_history_enabled(enabled: bool) {
+    let Some(path) = atoll_settings_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut config: Value = path
+        .exists()
+        .then(|| std::fs::read_to_string(&path).ok())
+        .flatten()
+        .and_then(|c| serde_json::from_str(&c).ok())
+        .unwrap_or_else(|| Value::Object(Default::default()));
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert("clipboardHistoryEnabled".into(), Value::from(enabled));
+    }
+    if let Ok(formatted) = serde_json::to_string_pretty(&config) {
+        let _ = std::fs::write(path, formatted);
+    }
+}
+
 #[tauri::command]
 fn get_now_playing() -> Option<NowPlayingTrack> {
     #[cfg(target_os = "macos")]
@@ -2796,6 +2838,50 @@ fn set_subagent_retention(state: State<'_, AppState>, minutes: u64) -> u64 {
     *retention = secs;
     persist_settings(None, Some(clamped_minutes));
     secs
+}
+
+#[tauri::command]
+fn get_clipboard_history(state: State<'_, AppState>) -> Vec<clipboard_history::ClipboardEntry> {
+    let entries = clipboard_history::prune_expired(lock_state(&state.clipboard_history).clone());
+    *lock_state(&state.clipboard_history) = entries.clone();
+    entries
+}
+
+#[tauri::command]
+fn copy_clipboard_entry(state: State<'_, AppState>, id: String) -> bool {
+    let entry = lock_state(&state.clipboard_history)
+        .iter()
+        .find(|e| e.id == id)
+        .cloned();
+    let Some(entry) = entry else {
+        return false;
+    };
+    clipboard_history::write_clipboard(&entry.content);
+    true
+}
+
+#[tauri::command]
+fn clear_clipboard_history(state: State<'_, AppState>) {
+    let empty = Vec::new();
+    clipboard_history::save_history(&empty);
+    *lock_state(&state.clipboard_history) = empty;
+}
+
+#[tauri::command]
+fn get_clipboard_history_enabled(state: State<'_, AppState>) -> bool {
+    *lock_state(&state.clipboard_history_enabled)
+}
+
+#[tauri::command]
+fn set_clipboard_history_enabled(state: State<'_, AppState>, enabled: bool) -> bool {
+    *lock_state(&state.clipboard_history_enabled) = enabled;
+    persist_clipboard_history_enabled(enabled);
+    if enabled {
+        // Reload persisted history now that monitoring is active.
+        let entries = clipboard_history::load_history();
+        *lock_state(&state.clipboard_history) = entries;
+    }
+    enabled
 }
 
 fn archive_subagent_in_state(state: &AppState, agent_id: &str) -> Option<String> {
@@ -6401,6 +6487,8 @@ pub fn run() {
             token_history_dirty: AtomicBool::new(false),
             transcript_cache: Mutex::new(TranscriptCache::default()),
             media_card_enabled: Mutex::new(load_media_card_enabled()),
+            clipboard_history: Mutex::new(clipboard_history::load_history()),
+            clipboard_history_enabled: Mutex::new(load_clipboard_history_enabled()),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -6434,6 +6522,11 @@ pub fn run() {
             send_media_command,
             get_media_card_enabled,
             set_media_card_enabled,
+            get_clipboard_history,
+            copy_clipboard_entry,
+            clear_clipboard_history,
+            get_clipboard_history_enabled,
+            set_clipboard_history_enabled,
             archive_subagent,
             archive_completed_subagents,
             get_token_history,
@@ -6479,6 +6572,7 @@ pub fn run() {
             start_token_refresh_timer(app.handle().clone());
             start_token_history_writer(app.handle().clone());
             start_media_monitor(app.handle().clone());
+            start_clipboard_monitor(app.handle().clone());
             start_initial_maintenance(app.handle().clone());
             std::thread::spawn(|| {
                 pricing::maybe_refresh_pricing_catalog_on_startup();
@@ -6617,6 +6711,39 @@ fn start_media_monitor(app: AppHandle) {
     {
         let _ = app;
     }
+}
+
+fn start_clipboard_monitor(app: AppHandle) {
+    thread::spawn(move || {
+        // Let the app settle before the first poll.
+        thread::sleep(Duration::from_secs(2));
+        let mut last_text: Option<String> = None;
+        loop {
+            thread::sleep(Duration::from_millis(1000));
+            let state = app.state::<AppState>();
+            let enabled = *lock_state(&state.clipboard_history_enabled);
+            if !enabled {
+                last_text = None;
+                continue;
+            }
+            // read_clipboard returns None when no text is on the pasteboard.
+            let current = clipboard_history::read_clipboard();
+            let changed = match (&last_text, &current) {
+                (None, None) => false,
+                (None, Some(_)) | (Some(_), None) => true,
+                (Some(a), Some(b)) => a != b,
+            };
+            if changed {
+                last_text = current.clone();
+                if let Some(text) = current {
+                    if let Some(entries) = clipboard_history::add_entry(text) {
+                        *lock_state(&state.clipboard_history) = entries.clone();
+                        let _ = app.emit("clipboard-history-changed", &entries);
+                    }
+                }
+            }
+        }
+    });
 }
 
 fn start_token_history_writer(app: AppHandle) {
@@ -9168,6 +9295,8 @@ mod core_tests {
             token_history_dirty: AtomicBool::new(false),
             transcript_cache: Mutex::new(TranscriptCache::default()),
             media_card_enabled: Mutex::new(true),
+            clipboard_history: Mutex::new(Vec::new()),
+            clipboard_history_enabled: Mutex::new(false),
         }
     }
 
@@ -9902,6 +10031,8 @@ mod cursor_subagent_tests {
             token_history_dirty: AtomicBool::new(false),
             transcript_cache: Mutex::new(TranscriptCache::default()),
             media_card_enabled: Mutex::new(true),
+            clipboard_history: Mutex::new(Vec::new()),
+            clipboard_history_enabled: Mutex::new(false),
         }
     }
 

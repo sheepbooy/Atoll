@@ -639,6 +639,59 @@ export async function setMediaCardEnabled(enabled: boolean): Promise<boolean> {
   return invoke<boolean>("set_media_card_enabled", { enabled });
 }
 
+export interface ClipboardEntry {
+  id: string;
+  content: string;
+  preview: string;
+  copiedAt: number;
+}
+
+export async function getClipboardHistory(): Promise<ClipboardEntry[]> {
+  if (!isTauriRuntime()) {
+    return [];
+  }
+  return invoke<ClipboardEntry[]>("get_clipboard_history");
+}
+
+export async function copyClipboardEntry(id: string): Promise<boolean> {
+  if (!isTauriRuntime()) {
+    return false;
+  }
+  return invoke<boolean>("copy_clipboard_entry", { id });
+}
+
+export async function clearClipboardHistory(): Promise<void> {
+  if (!isTauriRuntime()) {
+    return;
+  }
+  return invoke<void>("clear_clipboard_history");
+}
+
+export async function getClipboardHistoryEnabled(): Promise<boolean> {
+  if (!isTauriRuntime()) {
+    return false;
+  }
+  return invoke<boolean>("get_clipboard_history_enabled");
+}
+
+export async function setClipboardHistoryEnabled(enabled: boolean): Promise<boolean> {
+  if (!isTauriRuntime()) {
+    return enabled;
+  }
+  return invoke<boolean>("set_clipboard_history_enabled", { enabled });
+}
+
+export async function onClipboardHistoryChanged(
+  callback: (entries: ClipboardEntry[]) => void,
+) {
+  if (!isTauriRuntime()) {
+    return () => undefined;
+  }
+  return listen<ClipboardEntry[]>("clipboard-history-changed", (event) =>
+    callback(event.payload),
+  );
+}
+
 export async function onNowPlayingChanged(
   callback: (track: NowPlayingTrack | null) => void,
 ) {

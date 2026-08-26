@@ -134,5 +134,13 @@
     "media": "Media",
     "both": "Both",
     "none": "None"
+  },
+  "clipboard": {
+    "title": "Clipboard history",
+    "searchPlaceholder": "Search…",
+    "empty": "Copy any text and it will appear here",
+    "disabled": "Enable clipboard history in settings",
+    "clear": "Clear all",
+    "copied": "Copied"
   }
 }

@@ -38,6 +38,7 @@ import {
   ChevronUp,
   CircleCheck,
   CircleDollarSign,
+  ClipboardList,
   Download,
   Ellipsis,
   ExternalLink,
@@ -101,6 +102,7 @@ import {
 } from "./islandPresentation";
 import { AgentMascot, AGENT_ACCENT } from "./AgentMascot";
 import { NowPlayingCard } from "./NowPlayingCard";
+import { ClipboardHistoryView } from "./ClipboardHistoryView";
 import type { ClawdMood } from "./ClawdMascot";
 import { getSessionColor, getSubagentColor, getSubagentMood } from "./subagentIdentity";
 import { AtollLogo, type AtollActivity } from "./AtollLogo";
@@ -172,6 +174,13 @@ import {
   onNowPlayingChanged,
   sendMediaCommand,
   setMediaCardEnabled,
+  ClipboardEntry,
+  getClipboardHistory,
+  getClipboardHistoryEnabled,
+  onClipboardHistoryChanged,
+  copyClipboardEntry,
+  clearClipboardHistory,
+  setClipboardHistoryEnabled,
   archiveAllResolved,
   archiveSession,
   archiveSubagent,
@@ -213,7 +222,8 @@ type PanelView =
   | { kind: "session"; sessionId: string }
   | { kind: "subagent"; sessionId: string; agentId: string }
   | { kind: "subagentList"; sessionId: string }
-  | { kind: "settings"; page: "main" | "hooks" | "tokens" | "usage" };
+  | { kind: "settings"; page: "main" | "hooks" | "tokens" | "usage" }
+  | { kind: "clipboard" };
 type FoldedIslandSize = "small" | "regular";
 
 const COMPACT_ICON_SETTING_KEY = "atoll.maxCompactIcons";
@@ -753,6 +763,8 @@ export function App() {
   const [launchAtLoginBusy, setLaunchAtLoginBusy] = useState(false);
   const [nowPlayingTrack, setNowPlayingTrack] = useState<NowPlayingTrack | null>(null);
   const [mediaCardEnabled, setMediaCardEnabledState] = useState(true);
+  const [clipboardHistory, setClipboardHistory] = useState<ClipboardEntry[]>([]);
+  const [clipboardEnabled, setClipboardEnabled] = useState(false);
   const [justResolved, setJustResolved] = useState(false);
   const [hookHealthHydrated, setHookHealthHydrated] = useState(false);
   const [configuredHookAgents, setConfiguredHookAgents] = useState(() =>
@@ -1134,6 +1146,17 @@ export function App() {
     getMediaCardEnabled()
       .then(setMediaCardEnabledState)
       .catch(() => undefined);
+    getClipboardHistoryEnabled()
+      .then(setClipboardEnabled)
+      .catch(() => undefined);
+    getClipboardHistory()
+      .then(setClipboardHistory)
+      .catch(() => undefined);
+    const unsubscribeClipboard = manageAsyncUnlisten(
+      onClipboardHistoryChanged((entries) => {
+        setClipboardHistory(entries);
+      }),
+    );
     const unsubscribeMedia = manageAsyncUnlisten(
       onNowPlayingChanged((track) => {
         setNowPlayingTrack(track);
@@ -1242,7 +1265,9 @@ export function App() {
             snapshotRef.current.pendingCount === 0 &&
             snapshotRef.current.sessions.length === 0;
           const planExpanded = snapshotHasPlanPending(snapshotRef.current);
-          const settingsExpanded = panelViewRef.current.kind === "settings";
+          const settingsExpanded =
+            panelViewRef.current.kind === "settings" ||
+            panelViewRef.current.kind === "clipboard";
           await setIslandPresentation(
             "expanded",
             collapsedWindowWidthRef.current,
@@ -1285,6 +1310,7 @@ export function App() {
       unsubscribeCaptureHooks();
       unsubscribeScreenshot();
       unsubscribeMedia();
+      unsubscribeClipboard();
       clearTransitionWork();
       clearIdleTimer();
     };
@@ -1950,7 +1976,9 @@ export function App() {
       snapshotRef.current.pendingCount === 0 &&
       snapshotRef.current.sessions.length === 0;
     const planExpanded = snapshotHasPlanPending(snapshotRef.current);
-    const settingsExpanded = panelViewRef.current.kind === "settings";
+    const settingsExpanded =
+      panelViewRef.current.kind === "settings" ||
+      panelViewRef.current.kind === "clipboard";
     lastNativePresentationKeyRef.current = expandedPresentationKey(
       idleExpanded,
       planExpanded && !settingsExpanded,
@@ -2559,6 +2587,16 @@ export function App() {
     setMediaCardEnabled(enabled).catch(() => undefined);
   }, []);
 
+  const handleChangeClipboardEnabled = useCallback((enabled: boolean) => {
+    setClipboardEnabled(enabled);
+    setClipboardHistoryEnabled(enabled).catch(() => undefined);
+    if (enabled) {
+      getClipboardHistory()
+        .then(setClipboardHistory)
+        .catch(() => undefined);
+    }
+  }, []);
+
   const hookMenuAgents: HookMenuAgent[] = [
     {
       key: "claude",
@@ -2802,6 +2840,20 @@ export function App() {
     setPanelView({ kind: "settings", page: "usage" });
   }
 
+  function openClipboardPage() {
+    setMenuOpen(false);
+    setNavDirection("forward");
+    setPanelAnimKey((key) => key + 1);
+    setPanelView({ kind: "clipboard" });
+    getClipboardHistory()
+      .then(setClipboardHistory)
+      .catch(() => undefined);
+  }
+
+  function handleOpenClipboard() {
+    openClipboardPage();
+  }
+
   function handleOpenUsageFromSettings() {
     openUsagePage("settings-main");
   }
@@ -2923,7 +2975,9 @@ export function App() {
     panelView.kind === "home" &&
     sessions.length === 0 &&
     snapshot.pendingCount === 0;
-  const isSettingsExpanded = isExpandedChrome && panelView.kind === "settings";
+  const isSettingsExpanded =
+    isExpandedChrome &&
+    (panelView.kind === "settings" || panelView.kind === "clipboard");
   const nativeExpandedPlan = isPlanExpanded && !isSettingsExpanded;
   const nativeExpandedSettings = isSettingsExpanded;
   const isSubview = isExpandedChrome && panelView.kind !== "home";
@@ -3096,6 +3150,23 @@ export function App() {
       );
     }
 
+    if (panelView.kind === "clipboard") {
+      return (
+        <ClipboardHistoryView
+          entries={clipboardHistory}
+          enabled={clipboardEnabled}
+          onCopy={(id) => {
+            copyClipboardEntry(id).catch(() => undefined);
+          }}
+          onClear={() => {
+            clearClipboardHistory()
+              .then(() => setClipboardHistory([]))
+              .catch(() => undefined);
+          }}
+        />
+      );
+    }
+
     if (panelView.kind === "settings") {
       if (panelView.page === "hooks") {
         return (
@@ -3178,6 +3249,8 @@ export function App() {
           onChangeLanguage={handleChangeLanguage}
           mediaCardEnabled={mediaCardEnabled}
           onChangeMediaCardEnabled={handleChangeMediaCardEnabled}
+          clipboardHistoryEnabled={clipboardEnabled}
+          onChangeClipboardHistoryEnabled={handleChangeClipboardEnabled}
           compactIndicator={compactIndicator}
           onChangeCompactIndicator={setCompactIndicatorState}
         />
@@ -3384,6 +3457,8 @@ export function App() {
                   );
                 }}
               />
+            ) : panelView.kind === "clipboard" ? (
+              <ClipboardSubviewNav onBack={navigateBack} />
             ) : panelView.kind === "settings" && panelView.page === "hooks" ? (
               <HooksSubviewNav
                 onBack={navigateBackFromHooks}
@@ -3496,6 +3571,15 @@ export function App() {
                 onClick={handleOpenTokensFromCounter}
               />
             ) : null}
+            <button
+              className="icon-button"
+              type="button"
+              onClick={handleOpenClipboard}
+              aria-label={t("clipboard.title")}
+              tabIndex={isExpandedChrome ? 0 : -1}
+            >
+              <ClipboardList size={16} />
+            </button>
             <button
               className="icon-button"
               type="button"
@@ -4094,6 +4178,8 @@ interface SettingsViewProps {
   onChangeLanguage: (language: AppLanguage) => void;
   mediaCardEnabled: boolean;
   onChangeMediaCardEnabled: (enabled: boolean) => void;
+  clipboardHistoryEnabled: boolean;
+  onChangeClipboardHistoryEnabled: (enabled: boolean) => void;
   compactIndicator: CompactIndicatorMode;
   onChangeCompactIndicator: (mode: CompactIndicatorMode) => void;
 }
@@ -4252,6 +4338,8 @@ function SettingsView({
   onChangeLanguage,
   mediaCardEnabled,
   onChangeMediaCardEnabled,
+  clipboardHistoryEnabled,
+  onChangeClipboardHistoryEnabled,
   compactIndicator,
   onChangeCompactIndicator,
 }: SettingsViewProps) {
@@ -4351,6 +4439,12 @@ function SettingsView({
               onChange={onChangeMediaCardEnabled}
             />
           ) : null}
+          <SettingsToggle
+            label={t("display.clipboardHistoryLabel")}
+            desc={t("display.clipboardHistoryDesc")}
+            checked={clipboardHistoryEnabled}
+            onChange={onChangeClipboardHistoryEnabled}
+          />
           {IS_MACOS ? (
             <div className="settings-card">
               <div className="settings-card-head">
@@ -5589,6 +5683,23 @@ function TokensSubviewNav({
       <span className="settings-header-title">
         <Activity size={14} />
         <span>{t("nav.tokenActivity")}</span>
+      </span>
+    </div>
+  );
+}
+
+function ClipboardSubviewNav({ onBack }: { onBack: () => void }) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="settings-subview-nav" data-no-drag>
+      <button type="button" className="back-button" onClick={onBack}>
+        <ArrowLeft size={13} />
+        <span>{t("nav.back")}</span>
+      </button>
+      <span className="settings-header-title">
+        <ClipboardList size={14} />
+        <span>{t("clipboard.title")}</span>
       </span>
     </div>
   );
