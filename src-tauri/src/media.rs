@@ -86,6 +86,7 @@ pub fn fetch_now_playing() -> Option<NowPlayingTrack> {
         .arg(&script)
         .arg(&framework)
         .arg("get")
+        .arg("--now")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()

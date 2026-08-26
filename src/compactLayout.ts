@@ -22,6 +22,9 @@ export const COMPACT_HEADER_GAP = 8;
 /** Fixed extra width budget on non-notched displays so `space-between` always
  *  has room to distribute as even spacing between logo and metrics. */
 export const COMPACT_DISTRIBUTE_BUDGET = 40;
+/** Width reserved for the scrolling-lyrics middle column on non-notched
+ *  displays. Must match `.lyrics-marquee { width: 140px }` in styles.css. */
+export const COMPACT_LYRICS_COLUMN = 140;
 export const COMPACT_PENDING_BADGE_SLOT = 28;
 /** Space between right session icons and the token counter in header-metrics. */
 export const COMPACT_METRICS_GAP = 10;
@@ -269,6 +272,7 @@ export function computeCollapsedWindowWidth(
   pendingCount: number,
   hasMediaArtwork = false,
   showMediaIndicator = false,
+  showLyrics = false,
 ): number {
   const layout = computeCompactHeaderLayout(
     notchMetrics,
@@ -320,9 +324,11 @@ export function computeCollapsedWindowWidth(
   }
 
   const contentWidth = leftWidth + rightWidth + outerGaps;
+  // Lyrics occupy a dedicated middle column on non-notched displays.
+  const lyricsWidth = showLyrics && !notchMetrics.hasNotch ? COMPACT_LYRICS_COLUMN : 0;
   // Ensure space-between always has room to distribute as even spacing between
   // the logo column and the metrics column on non-notched displays.
-  const minWidth = contentWidth + COMPACT_DISTRIBUTE_BUDGET;
+  const minWidth = contentWidth + lyricsWidth + COMPACT_DISTRIBUTE_BUDGET;
 
   return Math.min(
     COMPACT_MAX_WINDOW_WIDTH,

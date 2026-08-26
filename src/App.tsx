@@ -104,6 +104,7 @@ import {
 import { AgentMascot, AGENT_ACCENT } from "./AgentMascot";
 import { NowPlayingCard } from "./NowPlayingCard";
 import { ClipboardHistoryView } from "./ClipboardHistoryView";
+import { LyricsMarquee } from "./LyricsMarquee";
 import type { ClawdMood } from "./ClawdMascot";
 import { getSessionColor, getSubagentColor, getSubagentMood } from "./subagentIdentity";
 import { AtollLogo, type AtollActivity } from "./AtollLogo";
@@ -215,6 +216,12 @@ import {
   isAutostartEnabled,
   enableAutostart,
   disableAutostart,
+  getLyricsEnabled,
+  setLyricsEnabled,
+  onLyricsChanged,
+  onLyricsPosition,
+  getCurrentLyrics,
+  type LyricPayload,
 } from "./tauri";
 
 type Decision = "approved" | "denied";
@@ -643,11 +650,15 @@ function resolveCollapsedMode(
   sessionCount: number,
   pendingCount: number,
   phase: PresentationPhase,
+  hasLyrics: boolean,
 ): "micro" | "compact" | "dormant" {
   if (phase === "micro") return "micro";
   if (shouldRestInMicro(usesMicro)) return "compact";
   if (supportsMicroIsland) return "compact";
-  if (sessionCount === 0 && pendingCount === 0) return "dormant";
+  if (sessionCount === 0 && pendingCount === 0) {
+    // Stay compact when lyrics are showing so the header has room.
+    return hasLyrics ? "compact" : "dormant";
+  }
   return "compact";
 }
 
@@ -765,6 +776,9 @@ export function App() {
   const [launchAtLoginBusy, setLaunchAtLoginBusy] = useState(false);
   const [nowPlayingTrack, setNowPlayingTrack] = useState<NowPlayingTrack | null>(null);
   const [mediaCardEnabled, setMediaCardEnabledState] = useState(true);
+  const [lyricsData, setLyricsData] = useState<LyricPayload | null>(null);
+  const [lyricsPosition, setLyricsPosition] = useState<{ position: number; playing: boolean } | null>(null);
+  const [lyricsEnabled, setLyricsEnabledState] = useState(false);
   const [clipboardHistory, setClipboardHistory] = useState<ClipboardEntry[]>([]);
   const [clipboardEnabled, setClipboardEnabled] = useState(false);
   const [justResolved, setJustResolved] = useState(false);
@@ -902,6 +916,7 @@ export function App() {
         snapshot.pendingCount,
         nowPlayingTrack?.artworkBase64 != null,
         compactIndicator === "media" || compactIndicator === "both",
+        lyricsEnabled && lyricsData != null && lyricsData.lines.length > 0,
       ),
     [
       notchMetrics,
@@ -911,6 +926,8 @@ export function App() {
       snapshot.pendingCount,
       nowPlayingTrack?.artworkBase64,
       compactIndicator,
+      lyricsEnabled,
+      lyricsData,
     ],
   );
   const stableWidthRef = useRef(computedCollapsedWidth);
@@ -939,6 +956,9 @@ export function App() {
     sessions.length,
     snapshot.pendingCount,
     phase,
+    // When lyrics are active, stay in compact mode (not dormant) so the
+    // header has room for the lyrics column. Dormant mode is too narrow.
+    lyricsEnabled && lyricsData != null && lyricsData.lines.length > 0 && !notchMetrics.hasNotch,
   );
   const collapsedMode: "micro" | "compact" | "dormant" =
     (suppressPostCollapseSyncRef.current ||
@@ -1148,6 +1168,12 @@ export function App() {
     getMediaCardEnabled()
       .then(setMediaCardEnabledState)
       .catch(() => undefined);
+    getLyricsEnabled()
+      .then(setLyricsEnabledState)
+      .catch(() => undefined);
+    getCurrentLyrics()
+      .then(setLyricsData)
+      .catch(() => undefined);
     getClipboardHistoryEnabled()
       .then(setClipboardEnabled)
       .catch(() => undefined);
@@ -1162,6 +1188,16 @@ export function App() {
     const unsubscribeMedia = manageAsyncUnlisten(
       onNowPlayingChanged((track) => {
         setNowPlayingTrack(track);
+      }),
+    );
+    const unsubscribeLyrics = manageAsyncUnlisten(
+      onLyricsChanged((payload) => {
+        setLyricsData(payload);
+      }),
+    );
+    const unsubscribeLyricsPos = manageAsyncUnlisten(
+      onLyricsPosition(({ position, playing }) => {
+        setLyricsPosition({ position, playing });
       }),
     );
     const unsubscribe = manageAsyncUnlisten(
@@ -1313,6 +1349,8 @@ export function App() {
       unsubscribeScreenshot();
       unsubscribeMedia();
       unsubscribeClipboard();
+      unsubscribeLyrics();
+      unsubscribeLyricsPos();
       clearTransitionWork();
       clearIdleTimer();
     };
@@ -2613,6 +2651,14 @@ export function App() {
     setMediaCardEnabled(enabled).catch(() => undefined);
   }, []);
 
+  const handleChangeLyricsEnabled = useCallback((enabled: boolean) => {
+    setLyricsEnabledState(enabled);
+    setLyricsEnabled(enabled).catch(() => undefined);
+    if (!enabled) {
+      setLyricsData(null);
+    }
+  }, []);
+
   const handleChangeClipboardEnabled = useCallback((enabled: boolean) => {
     setClipboardEnabled(enabled);
     setClipboardHistoryEnabled(enabled).catch(() => undefined);
@@ -2975,6 +3021,18 @@ export function App() {
     (compactIndicator === "media" || compactIndicator === "both") &&
     nowPlayingTrack?.artworkBase64 != null;
   const showExpandedTokenCounter = true;
+  // Lyrics occupy a dedicated middle grid column — only on non-notched
+  // displays (the notch area is physically invisible, so lyrics there would
+  // be hidden). Show in both compact and dormant idle states so the user
+  // sees lyrics even with no active agent sessions.
+  const showLyricsMarquee =
+    lyricsEnabled &&
+    lyricsData != null &&
+    lyricsData.lines.length > 0 &&
+    !isMicro &&
+    !isExpanded &&
+    !isPresentationTransition &&
+    !notchMetrics.hasNotch;
   const showCollapsedActivityStrip =
     !isDormant &&
     !isExpanded &&
@@ -3276,6 +3334,8 @@ export function App() {
           onChangeLanguage={handleChangeLanguage}
           mediaCardEnabled={mediaCardEnabled}
           onChangeMediaCardEnabled={handleChangeMediaCardEnabled}
+          lyricsEnabled={lyricsEnabled}
+          onChangeLyricsEnabled={handleChangeLyricsEnabled}
           clipboardHistoryEnabled={clipboardEnabled}
           onChangeClipboardHistoryEnabled={handleChangeClipboardEnabled}
           compactIndicator={compactIndicator}
@@ -3372,7 +3432,7 @@ export function App() {
         onBlurCapture={handleIslandBlur}
       >
         <header
-          className="island-header"
+          className={`island-header${showLyricsMarquee ? " has-lyrics" : ""}`}
           onMouseDown={startWindowDrag}
           title={isExpanded ? t("header.dragWindow") : t("header.hoverToOpen")}
         >
@@ -3523,6 +3583,14 @@ export function App() {
 
           {showCompactNotchSpacer ? (
             <span className="header-notch-spacer" aria-hidden="true" />
+          ) : null}
+
+          {showLyricsMarquee ? (
+            <LyricsMarquee
+              lines={lyricsData!.lines}
+              position={lyricsPosition?.position ?? null}
+              playing={lyricsPosition?.playing ?? false}
+            />
           ) : null}
 
           {showCompactHeaderMetrics || showMicroTokenCounter ? (
@@ -4205,6 +4273,8 @@ interface SettingsViewProps {
   onChangeLanguage: (language: AppLanguage) => void;
   mediaCardEnabled: boolean;
   onChangeMediaCardEnabled: (enabled: boolean) => void;
+  lyricsEnabled: boolean;
+  onChangeLyricsEnabled: (enabled: boolean) => void;
   clipboardHistoryEnabled: boolean;
   onChangeClipboardHistoryEnabled: (enabled: boolean) => void;
   compactIndicator: CompactIndicatorMode;
@@ -4365,6 +4435,8 @@ function SettingsView({
   onChangeLanguage,
   mediaCardEnabled,
   onChangeMediaCardEnabled,
+  lyricsEnabled,
+  onChangeLyricsEnabled,
   clipboardHistoryEnabled,
   onChangeClipboardHistoryEnabled,
   compactIndicator,
@@ -4464,6 +4536,14 @@ function SettingsView({
               desc={t("display.mediaCardDesc")}
               checked={mediaCardEnabled}
               onChange={onChangeMediaCardEnabled}
+            />
+          ) : null}
+          {IS_MACOS ? (
+            <SettingsToggle
+              label={t("display.lyricsLabel")}
+              desc={t("display.lyricsDesc")}
+              checked={lyricsEnabled}
+              onChange={onChangeLyricsEnabled}
             />
           ) : null}
           <SettingsToggle

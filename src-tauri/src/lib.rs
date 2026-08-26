@@ -19,6 +19,7 @@ mod debug_agent;
 mod hook_bridge;
 mod hook_trust;
 mod local_time;
+mod lyrics;
 #[cfg(target_os = "macos")]
 mod media;
 mod platform;
@@ -477,6 +478,12 @@ pub(crate) struct AppState {
     clipboard_history: Mutex<Vec<clipboard_history::ClipboardEntry>>,
     /// Whether clipboard history monitoring is enabled (privacy toggle).
     clipboard_history_enabled: Mutex<bool>,
+    /// Whether the scrolling-lyrics marquee is enabled in the compact island.
+    lyrics_enabled: Mutex<bool>,
+    /// Current lyrics payload (None when no track or no synced lyrics).
+    lyrics: Mutex<Option<lyrics::LyricPayload>>,
+    /// Dedup key (`artist|title`) so we don't refetch the same track.
+    lyrics_track_key: Mutex<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2774,6 +2781,43 @@ fn persist_clipboard_history_enabled(enabled: bool) {
     }
 }
 
+fn load_lyrics_enabled() -> bool {
+    let Some(path) = atoll_settings_path() else {
+        return false;
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+        return false;
+    };
+    value
+        .get("lyricsEnabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn persist_lyrics_enabled(enabled: bool) {
+    let Some(path) = atoll_settings_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut config: Value = path
+        .exists()
+        .then(|| std::fs::read_to_string(&path).ok())
+        .flatten()
+        .and_then(|c| serde_json::from_str(&c).ok())
+        .unwrap_or_else(|| Value::Object(Default::default()));
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert("lyricsEnabled".into(), Value::from(enabled));
+    }
+    if let Ok(formatted) = serde_json::to_string_pretty(&config) {
+        let _ = std::fs::write(path, formatted);
+    }
+}
+
 #[tauri::command]
 fn get_now_playing() -> Option<NowPlayingTrack> {
     #[cfg(target_os = "macos")]
@@ -2817,6 +2861,28 @@ fn set_media_card_enabled(state: State<'_, AppState>, enabled: bool) -> bool {
     *lock_state(&state.media_card_enabled) = enabled;
     persist_media_card_enabled(enabled);
     enabled
+}
+
+#[tauri::command]
+fn get_lyrics_enabled(state: State<'_, AppState>) -> bool {
+    *lock_state(&state.lyrics_enabled)
+}
+
+#[tauri::command]
+fn set_lyrics_enabled(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> bool {
+    *lock_state(&state.lyrics_enabled) = enabled;
+    persist_lyrics_enabled(enabled);
+    if !enabled {
+        *lock_state(&state.lyrics) = None;
+        *lock_state(&state.lyrics_track_key) = String::new();
+        let _ = app.emit("lyrics-changed", Option::<lyrics::LyricPayload>::None);
+    }
+    enabled
+}
+
+#[tauri::command]
+fn get_current_lyrics(state: State<'_, AppState>) -> Option<lyrics::LyricPayload> {
+    lock_state(&state.lyrics).clone()
 }
 
 #[tauri::command]
@@ -6670,6 +6736,9 @@ pub fn run() {
             media_card_enabled: Mutex::new(load_media_card_enabled()),
             clipboard_history: Mutex::new(clipboard_history::load_history()),
             clipboard_history_enabled: Mutex::new(load_clipboard_history_enabled()),
+            lyrics_enabled: Mutex::new(load_lyrics_enabled()),
+            lyrics: Mutex::new(None),
+            lyrics_track_key: Mutex::new(String::new()),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -6704,6 +6773,9 @@ pub fn run() {
             send_media_command,
             get_media_card_enabled,
             set_media_card_enabled,
+            get_lyrics_enabled,
+            set_lyrics_enabled,
+            get_current_lyrics,
             get_clipboard_history,
             copy_clipboard_entry,
             clear_clipboard_history,
@@ -6755,6 +6827,7 @@ pub fn run() {
             start_token_history_writer(app.handle().clone());
             start_media_monitor(app.handle().clone());
             start_clipboard_monitor(app.handle().clone());
+            start_lyrics_monitor(app.handle().clone());
             start_initial_maintenance(app.handle().clone());
             std::thread::spawn(|| {
                 pricing::maybe_refresh_pricing_catalog_on_startup();
@@ -6859,9 +6932,10 @@ const AUTO_ARCHIVE_INTERVAL: Duration = Duration::from_secs(10);
 const TOKEN_SNAPSHOT_MIN_INTERVAL: Duration = Duration::from_secs(2);
 const TOKEN_HISTORY_WRITE_INTERVAL: Duration = Duration::from_secs(2);
 
-/// Polls the MediaRemote framework every 2s and emits `now-playing-changed`
-/// only when the track metadata or playing state actually changes (position
-/// is excluded so we don't push an event every poll). No-op on non-macOS.
+/// Polls the MediaRemote framework every 1s and emits `now-playing-changed`
+/// only when the track metadata or playing state actually changes. Also
+/// emits `now-playing-position` every poll so the frontend can calibrate
+/// its local playback clock for lyric sync. No-op on non-macOS.
 fn start_media_monitor(app: AppHandle) {
     #[cfg(target_os = "macos")]
     {
@@ -6870,7 +6944,7 @@ fn start_media_monitor(app: AppHandle) {
             thread::sleep(Duration::from_secs(2));
             let mut last: Option<NowPlayingTrack> = None;
             loop {
-                thread::sleep(Duration::from_millis(2000));
+                thread::sleep(Duration::from_millis(1000));
                 let current = media::fetch_now_playing();
                 let changed = match (&last, &current) {
                     (None, None) => false,
@@ -6885,6 +6959,18 @@ fn start_media_monitor(app: AppHandle) {
                 if changed {
                     last = current.clone();
                     let _ = app.emit("now-playing-changed", &current);
+                }
+                // Push position every poll so lyric sync stays tight for
+                // fast-tempo tracks. The 1s cadence + frontend 60fps
+                // interpolation keeps line changes within ~16ms.
+                if let Some(ref track) = current {
+                    let _ = app.emit(
+                        "now-playing-position",
+                        &serde_json::json!({
+                            "position": track.position.unwrap_or(0.0),
+                            "playing": track.playing,
+                        }),
+                    );
                 }
             }
         });
@@ -6922,6 +7008,112 @@ fn start_clipboard_monitor(app: AppHandle) {
                         *lock_state(&state.clipboard_history) = entries.clone();
                         let _ = app.emit("clipboard-history-changed", &entries);
                     }
+                }
+            }
+        }
+    });
+}
+
+/// Polls the current media track, fetches synced lyrics from LRCLIB on track
+/// change, and emits `lyrics-changed` (full payload) + `lyrics-line-changed`
+/// (current index + next line time). No-op when lyrics are disabled or no
+/// media is playing.
+fn start_lyrics_monitor(app: AppHandle) {
+    thread::spawn(move || {
+        // Let the app settle before the first poll.
+        thread::sleep(Duration::from_secs(3));
+        let mut last_index: Option<usize> = None;
+        loop {
+            thread::sleep(Duration::from_millis(1000));
+            let state = app.state::<AppState>();
+            let enabled = *lock_state(&state.lyrics_enabled);
+            if !enabled {
+                let was_some = lock_state(&state.lyrics).is_some();
+                if was_some {
+                    *lock_state(&state.lyrics) = None;
+                    *lock_state(&state.lyrics_track_key) = String::new();
+                    last_index = None;
+                    let _ = app.emit("lyrics-changed", Option::<lyrics::LyricPayload>::None);
+                }
+                continue;
+            }
+
+            // Fetch current track from the MediaRemote adapter directly.
+            #[cfg(target_os = "macos")]
+            let track: Option<NowPlayingTrack> = media::fetch_now_playing();
+            #[cfg(not(target_os = "macos"))]
+            let track: Option<NowPlayingTrack> = None;
+
+            let Some(track) = track else {
+                let was_some = lock_state(&state.lyrics).is_some();
+                if was_some {
+                    *lock_state(&state.lyrics) = None;
+                    *lock_state(&state.lyrics_track_key) = String::new();
+                    last_index = None;
+                    let _ = app.emit("lyrics-changed", Option::<lyrics::LyricPayload>::None);
+                }
+                continue;
+            };
+
+            let title = track.title.clone().unwrap_or_default();
+            let artist = track.artist.clone().unwrap_or_default();
+            let key = format!("{}|{}", artist, title);
+
+            // Refetch lyrics only when the track changes.
+            let need_fetch = {
+                let prev = lock_state(&state.lyrics_track_key).clone();
+                prev != key
+            };
+            if need_fetch {
+                let lines = if title.is_empty() && artist.is_empty() {
+                    None
+                } else {
+                    lyrics::fetch_lyrics(&artist, &title, track.album.as_deref(), track.duration)
+                };
+                if let Some(lines) = lines {
+                    *lock_state(&state.lyrics_track_key) = key.clone();
+                    *lock_state(&state.lyrics) = Some(lyrics::LyricPayload {
+                        current_index: 0,
+                        next_time_ms: lines.get(1).map(|l| l.time_ms),
+                        lines,
+                        track_title: track.title.clone(),
+                        track_artist: track.artist.clone(),
+                    });
+                    last_index = None; // force re-emit below
+                    let payload = lock_state(&state.lyrics).clone();
+                    let _ = app.emit("lyrics-changed", &payload);
+                } else {
+                    // No synced lyrics available — clear any stale payload.
+                    let was_some = lock_state(&state.lyrics).is_some();
+                    if was_some {
+                        *lock_state(&state.lyrics) = None;
+                        *lock_state(&state.lyrics_track_key) = String::new();
+                        last_index = None;
+                        let _ = app.emit("lyrics-changed", Option::<lyrics::LyricPayload>::None);
+                    }
+                    continue;
+                }
+            }
+
+            // Track current line from playback position.
+            let payload_guard = lock_state(&state.lyrics);
+            let Some(payload) = payload_guard.as_ref() else {
+                continue;
+            };
+            if payload.lines.is_empty() {
+                continue;
+            }
+            let pos = track.position.unwrap_or(0.0);
+            // Update current_index in state (for get_current_lyrics), but
+            // line tracking is done client-side via interpolated position.
+            let idx = lyrics::current_line_index(&payload.lines, pos);
+            if last_index != Some(idx) {
+                last_index = Some(idx);
+                let next_ms = payload.lines.get(idx + 1).map(|l| l.time_ms);
+                drop(payload_guard);
+                if let Some(p) = lock_state(&state.lyrics).as_mut() {
+                    p.current_index = idx;
+                    p.next_time_ms = next_ms;
                 }
             }
         }
@@ -9479,6 +9671,9 @@ mod core_tests {
             media_card_enabled: Mutex::new(true),
             clipboard_history: Mutex::new(Vec::new()),
             clipboard_history_enabled: Mutex::new(false),
+            lyrics_enabled: Mutex::new(false),
+            lyrics: Mutex::new(None),
+            lyrics_track_key: Mutex::new(String::new()),
         }
     }
 
@@ -10215,6 +10410,9 @@ mod cursor_subagent_tests {
             media_card_enabled: Mutex::new(true),
             clipboard_history: Mutex::new(Vec::new()),
             clipboard_history_enabled: Mutex::new(false),
+            lyrics_enabled: Mutex::new(false),
+            lyrics: Mutex::new(None),
+            lyrics_track_key: Mutex::new(String::new()),
         }
     }
 

@@ -673,6 +673,67 @@ export async function setMediaCardEnabled(enabled: boolean): Promise<boolean> {
   return invoke<boolean>("set_media_card_enabled", { enabled });
 }
 
+export interface LyricLine {
+  timeMs: number;
+  text: string;
+}
+
+export interface LyricPayload {
+  lines: LyricLine[];
+  currentIndex: number;
+  nextTimeMs: number | null;
+  trackTitle: string | null;
+  trackArtist: string | null;
+}
+
+export async function getLyricsEnabled(): Promise<boolean> {
+  if (!isTauriRuntime()) {
+    return false;
+  }
+  return invoke<boolean>("get_lyrics_enabled");
+}
+
+export async function setLyricsEnabled(enabled: boolean): Promise<boolean> {
+  if (!isTauriRuntime()) {
+    return enabled;
+  }
+  return invoke<boolean>("set_lyrics_enabled", { enabled });
+}
+
+export async function getCurrentLyrics(): Promise<LyricPayload | null> {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+  return invoke<LyricPayload | null>("get_current_lyrics");
+}
+
+export async function onLyricsChanged(
+  callback: (payload: LyricPayload | null) => void,
+) {
+  if (!isTauriRuntime()) {
+    return () => undefined;
+  }
+  return listen<LyricPayload | null>("lyrics-changed", (event) =>
+    callback(event.payload),
+  );
+}
+
+export interface LyricsPosition {
+  position: number;
+  playing: boolean;
+}
+
+export async function onLyricsPosition(
+  callback: (pos: LyricsPosition) => void,
+) {
+  if (!isTauriRuntime()) {
+    return () => undefined;
+  }
+  return listen<LyricsPosition>("now-playing-position", (event) =>
+    callback(event.payload),
+  );
+}
+
 export interface ClipboardEntry {
   id: string;
   content: string;

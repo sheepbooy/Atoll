@@ -518,9 +518,14 @@ kbd {
     gap var(--duration-expand) var(--ease-window);
 }
 
+/* Expanded menu bar: logo + tabs + actions share one 36px band. The first
+   grid column must be elastic (1fr) so header-main fills the row and the
+   absolutely-positioned agent-tabs container can span from the logo to the
+   right edge. Using `auto` here shrinks header-main to logo width and
+   clips the tabs. */
 .is-expanded .island-header {
   height: var(--compact-height);
-  grid-template-columns: auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   justify-content: space-between;
   gap: 6px;
   padding: 0 12px 0 14px;
@@ -7099,6 +7104,14 @@ kbd {
   .island.is-panel-exiting .island-panel {
     animation: none !important;
   }
+
+  .lyrics-marquee__line,
+  .island-header.has-lyrics .compact-session-dot {
+    animation: none !important;
+  }
+  .lyrics-marquee {
+    opacity: 0.55;
+  }
 }
 
 /* ─── Cursor mascot preview page (?preview=cursor) ─────────────── */
@@ -7243,3 +7256,69 @@ kbd {
   color: inherit;
   background: #171a1f;
 }
+
+/* ─── Scrolling lyrics marquee (compact island) ────────────────── */
+/* Lyrics occupy a dedicated middle grid column in the compact header,
+   between the left logo/icons column and the right metrics column.
+   Only shown on non-notched displays (the notch area is invisible). */
+
+.island-header.has-lyrics,
+.is-compact:not(.is-dormant) .island-header.has-lyrics {
+  grid-template-columns: auto auto auto;
+  justify-content: space-between;
+}
+
+.lyrics-marquee {
+  min-width: 0;
+  width: 140px;
+  height: var(--compact-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.15;
+  text-align: center;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.82;
+  color: var(--text-primary, #e8eaed);
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+}
+
+.lyrics-marquee__line {
+  display: block;
+  padding: 0 4px;
+  max-height: 2.3em;
+  overflow: hidden;
+  animation: lyrics-fade-up 400ms var(--ease-out) both;
+}
+
+@keyframes lyrics-fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Agent hop — fires once per line change (remounted via key). */
+.island-header.has-lyrics .compact-session-dot {
+  animation: session-dot-hop 400ms var(--ease-out);
+}
+
+@keyframes session-dot-hop {
+  0% { transform: translateY(0); }
+  45% { transform: translateY(-4px); }
+  100% { transform: translateY(0); }
+}
+
+/* Kill marquee + hop during expand/collapse transitions (matches the
+   existing compact-session-stack guard at line 1117). */
+.is-opening .lyrics-marquee,
+.is-closing .lyrics-marquee {
+  display: none;
+}
+
+.is-opening.island-header.has-lyrics .compact-session-dot,
+.is-closing.island-header.has-lyrics .compact-session-dot {
+  animation: none;
+}
+
