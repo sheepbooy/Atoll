@@ -19,6 +19,8 @@ import remarkGfm from "remark-gfm";
 
 const IS_WINDOWS =
   typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
+const IS_MACOS =
+  typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
 
 const DECISION_SHORTCUTS = {
   deny: IS_WINDOWS ? "Del" : "⌫",
@@ -98,6 +100,7 @@ import {
   RESOLVE_FEEDBACK_MS,
 } from "./islandPresentation";
 import { AgentMascot, AGENT_ACCENT } from "./AgentMascot";
+import { NowPlayingCard } from "./NowPlayingCard";
 import type { ClawdMood } from "./ClawdMascot";
 import { getSessionColor, getSubagentColor, getSubagentMood } from "./subagentIdentity";
 import { AtollLogo, type AtollActivity } from "./AtollLogo";
@@ -119,11 +122,14 @@ import { TokenHeatmapView } from "./TokenHeatmapView";
 import { formatCompactTokenCount } from "./tokenCounterFormat";
 import { formatCompactCost } from "./costFormat";
 import {
+  type CompactIndicatorMode,
   EXPANDED_COUNTER_DISPLAY_KEY,
   FOLDED_COUNTER_DISPLAY_KEY,
   HEATMAP_DISPLAY_KEY,
+  readCompactIndicator,
   readDisplayMode,
   SETTINGS_BADGE_DISPLAY_KEY,
+  writeCompactIndicator,
   writeDisplayMode,
   type UsageDisplayMode,
 } from "./displayPrefs";
@@ -160,6 +166,12 @@ import {
   HookStatus,
   HookHealthSnapshot,
   EMPTY_HOOK_HEALTH,
+  NowPlayingTrack,
+  MediaCommand,
+  getMediaCardEnabled,
+  onNowPlayingChanged,
+  sendMediaCommand,
+  setMediaCardEnabled,
   archiveAllResolved,
   archiveSession,
   archiveSubagent,
@@ -724,6 +736,9 @@ export function App() {
   const [foldedCounterDisplay, setFoldedCounterDisplay] = useState<UsageDisplayMode>(() =>
     readDisplayMode(FOLDED_COUNTER_DISPLAY_KEY),
   );
+  const [compactIndicator, setCompactIndicatorState] = useState<CompactIndicatorMode>(() =>
+    readCompactIndicator(),
+  );
   const [expandedCounterDisplay, setExpandedCounterDisplay] = useState<UsageDisplayMode>(() =>
     readDisplayMode(EXPANDED_COUNTER_DISPLAY_KEY),
   );
@@ -736,6 +751,8 @@ export function App() {
   const [pricingModels, setPricingModels] = useState<ModelPricingEntry[]>([]);
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
   const [launchAtLoginBusy, setLaunchAtLoginBusy] = useState(false);
+  const [nowPlayingTrack, setNowPlayingTrack] = useState<NowPlayingTrack | null>(null);
+  const [mediaCardEnabled, setMediaCardEnabledState] = useState(true);
   const [justResolved, setJustResolved] = useState(false);
   const [hookHealthHydrated, setHookHealthHydrated] = useState(false);
   const [configuredHookAgents, setConfiguredHookAgents] = useState(() =>
@@ -869,6 +886,8 @@ export function App() {
         maxCompactIcons,
         activeSessionTokenTotal,
         snapshot.pendingCount,
+        nowPlayingTrack?.artworkBase64 != null,
+        compactIndicator === "media" || compactIndicator === "both",
       ),
     [
       notchMetrics,
@@ -876,6 +895,8 @@ export function App() {
       maxCompactIcons,
       activeSessionTokenTotal,
       snapshot.pendingCount,
+      nowPlayingTrack?.artworkBase64,
+      compactIndicator,
     ],
   );
   const stableWidthRef = useRef(computedCollapsedWidth);
@@ -1049,6 +1070,10 @@ export function App() {
   }, [foldedCounterDisplay]);
 
   useEffect(() => {
+    writeCompactIndicator(compactIndicator);
+  }, [compactIndicator]);
+
+  useEffect(() => {
     writeDisplayMode(EXPANDED_COUNTER_DISPLAY_KEY, expandedCounterDisplay);
   }, [expandedCounterDisplay]);
 
@@ -1106,6 +1131,14 @@ export function App() {
         setNotchMetricsHydrated(true);
       });
     setSessionRetention(readRetentionMinutes()).catch(() => undefined);
+    getMediaCardEnabled()
+      .then(setMediaCardEnabledState)
+      .catch(() => undefined);
+    const unsubscribeMedia = manageAsyncUnlisten(
+      onNowPlayingChanged((track) => {
+        setNowPlayingTrack(track);
+      }),
+    );
     const unsubscribe = manageAsyncUnlisten(
       onSnapshotChanged((nextSnapshot) => {
         applySnapshot(nextSnapshot, { mergeHookHealth: true });
@@ -1251,6 +1284,7 @@ export function App() {
       unsubscribeCapture();
       unsubscribeCaptureHooks();
       unsubscribeScreenshot();
+      unsubscribeMedia();
       clearTransitionWork();
       clearIdleTimer();
     };
@@ -2520,6 +2554,11 @@ export function App() {
     await changeAppLanguage(nextLanguage);
   }
 
+  const handleChangeMediaCardEnabled = useCallback((enabled: boolean) => {
+    setMediaCardEnabledState(enabled);
+    setMediaCardEnabled(enabled).catch(() => undefined);
+  }, []);
+
   const hookMenuAgents: HookMenuAgent[] = [
     {
       key: "claude",
@@ -2846,8 +2885,16 @@ export function App() {
   const showCompactHeaderMetrics =
     !isMicro && !isDormant && !isExpanded && !isPresentationTransition;
   const showMicroTokenCounter =
-    isMicro && !isPresentationTransition && sessions.length > 0;
-  const showCompactTokenCounter = sessions.length > 0;
+    isMicro && !isPresentationTransition && sessions.length > 0 &&
+    (compactIndicator === "tokens" || compactIndicator === "both");
+  const showCompactTokenCounter =
+    sessions.length > 0 &&
+    (compactIndicator === "tokens" || compactIndicator === "both");
+  const showCompactMediaIndicator =
+    (showCompactHeaderMetrics || isMicro) &&
+    !isPresentationTransition &&
+    (compactIndicator === "media" || compactIndicator === "both") &&
+    nowPlayingTrack?.artworkBase64 != null;
   const showExpandedTokenCounter = true;
   const showCollapsedActivityStrip =
     !isDormant &&
@@ -3129,6 +3176,10 @@ export function App() {
           hooksAllConnected={hookHealthAnalysis.allConnected}
           language={language}
           onChangeLanguage={handleChangeLanguage}
+          mediaCardEnabled={mediaCardEnabled}
+          onChangeMediaCardEnabled={handleChangeMediaCardEnabled}
+          compactIndicator={compactIndicator}
+          onChangeCompactIndicator={setCompactIndicatorState}
         />
       );
     }
@@ -3403,6 +3454,14 @@ export function App() {
                   compactTokenLevel={compactHeaderLayout.tokenCompactLevel}
                 />
               ) : null}
+              {showCompactMediaIndicator && nowPlayingTrack?.artworkBase64 ? (
+                <img
+                  className="compact-media-thumb"
+                  src={`data:image/jpeg;base64,${nowPlayingTrack.artworkBase64}`}
+                  alt=""
+                  draggable={false}
+                />
+              ) : null}
               {showCompactHeaderMetrics && snapshot.pendingCount > 0 ? (
                 <span className="pending-badge-slot">
                   <span
@@ -3535,6 +3594,16 @@ export function App() {
             <div key={panelAnimKey} className="island-panel-content">
               {renderPanel()}
             </div>
+            {isExpandedChrome && mediaCardEnabled && nowPlayingTrack ? (
+              <div className="island-panel-footer">
+                <NowPlayingCard
+                  track={nowPlayingTrack}
+                  onCommand={(cmd) => {
+                    sendMediaCommand(cmd).catch(() => undefined);
+                  }}
+                />
+              </div>
+            ) : null}
           </div>
         ) : null}
         {updateNotice ? (
@@ -4023,6 +4092,10 @@ interface SettingsViewProps {
   hooksAllConnected: boolean;
   language: AppLanguage;
   onChangeLanguage: (language: AppLanguage) => void;
+  mediaCardEnabled: boolean;
+  onChangeMediaCardEnabled: (enabled: boolean) => void;
+  compactIndicator: CompactIndicatorMode;
+  onChangeCompactIndicator: (mode: CompactIndicatorMode) => void;
 }
 
 function SettingsLanguageToggle({
@@ -4177,6 +4250,10 @@ function SettingsView({
   hooksAllConnected,
   language,
   onChangeLanguage,
+  mediaCardEnabled,
+  onChangeMediaCardEnabled,
+  compactIndicator,
+  onChangeCompactIndicator,
 }: SettingsViewProps) {
   const { t } = useTranslation("settings");
 
@@ -4266,6 +4343,35 @@ function SettingsView({
         <div className="settings-section">
           <span className="settings-section-label">{t("section.display")}</span>
           <SettingsLanguageToggle language={language} onChange={onChangeLanguage} />
+          {IS_MACOS ? (
+            <SettingsToggle
+              label={t("display.mediaCardLabel")}
+              desc={t("display.mediaCardDesc")}
+              checked={mediaCardEnabled}
+              onChange={onChangeMediaCardEnabled}
+            />
+          ) : null}
+          {IS_MACOS ? (
+            <div className="settings-card">
+              <div className="settings-card-head">
+                <span className="settings-card-title">{t("display.compactIndicatorLabel")}</span>
+                <div className="settings-segmented" role="group" aria-label={t("display.compactIndicatorLabel")}>
+                  {(["media", "tokens", "both", "none"] as CompactIndicatorMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className={`settings-segment${compactIndicator === mode ? " is-active" : ""}`}
+                      onClick={() => onChangeCompactIndicator(mode)}
+                      data-no-drag
+                    >
+                      {t("common:displayMode." + mode)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <span className="settings-card-desc">{t("display.compactIndicatorDesc")}</span>
+            </div>
+          ) : null}
           {showFoldedIslandSizeSetting ? (
             <SettingsToggle
               label={t("display.smallFoldedIslandLabel")}

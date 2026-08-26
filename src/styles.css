@@ -586,6 +586,7 @@ kbd {
   width: 100%;
   height: 100%;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 0 16px;
@@ -3496,9 +3497,32 @@ kbd {
   transform: translate3d(0, -8px, 0);
   backface-visibility: hidden;
   will-change: opacity, transform;
+  display: flex;
+  flex-direction: column;
   transition:
     opacity var(--duration-normal) var(--ease-window),
     transform var(--duration-expand) var(--ease-window);
+}
+
+.island-panel-content {
+  flex: 1;
+  min-height: 0;
+}
+
+.island-panel-footer {
+  flex-shrink: 0;
+  padding-top: 8px;
+  opacity: 0;
+  transform: translate3d(0, 12px, 0);
+  transition:
+    opacity var(--duration-normal) var(--ease-out) 80ms,
+    transform var(--duration-normal) var(--ease-out) 80ms;
+}
+
+/* The footer slides in once the panel is visible (not during transitions). */
+.is-expanded:not(.is-opening):not(.is-closing) .island-panel-footer {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
 }
 
 /* Soft film grain — static CSS noise (no SVG feTurbulence; that filter
@@ -3532,7 +3556,7 @@ kbd {
 .island-panel-content {
   position: relative;
   z-index: 1;
-  height: 100%;
+  flex: 1;
   min-height: 0;
 }
 
@@ -5989,6 +6013,178 @@ kbd {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.compact-media-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  object-fit: cover;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.now-playing-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Stagger the card's inner elements in when the footer appears. */
+.island-panel-footer .np-artwork,
+.island-panel-footer .np-info,
+.island-panel-footer .np-controls {
+  opacity: 0;
+  transform: translate3d(0, 6px, 0);
+  transition:
+    opacity var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out);
+}
+.island-panel-footer .np-artwork { transition-delay: 120ms; }
+.island-panel-footer .np-info { transition-delay: 160ms; }
+.island-panel-footer .np-controls { transition-delay: 200ms; }
+
+.is-expanded:not(.is-opening):not(.is-closing) .island-panel-footer .np-artwork,
+.is-expanded:not(.is-opening):not(.is-closing) .island-panel-footer .np-info,
+.is-expanded:not(.is-opening):not(.is-closing) .island-panel-footer .np-controls {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+/* Artwork has a subtle scale-in for extra life. */
+.is-expanded:not(.is-opening):not(.is-closing) .island-panel-footer .np-artwork {
+  animation: np-artwork-pop var(--duration-normal) var(--ease-pop) 120ms both;
+}
+
+@keyframes np-artwork-pop {
+  0% { transform: translate3d(0, 6px, 0) scale(0.9); opacity: 0; }
+  100% { transform: translate3d(0, 0, 0) scale(1); opacity: 1; }
+}
+
+.np-artwork {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.np-artwork-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.np-artwork-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-muted);
+  opacity: 0.4;
+}
+
+.np-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.np-text-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.np-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.np-source {
+  font-size: 9px;
+  color: var(--text-muted);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.np-artist {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.np-progress {
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin-top: 4px;
+  overflow: hidden;
+}
+
+.np-progress-bar {
+  height: 100%;
+  border-radius: 1px;
+  background: var(--text-muted);
+  opacity: 0.6;
+  transition: width 1s linear;
+}
+
+.np-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.np-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.np-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.np-btn-primary {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.np-btn-primary:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .idle-dot {

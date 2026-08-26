@@ -18,6 +18,8 @@ mod debug_agent;
 mod hook_bridge;
 mod hook_trust;
 mod local_time;
+#[cfg(target_os = "macos")]
+mod media;
 mod platform;
 mod pricing;
 mod token_history;
@@ -353,6 +355,25 @@ enum IslandWindowMode {
     Expanded,
 }
 
+/// Re-exported so `get_now_playing` can return the type on all platforms.
+#[cfg(target_os = "macos")]
+pub(crate) use media::NowPlayingTrack;
+
+/// Non-macOS stub so the command signature compiles without the media module.
+#[cfg(not(target_os = "macos"))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct NowPlayingTrack {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub duration: Option<f64>,
+    pub position: Option<f64>,
+    pub playing: bool,
+    pub artwork_base64: Option<String>,
+    pub app: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct IslandHoverChanged {
@@ -449,6 +470,8 @@ pub(crate) struct AppState {
     /// Coalesces token-history persistence so snapshot and hook hot paths never write files.
     token_history_dirty: AtomicBool,
     transcript_cache: Mutex<TranscriptCache>,
+    /// Whether the Now Playing media card is shown in the idle island.
+    media_card_enabled: Mutex<bool>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2659,8 +2682,90 @@ fn persist_settings(session_minutes: Option<u64>, subagent_minutes: Option<u64>)
     }
 }
 
+fn load_media_card_enabled() -> bool {
+    let Some(path) = atoll_settings_path() else {
+        return true;
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return true;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+        return true;
+    };
+    value
+        .get("mediaCardEnabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+}
+
+fn persist_media_card_enabled(enabled: bool) {
+    let Some(path) = atoll_settings_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut config: Value = path
+        .exists()
+        .then(|| std::fs::read_to_string(&path).ok())
+        .flatten()
+        .and_then(|c| serde_json::from_str(&c).ok())
+        .unwrap_or_else(|| Value::Object(Default::default()));
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert("mediaCardEnabled".into(), Value::from(enabled));
+    }
+    if let Ok(formatted) = serde_json::to_string_pretty(&config) {
+        let _ = std::fs::write(path, formatted);
+    }
+}
+
 fn persist_retention_minutes(minutes: u64) {
     persist_settings(Some(minutes.clamp(1, 60)), None);
+}
+
+#[tauri::command]
+fn get_now_playing() -> Option<NowPlayingTrack> {
+    #[cfg(target_os = "macos")]
+    {
+        media::fetch_now_playing()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+#[tauri::command]
+fn send_media_command(command: String) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let cmd = match command.as_str() {
+            "play" => media::MR_COMMAND_PLAY,
+            "pause" => media::MR_COMMAND_PAUSE,
+            "toggle" => media::MR_COMMAND_TOGGLE,
+            "next" => media::MR_COMMAND_NEXT,
+            "prev" => media::MR_COMMAND_PREV,
+            _ => return false,
+        };
+        media::send_media_command_raw(cmd)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = command;
+        false
+    }
+}
+
+#[tauri::command]
+fn get_media_card_enabled(state: State<'_, AppState>) -> bool {
+    *lock_state(&state.media_card_enabled)
+}
+
+#[tauri::command]
+fn set_media_card_enabled(state: State<'_, AppState>, enabled: bool) -> bool {
+    *lock_state(&state.media_card_enabled) = enabled;
+    persist_media_card_enabled(enabled);
+    enabled
 }
 
 #[tauri::command]
@@ -6295,6 +6400,7 @@ pub fn run() {
             last_hook_activity: Mutex::new(Instant::now()),
             token_history_dirty: AtomicBool::new(false),
             transcript_cache: Mutex::new(TranscriptCache::default()),
+            media_card_enabled: Mutex::new(load_media_card_enabled()),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -6324,6 +6430,10 @@ pub fn run() {
             set_session_retention,
             get_subagent_retention,
             set_subagent_retention,
+            get_now_playing,
+            send_media_command,
+            get_media_card_enabled,
+            set_media_card_enabled,
             archive_subagent,
             archive_completed_subagents,
             get_token_history,
@@ -6368,6 +6478,7 @@ pub fn run() {
             start_auto_archive_timer(app.handle().clone());
             start_token_refresh_timer(app.handle().clone());
             start_token_history_writer(app.handle().clone());
+            start_media_monitor(app.handle().clone());
             start_initial_maintenance(app.handle().clone());
             std::thread::spawn(|| {
                 pricing::maybe_refresh_pricing_catalog_on_startup();
@@ -6471,6 +6582,42 @@ fn tray_menu_entries() -> [(&'static str, &'static str); 2] {
 const AUTO_ARCHIVE_INTERVAL: Duration = Duration::from_secs(10);
 const TOKEN_SNAPSHOT_MIN_INTERVAL: Duration = Duration::from_secs(2);
 const TOKEN_HISTORY_WRITE_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Polls the MediaRemote framework every 2s and emits `now-playing-changed`
+/// only when the track metadata or playing state actually changes (position
+/// is excluded so we don't push an event every poll). No-op on non-macOS.
+fn start_media_monitor(app: AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        thread::spawn(move || {
+            // Let the app settle before the first fetch.
+            thread::sleep(Duration::from_secs(2));
+            let mut last: Option<NowPlayingTrack> = None;
+            loop {
+                thread::sleep(Duration::from_millis(2000));
+                let current = media::fetch_now_playing();
+                let changed = match (&last, &current) {
+                    (None, None) => false,
+                    (None, Some(_)) | (Some(_), None) => true,
+                    (Some(a), Some(b)) => {
+                        a.title != b.title
+                            || a.artist != b.artist
+                            || a.playing != b.playing
+                            || a.artwork_base64 != b.artwork_base64
+                    }
+                };
+                if changed {
+                    last = current.clone();
+                    let _ = app.emit("now-playing-changed", &current);
+                }
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+    }
+}
 
 fn start_token_history_writer(app: AppHandle) {
     thread::spawn(move || loop {
@@ -9020,6 +9167,7 @@ mod core_tests {
             last_hook_activity: Mutex::new(Instant::now()),
             token_history_dirty: AtomicBool::new(false),
             transcript_cache: Mutex::new(TranscriptCache::default()),
+            media_card_enabled: Mutex::new(true),
         }
     }
 
@@ -9753,6 +9901,7 @@ mod cursor_subagent_tests {
             last_hook_activity: Mutex::new(Instant::now()),
             token_history_dirty: AtomicBool::new(false),
             transcript_cache: Mutex::new(TranscriptCache::default()),
+            media_card_enabled: Mutex::new(true),
         }
     }
 

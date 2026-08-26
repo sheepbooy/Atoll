@@ -598,6 +598,58 @@ export async function setCompactLayout(
   });
 }
 
+export interface NowPlayingTrack {
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  duration: number | null;
+  position: number | null;
+  playing: boolean;
+  artworkBase64: string | null;
+  app: string | null;
+}
+
+export type MediaCommand = "play" | "pause" | "toggle" | "next" | "prev";
+
+export async function getNowPlaying(): Promise<NowPlayingTrack | null> {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+  return invoke<NowPlayingTrack | null>("get_now_playing");
+}
+
+export async function sendMediaCommand(command: MediaCommand): Promise<boolean> {
+  if (!isTauriRuntime()) {
+    return false;
+  }
+  return invoke<boolean>("send_media_command", { command });
+}
+
+export async function getMediaCardEnabled(): Promise<boolean> {
+  if (!isTauriRuntime()) {
+    return true;
+  }
+  return invoke<boolean>("get_media_card_enabled");
+}
+
+export async function setMediaCardEnabled(enabled: boolean): Promise<boolean> {
+  if (!isTauriRuntime()) {
+    return enabled;
+  }
+  return invoke<boolean>("set_media_card_enabled", { enabled });
+}
+
+export async function onNowPlayingChanged(
+  callback: (track: NowPlayingTrack | null) => void,
+) {
+  if (!isTauriRuntime()) {
+    return () => undefined;
+  }
+  return listen<NowPlayingTrack | null>("now-playing-changed", (event) =>
+    callback(event.payload),
+  );
+}
+
 export interface NotchMetrics {
   hasNotch: boolean;
   width: number;

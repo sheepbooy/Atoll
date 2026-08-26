@@ -109,6 +109,13 @@
     "loading": "加载中...",
     "archive": "归档"
   },
+  "media": {
+    "noMedia": "暂无播放",
+    "play": "播放",
+    "pause": "暂停",
+    "next": "下一首",
+    "prev": "上一首"
+  },
   "idle": {
     "waiting": "等待请求中…",
     "setupTitle": "连接你的 Agent",
@@ -123,6 +130,9 @@
   },
   "displayMode": {
     "tokens": "Token",
-    "cost": "费用"
+    "cost": "费用",
+    "media": "媒体",
+    "both": "全部",
+    "none": "无"
   }
 }

@@ -109,6 +109,13 @@
     "loading": "Loading...",
     "archive": "Archive"
   },
+  "media": {
+    "noMedia": "Nothing playing",
+    "play": "Play",
+    "pause": "Pause",
+    "next": "Next",
+    "prev": "Previous"
+  },
   "idle": {
     "waiting": "Waiting for requests…",
     "setupTitle": "Connect your agents",
@@ -123,6 +130,9 @@
   },
   "displayMode": {
     "tokens": "Tokens",
-    "cost": "Cost"
+    "cost": "Cost",
+    "media": "Media",
+    "both": "Both",
+    "none": "None"
   }
 }

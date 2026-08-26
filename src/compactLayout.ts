@@ -22,6 +22,8 @@ export const COMPACT_HEADER_GAP = 8;
 export const COMPACT_PENDING_BADGE_SLOT = 28;
 /** Space between right session icons and the token counter in header-metrics. */
 export const COMPACT_METRICS_GAP = 10;
+/** Album-artwork thumbnail slot in compact mode (width + gap). */
+export const COMPACT_MEDIA_THUMB_SLOT = 18 + COMPACT_METRICS_GAP;
 
 export const MIN_MAX_COMPACT_ICONS = 1;
 export const ABSOLUTE_MAX_COMPACT_ICONS = 8;
@@ -262,6 +264,8 @@ export function computeCollapsedWindowWidth(
   maxCompactIcons: number,
   tokenTotal: number,
   pendingCount: number,
+  hasMediaArtwork = false,
+  showMediaIndicator = false,
 ): number {
   const layout = computeCompactHeaderLayout(
     notchMetrics,
@@ -297,6 +301,7 @@ export function computeCollapsedWindowWidth(
     sessionTokenGap +
     (hasToken ? estimateTokenDisplayWidth(tokenText) : 0) +
     (pendingCount > 0 ? COMPACT_PENDING_BADGE_SLOT + COMPACT_METRICS_GAP : 0) +
+    (showMediaIndicator && hasMediaArtwork ? COMPACT_MEDIA_THUMB_SLOT : 0) +
     COMPACT_OUTER_PADDING;
 
   const notchWidth = notchMetrics.hasNotch ? notchMetrics.width : 0;
