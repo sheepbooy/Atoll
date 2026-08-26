@@ -179,21 +179,22 @@ fn read_clipboard_windows() -> Option<String> {
     use windows::Win32::System::DataExchange::{
         CloseClipboard, GetClipboardData, OpenClipboard,
     };
-    use windows::Win32::System::Memory::{GlobalLock, GlobalUnlock, HGLOBAL};
+    use windows::Win32::System::Memory::{GlobalLock, GlobalUnlock};
     use windows::Win32::System::Ole::CF_UNICODETEXT;
-    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::Foundation::HGLOBAL;
 
     unsafe {
         if OpenClipboard(None).is_err() {
             return None;
         }
         let result = (|| {
-            let handle = GetClipboardData(CF_UNICODETEXT.0);
+            let handle = GetClipboardData(CF_UNICODETEXT.0 as u32);
             let handle = match handle {
                 Ok(h) if !h.is_invalid() => h,
                 _ => return None,
             };
-            let ptr = GlobalLock(HGLOBAL(handle.0));
+            let hmem = HGLOBAL(handle.0);
+            let ptr = GlobalLock(hmem);
             if ptr.is_null() {
                 return None;
             }
@@ -206,7 +207,7 @@ fn read_clipboard_windows() -> Option<String> {
                 len
             });
             let result = String::from_utf16_lossy(wcs);
-            let _ = GlobalUnlock(HGLOBAL(handle.0));
+            let _ = GlobalUnlock(hmem);
             Some(result)
         })();
         let _ = CloseClipboard();
@@ -239,7 +240,7 @@ fn write_clipboard_windows(text: &str) {
                 if !ptr.is_null() {
                     std::ptr::copy_nonoverlapping(wcs.as_ptr() as *const u8, ptr as *mut u8, byte_len);
                     let _ = GlobalUnlock(hmem);
-                    let _ = SetClipboardData(CF_UNICODETEXT.0, Some(HANDLE(hmem.0)));
+                    let _ = SetClipboardData(CF_UNICODETEXT.0 as u32, HANDLE(hmem.0));
                 }
             }
         }
