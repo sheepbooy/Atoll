@@ -12,12 +12,13 @@ use serde::{Deserialize, Serialize};
 use std::os::raw::c_int;
 use std::process::{Command, Stdio};
 
-/// MRCommand values (reverse-engineered, stable across macOS 10.15–15).
+/// MRCommand values, verified empirically against macOS 26.
+/// Note: value 3 behaves as a second pause/stop; next/prev are 4/5, not 3/4.
 pub const MR_COMMAND_PLAY: c_int = 0;
 pub const MR_COMMAND_PAUSE: c_int = 1;
 pub const MR_COMMAND_TOGGLE: c_int = 2;
-pub const MR_COMMAND_NEXT: c_int = 3;
-pub const MR_COMMAND_PREV: c_int = 4;
+pub const MR_COMMAND_NEXT: c_int = 4;
+pub const MR_COMMAND_PREV: c_int = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
