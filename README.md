@@ -46,7 +46,11 @@
 - **有请求时** — 自动展开，展示命令详情，一键 **Approve / Deny / Always**
 - **Plan 模式** — 在顶栏回答规划问题、预览 Markdown 计划，再决定是否开始构建
 - **Subagent** — 追踪子 agent 生命周期，会话内 chip 预览、列表视图与 transcript 详情，支持批量归档
+- **Now Playing** — 音乐播放卡片显示当前曲目与封面，紧凑态指标器同步播放状态；支持上一首/下一首控制
+- **滚动歌词** — 紧凑胶囊中部展示当前歌词行，随播放进度自动滚动
+- **剪贴板历史** — 跨平台剪贴板历史记录，关键词搜索 + 隐私开关，敏感内容自动过滤
 - **Token 热力图** — 持久化每日用量，重启后继续累计；展开态计数器可查看热力图、Agent 占比与 30 天趋势
+- **Hook 健康检测** — 自动检测并清理失效的竞争 Claude hooks，启动时补齐缺失的 lifecycle hooks
 - **开机自启动** — Settings → General 可开启 Launch at login（macOS / Windows）
 - **应用内更新** — 启动时自动检测新版本，三点菜单一键下载安装并重启
 - **Cursor IDE** — Hook 集成、会话与 subagent 追踪、Token 统计；Shell 权限由 Cursor 自带 UI 处理，Atoll 以 observer hooks 异步监听，不阻塞 IDE；顶栏 **Open Cursor** 一键跳回 IDE

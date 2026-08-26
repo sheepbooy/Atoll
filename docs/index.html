@@ -67,7 +67,7 @@
           <img src="assets/logo.svg" alt="Atoll mascot" class="hero-logo" width="64" height="72" />
           <div class="hero-badge">
             <span class="dot"></span>
-            v0.1.39 · macOS &amp; Windows
+            v0.1.53 · macOS &amp; Windows
           </div>
           <h1>
             <span class="gradient">AI 工作流浮岛</span>
@@ -256,6 +256,58 @@
             <span class="plan-note">Launch at login · Settings → General</span>
           </div>
         </article>
+
+        <article class="feature-card">
+          <div class="feature-card-body">
+            <div class="feature-icon cyan">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+            <h3>Now Playing 音乐卡片</h3>
+            <p>显示当前曲目、封面与播放状态，紧凑态指标器同步显示；支持上一首 / 下一首控制，不用切到音乐 App。</p>
+          </div>
+          <div class="feature-preview feature-preview--note" aria-hidden="true">
+            <span class="plan-note">Now Playing · 紧凑态指标器同步</span>
+          </div>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-card-body">
+            <div class="feature-icon violet">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h6l2-4 4 8 2-4h4"/></svg>
+            </div>
+            <h3>滚动歌词</h3>
+            <p>紧凑胶囊中部展示当前歌词行，随播放进度自动滚动；v0.1.52 起支持，在 Settings 开启。</p>
+          </div>
+          <div class="feature-preview feature-preview--note" aria-hidden="true">
+            <span class="plan-note">Lyrics · 紧凑胶囊中部滚动</span>
+          </div>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-card-body">
+            <div class="feature-icon coral">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><path d="M9 12h6"/></svg>
+            </div>
+            <h3>剪贴板历史</h3>
+            <p>跨平台剪贴板历史记录，关键词搜索秒回溯复制内容；隐私开关可暂停记录，敏感内容自动过滤。v0.1.50 起支持。</p>
+          </div>
+          <div class="feature-preview feature-preview--note" aria-hidden="true">
+            <span class="plan-note">Clipboard history · 搜索 + 隐私开关</span>
+          </div>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-card-body">
+            <div class="feature-icon lime">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+            </div>
+            <h3>Hook 健康检测</h3>
+            <p>自动检测并清理失效的竞争 Claude hooks，启动时补齐缺失的 lifecycle hooks、刷新过期 shim，保留你的自定义配置。</p>
+          </div>
+          <div class="feature-preview feature-preview--note" aria-hidden="true">
+            <span class="plan-note">Hook health · 自动检测 + 清理</span>
+          </div>
+        </article>
       </div>
     </section>
 
@@ -336,7 +388,7 @@
               <p>后端增量合并 snapshot、缩短锁持有时间；前端减少全量重渲染，归档已完成项时保留仍在运行的 sibling。</p>
             </div>
           </div>
-          <p class="plan-note">v0.1.39 已加固 subagent 列表、详情与批量归档稳定性</p>
+          <p class="plan-note">v0.1.53 已加入 Now Playing、滚动歌词、剪贴板历史与 hook 健康检测</p>
         </div>
 
         <div class="plan-demo">
@@ -582,7 +634,7 @@
     <section id="updates" class="container reveal">
       <span class="section-label">更新</span>
       <h2 class="section-title">自动检查更新，持续演进</h2>
-      <p class="section-desc">Atoll 还在快速迭代。v0.1.39 聚焦 subagent 并发、归档稳定性与 Cursor / Windows hook 自动修复；应用启动时会自动检测 GitHub 新版本，有新版本时在三点菜单显示更新入口，可一键下载安装并重启。</p>
+      <p class="section-desc">Atoll 还在快速迭代。v0.1.53 起加入 Now Playing 音乐卡片、滚动歌词、剪贴板历史与 hook 健康检测；应用启动时会自动检测 GitHub 新版本，有新版本时在三点菜单显示更新入口，可一键下载安装并重启。</p>
 
       <div class="update-grid">
         <article class="update-card">
