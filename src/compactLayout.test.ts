@@ -174,8 +174,9 @@ describe("compactLayout", () => {
     expect(layout.rightIconCount).toBe(0);
     expect(layout.overflowCount).toBe(6);
     expect(withToken).toBeGreaterThan(withoutToken);
-    expect(withToken).toBeLessThan(280);
-    expect(withoutToken).toBeLessThan(280);
+    // Width = content + COMPACT_DISTRIBUTE_BUDGET (40px) for even space-between spacing.
+    expect(withToken).toBeLessThan(320);
+    expect(withoutToken).toBeLessThan(320);
   });
 
   it("keeps collapsed width within the compact window cap on notch screens", () => {

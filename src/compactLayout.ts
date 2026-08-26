@@ -19,6 +19,9 @@ export const COMPACT_OUTER_PADDING = 8;
 export const COMPACT_NOTCH_INNER_GAP = 6;
 /** Space between left sessions and right metrics on non-notched displays. */
 export const COMPACT_HEADER_GAP = 8;
+/** Fixed extra width budget on non-notched displays so `space-between` always
+ *  has room to distribute as even spacing between logo and metrics. */
+export const COMPACT_DISTRIBUTE_BUDGET = 40;
 export const COMPACT_PENDING_BADGE_SLOT = 28;
 /** Space between right session icons and the token counter in header-metrics. */
 export const COMPACT_METRICS_GAP = 10;
@@ -317,7 +320,9 @@ export function computeCollapsedWindowWidth(
   }
 
   const contentWidth = leftWidth + rightWidth + outerGaps;
-  const minWidth = COMPACT_SIDE_MIN * 2 + outerGaps;
+  // Ensure space-between always has room to distribute as even spacing between
+  // the logo column and the metrics column on non-notched displays.
+  const minWidth = contentWidth + COMPACT_DISTRIBUTE_BUDGET;
 
   return Math.min(
     COMPACT_MAX_WINDOW_WIDTH,

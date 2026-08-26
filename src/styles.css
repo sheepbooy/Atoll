@@ -502,7 +502,8 @@ kbd {
   display: grid;
   width: 100%;
   height: var(--compact-height);
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto auto;
+  justify-content: space-between;
   gap: 8px;
   align-items: center;
   padding: 3px 8px;
@@ -519,7 +520,8 @@ kbd {
 
 .is-expanded .island-header {
   height: var(--compact-height);
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto auto;
+  justify-content: space-between;
   gap: 6px;
   padding: 0 12px 0 14px;
   cursor: grab;
@@ -3510,6 +3512,7 @@ kbd {
 
 .island-panel-footer {
   flex-shrink: 0;
+  width: 100%;
   padding-top: 8px;
   opacity: 0;
   transform: translate3d(0, 12px, 0);
@@ -5197,6 +5200,53 @@ kbd {
   display: flex;
   gap: 8px;
   padding-top: 2px;
+}
+
+.settings-hook-competing {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 159, 67, 0.28);
+  background: rgba(255, 159, 67, 0.08);
+}
+
+.settings-hook-competing-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-hook-competing-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.settings-hook-competing-item code {
+  flex: 1;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  color: rgba(255, 159, 67, 0.9);
+  word-break: break-all;
+}
+
+.settings-hook-competing-event {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 159, 67, 0.18);
+  color: rgba(255, 159, 67, 0.95);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .settings-hook-button {
