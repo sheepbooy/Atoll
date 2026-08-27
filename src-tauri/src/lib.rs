@@ -6932,6 +6932,11 @@ const AUTO_ARCHIVE_INTERVAL: Duration = Duration::from_secs(10);
 const TOKEN_SNAPSHOT_MIN_INTERVAL: Duration = Duration::from_secs(2);
 const TOKEN_HISTORY_WRITE_INTERVAL: Duration = Duration::from_secs(2);
 
+/// How long to wait before retrying lyrics lookup for a track that recently
+/// had no lyrics anywhere — retrying every poll would hammer the lyrics APIs
+/// (and risk rate limits) for lyric-less tracks.
+const LYRICS_MISS_RETRY_AFTER: Duration = Duration::from_secs(30);
+
 /// Polls the MediaRemote framework every 1s and emits `now-playing-changed`
 /// only when the track metadata or playing state actually changes. Also
 /// emits `now-playing-position` every poll so the frontend can calibrate
@@ -7023,6 +7028,9 @@ fn start_lyrics_monitor(app: AppHandle) {
         // Let the app settle before the first poll.
         thread::sleep(Duration::from_secs(3));
         let mut last_index: Option<usize> = None;
+        // Tracks we recently failed to find lyrics for, so lyric-less songs
+        // don't trigger a full search on every 1s poll.
+        let mut lyrics_miss_cache: HashMap<String, Instant> = HashMap::new();
         loop {
             thread::sleep(Duration::from_millis(1000));
             let state = app.state::<AppState>();
@@ -7059,10 +7067,14 @@ fn start_lyrics_monitor(app: AppHandle) {
             let artist = track.artist.clone().unwrap_or_default();
             let key = format!("{}|{}", artist, title);
 
-            // Refetch lyrics only when the track changes.
+            // Refetch lyrics only when the track changes (and not for tracks
+            // we recently established have no lyrics).
             let need_fetch = {
                 let prev = lock_state(&state.lyrics_track_key).clone();
                 prev != key
+                    && lyrics_miss_cache
+                        .get(&key)
+                        .map_or(true, |t| t.elapsed() >= LYRICS_MISS_RETRY_AFTER)
             };
             if need_fetch {
                 let lines = if title.is_empty() && artist.is_empty() {
@@ -7071,6 +7083,7 @@ fn start_lyrics_monitor(app: AppHandle) {
                     lyrics::fetch_lyrics(&artist, &title, track.album.as_deref(), track.duration)
                 };
                 if let Some(lines) = lines {
+                    lyrics_miss_cache.remove(&key);
                     *lock_state(&state.lyrics_track_key) = key.clone();
                     *lock_state(&state.lyrics) = Some(lyrics::LyricPayload {
                         current_index: 0,
@@ -7083,7 +7096,10 @@ fn start_lyrics_monitor(app: AppHandle) {
                     let payload = lock_state(&state.lyrics).clone();
                     let _ = app.emit("lyrics-changed", &payload);
                 } else {
-                    // No synced lyrics available — clear any stale payload.
+                    // No synced lyrics available — clear any stale payload and
+                    // remember the miss so we don't refetch every poll.
+                    lyrics_miss_cache.retain(|_, t| t.elapsed() < LYRICS_MISS_RETRY_AFTER);
+                    lyrics_miss_cache.insert(key.clone(), Instant::now());
                     let was_some = lock_state(&state.lyrics).is_some();
                     if was_some {
                         *lock_state(&state.lyrics) = None;
