@@ -777,7 +777,11 @@ export function App() {
   const [nowPlayingTrack, setNowPlayingTrack] = useState<NowPlayingTrack | null>(null);
   const [mediaCardEnabled, setMediaCardEnabledState] = useState(true);
   const [lyricsData, setLyricsData] = useState<LyricPayload | null>(null);
-  const [lyricsPosition, setLyricsPosition] = useState<{ position: number; playing: boolean } | null>(null);
+  const [playbackPosition, setPlaybackPosition] = useState<{
+    position: number;
+    playing: boolean;
+    receivedAt: number;
+  } | null>(null);
   const [lyricsEnabled, setLyricsEnabledState] = useState(false);
   const [clipboardHistory, setClipboardHistory] = useState<ClipboardEntry[]>([]);
   const [clipboardEnabled, setClipboardEnabled] = useState(false);
@@ -1197,7 +1201,7 @@ export function App() {
     );
     const unsubscribeLyricsPos = manageAsyncUnlisten(
       onLyricsPosition(({ position, playing }) => {
-        setLyricsPosition({ position, playing });
+        setPlaybackPosition({ position, playing, receivedAt: Date.now() });
       }),
     );
     const unsubscribe = manageAsyncUnlisten(
@@ -3588,8 +3592,8 @@ export function App() {
           {showLyricsMarquee ? (
             <LyricsMarquee
               lines={lyricsData!.lines}
-              position={lyricsPosition?.position ?? null}
-              playing={lyricsPosition?.playing ?? false}
+              position={playbackPosition?.position ?? null}
+              playing={playbackPosition?.playing ?? false}
             />
           ) : null}
 

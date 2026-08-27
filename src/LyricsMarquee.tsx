@@ -1,10 +1,26 @@
-import type { LyricLine } from "./tauri";
+import type { LyricLine, LyricPayload, NowPlayingTrack } from "./tauri";
 
 interface LyricsMarqueeProps {
   lines: LyricLine[];
   /** Playback position in seconds (from backend, updated every 1s). */
   position: number | null;
   playing: boolean;
+}
+
+/**
+ * True when the lyrics payload was fetched for the track currently playing.
+ * Lyrics are fetched asynchronously on track change; until the new payload
+ * arrives, the old track's lines must not be rendered against the new
+ * track's position (they would show unrelated lines mid-song).
+ */
+export function lyricsMatchTrack(
+  lyrics: LyricPayload | null,
+  track: NowPlayingTrack | null,
+): boolean {
+  if (lyrics == null || track == null) {
+    return false;
+  }
+  return lyrics.trackTitle === track.title && lyrics.trackArtist === track.artist;
 }
 
 /**

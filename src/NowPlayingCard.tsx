@@ -4,33 +4,83 @@ import { Music, Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import type { CSSProperties } from "react";
 import type { MediaCommand, NowPlayingTrack } from "./tauri";
 
+/**
+ * A backend playback-position sample. The media monitor emits one every ~1s
+ * (`now-playing-position`); `receivedAt` is stamped by the frontend when the
+ * event arrives.
+ */
+export interface LivePositionSample {
+  position: number;
+  receivedAt: number;
+}
+
 interface NowPlayingCardProps {
   track: NowPlayingTrack;
+  /**
+   * Freshest backend position sample. `track.position` is only a snapshot
+   * from the last metadata/play-state change (`now-playing-changed` ignores
+   * position), so without these samples the bar free-runs and diverges —
+   * permanently after a seek in the source player.
+   */
+  livePosition?: LivePositionSample | null;
   onCommand: (command: MediaCommand) => void;
 }
 
-export function NowPlayingCard({ track, onCommand }: NowPlayingCardProps) {
-  const { t } = useTranslation("common");
-  const [position, setPosition] = useState(track.position ?? 0);
+interface PositionAnchor {
+  position: number;
+  at: number;
+}
 
-  // Local progress interpolation: advance position every 1s while playing so
-  // the bar moves smoothly between the 2s backend polls.
+export function NowPlayingCard({ track, livePosition, onCommand }: NowPlayingCardProps) {
+  const { t } = useTranslation("common");
+  const [anchor, setAnchor] = useState<PositionAnchor | null>(() => {
+    if (livePosition) {
+      return { position: livePosition.position, at: livePosition.receivedAt };
+    }
+    const pos = track.position;
+    return pos != null ? { position: pos, at: Date.now() } : null;
+  });
+  // Re-render on a sub-second cadence so the wall-clock interpolation below
+  // renders smoothly while playing.
+  const [, setTick] = useState(0);
+
+  // `track` gets a new object identity on every `now-playing-changed` event;
+  // its position snapshot is fresh at that moment (e.g. a new track starting
+  // at 0s). Keep whichever sample arrived last so the bar reflects seeks and
+  // track changes immediately instead of waiting for the next ~1s poll.
   useEffect(() => {
-    if (!track.playing || track.position == null || track.duration == null) {
-      setPosition(track.position ?? 0);
+    const pos = track.position;
+    if (pos == null) {
       return;
     }
-    setPosition(track.position);
-    const interval = window.setInterval(() => {
-      setPosition((prev) => {
-        if (track.duration != null && prev + 1 >= track.duration) {
-          return track.duration;
-        }
-        return prev + 1;
-      });
-    }, 1000);
+    const at = Date.now();
+    setAnchor((prev) => (!prev || at >= prev.at ? { position: pos, at } : prev));
+  }, [track]);
+
+  useEffect(() => {
+    if (!livePosition) {
+      return;
+    }
+    const { position, receivedAt: at } = livePosition;
+    setAnchor((prev) => (!prev || at >= prev.at ? { position, at } : prev));
+  }, [livePosition]);
+
+  useEffect(() => {
+    if (!track.playing) {
+      return;
+    }
+    const interval = window.setInterval(() => setTick((n) => n + 1), 250);
     return () => window.clearInterval(interval);
-  }, [track.position, track.playing, track.duration]);
+  }, [track.playing]);
+
+  let position = anchor?.position ?? track.position ?? 0;
+  if (track.playing && anchor) {
+    position += (Date.now() - anchor.at) / 1000;
+  }
+  if (track.duration != null) {
+    position = Math.min(position, track.duration);
+  }
+  position = Math.max(0, position);
 
   const progressPct =
     track.duration != null && track.duration > 0

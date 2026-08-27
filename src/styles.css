@@ -6340,7 +6340,7 @@ kbd {
   border-radius: 1px;
   background: var(--text-muted);
   opacity: 0.6;
-  transition: width 1s linear;
+  transition: width 250ms linear;
 }
 
 .np-controls {
