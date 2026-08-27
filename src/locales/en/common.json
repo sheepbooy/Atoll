@@ -141,6 +141,8 @@
     "empty": "Copy any text and it will appear here",
     "disabled": "Enable clipboard history in settings",
     "clear": "Clear all",
-    "copied": "Copied"
+    "copied": "Copied",
+    "kindImage": "Image",
+    "kindFiles": "Files"
   }
 }

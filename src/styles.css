@@ -6311,6 +6311,41 @@ kbd {
   border-color: rgba(120, 220, 150, 0.2);
 }
 
+.clipboard-entry.has-icon {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.clipboard-entry-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.clipboard-entry-thumb {
+  height: 36px;
+  max-width: 96px;
+  object-fit: contain;
+  border-radius: 5px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.clipboard-entry-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(111, 220, 255, 0.08);
+  color: rgba(111, 220, 255, 0.75);
+  flex-shrink: 0;
+}
+
 .clipboard-entry-preview {
   font-size: 13px;
   line-height: 1.35;

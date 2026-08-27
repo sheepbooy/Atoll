@@ -480,6 +480,8 @@ pub(crate) struct AppState {
     clipboard_history: Mutex<Vec<clipboard_history::ClipboardEntry>>,
     /// Whether clipboard history monitoring is enabled (privacy toggle).
     clipboard_history_enabled: Mutex<bool>,
+    /// Maximum number of clipboard entries kept (user setting).
+    clipboard_history_limit: Mutex<usize>,
     /// Whether the scrolling-lyrics marquee is enabled in the compact island.
     lyrics_enabled: Mutex<bool>,
     /// Current lyrics payload (None when no track or no synced lyrics).
@@ -2820,6 +2822,52 @@ fn persist_clipboard_history_enabled(enabled: bool) {
     }
 }
 
+fn load_clipboard_history_limit() -> usize {
+    let Some(path) = atoll_settings_path() else {
+        return clipboard_history::DEFAULT_MAX_ENTRIES;
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return clipboard_history::DEFAULT_MAX_ENTRIES;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+        return clipboard_history::DEFAULT_MAX_ENTRIES;
+    };
+    value
+        .get("clipboardHistoryLimit")
+        .and_then(Value::as_u64)
+        .map(|limit| {
+            limit.clamp(
+                clipboard_history::MIN_HISTORY_LIMIT as u64,
+                clipboard_history::MAX_HISTORY_LIMIT as u64,
+            ) as usize
+        })
+        .unwrap_or(clipboard_history::DEFAULT_MAX_ENTRIES)
+}
+
+fn persist_clipboard_history_limit(limit: usize) {
+    let Some(path) = atoll_settings_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut config: Value = path
+        .exists()
+        .then(|| std::fs::read_to_string(&path).ok())
+        .flatten()
+        .and_then(|c| serde_json::from_str(&c).ok())
+        .unwrap_or_else(|| Value::Object(Default::default()));
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert(
+            "clipboardHistoryLimit".into(),
+            Value::from(limit as u64),
+        );
+    }
+    if let Ok(formatted) = serde_json::to_string_pretty(&config) {
+        let _ = std::fs::write(path, formatted);
+    }
+}
+
 fn load_lyrics_enabled() -> bool {
     let Some(path) = atoll_settings_path() else {
         return false;
@@ -2968,13 +3016,19 @@ fn set_subagent_retention(state: State<'_, AppState>, minutes: u64) -> u64 {
 
 #[tauri::command]
 fn get_clipboard_history(state: State<'_, AppState>) -> Vec<clipboard_history::ClipboardEntry> {
-    let entries = clipboard_history::prune_expired(lock_state(&state.clipboard_history).clone());
-    *lock_state(&state.clipboard_history) = entries.clone();
-    entries
+    let limit = *lock_state(&state.clipboard_history_limit);
+    let mut entries = lock_state(&state.clipboard_history);
+    let before = entries.len();
+    clipboard_history::prune_expired(&mut entries, limit);
+    let result = entries.clone();
+    if result.len() != before {
+        clipboard_history::save_history(&entries);
+    }
+    result
 }
 
 #[tauri::command]
-fn copy_clipboard_entry(state: State<'_, AppState>, id: String) -> bool {
+fn copy_clipboard_entry(app: AppHandle, state: State<'_, AppState>, id: String) -> bool {
     let entry = lock_state(&state.clipboard_history)
         .iter()
         .find(|e| e.id == id)
@@ -2982,15 +3036,29 @@ fn copy_clipboard_entry(state: State<'_, AppState>, id: String) -> bool {
     let Some(entry) = entry else {
         return false;
     };
-    clipboard_history::write_clipboard(&entry.content);
-    true
+    let payload = match entry.kind {
+        clipboard_history::EntryKind::Text => Some(clipboard_history::ClipboardPayload::Text(
+            entry.content.clone(),
+        )),
+        clipboard_history::EntryKind::Image => clipboard_history::read_image_blob(&entry.id)
+            .map(|png| clipboard_history::ClipboardPayload::Image { png }),
+        clipboard_history::EntryKind::Files => Some(clipboard_history::ClipboardPayload::Files(
+            entry.content.lines().map(str::to_string).collect(),
+        )),
+    };
+    let Some(payload) = payload else {
+        return false;
+    };
+    write_clipboard_payload(&app, &payload)
 }
 
 #[tauri::command]
 fn clear_clipboard_history(state: State<'_, AppState>) {
-    let empty = Vec::new();
-    clipboard_history::save_history(&empty);
-    *lock_state(&state.clipboard_history) = empty;
+    let mut entries = lock_state(&state.clipboard_history);
+    entries.clear();
+    clipboard_history::save_history(&entries);
+    drop(entries);
+    clipboard_history::clear_blobs();
 }
 
 #[tauri::command]
@@ -2999,15 +3067,60 @@ fn get_clipboard_history_enabled(state: State<'_, AppState>) -> bool {
 }
 
 #[tauri::command]
-fn set_clipboard_history_enabled(state: State<'_, AppState>, enabled: bool) -> bool {
+fn set_clipboard_history_enabled(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> bool {
     *lock_state(&state.clipboard_history_enabled) = enabled;
     persist_clipboard_history_enabled(enabled);
     if enabled {
-        // Reload persisted history now that monitoring is active.
-        let entries = clipboard_history::load_history();
-        *lock_state(&state.clipboard_history) = entries;
+        // Snapshot the current clipboard first (main-thread read), then
+        // reload persisted history under the state lock so enabling feels
+        // like it captured what was just copied. Never touch the main
+        // thread while holding the history lock: sync Tauri commands run
+        // on the main thread and take the same lock.
+        let snapshot = read_clipboard_snapshot(&app);
+        let limit = *lock_state(&state.clipboard_history_limit);
+        let mut entries = lock_state(&state.clipboard_history);
+        *entries = clipboard_history::load_history(limit);
+        if let Some(payload) = snapshot {
+            if clipboard_history::add_entry(&mut entries, payload, limit) {
+                clipboard_history::save_history(&entries);
+            }
+        }
     }
     enabled
+}
+
+#[tauri::command]
+fn get_clipboard_history_limit(state: State<'_, AppState>) -> usize {
+    *lock_state(&state.clipboard_history_limit)
+}
+
+#[tauri::command]
+fn set_clipboard_history_limit(state: State<'_, AppState>, limit: usize) -> usize {
+    let clamped = limit.clamp(
+        clipboard_history::MIN_HISTORY_LIMIT,
+        clipboard_history::MAX_HISTORY_LIMIT,
+    );
+    *lock_state(&state.clipboard_history_limit) = clamped;
+    persist_clipboard_history_limit(clamped);
+    // Shrinking the limit prunes immediately (and drops trimmed blobs).
+    let mut entries = lock_state(&state.clipboard_history);
+    let before = entries.len();
+    clipboard_history::prune_expired(&mut entries, clamped);
+    if entries.len() != before {
+        clipboard_history::save_history(&entries);
+    }
+    clamped
+}
+
+#[tauri::command]
+fn get_clipboard_entry_thumbnail(state: State<'_, AppState>, id: String) -> Option<String> {
+    let is_image = lock_state(&state.clipboard_history)
+        .iter()
+        .any(|e| e.id == id && e.kind == clipboard_history::EntryKind::Image);
+    if !is_image {
+        return None;
+    }
+    clipboard_history::read_thumbnail_data_url(&id)
 }
 
 fn archive_subagent_in_state(state: &AppState, agent_id: &str) -> Option<String> {
@@ -6786,7 +6899,8 @@ pub fn run() {
             transcript_cache: Mutex::new(TranscriptCache::default()),
             media_card_enabled: Mutex::new(load_media_card_enabled()),
             artwork_backdrop_enabled: Mutex::new(load_artwork_backdrop_enabled()),
-            clipboard_history: Mutex::new(clipboard_history::load_history()),
+            clipboard_history_limit: Mutex::new(load_clipboard_history_limit()),
+            clipboard_history: Mutex::new(clipboard_history::load_history(load_clipboard_history_limit())),
             clipboard_history_enabled: Mutex::new(load_clipboard_history_enabled()),
             lyrics_enabled: Mutex::new(load_lyrics_enabled()),
             lyrics: Mutex::new(None),
@@ -6835,6 +6949,9 @@ pub fn run() {
             clear_clipboard_history,
             get_clipboard_history_enabled,
             set_clipboard_history_enabled,
+            get_clipboard_history_limit,
+            set_clipboard_history_limit,
+            get_clipboard_entry_thumbnail,
             archive_subagent,
             archive_completed_subagents,
             get_token_history,
@@ -7077,34 +7194,91 @@ fn start_media_monitor(app: AppHandle) {
     }
 }
 
+/// Run a closure on the app's main thread and wait briefly for its result.
+/// NSPasteboard must only be touched from the main thread on macOS, so every
+/// pasteboard read/write is marshaled through this. Other platforms call
+/// the closure directly (Win32 clipboard APIs are thread-safe).
+fn call_on_main_thread<T, F>(app: &AppHandle, f: F) -> Option<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    #[cfg(target_os = "macos")]
+    {
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.run_on_main_thread(move || {
+            let _ = tx.send(f());
+        })
+        .ok()?;
+        rx.recv_timeout(Duration::from_millis(2000)).ok()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Some(f())
+    }
+}
+
+fn clipboard_sequence(app: &AppHandle) -> u64 {
+    call_on_main_thread(app, clipboard_history::clipboard_sequence).unwrap_or(0)
+}
+
+fn read_clipboard_snapshot(app: &AppHandle) -> Option<clipboard_history::ClipboardPayload> {
+    call_on_main_thread(app, clipboard_history::read_clipboard_snapshot).flatten()
+}
+
+fn write_clipboard_payload(
+    app: &AppHandle,
+    payload: &clipboard_history::ClipboardPayload,
+) -> bool {
+    let payload = payload.clone();
+    call_on_main_thread(app, move || {
+        clipboard_history::write_clipboard_payload(&payload)
+    })
+    .unwrap_or(false)
+}
+
 fn start_clipboard_monitor(app: AppHandle) {
     thread::spawn(move || {
         // Let the app settle before the first poll.
         thread::sleep(Duration::from_secs(2));
-        let mut last_text: Option<String> = None;
+        // Baseline the clipboard sequence counter: the content already on
+        // the clipboard at startup is not treated as a fresh copy. Only
+        // sequence changes that happen while monitoring get recorded.
+        let mut last_seq: Option<u64> = None;
         loop {
             thread::sleep(Duration::from_millis(1000));
             let state = app.state::<AppState>();
             let enabled = *lock_state(&state.clipboard_history_enabled);
             if !enabled {
-                last_text = None;
+                last_seq = None;
                 continue;
             }
-            // read_clipboard returns None when no text is on the pasteboard.
-            let current = clipboard_history::read_clipboard();
-            let changed = match (&last_text, &current) {
-                (None, None) => false,
-                (None, Some(_)) | (Some(_), None) => true,
-                (Some(a), Some(b)) => a != b,
+            let seq = clipboard_sequence(&app);
+            if seq == 0 {
+                // Sequence numbers are unavailable on this platform.
+                continue;
+            }
+            if last_seq == Some(seq) {
+                continue;
+            }
+            let had_baseline = last_seq.is_some();
+            last_seq = Some(seq);
+            if !had_baseline {
+                continue;
+            }
+            // Read the snapshot before taking the history lock: the main
+            // thread runs sync commands that lock the same state.
+            let Some(payload) = read_clipboard_snapshot(&app) else {
+                continue;
             };
-            if changed {
-                last_text = current.clone();
-                if let Some(text) = current {
-                    if let Some(entries) = clipboard_history::add_entry(text) {
-                        *lock_state(&state.clipboard_history) = entries.clone();
-                        let _ = app.emit("clipboard-history-changed", &entries);
-                    }
-                }
+            let limit = *lock_state(&state.clipboard_history_limit);
+            let mut entries = lock_state(&state.clipboard_history);
+            if clipboard_history::add_entry(&mut entries, payload, limit) {
+                clipboard_history::save_history(&entries);
+                let snapshot = entries.clone();
+                drop(entries);
+                let _ = app.emit("clipboard-history-changed", &snapshot);
             }
         }
     });
@@ -9791,6 +9965,7 @@ mod core_tests {
             media_card_enabled: Mutex::new(true),
             artwork_backdrop_enabled: Mutex::new(false),
             clipboard_history: Mutex::new(Vec::new()),
+            clipboard_history_limit: Mutex::new(clipboard_history::DEFAULT_MAX_ENTRIES),
             clipboard_history_enabled: Mutex::new(false),
             lyrics_enabled: Mutex::new(false),
             lyrics: Mutex::new(None),
@@ -10584,6 +10759,7 @@ mod cursor_subagent_tests {
             media_card_enabled: Mutex::new(true),
             artwork_backdrop_enabled: Mutex::new(false),
             clipboard_history: Mutex::new(Vec::new()),
+            clipboard_history_limit: Mutex::new(clipboard_history::DEFAULT_MAX_ENTRIES),
             clipboard_history_enabled: Mutex::new(false),
             lyrics_enabled: Mutex::new(false),
             lyrics: Mutex::new(None),

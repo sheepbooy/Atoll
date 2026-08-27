@@ -141,6 +141,8 @@
     "empty": "复制任何文本即可记录到这里",
     "disabled": "在设置中开启剪贴板历史",
     "clear": "清空",
-    "copied": "已复制"
+    "copied": "已复制",
+    "kindImage": "图片",
+    "kindFiles": "文件"
   }
 }

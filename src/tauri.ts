@@ -749,11 +749,15 @@ export async function onLyricsPosition(
   );
 }
 
+export type ClipboardEntryKind = "text" | "image" | "files";
+
 export interface ClipboardEntry {
   id: string;
+  kind: ClipboardEntryKind;
   content: string;
   preview: string;
   copiedAt: number;
+  byteSize?: number;
 }
 
 export async function getClipboardHistory(): Promise<ClipboardEntry[]> {
@@ -789,6 +793,27 @@ export async function setClipboardHistoryEnabled(enabled: boolean): Promise<bool
     return enabled;
   }
   return invoke<boolean>("set_clipboard_history_enabled", { enabled });
+}
+
+export async function getClipboardHistoryLimit(): Promise<number> {
+  if (!isTauriRuntime()) {
+    return 50;
+  }
+  return invoke<number>("get_clipboard_history_limit");
+}
+
+export async function setClipboardHistoryLimit(limit: number): Promise<number> {
+  if (!isTauriRuntime()) {
+    return limit;
+  }
+  return invoke<number>("set_clipboard_history_limit", { limit });
+}
+
+export async function getClipboardEntryThumbnail(id: string): Promise<string | null> {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+  return invoke<string | null>("get_clipboard_entry_thumbnail", { id });
 }
 
 export async function onClipboardHistoryChanged(

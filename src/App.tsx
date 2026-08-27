@@ -181,10 +181,12 @@ import {
   ClipboardEntry,
   getClipboardHistory,
   getClipboardHistoryEnabled,
+  getClipboardHistoryLimit,
   onClipboardHistoryChanged,
   copyClipboardEntry,
   clearClipboardHistory,
   setClipboardHistoryEnabled,
+  setClipboardHistoryLimit,
   archiveAllResolved,
   archiveSession,
   archiveSubagent,
@@ -291,6 +293,8 @@ const MAX_MAX_SUBAGENT_DISPLAY = 10;
 const DEFAULT_RETENTION_MINUTES = 15;
 const DEFAULT_SUBAGENT_RETENTION_MINUTES = 10;
 const MIN_RETENTION_MINUTES = 1;
+const MIN_CLIPBOARD_LIMIT = 10;
+const MAX_CLIPBOARD_LIMIT = 500;
 const MAX_RETENTION_MINUTES = 60;
 const IDLE_INTERVAL_SETTING_KEY = "atoll.idleIntervalMin";
 const IDLE_DURATION_SETTING_KEY = "atoll.idleDurationMin";
@@ -884,6 +888,7 @@ export function App() {
   const [lyricsEnabled, setLyricsEnabledState] = useState(false);
   const [clipboardHistory, setClipboardHistory] = useState<ClipboardEntry[]>([]);
   const [clipboardEnabled, setClipboardEnabled] = useState(false);
+  const [clipboardLimit, setClipboardLimit] = useState(50);
   const [justResolved, setJustResolved] = useState(false);
   const [hookHealthHydrated, setHookHealthHydrated] = useState(false);
   const [configuredHookAgents, setConfiguredHookAgents] = useState(() =>
@@ -1282,6 +1287,9 @@ export function App() {
       .catch(() => undefined);
     getClipboardHistoryEnabled()
       .then(setClipboardEnabled)
+      .catch(() => undefined);
+    getClipboardHistoryLimit()
+      .then(setClipboardLimit)
       .catch(() => undefined);
     getClipboardHistory()
       .then(setClipboardHistory)
@@ -2848,6 +2856,15 @@ export function App() {
     }
   }, []);
 
+  const handleChangeClipboardLimit = useCallback((limit: number) => {
+    const clamped = Math.min(
+      MAX_CLIPBOARD_LIMIT,
+      Math.max(MIN_CLIPBOARD_LIMIT, Math.round(limit)),
+    );
+    setClipboardLimit(clamped);
+    setClipboardHistoryLimit(clamped).catch(() => undefined);
+  }, []);
+
   const hookMenuAgents: HookMenuAgent[] = [
     {
       key: "claude",
@@ -3523,6 +3540,8 @@ export function App() {
           onChangeLyricsEnabled={handleChangeLyricsEnabled}
           clipboardHistoryEnabled={clipboardEnabled}
           onChangeClipboardHistoryEnabled={handleChangeClipboardEnabled}
+          clipboardLimit={clipboardLimit}
+          onChangeClipboardLimit={handleChangeClipboardLimit}
           compactIndicator={compactIndicator}
           onChangeCompactIndicator={setCompactIndicatorState}
         />
@@ -4508,6 +4527,8 @@ interface SettingsViewProps {
   onChangeLyricsEnabled: (enabled: boolean) => void;
   clipboardHistoryEnabled: boolean;
   onChangeClipboardHistoryEnabled: (enabled: boolean) => void;
+  clipboardLimit: number;
+  onChangeClipboardLimit: (limit: number) => void;
   compactIndicator: CompactIndicatorMode;
   onChangeCompactIndicator: (mode: CompactIndicatorMode) => void;
 }
@@ -4672,6 +4693,8 @@ function SettingsView({
   onChangeLyricsEnabled,
   clipboardHistoryEnabled,
   onChangeClipboardHistoryEnabled,
+  clipboardLimit,
+  onChangeClipboardLimit,
   compactIndicator,
   onChangeCompactIndicator,
 }: SettingsViewProps) {
@@ -4792,6 +4815,16 @@ function SettingsView({
             desc={t("display.clipboardHistoryDesc")}
             checked={clipboardHistoryEnabled}
             onChange={onChangeClipboardHistoryEnabled}
+          />
+          <SettingsSlider
+            label={t("display.clipboardHistoryLimitLabel")}
+            value={clipboardLimit}
+            min={MIN_CLIPBOARD_LIMIT}
+            max={MAX_CLIPBOARD_LIMIT}
+            step={10}
+            unit={t("display.clipboardHistoryLimitUnit")}
+            desc={t("display.clipboardHistoryLimitDesc")}
+            onChange={onChangeClipboardLimit}
           />
           {IS_MACOS ? (
             <div className="settings-card">
