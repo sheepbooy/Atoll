@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="220" viewBox="0 0 420 220" role="img" aria-label="剪贴板历史：搜索框 + 复制条目列表">
+  <defs>
+    <linearGradient id="cb-panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#16181d"/>
+      <stop offset="100%" stop-color="#111317"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="420" height="220" rx="12" fill="url(#cb-panel)" stroke="rgba(255,255,255,0.08)"/>
+
+  <!-- Search toolbar (real CSS: padding 0 4px 10px, gap 8) -->
+  <text x="16" y="22" fill="rgba(255,255,255,0.38)" font-family="system-ui,sans-serif" font-size="8" letter-spacing="0.06em">CLIPBOARD HISTORY</text>
+
+  <!-- search input (padding 7px, 30px left for icon, 8px radius) -->
+  <rect x="16" y="32" width="388" height="32" rx="8" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.08)"/>
+  <!-- search icon -->
+  <circle cx="32" cy="48" r="4" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.2"/>
+  <line x1="35" y1="51" x2="38" y2="54" stroke="rgba(255,255,255,0.5)" stroke-width="1.2" stroke-linecap="round"/>
+  <text x="44" y="52" fill="rgba(255,255,255,0.35)" font-family="system-ui,sans-serif" font-size="13">搜索复制历史…</text>
+
+  <!-- clear button -->
+  <rect x="370" y="36" width="28" height="24" rx="6" fill="transparent" stroke="rgba(255,255,255,0.1)"/>
+  <path d="M378 44 L386 52 M386 44 L378 52" stroke="rgba(255,255,255,0.4)" stroke-width="1.2" stroke-linecap="round"/>
+
+  <!-- Entry list (gap 4px, each entry padding 8/12, 8px radius) -->
+  <!-- entry 1 -->
+  <rect x="16" y="72" width="388" height="44" rx="8" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.05)"/>
+  <text x="28" y="90" fill="#e8eaed" font-family="system-ui,sans-serif" font-size="13">npm run build &amp;&amp; npm run tauri dev</text>
+  <text x="28" y="106" fill="#6b7280" font-family="system-ui,sans-serif" font-size="11">2 分钟前 · 31 字符</text>
+
+  <!-- entry 2 (copied state - green tint) -->
+  <rect x="16" y="120" width="388" height="44" rx="8" fill="rgba(120,220,150,0.1)" stroke="rgba(120,220,150,0.2)"/>
+  <text x="28" y="138" fill="#e8eaed" font-family="system-ui,sans-serif" font-size="13">git commit -m "fix: align mascot logos"</text>
+  <text x="28" y="154" fill="#6b7280" font-family="system-ui,sans-serif" font-size="11">5 分钟前 · 44 字符</text>
+  <!-- copied checkmark badge -->
+  <circle cx="388" cy="142" r="6" fill="rgba(120,220,150,0.3)"/>
+  <path d="M385 142 L387.5 144.5 L391 140.5" stroke="#78dc96" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+  <!-- entry 3 -->
+  <rect x="16" y="168" width="388" height="44" rx="8" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.05)"/>
+  <text x="28" y="186" fill="#e8eaed" font-family="system-ui,sans-serif" font-size="13">const MASCOT_VIEWBOX = { x: -20, y: -34, ... }</text>
+  <text x="28" y="202" fill="#6b7280" font-family="system-ui,sans-serif" font-size="11">10 分钟前 · 52 字符</text>
+</svg>

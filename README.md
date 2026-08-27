@@ -186,6 +186,24 @@ Hook 注册 `PermissionRequest`、`PostToolUse`、`Stop` 等事件，写入 `~/.
   <img src="docs/assets/session-overview.png" alt="多 session 菜单栏 + Claude Code 终端" width="92%" />
 </p>
 
+### 新功能预览
+
+<p align="center">
+  <img src="docs/assets/now-playing-preview.svg" alt="Now Playing 音乐卡片：紧凑态指标器 + 展开态曲目封面与控制" width="420" />
+</p>
+
+<p align="center">
+  <img src="docs/assets/lyrics-preview.svg" alt="滚动歌词：紧凑胶囊中部歌词行随播放进度滚动" width="420" />
+</p>
+
+<p align="center">
+  <img src="docs/assets/clipboard-history-preview.svg" alt="剪贴板历史：搜索框 + 复制条目列表" width="420" />
+</p>
+
+<p align="center">
+  <img src="docs/assets/hook-health-preview.svg" alt="Hook 健康检测：Agent hook 状态 + 失效竞争 hook 清理" width="420" />
+</p>
+
 ---
 
 ## 开发

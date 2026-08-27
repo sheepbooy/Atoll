@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="220" viewBox="0 0 420 220" role="img" aria-label="Hook 健康检测：Agent hook 状态 + 检测到失效竞争 hook">
+  <defs>
+    <linearGradient id="hk-panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#16181d"/>
+      <stop offset="100%" stop-color="#111317"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="420" height="220" rx="12" fill="url(#hk-panel)" stroke="rgba(255,255,255,0.08)"/>
+
+  <text x="16" y="22" fill="rgba(255,255,255,0.38)" font-family="system-ui,sans-serif" font-size="8" letter-spacing="0.06em">SETTINGS → AGENT HOOKS</text>
+
+  <!-- Claude hook card (ready - green) -->
+  <rect x="16" y="32" width="388" height="40" rx="10" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.06)"/>
+  <!-- mascot dot coral -->
+  <circle cx="34" cy="52" r="7" fill="rgba(255,129,117,0.18)" stroke="#ff8175" stroke-width="0.8" stroke-opacity="0.5"/>
+  <text x="50" y="50" fill="#fff" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Claude Code</text>
+  <text x="50" y="63" fill="rgba(255,255,255,0.4)" font-family="ui-monospace,monospace" font-size="9">~/.claude/settings.json</text>
+  <!-- ready badge -->
+  <rect x="340" y="44" width="52" height="16" rx="8" fill="rgba(120,220,150,0.12)" stroke="rgba(120,220,150,0.3)"/>
+  <circle cx="352" cy="52" r="3" fill="#78dc96"/>
+  <text x="372" y="55" text-anchor="middle" fill="#78dc96" font-family="system-ui,sans-serif" font-size="9" font-weight="600">Ready</text>
+
+  <!-- Codex hook card (ready) -->
+  <rect x="16" y="76" width="388" height="40" rx="10" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.06)"/>
+  <circle cx="34" cy="96" r="7" fill="rgba(97,216,247,0.18)" stroke="#61d8f7" stroke-width="0.8" stroke-opacity="0.5"/>
+  <text x="50" y="94" fill="#fff" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Codex</text>
+  <text x="50" y="107" fill="rgba(255,255,255,0.4)" font-family="ui-monospace,monospace" font-size="9">~/.codex/hooks.json</text>
+  <rect x="340" y="88" width="52" height="16" rx="8" fill="rgba(120,220,150,0.12)" stroke="rgba(120,220,150,0.3)"/>
+  <circle cx="352" cy="96" r="3" fill="#78dc96"/>
+  <text x="372" y="99" text-anchor="middle" fill="#78dc96" font-family="system-ui,sans-serif" font-size="9" font-weight="600">Ready</text>
+
+  <!-- Dead competing hook warning (orange) -->
+  <rect x="16" y="124" width="388" height="72" rx="8" fill="rgba(255,159,67,0.08)" stroke="rgba(255,159,67,0.28)"/>
+  <text x="28" y="142" fill="#f4c487" font-family="system-ui,sans-serif" font-size="11" font-weight="600">⚠ 检测到失效的竞争 Claude hooks</text>
+  <text x="28" y="156" fill="rgba(255,159,67,0.7)" font-family="system-ui,sans-serif" font-size="9">这些 hook 指向已卸载的旧版本，会抢占事件：</text>
+
+  <!-- competing item 1 -->
+  <rect x="28" y="162" width="60" height="14" rx="3" fill="rgba(255,159,67,0.18)"/>
+  <text x="58" y="172" text-anchor="middle" fill="rgba(255,159,67,0.95)" font-family="system-ui,sans-serif" font-size="8" font-weight="700">PREV</text>
+  <text x="96" y="172" fill="rgba(255,159,67,0.9)" font-family="ui-monospace,monospace" font-size="9">~/.claude/settings.json · atoll-hook-v0.1.40</text>
+
+  <!-- cleanup button -->
+  <rect x="28" y="184" width="120" height="26" rx="7" fill="rgba(255,159,67,0.12)" stroke="rgba(255,159,67,0.35)"/>
+  <path d="M40 196 L52 196 M46 192 L46 200" stroke="#f4c487" stroke-width="1.2" stroke-linecap="round"/>
+  <text x="88" y="200" text-anchor="middle" fill="#f4c487" font-family="system-ui,sans-serif" font-size="11" font-weight="600">清理失效 hooks</text>
+</svg>
