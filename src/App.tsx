@@ -1201,6 +1201,9 @@ export function App() {
     );
     const unsubscribeLyricsPos = manageAsyncUnlisten(
       onLyricsPosition(({ position, playing }) => {
+        if (position == null) {
+          return;
+        }
         setPlaybackPosition({ position, playing, receivedAt: Date.now() });
       }),
     );

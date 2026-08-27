@@ -6941,6 +6941,31 @@ const LYRICS_MISS_RETRY_AFTER: Duration = Duration::from_secs(30);
 /// only when the track metadata or playing state actually changes. Also
 /// emits `now-playing-position` every poll so the frontend can calibrate
 /// its local playback clock for lyric sync. No-op on non-macOS.
+/// Position to report for the `now-playing-position` event, with paused
+/// creep removed. Some players (QQ Music) keep advancing elapsedTime while
+/// paused and snap it back on resume; while paused, hold the last adopted
+/// position so the progress bar and lyrics don't creep forward and jump
+/// back. Real jumps (backward, or forward by ≥2s in one poll — seeks) are
+/// adopted; `None` passes through (the frontend ignores null positions).
+fn sanitize_paused_position(
+    raw: Option<f64>,
+    playing: bool,
+    prev_raw: Option<f64>,
+    held: &mut Option<f64>,
+) -> Option<f64> {
+    if playing {
+        *held = raw;
+        return raw;
+    }
+    match (raw, prev_raw, *held) {
+        (Some(r), Some(pr), Some(h)) if r >= pr && r - pr < 2.0 => Some(h),
+        _ => {
+            *held = raw;
+            raw
+        }
+    }
+}
+
 fn start_media_monitor(app: AppHandle) {
     #[cfg(target_os = "macos")]
     {
@@ -6948,6 +6973,8 @@ fn start_media_monitor(app: AppHandle) {
             // Let the app settle before the first fetch.
             thread::sleep(Duration::from_secs(2));
             let mut last: Option<NowPlayingTrack> = None;
+            let mut prev_raw: Option<f64> = None;
+            let mut held: Option<f64> = None;
             loop {
                 thread::sleep(Duration::from_millis(1000));
                 let current = media::fetch_now_playing();
@@ -6965,17 +6992,27 @@ fn start_media_monitor(app: AppHandle) {
                     last = current.clone();
                     let _ = app.emit("now-playing-changed", &current);
                 }
-                // Push position every poll so lyric sync stays tight for
-                // fast-tempo tracks. The 1s cadence + frontend 60fps
-                // interpolation keeps line changes within ~16ms.
+                // Push position every poll so the progress bar and lyric
+                // line stay tight; the frontend interpolates with the wall
+                // clock between polls.
                 if let Some(ref track) = current {
+                    let position = sanitize_paused_position(
+                        track.position,
+                        track.playing,
+                        prev_raw,
+                        &mut held,
+                    );
+                    prev_raw = track.position;
                     let _ = app.emit(
                         "now-playing-position",
                         &serde_json::json!({
-                            "position": track.position.unwrap_or(0.0),
+                            "position": position,
                             "playing": track.playing,
                         }),
                     );
+                } else {
+                    prev_raw = None;
+                    held = None;
                 }
             }
         });
@@ -10177,6 +10214,59 @@ mod core_tests {
             tray_menu_entries(),
             [("show", "Show Atoll"), ("quit", "Quit")]
         );
+    }
+
+    #[test]
+    fn paused_position_freezes_creep_but_allows_seeks() {
+        // Mirrors QQ Music behavior measured live: elapsedTime keeps
+        // advancing while paused and snaps back on resume.
+        let mut held: Option<f64> = None;
+        let mut prev_raw: Option<f64> = None;
+        let step = |raw, playing, prev, held: &mut Option<f64>| {
+            sanitize_paused_position(Some(raw), playing, prev, held)
+        };
+
+        // Playing positions pass through.
+        assert_eq!(step(71.2, true, prev_raw, &mut held), Some(71.2));
+        prev_raw = Some(71.2);
+
+        // First paused sample lands within the last playing position's
+        // creep window — held at the last playing value.
+        assert_eq!(step(71.8, false, prev_raw, &mut held), Some(71.2));
+        prev_raw = Some(71.8);
+
+        // Subsequent paused creep stays frozen.
+        assert_eq!(step(72.9, false, prev_raw, &mut held), Some(71.2));
+        prev_raw = Some(72.9);
+        assert_eq!(step(73.99, false, prev_raw, &mut held), Some(71.2));
+        prev_raw = Some(73.99);
+
+        // A forward seek while paused (≥2s in one poll) is adopted.
+        assert_eq!(step(100.0, false, prev_raw, &mut held), Some(100.0));
+        prev_raw = Some(100.0);
+
+        // A backward seek while paused is adopted.
+        assert_eq!(step(50.0, false, prev_raw, &mut held), Some(50.0));
+        prev_raw = Some(50.0);
+
+        // Resume passes the snapped-back true position through.
+        assert_eq!(step(71.0, true, prev_raw, &mut held), Some(71.0));
+    }
+
+    #[test]
+    fn paused_position_none_and_cold_start_pass_through() {
+        let mut held: Option<f64> = None;
+        // No history: adopt whatever arrives.
+        assert_eq!(
+            sanitize_paused_position(Some(30.0), false, None, &mut held),
+            Some(30.0)
+        );
+        // None (player omitted elapsedTime) passes through as None.
+        assert_eq!(
+            sanitize_paused_position(None, false, Some(30.0), &mut held),
+            None
+        );
+        assert_eq!(held, None);
     }
 
     #[test]

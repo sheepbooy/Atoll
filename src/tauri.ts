@@ -719,7 +719,8 @@ export async function onLyricsChanged(
 }
 
 export interface LyricsPosition {
-  position: number;
+  /** Null when the player omitted elapsedTime; consumers should skip. */
+  position: number | null;
   playing: boolean;
 }
 
