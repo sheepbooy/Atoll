@@ -21,16 +21,21 @@ export function LyricsMarquee({ lines, position, playing }: LyricsMarqueeProps) 
   const pos = position ?? 0;
   const currentIndex = lineIndexAt(lines, pos);
   const line = lines[currentIndex];
+  const text = line?.text.trim() ?? "";
 
-  if (!line || !line.text.trim()) {
-    return null;
-  }
-
+  // The wrapper must stay mounted even when the current line is empty
+  // (intro/interlude): it occupies the dedicated 140px middle grid column,
+  // so unmounting it would shift the metrics column inward and expose a
+  // blank strip of island background to its right.
   return (
     <span className="lyrics-marquee" aria-hidden="true">
-      <span key={currentIndex} className="lyrics-marquee__line">
-        {line.text}
-      </span>
+      {text ? (
+        <span key={currentIndex} className="lyrics-marquee__line">
+          {line.text}
+        </span>
+      ) : (
+        <span className="lyrics-marquee__gap">· · ·</span>
+      )}
     </span>
   );
 }

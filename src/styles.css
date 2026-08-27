@@ -7106,6 +7106,7 @@ kbd {
   }
 
   .lyrics-marquee__line,
+  .lyrics-marquee__gap,
   .island-header.has-lyrics .compact-session-dot {
     animation: none !important;
   }
@@ -7291,6 +7292,15 @@ kbd {
   padding: 0 4px;
   max-height: 2.3em;
   overflow: hidden;
+  animation: lyrics-fade-up 400ms var(--ease-out) both;
+}
+
+/* Instrumental gaps (intro/interlude): keeps the middle column occupied
+   while signalling that music is still playing. */
+.lyrics-marquee__gap {
+  display: block;
+  opacity: 0.35;
+  letter-spacing: 3px;
   animation: lyrics-fade-up 400ms var(--ease-out) both;
 }
 
