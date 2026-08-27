@@ -85,6 +85,9 @@
     "unknown": "Unknown error",
     "codexNotSaved": "Codex hooks were not saved. Check permissions on ~/.codex/hooks.json.",
     "cursorNotSaved": "Cursor hooks were not saved. Check permissions on ~/.cursor/hooks.json.",
-    "installPartial": "Could not install hooks for: {{agents}}."
+    "installPartial": "Could not install hooks for: {{agents}}.",
+    "uninstallFailed": "{{agentLabel}} hook uninstall failed: {{message}}",
+    "uninstallAllFailed": "Hook uninstall failed: {{message}}",
+    "cleanupFailed": "Hook cleanup failed: {{message}}"
   }
 }

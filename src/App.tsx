@@ -789,6 +789,13 @@ export function App() {
   const navigationSeqRef = useRef(0);
   const [hookBusy, setHookBusy] = useState(false);
   const [hookInstallError, setHookInstallError] = useState<string | null>(null);
+  // Safety net for a wedged hook invoke: without a forced reset, one call that
+  // never resolves would keep every hook button disabled until app restart.
+  useEffect(() => {
+    if (!hookBusy) return;
+    const timeout = window.setTimeout(() => setHookBusy(false), 30_000);
+    return () => window.clearTimeout(timeout);
+  }, [hookBusy]);
   const [hooksBackTarget, setHooksBackTarget] = useState<"home" | "settings-main">("home");
   const [tokensBackTarget, setTokensBackTarget] = useState<"home" | "settings-main">("home");
   const [usageBackTarget, setUsageBackTarget] = useState<"home" | "settings-main">("home");
@@ -2624,6 +2631,7 @@ export function App() {
   async function handleUninstallClaudeHooks() {
     setMenuOpen(false);
     setHookBusy(true);
+    setHookInstallError(null);
     try {
       const status = await uninstallClaudeHooks();
       const nextSnapshot = await getSnapshot().catch(() => null);
@@ -2638,8 +2646,14 @@ export function App() {
           },
         });
       }
-    } catch {
-      // keep previous status
+    } catch (error) {
+      setHookInstallError(
+        i18n.t("error.uninstallFailed", {
+          ns: "hooks",
+          agentLabel: "Claude Code",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
     } finally {
       setHookBusy(false);
     }
@@ -2648,6 +2662,7 @@ export function App() {
   async function handleRemoveCompetingClaudeHooks() {
     setMenuOpen(false);
     setHookBusy(true);
+    setHookInstallError(null);
     try {
       const status = await removeCompetingClaudeHooks();
       const nextSnapshot = await getSnapshot().catch(() => null);
@@ -2662,8 +2677,13 @@ export function App() {
           },
         });
       }
-    } catch {
-      // keep previous status
+    } catch (error) {
+      setHookInstallError(
+        i18n.t("error.cleanupFailed", {
+          ns: "hooks",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
     } finally {
       setHookBusy(false);
     }
@@ -2686,8 +2706,14 @@ export function App() {
           },
         });
       }
-    } catch {
-      // keep previous status
+    } catch (error) {
+      setHookInstallError(
+        i18n.t("error.uninstallFailed", {
+          ns: "hooks",
+          agentLabel: "Codex",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
     } finally {
       setHookBusy(false);
     }
@@ -2696,6 +2722,7 @@ export function App() {
   async function handleUninstallHooks() {
     setMenuOpen(false);
     setHookBusy(true);
+    setHookInstallError(null);
     try {
       const [claudeStatus, codexStatus, cursorStatus] = await Promise.all([
         uninstallClaudeHooks(),
@@ -2716,8 +2743,13 @@ export function App() {
           },
         });
       }
-    } catch {
-      // keep previous status
+    } catch (error) {
+      setHookInstallError(
+        i18n.t("error.uninstallAllFailed", {
+          ns: "hooks",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
     } finally {
       setHookBusy(false);
     }
@@ -2755,6 +2787,7 @@ export function App() {
   async function handleUninstallCursorHooks() {
     setMenuOpen(false);
     setHookBusy(true);
+    setHookInstallError(null);
     try {
       const status = await uninstallCursorHooks();
       const nextSnapshot = await getSnapshot().catch(() => null);
@@ -2769,8 +2802,14 @@ export function App() {
           },
         });
       }
-    } catch {
-      // keep previous status
+    } catch (error) {
+      setHookInstallError(
+        i18n.t("error.uninstallFailed", {
+          ns: "hooks",
+          agentLabel: "Cursor",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
     } finally {
       setHookBusy(false);
     }

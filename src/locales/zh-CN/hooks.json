@@ -85,6 +85,9 @@
     "unknown": "未知错误",
     "codexNotSaved": "Codex 钩子未保存。请检查 ~/.codex/hooks.json 的权限。",
     "cursorNotSaved": "Cursor 钩子未保存。请检查 ~/.cursor/hooks.json 的权限。",
-    "installPartial": "无法为以下 Agent 安装钩子：{{agents}}。"
+    "installPartial": "无法为以下 Agent 安装钩子：{{agents}}。",
+    "uninstallFailed": "{{agentLabel}} 钩子卸载失败：{{message}}",
+    "uninstallAllFailed": "钩子卸载失败：{{message}}",
+    "cleanupFailed": "钩子清理失败：{{message}}"
   }
 }
