@@ -2,6 +2,11 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.54] - 2026-08-27
+
+### 修复
+- **Now Playing 卡片 / 歌词跑马灯**：安装包遗漏 MediaRemote 适配器资源（`resources/media` 未加入 bundle），CI 构建的正式版取不到任何播放信息，两个功能开启后也不显示；已随 bundle 打包，安装版开箱即用
+
 ## [0.1.52] - 2026-08-25
 
 ### 修复

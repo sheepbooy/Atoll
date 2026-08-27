@@ -49,7 +49,9 @@
       "../scripts/atoll-claude-hook.mjs": "scripts/atoll-claude-hook.mjs",
       "../scripts/atoll-codex-hook.mjs": "scripts/atoll-codex-hook.mjs",
       "../scripts/atoll-cursor-hook.mjs": "scripts/atoll-cursor-hook.mjs",
-      "../scripts/atoll-hook-bridge.mjs": "scripts/atoll-hook-bridge.mjs"
+      "../scripts/atoll-hook-bridge.mjs": "scripts/atoll-hook-bridge.mjs",
+      "resources/media/mediaremote-adapter.pl": "media/mediaremote-adapter.pl",
+      "resources/media/MediaRemoteAdapter.framework": "media/MediaRemoteAdapter.framework"
     }
   },
   "plugins": {
