@@ -38,6 +38,8 @@
     "smallFoldedIslandDesc": "使用较小的 Windows 折叠岛，便于点击顶部居中边缘下方的页面。",
     "mediaCardLabel": "正在播放卡片",
     "mediaCardDesc": "在空闲岛中显示当前 macOS 媒体轨道和播放控制。",
+    "artworkBackdropLabel": "封面磨砂背景",
+    "artworkBackdropDesc": "展开岛屿时，正在播放的封面从折叠缩略图放大为磨砂玻璃质感的背景。默认关闭。",
     "lyricsLabel": "歌词跑马灯",
     "lyricsDesc": "播放媒体时在折叠岛中滚动显示逐行歌词。默认关闭。",
     "clipboardHistoryLabel": "剪贴板历史",

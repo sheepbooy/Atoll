@@ -173,9 +173,11 @@ import {
   NowPlayingTrack,
   MediaCommand,
   getMediaCardEnabled,
+  getArtworkBackdropEnabled,
   onNowPlayingChanged,
   sendMediaCommand,
   setMediaCardEnabled,
+  setArtworkBackdropEnabled,
   ClipboardEntry,
   getClipboardHistory,
   getClipboardHistoryEnabled,
@@ -234,6 +236,48 @@ type PanelView =
   | { kind: "settings"; page: "main" | "hooks" | "tokens" | "usage" }
   | { kind: "clipboard" };
 type FoldedIslandSize = "small" | "regular";
+// Window-space rect of the compact media thumb plus the window size it was
+// measured against; scales the expanded artwork backdrop back onto the thumb.
+type ArtworkBackdropOrigin = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  winW: number;
+  winH: number;
+};
+
+// Mean-luminance test so dark covers can relax the backdrop scrim instead of
+// collapsing into a dead black slab.
+function sampleArtworkIsDark(base64: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const size = 24;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(false);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, size, size);
+        const { data } = ctx.getImageData(0, 0, size, size);
+        let luminance = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          luminance += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+        }
+        resolve(luminance / (data.length / 4) / 255 < 0.3);
+      } catch {
+        resolve(false);
+      }
+    };
+    img.onerror = () => resolve(false);
+    img.src = `data:image/jpeg;base64,${base64}`;
+  });
+}
 
 const COMPACT_ICON_SETTING_KEY = "atoll.maxCompactIcons";
 const FOLDED_ISLAND_SIZE_SETTING_KEY = "atoll.foldedIslandSize";
@@ -776,6 +820,54 @@ export function App() {
   const [launchAtLoginBusy, setLaunchAtLoginBusy] = useState(false);
   const [nowPlayingTrack, setNowPlayingTrack] = useState<NowPlayingTrack | null>(null);
   const [mediaCardEnabled, setMediaCardEnabledState] = useState(true);
+  const [artworkBackdropEnabled, setArtworkBackdropEnabledState] = useState(false);
+  // Rect of the compact media thumb (window coords) captured right before the
+  // expand animation starts; drives the artwork backdrop grow-from-thumb origin.
+  const [artworkBackdropOrigin, setArtworkBackdropOrigin] =
+    useState<ArtworkBackdropOrigin | null>(null);
+  const artworkBackdropOriginRef = useRef<ArtworkBackdropOrigin | null>(null);
+  const [artworkBackdropRevealed, setArtworkBackdropRevealed] = useState(false);
+  const [artworkBackdropExitFade, setArtworkBackdropExitFade] = useState(false);
+  const [artworkIsDark, setArtworkIsDark] = useState(false);
+  const artworkBackdropExitFadeRef = useRef(false);
+  const compactMediaThumbRef = useRef<HTMLImageElement | null>(null);
+
+  // Artwork backdrop: grow from the compact thumb on expand, shrink back on
+  // collapse, and drop the stale origin once the island rests collapsed again.
+  useEffect(() => {
+    if (phase === "opening" || phase === "expanded") {
+      // Double rAF so the start frame is painted before the reveal
+      // transition (grow from thumb, or plain fade-in without an origin)
+      // kicks in.
+      let inner = 0;
+      const outer = requestAnimationFrame(() => {
+        inner = requestAnimationFrame(() => setArtworkBackdropRevealed(true));
+      });
+      return () => {
+        cancelAnimationFrame(outer);
+        if (inner) cancelAnimationFrame(inner);
+      };
+    }
+    if (phase === "closing") {
+      setArtworkBackdropRevealed(false);
+      return;
+    }
+    artworkBackdropOriginRef.current = null;
+    setArtworkBackdropOrigin(null);
+  }, [phase]);
+
+  // Re-test backdrop luminance whenever the artwork changes.
+  useEffect(() => {
+    const base64 = nowPlayingTrack?.artworkBase64;
+    if (!base64) return;
+    let cancelled = false;
+    sampleArtworkIsDark(base64).then((dark) => {
+      if (!cancelled) setArtworkIsDark(dark);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [nowPlayingTrack?.artworkBase64]);
   const [lyricsData, setLyricsData] = useState<LyricPayload | null>(null);
   const [playbackPosition, setPlaybackPosition] = useState<{
     position: number;
@@ -1171,6 +1263,9 @@ export function App() {
     setSessionRetention(readRetentionMinutes()).catch(() => undefined);
     getMediaCardEnabled()
       .then(setMediaCardEnabledState)
+      .catch(() => undefined);
+    getArtworkBackdropEnabled()
+      .then(setArtworkBackdropEnabledState)
       .catch(() => undefined);
     getLyricsEnabled()
       .then(setLyricsEnabledState)
@@ -2000,6 +2095,25 @@ export function App() {
     }, MICRO_SHRINK_DELAY_MS);
   }
 
+  // Snapshot the compact media thumb rect before the expand flips the phase —
+  // the thumb unmounts as soon as the island starts opening.
+  function captureArtworkBackdropOrigin() {
+    const rect = compactMediaThumbRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    const winW = window.innerWidth || 1;
+    const winH = window.innerHeight || 1;
+    const origin: ArtworkBackdropOrigin = {
+      x: rect.left,
+      y: rect.top,
+      w: rect.width,
+      h: rect.height,
+      winW,
+      winH,
+    };
+    artworkBackdropOriginRef.current = origin;
+    setArtworkBackdropOrigin(origin);
+  }
+
   async function expandIsland() {
     clearIdleTimer();
     holdCompactAfterSubviewOpenRef.current = false;
@@ -2014,6 +2128,13 @@ export function App() {
     const next = beginExpand(phaseRef.current);
     if (next === phaseRef.current) return;
     clearTransitionWork();
+    if (artworkBackdropExitFadeRef.current) {
+      artworkBackdropExitFadeRef.current = false;
+      setArtworkBackdropExitFade(false);
+    }
+    if (artworkBackdropOriginRef.current === null) {
+      captureArtworkBackdropOrigin();
+    }
     expandCollapseAnchorRef.current = {
       width: collapsedWindowWidthRef.current,
       leftWidth: compactLeftPaneWidthRef.current,
@@ -2170,6 +2291,13 @@ export function App() {
       wasSessionSubview && naturalCollapseMode === "dormant"
         ? "compact"
         : naturalCollapseMode;
+    // The dormant island vanishes entirely, so its backdrop fades out instead
+    // of shrinking back towards a thumb that will not reappear.
+    const backdropExitFade = collapseMode === "dormant";
+    if (artworkBackdropExitFadeRef.current !== backdropExitFade) {
+      artworkBackdropExitFadeRef.current = backdropExitFade;
+      setArtworkBackdropExitFade(backdropExitFade);
+    }
     const collapsePresentationWidth =
       collapseMode === "micro" ? microPresentationWidthRef.current : compactWidth;
 
@@ -2658,6 +2786,11 @@ export function App() {
     setMediaCardEnabled(enabled).catch(() => undefined);
   }, []);
 
+  const handleChangeArtworkBackdropEnabled = useCallback((enabled: boolean) => {
+    setArtworkBackdropEnabledState(enabled);
+    setArtworkBackdropEnabled(enabled).catch(() => undefined);
+  }, []);
+
   const handleChangeLyricsEnabled = useCallback((enabled: boolean) => {
     setLyricsEnabledState(enabled);
     setLyricsEnabled(enabled).catch(() => undefined);
@@ -3027,6 +3160,10 @@ export function App() {
     !isPresentationTransition &&
     (compactIndicator === "media" || compactIndicator === "both") &&
     nowPlayingTrack?.artworkBase64 != null;
+  const showArtworkBackdrop =
+    artworkBackdropEnabled &&
+    nowPlayingTrack?.artworkBase64 != null &&
+    (isExpanded || phase === "closing");
   const showExpandedTokenCounter = true;
   // Lyrics occupy a dedicated middle grid column — only on non-notched
   // displays (the notch area is physically invisible, so lyrics there would
@@ -3341,6 +3478,8 @@ export function App() {
           onChangeLanguage={handleChangeLanguage}
           mediaCardEnabled={mediaCardEnabled}
           onChangeMediaCardEnabled={handleChangeMediaCardEnabled}
+          artworkBackdropEnabled={artworkBackdropEnabled}
+          onChangeArtworkBackdropEnabled={handleChangeArtworkBackdropEnabled}
           lyricsEnabled={lyricsEnabled}
           onChangeLyricsEnabled={handleChangeLyricsEnabled}
           clipboardHistoryEnabled={clipboardEnabled}
@@ -3438,6 +3577,40 @@ export function App() {
         onFocusCapture={handleIslandFocus}
         onBlurCapture={handleIslandBlur}
       >
+        {showArtworkBackdrop && nowPlayingTrack?.artworkBase64 ? (
+          <div
+            className={`island-artwork-backdrop${artworkBackdropOrigin ? " has-origin" : ""}${
+              artworkBackdropRevealed ? " is-revealed" : ""
+            }${artworkBackdropExitFade ? " is-exit-fade" : ""}${artworkIsDark ? " is-dark-art" : ""}`}
+            style={
+              artworkBackdropOrigin
+                ? ({
+                    "--ab-x": `${artworkBackdropOrigin.x}px`,
+                    "--ab-y": `${artworkBackdropOrigin.y}px`,
+                    "--ab-sx": String(artworkBackdropOrigin.w / artworkBackdropOrigin.winW),
+                    "--ab-sy": String(artworkBackdropOrigin.h / artworkBackdropOrigin.winH),
+                  } as CSSProperties)
+                : undefined
+            }
+            aria-hidden
+          >
+            <div className="island-artwork-backdrop-scale">
+              <div
+                className="island-artwork-backdrop-img"
+                style={{
+                  backgroundImage: `url(data:image/jpeg;base64,${nowPlayingTrack.artworkBase64})`,
+                }}
+              />
+              <div
+                className="island-artwork-backdrop-ghost"
+                style={{
+                  backgroundImage: `url(data:image/jpeg;base64,${nowPlayingTrack.artworkBase64})`,
+                }}
+              />
+              <div className="island-artwork-backdrop-scrim" />
+            </div>
+          </div>
+        ) : null}
         <header
           className={`island-header${showLyricsMarquee ? " has-lyrics" : ""}`}
           onMouseDown={startWindowDrag}
@@ -3637,6 +3810,7 @@ export function App() {
               ) : null}
               {showCompactMediaIndicator && nowPlayingTrack?.artworkBase64 ? (
                 <img
+                  ref={compactMediaThumbRef}
                   className="compact-media-thumb"
                   src={`data:image/jpeg;base64,${nowPlayingTrack.artworkBase64}`}
                   alt=""
@@ -4285,6 +4459,8 @@ interface SettingsViewProps {
   onChangeLanguage: (language: AppLanguage) => void;
   mediaCardEnabled: boolean;
   onChangeMediaCardEnabled: (enabled: boolean) => void;
+  artworkBackdropEnabled: boolean;
+  onChangeArtworkBackdropEnabled: (enabled: boolean) => void;
   lyricsEnabled: boolean;
   onChangeLyricsEnabled: (enabled: boolean) => void;
   clipboardHistoryEnabled: boolean;
@@ -4447,6 +4623,8 @@ function SettingsView({
   onChangeLanguage,
   mediaCardEnabled,
   onChangeMediaCardEnabled,
+  artworkBackdropEnabled,
+  onChangeArtworkBackdropEnabled,
   lyricsEnabled,
   onChangeLyricsEnabled,
   clipboardHistoryEnabled,
@@ -4548,6 +4726,14 @@ function SettingsView({
               desc={t("display.mediaCardDesc")}
               checked={mediaCardEnabled}
               onChange={onChangeMediaCardEnabled}
+            />
+          ) : null}
+          {IS_MACOS ? (
+            <SettingsToggle
+              label={t("display.artworkBackdropLabel")}
+              desc={t("display.artworkBackdropDesc")}
+              checked={artworkBackdropEnabled}
+              onChange={onChangeArtworkBackdropEnabled}
             />
           ) : null}
           {IS_MACOS ? (

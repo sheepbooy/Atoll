@@ -673,6 +673,20 @@ export async function setMediaCardEnabled(enabled: boolean): Promise<boolean> {
   return invoke<boolean>("set_media_card_enabled", { enabled });
 }
 
+export async function getArtworkBackdropEnabled(): Promise<boolean> {
+  if (!isTauriRuntime()) {
+    return false;
+  }
+  return invoke<boolean>("get_artwork_backdrop_enabled");
+}
+
+export async function setArtworkBackdropEnabled(enabled: boolean): Promise<boolean> {
+  if (!isTauriRuntime()) {
+    return enabled;
+  }
+  return invoke<boolean>("set_artwork_backdrop_enabled", { enabled });
+}
+
 export interface LyricLine {
   timeMs: number;
   text: string;

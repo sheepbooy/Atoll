@@ -474,6 +474,8 @@ pub(crate) struct AppState {
     transcript_cache: Mutex<TranscriptCache>,
     /// Whether the Now Playing media card is shown in the idle island.
     media_card_enabled: Mutex<bool>,
+    /// Whether the expanded island grows the now-playing artwork into a frosted backdrop.
+    artwork_backdrop_enabled: Mutex<bool>,
     /// Clipboard history entries (pruned, newest first).
     clipboard_history: Mutex<Vec<clipboard_history::ClipboardEntry>>,
     /// Whether clipboard history monitoring is enabled (privacy toggle).
@@ -2740,6 +2742,43 @@ fn persist_media_card_enabled(enabled: bool) {
     }
 }
 
+fn load_artwork_backdrop_enabled() -> bool {
+    let Some(path) = atoll_settings_path() else {
+        return false;
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+        return false;
+    };
+    value
+        .get("artworkBackdropEnabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn persist_artwork_backdrop_enabled(enabled: bool) {
+    let Some(path) = atoll_settings_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut config: Value = path
+        .exists()
+        .then(|| std::fs::read_to_string(&path).ok())
+        .flatten()
+        .and_then(|c| serde_json::from_str(&c).ok())
+        .unwrap_or_else(|| Value::Object(Default::default()));
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert("artworkBackdropEnabled".into(), Value::from(enabled));
+    }
+    if let Ok(formatted) = serde_json::to_string_pretty(&config) {
+        let _ = std::fs::write(path, formatted);
+    }
+}
+
 fn persist_retention_minutes(minutes: u64) {
     persist_settings(Some(minutes.clamp(1, 60)), None);
 }
@@ -2860,6 +2899,18 @@ fn get_media_card_enabled(state: State<'_, AppState>) -> bool {
 fn set_media_card_enabled(state: State<'_, AppState>, enabled: bool) -> bool {
     *lock_state(&state.media_card_enabled) = enabled;
     persist_media_card_enabled(enabled);
+    enabled
+}
+
+#[tauri::command]
+fn get_artwork_backdrop_enabled(state: State<'_, AppState>) -> bool {
+    *lock_state(&state.artwork_backdrop_enabled)
+}
+
+#[tauri::command]
+fn set_artwork_backdrop_enabled(state: State<'_, AppState>, enabled: bool) -> bool {
+    *lock_state(&state.artwork_backdrop_enabled) = enabled;
+    persist_artwork_backdrop_enabled(enabled);
     enabled
 }
 
@@ -6734,6 +6785,7 @@ pub fn run() {
             token_history_dirty: AtomicBool::new(false),
             transcript_cache: Mutex::new(TranscriptCache::default()),
             media_card_enabled: Mutex::new(load_media_card_enabled()),
+            artwork_backdrop_enabled: Mutex::new(load_artwork_backdrop_enabled()),
             clipboard_history: Mutex::new(clipboard_history::load_history()),
             clipboard_history_enabled: Mutex::new(load_clipboard_history_enabled()),
             lyrics_enabled: Mutex::new(load_lyrics_enabled()),
@@ -6773,6 +6825,8 @@ pub fn run() {
             send_media_command,
             get_media_card_enabled,
             set_media_card_enabled,
+            get_artwork_backdrop_enabled,
+            set_artwork_backdrop_enabled,
             get_lyrics_enabled,
             set_lyrics_enabled,
             get_current_lyrics,
@@ -9722,6 +9776,7 @@ mod core_tests {
             token_history_dirty: AtomicBool::new(false),
             transcript_cache: Mutex::new(TranscriptCache::default()),
             media_card_enabled: Mutex::new(true),
+            artwork_backdrop_enabled: Mutex::new(false),
             clipboard_history: Mutex::new(Vec::new()),
             clipboard_history_enabled: Mutex::new(false),
             lyrics_enabled: Mutex::new(false),
@@ -10514,6 +10569,7 @@ mod cursor_subagent_tests {
             token_history_dirty: AtomicBool::new(false),
             transcript_cache: Mutex::new(TranscriptCache::default()),
             media_card_enabled: Mutex::new(true),
+            artwork_backdrop_enabled: Mutex::new(false),
             clipboard_history: Mutex::new(Vec::new()),
             clipboard_history_enabled: Mutex::new(false),
             lyrics_enabled: Mutex::new(false),

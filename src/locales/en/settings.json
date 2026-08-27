@@ -38,6 +38,8 @@
     "smallFoldedIslandDesc": "Use the smaller Windows folded island so pages under the top-center edge stay easier to click.",
     "mediaCardLabel": "Now Playing card",
     "mediaCardDesc": "Show the current macOS media track and playback controls in the idle island.",
+    "artworkBackdropLabel": "Frosted artwork backdrop",
+    "artworkBackdropDesc": "Grow the now-playing artwork from its folded thumbnail into a frosted-glass backdrop when the island expands. Off by default.",
     "lyricsLabel": "Scrolling lyrics",
     "lyricsDesc": "Show timed lyrics scrolling through the folded island when media is playing. Off by default.",
     "clipboardHistoryLabel": "Clipboard history",
