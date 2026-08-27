@@ -104,7 +104,7 @@ import {
 import { AgentMascot, AGENT_ACCENT } from "./AgentMascot";
 import { NowPlayingCard } from "./NowPlayingCard";
 import { ClipboardHistoryView } from "./ClipboardHistoryView";
-import { LyricsMarquee } from "./LyricsMarquee";
+import { LyricsMarquee, lyricsMatchTrack } from "./LyricsMarquee";
 import type { ClawdMood } from "./ClawdMascot";
 import { getSessionColor, getSubagentColor, getSubagentMood } from "./subagentIdentity";
 import { AtollLogo, type AtollActivity } from "./AtollLogo";
@@ -3591,7 +3591,11 @@ export function App() {
 
           {showLyricsMarquee ? (
             <LyricsMarquee
-              lines={lyricsData!.lines}
+              // Until the payload for the *current* track arrives (fetched
+              // on track change), render no lines — the marquee keeps its
+              // column-mounted placeholder instead of showing the previous
+              // track's lyrics against this track's position.
+              lines={lyricsMatchTrack(lyricsData, nowPlayingTrack) ? lyricsData!.lines : []}
               position={playbackPosition?.position ?? null}
               playing={playbackPosition?.playing ?? false}
             />
@@ -3781,6 +3785,7 @@ export function App() {
               <div className="island-panel-footer">
                 <NowPlayingCard
                   track={nowPlayingTrack}
+                  livePosition={playbackPosition}
                   onCommand={(cmd) => {
                     sendMediaCommand(cmd).catch(() => undefined);
                   }}
