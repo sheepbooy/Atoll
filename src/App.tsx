@@ -3624,10 +3624,14 @@ export function App() {
             style={
               artworkBackdropOrigin
                 ? ({
-                    "--ab-x": `${artworkBackdropOrigin.x}px`,
-                    "--ab-y": `${artworkBackdropOrigin.y}px`,
-                    "--ab-sx": String(artworkBackdropOrigin.w / artworkBackdropOrigin.winW),
-                    "--ab-sy": String(artworkBackdropOrigin.h / artworkBackdropOrigin.winH),
+                    // Percent geometry relative to the live window: as the
+                    // native window shrinks during collapse, the backdrop
+                    // rides proportionally toward the thumb instead of
+                    // snapping to pixel coordinates measured pre-expand.
+                    "--ab-left": `${(artworkBackdropOrigin.x / artworkBackdropOrigin.winW) * 100}%`,
+                    "--ab-top": `${(artworkBackdropOrigin.y / artworkBackdropOrigin.winH) * 100}%`,
+                    "--ab-w": `${(artworkBackdropOrigin.w / artworkBackdropOrigin.winW) * 100}%`,
+                    "--ab-h": `${(artworkBackdropOrigin.h / artworkBackdropOrigin.winH) * 100}%`,
                   } as CSSProperties)
                 : undefined
             }

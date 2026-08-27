@@ -493,10 +493,13 @@ kbd {
 
 /* ─── Frosted artwork backdrop (expanded island) ─────────────────── */
 /* The wrapper always fills the window, so it tracks the native resize
-   frame-by-frame; only the inner scale layer animates (compositor-only,
-   no per-frame blur re-raster). Blur is rasterized once at full size and
-   then scaled, so the backdrop starts near-sharp at thumb scale and
-   defocuses as it grows. */
+   frame-by-frame; the inner scale layer animates between the full-bleed
+   rect and the compact thumb rect expressed as PERCENTAGES of the live
+   window. Percentage targets recompute as the native window shrinks, so
+   the backdrop rides proportionally toward the thumb and converges on the
+   exact 18×18 rect at the final frame — pixel targets measured before the
+   expand would be expressed in the compact window's coordinate space and
+   visibly snap into place only at the last moment. */
 
 .island-artwork-backdrop {
   position: absolute;
@@ -530,18 +533,26 @@ kbd {
   transition: opacity var(--duration-expand) ease;
 }
 
+/* Percent geometry defaults to full-bleed, so a missing origin (fade-in
+   path) collapses to a no-op instead of a degenerate rect. */
 .island-artwork-backdrop-scale {
   position: absolute;
-  inset: 0;
-  transform-origin: 0 0;
-  transform: translate(var(--ab-x, 0px), var(--ab-y, 0px))
-    scale(var(--ab-sx, 1), var(--ab-sy, 1));
-  transition: transform var(--duration-expand) var(--ease-window);
-  will-change: transform;
+  left: var(--ab-left, 0%);
+  top: var(--ab-top, 0%);
+  width: var(--ab-w, 100%);
+  height: var(--ab-h, 100%);
+  transition:
+    left var(--duration-expand) var(--ease-window),
+    top var(--duration-expand) var(--ease-window),
+    width var(--duration-expand) var(--ease-window),
+    height var(--duration-expand) var(--ease-window);
 }
 
 .island-artwork-backdrop.is-revealed .island-artwork-backdrop-scale {
-  transform: none;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .island.is-closing .island-artwork-backdrop-scale {
@@ -549,7 +560,10 @@ kbd {
 }
 
 .island-artwork-backdrop.is-exit-fade .island-artwork-backdrop-scale {
-  transform: none;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
   transition: none;
 }
 
