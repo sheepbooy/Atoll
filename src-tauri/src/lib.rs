@@ -7746,7 +7746,7 @@ fn animate_island_window_mode(
     window: &tauri::WebviewWindow,
     mode: IslandWindowMode,
     generation: u64,
-    presentation_generation: &AtomicU64,
+    presentation_generation: &Arc<AtomicU64>,
     home_bounds: Option<HomeWindowBounds>,
     compact_width: f64,
     compact_left_width: f64,
@@ -7904,7 +7904,20 @@ fn animate_island_window_mode(
     });
     let _ = sync_rx.recv_timeout(Duration::from_secs(2));
 
-    platform::set_island_cursor_events_ignored(window, is_collapsed_pass_through_mode(mode));
+    // The animation loop aborts without an epilogue once superseded, but a
+    // newer presentation can still start while we were waiting for the main
+    // thread above. Guard the cursor-event toggle and the settled emit: a
+    // stale collapse re-enabling click pass-through over a fresh expand is
+    // what leaves an expanded island that ignores every pointer event.
+    if presentation_generation.load(Ordering::SeqCst) != generation {
+        return Ok(());
+    }
+    platform::set_island_cursor_events_ignored_if_current(
+        window,
+        is_collapsed_pass_through_mode(mode),
+        Arc::clone(presentation_generation),
+        generation,
+    );
     let _ = window.emit("island-presentation-settled", mode);
     Ok(())
 }

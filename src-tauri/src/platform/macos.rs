@@ -137,6 +137,36 @@ pub fn detect_notch_metrics(
     .unwrap_or_default()
 }
 pub fn set_island_cursor_events_ignored(window: &tauri::WebviewWindow, ignore: bool) {
+    apply_island_cursor_events(window, ignore, None);
+}
+
+/// Like [`set_island_cursor_events_ignored`], but the toggle is skipped when
+/// `presentation_generation` has moved past `generation` by the time the
+/// main-thread block actually runs. Without this, a finished (but not yet
+/// finalized) collapse animation can re-enable click pass-through after a
+/// newer expand animation already accepted clicks — leaving an expanded
+/// island that ignores every pointer event until the next cycle.
+pub fn set_island_cursor_events_ignored_if_current(
+    window: &tauri::WebviewWindow,
+    ignore: bool,
+    presentation_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    generation: u64,
+) {
+    apply_island_cursor_events(
+        window,
+        ignore,
+        Some((presentation_generation, generation)),
+    );
+}
+
+fn apply_island_cursor_events(
+    window: &tauri::WebviewWindow,
+    ignore: bool,
+    generation_guard: Option<(
+        std::sync::Arc<std::sync::atomic::AtomicU64>,
+        u64,
+    )>,
+) {
     let panel_ptr = panel_store::get_raw();
     if !panel_ptr.is_null() {
         // setIgnoresMouseEvents: MUST run on the main thread.
@@ -144,6 +174,11 @@ pub fn set_island_cursor_events_ignored(window: &tauri::WebviewWindow, ignore: b
         // so dispatch via run_on_main_thread.
         let ptr_val = panel_ptr as usize;
         let _ = window.run_on_main_thread(move || unsafe {
+            if let Some((generation, expected)) = &generation_guard {
+                if generation.load(std::sync::atomic::Ordering::SeqCst) != *expected {
+                    return;
+                }
+            }
             use objc2::runtime::{AnyObject, Bool};
             let ptr = ptr_val as *mut AnyObject;
             let val = if ignore { Bool::YES } else { Bool::NO };
@@ -154,6 +189,14 @@ pub fn set_island_cursor_events_ignored(window: &tauri::WebviewWindow, ignore: b
             let moved = if ignore { Bool::NO } else { Bool::YES };
             let _: () = objc2::msg_send![ptr, setAcceptsMouseMovedEvents: moved];
         });
+        return;
+    }
+    if generation_guard
+        .as_ref()
+        .is_some_and(|(generation, expected)| {
+            generation.load(std::sync::atomic::Ordering::SeqCst) != *expected
+        })
+    {
         return;
     }
     let _ = window.set_ignore_cursor_events(ignore);

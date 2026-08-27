@@ -163,6 +163,33 @@ pub fn set_island_cursor_events_ignored(window: &WebviewWindow, ignore: bool) {
     }
 }
 
+/// Generation-guarded variant used at animation settle time: the toggle is
+/// skipped when a newer presentation has already superseded this animation,
+/// so a stale collapse cannot re-enable click pass-through over a fresh
+/// expand. Only macOS needs the guard (the racing epilogue is the animated
+/// settle path); other platforms fall through to the plain toggle.
+pub fn set_island_cursor_events_ignored_if_current(
+    window: &WebviewWindow,
+    ignore: bool,
+    presentation_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    generation: u64,
+) {
+    #[cfg(target_os = "macos")]
+    {
+        macos::set_island_cursor_events_ignored_if_current(
+            window,
+            ignore,
+            presentation_generation,
+            generation,
+        );
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (presentation_generation, generation);
+        set_island_cursor_events_ignored(window, ignore);
+    }
+}
+
 #[cfg(target_os = "windows")]
 pub fn sync_cursor_pass_through(window: &WebviewWindow, hovering: bool) {
     windows::sync_cursor_pass_through(window, hovering);
