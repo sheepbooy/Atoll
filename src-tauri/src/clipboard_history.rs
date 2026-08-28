@@ -36,7 +36,8 @@ use objc2_foundation::{NSArray, NSData, NSString, NSURL};
 pub const DEFAULT_MAX_ENTRIES: usize = 50;
 pub const MIN_HISTORY_LIMIT: usize = 10;
 pub const MAX_HISTORY_LIMIT: usize = 500;
-const EXPIRY_SECS: u64 = 24 * 60 * 60;
+pub const MAX_FAVORITES: usize = 100;
+pub const EXPIRY_SECS: u64 = 24 * 60 * 60;
 const PREVIEW_LEN: usize = 200;
 /// Skip clipboard images larger than this before decoding.
 pub const MAX_IMAGE_BYTES: usize = 32 * 1024 * 1024;
@@ -69,6 +70,9 @@ pub struct ClipboardEntry {
     /// Stable payload fingerprint used for dedup; 0 on legacy entries.
     #[serde(default)]
     pub fingerprint: u64,
+    /// Favorites skip expiry/limit and survive history clears.
+    #[serde(default)]
+    pub favorited: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -183,16 +187,17 @@ fn delete_image_blobs(id: &str) {
     }
 }
 
-/// Remove every stored blob (used when the whole history is cleared).
-pub fn clear_blobs() {
-    let Some(dir) = blobs_dir() else {
-        return;
-    };
-    if let Ok(entries) = std::fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            let _ = std::fs::remove_file(entry.path());
+/// Drop unfavorited entries and their image blobs. Favorites stay.
+pub fn clear_unfavorited(entries: &mut Vec<ClipboardEntry>) {
+    let mut kept: Vec<ClipboardEntry> = Vec::new();
+    for entry in entries.drain(..) {
+        if entry.favorited {
+            kept.push(entry);
+        } else if entry.kind == EntryKind::Image {
+            delete_image_blobs(&entry.id);
         }
     }
+    *entries = kept;
 }
 
 // ─── History persistence ───────────────────────────────────────────────────
@@ -239,20 +244,46 @@ pub fn save_history(entries: &[ClipboardEntry]) {
     }
 }
 
-/// Remove entries older than 24h, cap to `limit` (newest first) and delete
-/// the blobs of anything dropped.
+/// Remove unfavorited entries older than 24h, cap unfavorited rows to `limit`
+/// (newest first) and delete the blobs of anything dropped. Favorites are
+/// kept regardless of age or the history cap.
 pub fn prune_expired(entries: &mut Vec<ClipboardEntry>, limit: usize) {
     let now = now_secs();
     let mut kept: Vec<ClipboardEntry> = Vec::with_capacity(entries.len());
+    let mut history_count = 0usize;
     for entry in entries.drain(..) {
-        let fresh = now.saturating_sub(entry.copied_at) < EXPIRY_SECS;
-        if fresh && kept.len() < limit {
+        if entry.favorited {
             kept.push(entry);
+            continue;
+        }
+        let fresh = now.saturating_sub(entry.copied_at) < EXPIRY_SECS;
+        if fresh && history_count < limit {
+            kept.push(entry);
+            history_count += 1;
         } else if entry.kind == EntryKind::Image {
             delete_image_blobs(&entry.id);
         }
     }
     *entries = kept;
+}
+
+/// Star or unstar an entry. Unstarring re-runs prune so expired rows drop.
+/// Returns false when the id is missing or the favorite cap is already full.
+pub fn toggle_favorite(entries: &mut Vec<ClipboardEntry>, id: &str, limit: usize) -> bool {
+    let Some(idx) = entries.iter().position(|e| e.id == id) else {
+        return false;
+    };
+    if entries[idx].favorited {
+        entries[idx].favorited = false;
+        prune_expired(entries, limit);
+        return true;
+    }
+    let favorite_count = entries.iter().filter(|e| e.favorited).count();
+    if favorite_count >= MAX_FAVORITES {
+        return false;
+    }
+    entries[idx].favorited = true;
+    true
 }
 
 fn is_duplicate(entry: &ClipboardEntry, kind: EntryKind, fingerprint: u64, content: &str) -> bool {
@@ -288,13 +319,16 @@ pub fn add_entry(
             let fingerprint = fingerprint_bytes(&png);
             let byte_size = png.len() as u64;
             image_bytes = Some(png);
-            (EntryKind::Image, String::new(), String::new(), byte_size, fingerprint)
+            (
+                EntryKind::Image,
+                String::new(),
+                String::new(),
+                byte_size,
+                fingerprint,
+            )
         }
         ClipboardPayload::Files(paths) => {
-            let paths: Vec<String> = paths
-                .into_iter()
-                .filter(|p| !p.trim().is_empty())
-                .collect();
+            let paths: Vec<String> = paths.into_iter().filter(|p| !p.trim().is_empty()).collect();
             if paths.is_empty() {
                 return false;
             }
@@ -310,25 +344,43 @@ pub fn add_entry(
             return false;
         }
     }
-    // Drop older duplicates so the entry moves to the front.
+    // Reuse the older row's id and star so image blobs and favorites survive
+    // a recopy that merely moves the entry to the front.
+    let mut preserved_favorited = false;
+    let mut preserved_id: Option<String> = None;
+    for entry in entries.iter() {
+        if is_duplicate(entry, kind, fingerprint, &content) {
+            preserved_favorited |= entry.favorited;
+            if preserved_id.is_none() {
+                preserved_id = Some(entry.id.clone());
+            }
+        }
+    }
+    let reuse_id = preserved_id.clone();
     entries.retain(|e| {
-        let dup = is_duplicate(e, kind, fingerprint, &content);
-        if dup && e.kind == EntryKind::Image {
+        if !is_duplicate(e, kind, fingerprint, &content) {
+            return true;
+        }
+        if reuse_id.as_deref() != Some(e.id.as_str()) && e.kind == EntryKind::Image {
             delete_image_blobs(&e.id);
         }
-        !dup
+        false
     });
 
+    let id = reuse_id
+        .clone()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let entry = ClipboardEntry {
-        id: uuid::Uuid::new_v4().to_string(),
+        id,
         kind,
         content,
         preview,
         copied_at: now_secs(),
         byte_size,
         fingerprint,
+        favorited: preserved_favorited,
     };
-    if kind == EntryKind::Image {
+    if kind == EntryKind::Image && reuse_id.is_none() {
         let png = image_bytes.expect("image payloads keep their bytes");
         if !write_image_blobs(&entry.id, &png) {
             return false;
@@ -672,7 +724,11 @@ fn dib_to_png(dib: &[u8]) -> Option<Vec<u8>> {
         pixel_offset += 16;
     }
     if bpp <= 8 {
-        let palette = if clr_used > 0 { clr_used } else { 1usize << bpp };
+        let palette = if clr_used > 0 {
+            clr_used
+        } else {
+            1usize << bpp
+        };
         pixel_offset += palette * 4;
     }
     if pixel_offset > dib.len() {
@@ -712,7 +768,11 @@ fn write_clipboard_windows(text: &str) -> bool {
             if let Ok(hmem) = GlobalAlloc(GMEM_MOVEABLE, byte_len) {
                 let ptr = GlobalLock(hmem);
                 if !ptr.is_null() {
-                    std::ptr::copy_nonoverlapping(wcs.as_ptr() as *const u8, ptr as *mut u8, byte_len);
+                    std::ptr::copy_nonoverlapping(
+                        wcs.as_ptr() as *const u8,
+                        ptr as *mut u8,
+                        byte_len,
+                    );
                     let _ = GlobalUnlock(hmem);
                     let _ = SetClipboardData(CF_UNICODETEXT.0 as u32, HANDLE(hmem.0));
                 }
@@ -835,6 +895,7 @@ mod tests {
             copied_at: now_secs(),
             byte_size: 0,
             fingerprint: fingerprint_bytes(content.as_bytes()),
+            favorited: false,
         }
     }
 
@@ -865,8 +926,16 @@ mod tests {
     #[test]
     fn add_entry_accumulates_different_content() {
         let mut entries = Vec::new();
-        assert!(add_entry(&mut entries, ClipboardPayload::Text("a".into()), 50));
-        assert!(add_entry(&mut entries, ClipboardPayload::Text("b".into()), 50));
+        assert!(add_entry(
+            &mut entries,
+            ClipboardPayload::Text("a".into()),
+            50
+        ));
+        assert!(add_entry(
+            &mut entries,
+            ClipboardPayload::Text("b".into()),
+            50
+        ));
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].content, "b");
         assert_eq!(entries[1].content, "a");
@@ -875,12 +944,28 @@ mod tests {
     #[test]
     fn add_entry_dedups_same_content() {
         let mut entries = Vec::new();
-        assert!(add_entry(&mut entries, ClipboardPayload::Text("a".into()), 50));
-        assert!(!add_entry(&mut entries, ClipboardPayload::Text("a".into()), 50));
+        assert!(add_entry(
+            &mut entries,
+            ClipboardPayload::Text("a".into()),
+            50
+        ));
+        assert!(!add_entry(
+            &mut entries,
+            ClipboardPayload::Text("a".into()),
+            50
+        ));
         assert_eq!(entries.len(), 1);
         // A duplicate further back moves to the front without a second row.
-        assert!(add_entry(&mut entries, ClipboardPayload::Text("b".into()), 50));
-        assert!(add_entry(&mut entries, ClipboardPayload::Text("a".into()), 50));
+        assert!(add_entry(
+            &mut entries,
+            ClipboardPayload::Text("b".into()),
+            50
+        ));
+        assert!(add_entry(
+            &mut entries,
+            ClipboardPayload::Text("a".into()),
+            50
+        ));
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].content, "a");
     }
@@ -888,7 +973,11 @@ mod tests {
     #[test]
     fn add_entry_rejects_blank_text() {
         let mut entries = Vec::new();
-        assert!(!add_entry(&mut entries, ClipboardPayload::Text("   ".into()), 50));
+        assert!(!add_entry(
+            &mut entries,
+            ClipboardPayload::Text("   ".into()),
+            50
+        ));
         assert!(entries.is_empty());
     }
 
@@ -922,10 +1011,12 @@ mod tests {
             copied_at: 1234567890,
             byte_size: 42,
             fingerprint: 7,
+            favorited: true,
         };
         let json = serde_json::to_string(&entry).unwrap();
         assert!(json.contains("\"copiedAt\""));
         assert!(json.contains("\"byteSize\""));
+        assert!(json.contains("\"favorited\""));
         assert!(!json.contains("\"copied_at\""));
     }
 
@@ -936,7 +1027,113 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].kind, EntryKind::Text);
         assert_eq!(entries[0].fingerprint, 0);
+        assert!(!entries[0].favorited);
         // A legacy row still dedups against a matching new payload.
-        assert!(!add_entry(&mut entries, ClipboardPayload::Text("hello".into()), 50));
+        assert!(!add_entry(
+            &mut entries,
+            ClipboardPayload::Text("hello".into()),
+            50
+        ));
+    }
+
+    #[test]
+    fn prune_keeps_expired_favorites() {
+        let now = now_secs();
+        let old_fav = ClipboardEntry {
+            copied_at: now - EXPIRY_SECS - 1,
+            favorited: true,
+            ..text_entry("a", "old")
+        };
+        let mut entries = vec![old_fav, text_entry("b", "new")];
+        prune_expired(&mut entries, 50);
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().any(|e| e.id == "a" && e.favorited));
+    }
+
+    #[test]
+    fn prune_limit_ignores_favorites() {
+        let mut entries: Vec<ClipboardEntry> = (0..20)
+            .map(|i| text_entry(&format!("e{i}"), &format!("c{i}")))
+            .collect();
+        for entry in entries.iter_mut().take(5) {
+            entry.favorited = true;
+        }
+        prune_expired(&mut entries, 10);
+        assert_eq!(entries.len(), 15);
+        assert_eq!(entries.iter().filter(|e| e.favorited).count(), 5);
+        assert_eq!(entries.iter().filter(|e| !e.favorited).count(), 10);
+    }
+
+    #[test]
+    fn clear_unfavorited_keeps_stars() {
+        let mut fav = text_entry("keep", "keep");
+        fav.favorited = true;
+        let mut entries = vec![fav, text_entry("drop", "drop")];
+        clear_unfavorited(&mut entries);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, "keep");
+    }
+
+    #[test]
+    fn toggle_favorite_stars_and_unstars() {
+        let mut entries = vec![text_entry("a", "hello")];
+        assert!(toggle_favorite(&mut entries, "a", 50));
+        assert!(entries[0].favorited);
+        assert!(toggle_favorite(&mut entries, "a", 50));
+        assert!(!entries[0].favorited);
+        assert!(!toggle_favorite(&mut entries, "missing", 50));
+    }
+
+    #[test]
+    fn toggle_favorite_rejects_when_full() {
+        let mut entries: Vec<ClipboardEntry> = (0..MAX_FAVORITES)
+            .map(|i| {
+                let mut entry = text_entry(&format!("f{i}"), &format!("c{i}"));
+                entry.favorited = true;
+                entry
+            })
+            .collect();
+        entries.push(text_entry("extra", "extra"));
+        assert!(!toggle_favorite(&mut entries, "extra", 50));
+        assert!(!entries.last().unwrap().favorited);
+    }
+
+    #[test]
+    fn unfavorite_prunes_expired_row() {
+        let now = now_secs();
+        let old = ClipboardEntry {
+            copied_at: now - EXPIRY_SECS - 1,
+            favorited: true,
+            ..text_entry("a", "old")
+        };
+        let mut entries = vec![old];
+        assert!(toggle_favorite(&mut entries, "a", 50));
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn add_entry_dedup_preserves_favorite_and_id() {
+        let mut entries = Vec::new();
+        assert!(add_entry(
+            &mut entries,
+            ClipboardPayload::Text("starred".into()),
+            50
+        ));
+        let id = entries[0].id.clone();
+        assert!(toggle_favorite(&mut entries, &id, 50));
+        assert!(add_entry(
+            &mut entries,
+            ClipboardPayload::Text("other".into()),
+            50
+        ));
+        assert!(add_entry(
+            &mut entries,
+            ClipboardPayload::Text("starred".into()),
+            50
+        ));
+        assert_eq!(entries[0].content, "starred");
+        assert_eq!(entries[0].id, id);
+        assert!(entries[0].favorited);
+        assert_eq!(entries.len(), 2);
     }
 }

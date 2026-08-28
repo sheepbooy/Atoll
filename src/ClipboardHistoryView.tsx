@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ClipboardList, Image as ImageIcon, Paperclip, Search, Trash2 } from "lucide-react";
+import { ClipboardList, Image as ImageIcon, Paperclip, Search, Star, Trash2 } from "lucide-react";
 import i18n from "./i18n";
-import { getClipboardEntryThumbnail } from "./tauri";
+import { CLIPBOARD_HISTORY_EXPIRY_SECS, getClipboardEntryThumbnail } from "./tauri";
 import type { ClipboardEntry } from "./tauri";
 
 interface ClipboardHistoryViewProps {
@@ -10,6 +10,7 @@ interface ClipboardHistoryViewProps {
   enabled: boolean;
   onCopy: (id: string) => void;
   onClear: () => void;
+  onToggleFavorite: (id: string) => void;
 }
 
 function timeAgoFromSecs(unixSecs: number) {
@@ -38,6 +39,10 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function isFreshHistoryEntry(entry: ClipboardEntry, nowSecs: number) {
+  return nowSecs - entry.copiedAt < CLIPBOARD_HISTORY_EXPIRY_SECS;
+}
+
 function entryTooltip(entry: ClipboardEntry) {
   if (entry.kind === "image") {
     return i18n.t("clipboard.kindImage");
@@ -52,15 +57,18 @@ function ClipboardEntryRow({
   entry,
   copied,
   onCopy,
+  onToggleFavorite,
 }: {
   entry: ClipboardEntry;
   copied: boolean;
   onCopy: (id: string) => void;
+  onToggleFavorite: (id: string) => void;
 }) {
   const { t } = useTranslation();
   const [thumb, setThumb] = useState<string | null>(null);
   const isImage = entry.kind === "image";
   const isFiles = entry.kind === "files";
+  const favorited = Boolean(entry.favorited);
 
   useEffect(() => {
     if (!isImage) {
@@ -121,22 +129,40 @@ function ClipboardEntryRow({
   );
 
   return (
-    <button
-      type="button"
-      className={`clipboard-entry${copied ? " is-copied" : ""}${withIcon ? " has-icon" : ""}`}
-      onClick={() => onCopy(entry.id)}
-      data-no-drag
-      title={entryTooltip(entry)}
+    <div
+      className={`clipboard-entry-row${copied ? " is-copied" : ""}${withIcon ? " has-icon" : ""}`}
     >
-      {withIcon ? (
-        <>
-          {icon}
-          <span className="clipboard-entry-body">{body}</span>
-        </>
-      ) : (
-        body
-      )}
-    </button>
+      <button
+        type="button"
+        className={`clipboard-entry${copied ? " is-copied" : ""}${withIcon ? " has-icon" : ""}`}
+        onClick={() => onCopy(entry.id)}
+        data-no-drag
+        title={entryTooltip(entry)}
+      >
+        {withIcon ? (
+          <>
+            {icon}
+            <span className="clipboard-entry-body">{body}</span>
+          </>
+        ) : (
+          body
+        )}
+      </button>
+      <button
+        type="button"
+        className={`clipboard-star${favorited ? " is-on" : ""}`}
+        aria-pressed={favorited}
+        aria-label={favorited ? t("clipboard.unfavorite") : t("clipboard.favorite")}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onToggleFavorite(entry.id);
+        }}
+        data-no-drag
+      >
+        <Star size={14} fill={favorited ? "currentColor" : "none"} />
+      </button>
+    </div>
   );
 }
 
@@ -145,21 +171,35 @@ export function ClipboardHistoryView({
   enabled,
   onCopy,
   onClear,
+  onToggleFavorite,
 }: ClipboardHistoryViewProps) {
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [tab, setTab] = useState<"history" | "favorites">("history");
+
+  const favorites = useMemo(
+    () => entries.filter((entry) => entry.favorited),
+    [entries],
+  );
+  const historyEntries = useMemo(() => {
+    const nowSecs = Math.floor(Date.now() / 1000);
+    return entries.filter((entry) => isFreshHistoryEntry(entry, nowSecs));
+  }, [entries]);
+  const hasFavorites = favorites.length > 0;
+  const showTabs = enabled || hasFavorites;
+  const source = tab === "favorites" ? favorites : historyEntries;
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return entries;
+    if (!search.trim()) return source;
     const q = search.toLowerCase();
-    return entries.filter((e) => {
+    return source.filter((e) => {
       if (e.kind === "image") {
         return t("clipboard.kindImage").toLowerCase().includes(q);
       }
       return e.preview.toLowerCase().includes(q);
     });
-  }, [entries, search, t]);
+  }, [source, search, t]);
 
   const handleCopy = (id: string) => {
     onCopy(id);
@@ -167,10 +207,13 @@ export function ClipboardHistoryView({
     window.setTimeout(() => setCopiedId(null), 1200);
   };
 
+  const showDisabledHistory = !enabled && tab === "history";
+  const showToolbar = enabled || (hasFavorites && tab === "favorites");
+
   return (
     <div className="clipboard-history-view settings-view" data-no-drag>
       <div className="settings-body">
-        {!enabled ? (
+        {!enabled && !hasFavorites ? (
           <div className="clipboard-empty">
             <div className="clipboard-empty-icon">
               <ClipboardList size={24} />
@@ -179,48 +222,91 @@ export function ClipboardHistoryView({
           </div>
         ) : (
           <>
-            <div className="clipboard-toolbar">
-              <div className="clipboard-search-wrap">
-                <Search size={13} className="clipboard-search-icon" />
-                <input
-                  type="text"
-                  className="clipboard-search-input"
-                  placeholder={t("clipboard.searchPlaceholder")}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-              {entries.length > 0 ? (
+            {showTabs ? (
+              <div className="clipboard-tabs" role="tablist" aria-label={t("clipboard.title")}>
                 <button
                   type="button"
-                  className="clipboard-clear-btn"
-                  onClick={onClear}
+                  role="tab"
+                  aria-selected={tab === "history"}
+                  className={`clipboard-tab${tab === "history" ? " is-active" : ""}`}
+                  onClick={() => setTab("history")}
                   data-no-drag
                 >
-                  <Trash2 size={13} />
-                  <span>{t("clipboard.clear")}</span>
+                  {t("clipboard.tabHistory")}
                 </button>
-              ) : null}
-            </div>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === "favorites"}
+                  className={`clipboard-tab${tab === "favorites" ? " is-active" : ""}`}
+                  onClick={() => setTab("favorites")}
+                  data-no-drag
+                >
+                  {t("clipboard.tabFavorites")}
+                </button>
+              </div>
+            ) : null}
 
-            {filtered.length === 0 ? (
+            {showDisabledHistory ? (
               <div className="clipboard-empty">
                 <div className="clipboard-empty-icon">
                   <ClipboardList size={24} />
                 </div>
-                <p>{t("clipboard.empty")}</p>
+                <p>{t("clipboard.disabled")}</p>
               </div>
             ) : (
-              <div className="clipboard-list">
-                {filtered.map((entry) => (
-                  <ClipboardEntryRow
-                    key={entry.id}
-                    entry={entry}
-                    copied={copiedId === entry.id}
-                    onCopy={handleCopy}
-                  />
-                ))}
-              </div>
+              <>
+                {showToolbar ? (
+                  <div className="clipboard-toolbar">
+                    <div className="clipboard-search-wrap">
+                      <Search size={13} className="clipboard-search-icon" />
+                      <input
+                        type="text"
+                        className="clipboard-search-input"
+                        placeholder={t("clipboard.searchPlaceholder")}
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                      />
+                    </div>
+                    {tab === "history" && historyEntries.length > 0 ? (
+                      <button
+                        type="button"
+                        className="clipboard-clear-btn"
+                        onClick={onClear}
+                        data-no-drag
+                      >
+                        <Trash2 size={13} />
+                        <span>{t("clipboard.clear")}</span>
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {filtered.length === 0 ? (
+                  <div className="clipboard-empty">
+                    <div className="clipboard-empty-icon">
+                      <ClipboardList size={24} />
+                    </div>
+                    <p>
+                      {tab === "favorites"
+                        ? t("clipboard.emptyFavorites")
+                        : t("clipboard.empty")}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="clipboard-list">
+                    {filtered.map((entry) => (
+                      <ClipboardEntryRow
+                        key={entry.id}
+                        entry={entry}
+                        copied={copiedId === entry.id}
+                        onCopy={handleCopy}
+                        onToggleFavorite={onToggleFavorite}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </>
         )}

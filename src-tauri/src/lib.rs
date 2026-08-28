@@ -3058,12 +3058,27 @@ fn copy_clipboard_entry(app: AppHandle, state: State<'_, AppState>, id: String) 
 }
 
 #[tauri::command]
-fn clear_clipboard_history(state: State<'_, AppState>) {
+fn clear_clipboard_history(app: AppHandle, state: State<'_, AppState>) {
     let mut entries = lock_state(&state.clipboard_history);
-    entries.clear();
+    clipboard_history::clear_unfavorited(&mut entries);
     clipboard_history::save_history(&entries);
+    let snapshot = entries.clone();
     drop(entries);
-    clipboard_history::clear_blobs();
+    let _ = app.emit("clipboard-history-changed", &snapshot);
+}
+
+#[tauri::command]
+fn toggle_clipboard_favorite(app: AppHandle, state: State<'_, AppState>, id: String) -> bool {
+    let limit = *lock_state(&state.clipboard_history_limit);
+    let mut entries = lock_state(&state.clipboard_history);
+    let changed = clipboard_history::toggle_favorite(&mut entries, &id, limit);
+    if changed {
+        clipboard_history::save_history(&entries);
+        let snapshot = entries.clone();
+        drop(entries);
+        let _ = app.emit("clipboard-history-changed", &snapshot);
+    }
+    changed
 }
 
 #[tauri::command]
@@ -6957,6 +6972,7 @@ pub fn run() {
             set_clipboard_history_enabled,
             get_clipboard_history_limit,
             set_clipboard_history_limit,
+            toggle_clipboard_favorite,
             get_clipboard_entry_thumbnail,
             archive_subagent,
             archive_completed_subagents,

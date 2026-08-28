@@ -1391,6 +1391,9 @@ describe("App", () => {
     await waitForExpandedPanel(container);
     fireEvent.click(screen.getByRole("button", { name: /More options/i }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Settings/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Island appearance/i }),
+    );
 
     const toggle = await screen.findByRole("switch", {
       name: /Small folded island/i,
@@ -1443,6 +1446,11 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /Settings/i }));
 
     await screen.findByRole("switch", { name: /Launch at login/i });
+    expect(
+      screen.queryByRole("switch", { name: /Small folded island/i }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Island appearance/i }));
+    await screen.findByText(/Folded icon limit/i);
     expect(
       screen.queryByRole("switch", { name: /Small folded island/i }),
     ).not.toBeInTheDocument();
@@ -1662,6 +1670,9 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /More options/i }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Settings/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Island appearance/i }),
+    );
     const toggle = await screen.findByRole("switch", {
       name: /Small folded island/i,
     });
@@ -2076,5 +2087,38 @@ describe("App", () => {
       expect(screen.getByText("语言")).toBeInTheDocument();
       expect(screen.getByText("通用")).toBeInTheDocument();
     });
+  });
+
+  it("keeps island and clipboard controls behind settings subpages", async () => {
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    const { container } = render(<App />);
+    await waitForExpandedPanel(container);
+    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Settings/i }));
+
+    await screen.findByRole("switch", { name: /Launch at login/i });
+    expect(
+      screen.queryByRole("switch", { name: /Clipboard history/i }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Island appearance/i }));
+    expect(
+      await screen.findByText(/Folded icon limit/i),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Settings$/i }));
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /History recording/i }),
+    );
+    expect(
+      await screen.findByRole("switch", { name: /Clipboard history/i }),
+    ).toBeInTheDocument();
   });
 });

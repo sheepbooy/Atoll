@@ -44,7 +44,12 @@
     "openCursor": "打开 Cursor",
     "terminal": "终端",
     "tokenActivity": "Token 活动",
-    "displayPricing": "显示与定价"
+    "displayPricing": "显示与定价",
+    "island": "岛屿外观",
+    "media": "媒体",
+    "clipboard": "剪贴板",
+    "sessions": "会话",
+    "mascot": "吉祥物"
   },
   "approval": {
     "commandRequest": "命令请求",
@@ -139,10 +144,15 @@
     "title": "剪贴板历史",
     "searchPlaceholder": "搜索…",
     "empty": "复制任何文本即可记录到这里",
+    "emptyFavorites": "点亮星标即可收藏",
     "disabled": "在设置中开启剪贴板历史",
     "clear": "清空",
     "copied": "已复制",
     "kindImage": "图片",
-    "kindFiles": "文件"
+    "kindFiles": "文件",
+    "tabHistory": "历史",
+    "tabFavorites": "收藏",
+    "favorite": "收藏",
+    "unfavorite": "取消收藏"
   }
 }

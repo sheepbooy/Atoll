@@ -32,4 +32,11 @@ describe("i18n", () => {
     await i18n.changeLanguage("zh-CN");
     expect(i18n.t("display.languageLabel", { ns: "settings" })).toBe("语言");
   });
+
+  it("translates clipboard favorite labels", async () => {
+    await i18n.changeLanguage("zh-CN");
+    expect(i18n.t("clipboard.tabFavorites")).toBe("收藏");
+    expect(i18n.t("clipboard.emptyFavorites")).toBe("点亮星标即可收藏");
+    expect(i18n.t("pages.islandTitle", { ns: "settings" })).toBe("岛屿外观");
+  });
 });

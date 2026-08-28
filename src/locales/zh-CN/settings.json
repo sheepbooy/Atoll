@@ -2,11 +2,31 @@
   "title": "设置",
   "section": {
     "general": "通用",
+    "appearance": "外观",
+    "media": "媒体",
+    "clipboard": "剪贴板",
+    "sessions": "会话",
     "usage": "用量",
     "integrations": "集成",
     "display": "显示",
     "mascot": "吉祥物",
     "pricing": "定价"
+  },
+  "badge": {
+    "on": "开启",
+    "off": "关闭"
+  },
+  "pages": {
+    "islandTitle": "岛屿外观",
+    "islandDesc": "折叠岛尺寸、指示器与图标上限。",
+    "mascotTitle": "吉祥物",
+    "mascotDesc": "空闲时吉祥物活动的节奏。",
+    "mediaTitle": "媒体",
+    "mediaDesc": "正在播放卡片、封面背景与歌词。",
+    "clipboardTitle": "剪贴板",
+    "clipboardDesc": "历史记录与条数上限。",
+    "sessionsTitle": "会话",
+    "sessionsDesc": "空闲会话与子 Agent 的自动归档。"
   },
   "general": {
     "launchAtLoginLabel": "登录时启动",

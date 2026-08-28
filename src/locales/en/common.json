@@ -44,7 +44,12 @@
     "openCursor": "Open Cursor",
     "terminal": "Terminal",
     "tokenActivity": "Token activity",
-    "displayPricing": "Display & pricing"
+    "displayPricing": "Display & pricing",
+    "island": "Island appearance",
+    "media": "Media",
+    "clipboard": "Clipboard",
+    "sessions": "Sessions",
+    "mascot": "Mascot"
   },
   "approval": {
     "commandRequest": "Command request",
@@ -139,10 +144,15 @@
     "title": "Clipboard history",
     "searchPlaceholder": "Search…",
     "empty": "Copy any text and it will appear here",
+    "emptyFavorites": "Star an item to keep it here",
     "disabled": "Enable clipboard history in settings",
     "clear": "Clear all",
     "copied": "Copied",
     "kindImage": "Image",
-    "kindFiles": "Files"
+    "kindFiles": "Files",
+    "tabHistory": "History",
+    "tabFavorites": "Favorites",
+    "favorite": "Favorite",
+    "unfavorite": "Unfavorite"
   }
 }

@@ -2,11 +2,31 @@
   "title": "Settings",
   "section": {
     "general": "General",
+    "appearance": "Appearance",
+    "media": "Media",
+    "clipboard": "Clipboard",
+    "sessions": "Sessions",
     "usage": "Usage",
     "integrations": "Integrations",
     "display": "Display",
     "mascot": "Mascot",
     "pricing": "Pricing"
+  },
+  "badge": {
+    "on": "On",
+    "off": "Off"
+  },
+  "pages": {
+    "islandTitle": "Island appearance",
+    "islandDesc": "Folded island size, compact indicator, and icon limits.",
+    "mascotTitle": "Mascot",
+    "mascotDesc": "How often idle mascot activities switch.",
+    "mediaTitle": "Media",
+    "mediaDesc": "Now Playing card, artwork backdrop, and lyrics.",
+    "clipboardTitle": "Clipboard",
+    "clipboardDesc": "History recording and how many entries to keep.",
+    "sessionsTitle": "Sessions",
+    "sessionsDesc": "Auto-archive idle sessions and completed subagents."
   },
   "general": {
     "launchAtLoginLabel": "Launch at login",

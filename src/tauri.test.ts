@@ -247,4 +247,13 @@ describe("Tauri bridge", () => {
     expect(open).toHaveBeenNthCalledWith(1, "https://example.com", "_blank");
     expect(open).toHaveBeenNthCalledWith(2, "http://example.com", "_blank");
   });
+
+  it("invokes toggle_clipboard_favorite in the Tauri runtime", async () => {
+    setTauriRuntime(true);
+    invoke.mockResolvedValue(true);
+    const { toggleClipboardFavorite } = await import("./tauri");
+
+    await expect(toggleClipboardFavorite("abc")).resolves.toBe(true);
+    expect(invoke).toHaveBeenCalledWith("toggle_clipboard_favorite", { id: "abc" });
+  });
 });

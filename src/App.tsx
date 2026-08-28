@@ -5,6 +5,7 @@ import {
   memo,
   MouseEvent,
   PointerEvent as ReactPointerEvent,
+  ReactNode,
   UIEvent as ReactUIEvent,
   useCallback,
   useEffect,
@@ -39,6 +40,7 @@ import {
   CircleCheck,
   CircleDollarSign,
   ClipboardList,
+  Clock,
   Download,
   Ellipsis,
   ExternalLink,
@@ -46,11 +48,13 @@ import {
   Hammer,
   HelpCircle,
   Layers,
+  Music,
   Pin,
   PinOff,
   Power,
   RefreshCw,
   Settings2,
+  Sparkles,
   TriangleAlert,
   Trash2,
   X,
@@ -105,6 +109,24 @@ import { AgentMascot, AGENT_ACCENT } from "./AgentMascot";
 import { NowPlayingCard } from "./NowPlayingCard";
 import { ClipboardHistoryView } from "./ClipboardHistoryView";
 import { LyricsMarquee, lyricsMatchTrack } from "./LyricsMarquee";
+import {
+  ClipboardSettingsView,
+  IslandSettingsView,
+  MascotSettingsView,
+  MAX_CLIPBOARD_LIMIT,
+  MAX_IDLE_DURATION_MIN,
+  MAX_IDLE_INTERVAL_MIN,
+  MAX_MAX_SUBAGENT_DISPLAY,
+  MAX_RETENTION_MINUTES,
+  MediaSettingsView,
+  MIN_CLIPBOARD_LIMIT,
+  MIN_IDLE_DURATION_MIN,
+  MIN_IDLE_INTERVAL_MIN,
+  MIN_MAX_SUBAGENT_DISPLAY,
+  MIN_RETENTION_MINUTES,
+  SessionSettingsView,
+} from "./SettingsPages";
+import { SettingsView } from "./SettingsView";
 import type { ClawdMood } from "./ClawdMascot";
 import { getSessionColor, getSubagentColor, getSubagentMood } from "./subagentIdentity";
 import { AtollLogo, type AtollActivity } from "./AtollLogo";
@@ -187,6 +209,7 @@ import {
   clearClipboardHistory,
   setClipboardHistoryEnabled,
   setClipboardHistoryLimit,
+  toggleClipboardFavorite,
   archiveAllResolved,
   archiveSession,
   archiveSubagent,
@@ -236,8 +259,18 @@ type PanelView =
   | { kind: "session"; sessionId: string }
   | { kind: "subagent"; sessionId: string; agentId: string }
   | { kind: "subagentList"; sessionId: string }
-  | { kind: "settings"; page: "main" | "hooks" | "tokens" | "usage" }
+  | { kind: "settings"; page: SettingsPage }
   | { kind: "clipboard" };
+type SettingsPage =
+  | "main"
+  | "hooks"
+  | "tokens"
+  | "usage"
+  | "island"
+  | "media"
+  | "clipboard"
+  | "sessions"
+  | "mascot";
 type FoldedIslandSize = "small" | "regular";
 // Window-space rect of the compact media thumb plus the window size it was
 // measured against; scales the expanded artwork backdrop back onto the thumb.
@@ -289,22 +322,12 @@ const SUBAGENT_RETENTION_SETTING_KEY = "atoll.subagentRetentionMinutes";
 const MAX_SUBAGENT_DISPLAY_SETTING_KEY = "atoll.maxSubagentDisplay";
 const DEFAULT_MAX_COMPACT_ICONS = 3;
 const DEFAULT_MAX_SUBAGENT_DISPLAY = 3;
-const MIN_MAX_SUBAGENT_DISPLAY = 1;
-const MAX_MAX_SUBAGENT_DISPLAY = 10;
 const DEFAULT_RETENTION_MINUTES = 15;
 const DEFAULT_SUBAGENT_RETENTION_MINUTES = 10;
-const MIN_RETENTION_MINUTES = 1;
-const MIN_CLIPBOARD_LIMIT = 10;
-const MAX_CLIPBOARD_LIMIT = 500;
-const MAX_RETENTION_MINUTES = 60;
 const IDLE_INTERVAL_SETTING_KEY = "atoll.idleIntervalMin";
 const IDLE_DURATION_SETTING_KEY = "atoll.idleDurationMin";
 const DEFAULT_IDLE_INTERVAL_MIN = 10;
-const MIN_IDLE_INTERVAL_MIN = 1;
-const MAX_IDLE_INTERVAL_MIN = 60;
 const DEFAULT_IDLE_DURATION_MIN = 20;
-const MIN_IDLE_DURATION_MIN = 1;
-const MAX_IDLE_DURATION_MIN = 60;
 const SETTINGS_INITIALIZED_KEY = "atoll.settingsInitialized";
 const ZERO_TOKEN_USAGE: TokenUsage = {
   inputTokens: 0,
@@ -3202,6 +3225,20 @@ export function App() {
     setPanelView({ kind: "settings", page: "main" });
   }
 
+  function openSettingsSubpage(
+    page: Exclude<SettingsPage, "main" | "hooks" | "tokens" | "usage">,
+  ) {
+    setNavDirection("forward");
+    setPanelAnimKey((key) => key + 1);
+    setPanelView({ kind: "settings", page });
+  }
+
+  function navigateBackToSettingsMain() {
+    setNavDirection("back");
+    setPanelAnimKey((key) => key + 1);
+    setPanelView({ kind: "settings", page: "main" });
+  }
+
   function openHooksPage(backTarget: "home" | "settings-main") {
     setMenuOpen(false);
     setHooksBackTarget(backTarget);
@@ -3489,7 +3526,16 @@ export function App() {
           }}
           onClear={() => {
             clearClipboardHistory()
-              .then(() => setClipboardHistory([]))
+              .then(() => getClipboardHistory())
+              .then(setClipboardHistory)
+              .catch(() => undefined);
+          }}
+          onToggleFavorite={(id) => {
+            toggleClipboardFavorite(id)
+              .then((changed) => {
+                if (!changed) return;
+                return getClipboardHistory().then(setClipboardHistory);
+              })
               .catch(() => undefined);
           }}
         />
@@ -3537,57 +3583,101 @@ export function App() {
         );
       }
 
+      if (panelView.page === "island") {
+        return (
+          <IslandSettingsView
+            maxCompactIcons={maxCompactIcons}
+            maxCompactIconLimit={maxCompactIconLimit}
+            onChangeMaxCompactIcons={(nextValue) =>
+              setMaxCompactIcons(clampCompactIconLimit(nextValue, maxCompactIconLimit))
+            }
+            showFoldedIslandSizeSetting={supportsMicroIsland}
+            foldedIslandSize={foldedIslandSize}
+            onChangeFoldedIslandSize={handleChangeFoldedIslandSize}
+            maxSubagentDisplay={maxSubagentDisplay}
+            onChangeMaxSubagentDisplay={(nextValue) =>
+              setMaxSubagentDisplay(clampMaxSubagentDisplay(nextValue))
+            }
+            showCompactIndicator={IS_MACOS}
+            compactIndicator={compactIndicator}
+            onChangeCompactIndicator={setCompactIndicatorState}
+          />
+        );
+      }
+
+      if (panelView.page === "media") {
+        return (
+          <MediaSettingsView
+            mediaCardEnabled={mediaCardEnabled}
+            onChangeMediaCardEnabled={handleChangeMediaCardEnabled}
+            artworkBackdropEnabled={artworkBackdropEnabled}
+            onChangeArtworkBackdropEnabled={handleChangeArtworkBackdropEnabled}
+            lyricsEnabled={lyricsEnabled}
+            onChangeLyricsEnabled={handleChangeLyricsEnabled}
+          />
+        );
+      }
+
+      if (panelView.page === "clipboard") {
+        return (
+          <ClipboardSettingsView
+            clipboardHistoryEnabled={clipboardEnabled}
+            onChangeClipboardHistoryEnabled={handleChangeClipboardEnabled}
+            clipboardLimit={clipboardLimit}
+            onChangeClipboardLimit={handleChangeClipboardLimit}
+          />
+        );
+      }
+
+      if (panelView.page === "sessions") {
+        return (
+          <SessionSettingsView
+            retentionMinutes={retentionMinutes}
+            onChangeRetentionMinutes={(nextValue) =>
+              setRetentionMinutes(clampRetentionMinutes(nextValue))
+            }
+            subagentRetentionMinutes={subagentRetentionMinutes}
+            onChangeSubagentRetentionMinutes={(nextValue) =>
+              setSubagentRetentionMinutes(clampRetentionMinutes(nextValue))
+            }
+          />
+        );
+      }
+
+      if (panelView.page === "mascot") {
+        return (
+          <MascotSettingsView
+            idleIntervalSec={idleIntervalSec}
+            onChangeIdleInterval={(v) => setIdleIntervalSec(clampIdleInterval(v))}
+            idleDurationSec={idleDurationSec}
+            onChangeIdleDuration={(v) => setIdleDurationSec(clampIdleDuration(v))}
+          />
+        );
+      }
+
       return (
         <SettingsView
-          maxCompactIcons={maxCompactIcons}
-          maxCompactIconLimit={maxCompactIconLimit}
-          onChangeMaxCompactIcons={(nextValue) =>
-            setMaxCompactIcons(clampCompactIconLimit(nextValue, maxCompactIconLimit))
-          }
-          showFoldedIslandSizeSetting={supportsMicroIsland}
-          foldedIslandSize={foldedIslandSize}
-          onChangeFoldedIslandSize={handleChangeFoldedIslandSize}
-          retentionMinutes={retentionMinutes}
-          onChangeRetentionMinutes={(nextValue) =>
-            setRetentionMinutes(clampRetentionMinutes(nextValue))
-          }
-          subagentRetentionMinutes={subagentRetentionMinutes}
-          onChangeSubagentRetentionMinutes={(nextValue) =>
-            setSubagentRetentionMinutes(clampRetentionMinutes(nextValue))
-          }
-          maxSubagentDisplay={maxSubagentDisplay}
-          onChangeMaxSubagentDisplay={(nextValue) =>
-            setMaxSubagentDisplay(clampMaxSubagentDisplay(nextValue))
-          }
-          idleIntervalSec={idleIntervalSec}
-          onChangeIdleInterval={(v) => setIdleIntervalSec(clampIdleInterval(v))}
-          idleDurationSec={idleDurationSec}
-          onChangeIdleDuration={(v) => setIdleDurationSec(clampIdleDuration(v))}
           launchAtLogin={launchAtLogin}
           launchAtLoginBusy={launchAtLoginBusy}
           onChangeLaunchAtLogin={handleChangeLaunchAtLogin}
+          language={language}
+          onChangeLanguage={handleChangeLanguage}
           onOpenHooks={handleOpenHooksFromSettings}
           onOpenTokens={handleOpenTokensFromSettings}
           onOpenUsage={handleOpenUsageFromSettings}
+          onOpenIsland={() => openSettingsSubpage("island")}
+          onOpenMedia={() => openSettingsSubpage("media")}
+          onOpenClipboard={() => openSettingsSubpage("clipboard")}
+          onOpenSessions={() => openSettingsSubpage("sessions")}
+          onOpenMascot={() => openSettingsSubpage("mascot")}
           todayLabel={settingsTodayLabel}
           usageDisplaySummary={usageDisplaySummary}
           hooksSummary={hooksSetupSummary}
           hooksNeedAttention={hooksNeedAttention}
           hooksAllConnected={hookHealthAnalysis.allConnected}
-          language={language}
-          onChangeLanguage={handleChangeLanguage}
+          showMediaSettings={IS_MACOS}
           mediaCardEnabled={mediaCardEnabled}
-          onChangeMediaCardEnabled={handleChangeMediaCardEnabled}
-          artworkBackdropEnabled={artworkBackdropEnabled}
-          onChangeArtworkBackdropEnabled={handleChangeArtworkBackdropEnabled}
-          lyricsEnabled={lyricsEnabled}
-          onChangeLyricsEnabled={handleChangeLyricsEnabled}
           clipboardHistoryEnabled={clipboardEnabled}
-          onChangeClipboardHistoryEnabled={handleChangeClipboardEnabled}
-          clipboardLimit={clipboardLimit}
-          onChangeClipboardLimit={handleChangeClipboardLimit}
-          compactIndicator={compactIndicator}
-          onChangeCompactIndicator={setCompactIndicatorState}
         />
       );
     }
@@ -3831,21 +3921,67 @@ export function App() {
                 }}
               />
             ) : panelView.kind === "clipboard" ? (
-              <ClipboardSubviewNav onBack={navigateBack} />
+              <SettingsPageNav
+                onBack={navigateBack}
+                backLabel={t("nav.back")}
+                icon={<ClipboardList size={14} />}
+                title={t("clipboard.title")}
+              />
             ) : panelView.kind === "settings" && panelView.page === "hooks" ? (
-              <HooksSubviewNav
+              <SettingsPageNav
                 onBack={navigateBackFromHooks}
                 backLabel={hooksBackTarget === "settings-main" ? t("nav.settings") : t("nav.back")}
+                icon={<Download size={14} />}
+                title={t("title", { ns: "hooks" })}
               />
             ) : panelView.kind === "settings" && panelView.page === "tokens" ? (
-              <TokensSubviewNav
+              <SettingsPageNav
                 onBack={navigateBackFromTokens}
                 backLabel={tokensBackTarget === "settings-main" ? t("nav.settings") : t("nav.back")}
+                icon={<Activity size={14} />}
+                title={t("nav.tokenActivity")}
               />
             ) : panelView.kind === "settings" && panelView.page === "usage" ? (
-              <UsageSubviewNav
+              <SettingsPageNav
                 onBack={navigateBackFromUsage}
                 backLabel={usageBackTarget === "settings-main" ? t("nav.settings") : t("nav.back")}
+                icon={<CircleDollarSign size={14} />}
+                title={t("nav.displayPricing")}
+              />
+            ) : panelView.kind === "settings" && panelView.page === "island" ? (
+              <SettingsPageNav
+                onBack={navigateBackToSettingsMain}
+                backLabel={t("nav.settings")}
+                icon={<Layers size={14} />}
+                title={t("nav.island")}
+              />
+            ) : panelView.kind === "settings" && panelView.page === "media" ? (
+              <SettingsPageNav
+                onBack={navigateBackToSettingsMain}
+                backLabel={t("nav.settings")}
+                icon={<Music size={14} />}
+                title={t("nav.media")}
+              />
+            ) : panelView.kind === "settings" && panelView.page === "clipboard" ? (
+              <SettingsPageNav
+                onBack={navigateBackToSettingsMain}
+                backLabel={t("nav.settings")}
+                icon={<ClipboardList size={14} />}
+                title={t("nav.clipboard")}
+              />
+            ) : panelView.kind === "settings" && panelView.page === "sessions" ? (
+              <SettingsPageNav
+                onBack={navigateBackToSettingsMain}
+                backLabel={t("nav.settings")}
+                icon={<Clock size={14} />}
+                title={t("nav.sessions")}
+              />
+            ) : panelView.kind === "settings" && panelView.page === "mascot" ? (
+              <SettingsPageNav
+                onBack={navigateBackToSettingsMain}
+                backLabel={t("nav.settings")}
+                icon={<Sparkles size={14} />}
+                title={t("nav.mascot")}
               />
             ) : panelView.kind === "settings" ? (
               <SettingsSubviewNav onBack={navigateBack} />
@@ -4531,440 +4667,6 @@ function SessionListView({
   );
 }
 
-/* ─── Settings View ────────────────────────────────────────────── */
-
-interface SettingsViewProps {
-  maxCompactIcons: number;
-  maxCompactIconLimit: number;
-  onChangeMaxCompactIcons: (value: number) => void;
-  showFoldedIslandSizeSetting: boolean;
-  foldedIslandSize: FoldedIslandSize;
-  onChangeFoldedIslandSize: (small: boolean) => void;
-  maxSubagentDisplay: number;
-  onChangeMaxSubagentDisplay: (value: number) => void;
-  retentionMinutes: number;
-  onChangeRetentionMinutes: (value: number) => void;
-  subagentRetentionMinutes: number;
-  onChangeSubagentRetentionMinutes: (value: number) => void;
-  idleIntervalSec: number;
-  onChangeIdleInterval: (value: number) => void;
-  idleDurationSec: number;
-  onChangeIdleDuration: (value: number) => void;
-  launchAtLogin: boolean;
-  launchAtLoginBusy?: boolean;
-  onChangeLaunchAtLogin: (enabled: boolean) => void;
-  onOpenHooks: () => void;
-  onOpenTokens: () => void;
-  onOpenUsage: () => void;
-  todayLabel: string;
-  usageDisplaySummary: string;
-  hooksSummary: string;
-  hooksNeedAttention: boolean;
-  hooksAllConnected: boolean;
-  language: AppLanguage;
-  onChangeLanguage: (language: AppLanguage) => void;
-  mediaCardEnabled: boolean;
-  onChangeMediaCardEnabled: (enabled: boolean) => void;
-  artworkBackdropEnabled: boolean;
-  onChangeArtworkBackdropEnabled: (enabled: boolean) => void;
-  lyricsEnabled: boolean;
-  onChangeLyricsEnabled: (enabled: boolean) => void;
-  clipboardHistoryEnabled: boolean;
-  onChangeClipboardHistoryEnabled: (enabled: boolean) => void;
-  clipboardLimit: number;
-  onChangeClipboardLimit: (limit: number) => void;
-  compactIndicator: CompactIndicatorMode;
-  onChangeCompactIndicator: (mode: CompactIndicatorMode) => void;
-}
-
-function SettingsLanguageToggle({
-  language,
-  onChange,
-}: {
-  language: AppLanguage;
-  onChange: (language: AppLanguage) => void;
-}) {
-  const { t } = useTranslation("settings");
-
-  return (
-    <div className="settings-card">
-      <div className="settings-card-head">
-        <span className="settings-card-title">{t("display.languageLabel")}</span>
-        <div className="settings-segmented" role="group" aria-label={t("display.languageLabel")}>
-          <button
-            type="button"
-            className={`settings-segment${language === "en" ? " is-active" : ""}`}
-            onClick={() => onChange("en")}
-            data-no-drag
-          >
-            {t("display.languageEnglish")}
-          </button>
-          <button
-            type="button"
-            className={`settings-segment${language === "zh-CN" ? " is-active" : ""}`}
-            onClick={() => onChange("zh-CN")}
-            data-no-drag
-          >
-            {t("display.languageChinese")}
-          </button>
-        </div>
-      </div>
-      <span className="settings-card-desc">{t("display.languageDesc")}</span>
-    </div>
-  );
-}
-
-function SettingsToggle({
-  label,
-  desc,
-  checked,
-  disabled = false,
-  onChange,
-}: {
-  label: string;
-  desc: string;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (enabled: boolean) => void;
-}) {
-  return (
-    <div className="settings-card">
-      <div className="settings-card-head">
-        <span className="settings-card-title">{label}</span>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={checked}
-          aria-label={label}
-          className={`settings-toggle${checked ? " is-on" : ""}`}
-          disabled={disabled}
-          onClick={() => onChange(!checked)}
-          data-no-drag
-        >
-          <span className="settings-toggle-thumb" />
-        </button>
-      </div>
-      <span className="settings-card-desc">{desc}</span>
-    </div>
-  );
-}
-
-function SettingsSlider({
-  label,
-  value,
-  min,
-  max,
-  step = 1,
-  unit,
-  desc,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step?: number;
-  unit?: string;
-  desc: string;
-  onChange: (v: number) => void;
-}) {
-  const pct = ((value - min) / (max - min)) * 100;
-  return (
-    <div className="settings-card">
-      <div className="settings-card-head">
-        <span className="settings-card-title">{label}</span>
-        <span className="settings-card-value">
-          {value}
-          {unit ? <span className="settings-card-unit">{unit}</span> : null}
-        </span>
-      </div>
-      <div className="settings-slider-wrap">
-        <input
-          type="range"
-          className="settings-slider"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          style={{ "--slider-pct": `${pct}%` } as React.CSSProperties}
-          onChange={(e) => onChange(Number(e.target.value))}
-        />
-        <div className="settings-slider-labels">
-          <span>{min}{unit ?? ""}</span>
-          <span>{max}{unit ?? ""}</span>
-        </div>
-      </div>
-      <span className="settings-card-desc">{desc}</span>
-    </div>
-  );
-}
-
-function SettingsView({
-  maxCompactIcons,
-  maxCompactIconLimit,
-  onChangeMaxCompactIcons,
-  showFoldedIslandSizeSetting,
-  foldedIslandSize,
-  onChangeFoldedIslandSize,
-  maxSubagentDisplay,
-  onChangeMaxSubagentDisplay,
-  retentionMinutes,
-  onChangeRetentionMinutes,
-  subagentRetentionMinutes,
-  onChangeSubagentRetentionMinutes,
-  idleIntervalSec,
-  onChangeIdleInterval,
-  idleDurationSec,
-  onChangeIdleDuration,
-  launchAtLogin,
-  launchAtLoginBusy = false,
-  onChangeLaunchAtLogin,
-  onOpenHooks,
-  onOpenTokens,
-  onOpenUsage,
-  todayLabel,
-  usageDisplaySummary,
-  hooksSummary,
-  hooksNeedAttention,
-  hooksAllConnected,
-  language,
-  onChangeLanguage,
-  mediaCardEnabled,
-  onChangeMediaCardEnabled,
-  artworkBackdropEnabled,
-  onChangeArtworkBackdropEnabled,
-  lyricsEnabled,
-  onChangeLyricsEnabled,
-  clipboardHistoryEnabled,
-  onChangeClipboardHistoryEnabled,
-  clipboardLimit,
-  onChangeClipboardLimit,
-  compactIndicator,
-  onChangeCompactIndicator,
-}: SettingsViewProps) {
-  const { t } = useTranslation("settings");
-
-  return (
-    <div className="settings-view" data-no-drag>
-      <div className="settings-body">
-        <div className="settings-section">
-          <span className="settings-section-label">{t("section.general")}</span>
-          <SettingsToggle
-            label={t("general.launchAtLoginLabel")}
-            desc={t("general.launchAtLoginDesc")}
-            checked={launchAtLogin}
-            disabled={launchAtLoginBusy}
-            onChange={onChangeLaunchAtLogin}
-          />
-        </div>
-
-        <div className="settings-section">
-          <span className="settings-section-label">{t("section.usage")}</span>
-          <button
-            type="button"
-            className="settings-nav-card"
-            onClick={onOpenUsage}
-            data-no-drag
-          >
-            <div className="settings-nav-card-copy">
-              <span className="settings-card-title">{t("usage.displayPricingTitle")}</span>
-              <span className="settings-card-desc">
-                {t("usage.displayPricingDesc")}
-              </span>
-            </div>
-            <div className="settings-nav-card-meta">
-              <span className="settings-hook-badge is-summary is-installed">
-                {usageDisplaySummary}
-              </span>
-              <ChevronRight size={14} className="settings-nav-chevron" />
-            </div>
-          </button>
-          <button
-            type="button"
-            className="settings-nav-card"
-            onClick={onOpenTokens}
-            data-no-drag
-          >
-            <div className="settings-nav-card-copy">
-              <span className="settings-card-title">{t("usage.tokenActivityTitle")}</span>
-              <span className="settings-card-desc">
-                {t("usage.tokenActivityDesc")}
-              </span>
-            </div>
-            <div className="settings-nav-card-meta">
-              <span className="settings-hook-badge is-summary is-installed">
-                {todayLabel}
-              </span>
-              <ChevronRight size={14} className="settings-nav-chevron" />
-            </div>
-          </button>
-        </div>
-
-        <div className="settings-section">
-          <span className="settings-section-label">{t("section.integrations")}</span>
-          <button
-            type="button"
-            className="settings-nav-card"
-            onClick={onOpenHooks}
-            data-no-drag
-          >
-            <div className="settings-nav-card-copy">
-              <span className="settings-card-title">{t("integrations.agentHooksTitle")}</span>
-              <span className="settings-card-desc">
-                {t("integrations.agentHooksDesc")}
-              </span>
-            </div>
-            <div className="settings-nav-card-meta">
-              <span
-                className={`settings-hook-badge is-summary${
-                  hooksNeedAttention ? " is-missing" : hooksAllConnected ? " is-installed" : ""
-                }`}
-              >
-                {hooksSummary}
-              </span>
-              <ChevronRight size={14} className="settings-nav-chevron" />
-            </div>
-          </button>
-        </div>
-
-        <div className="settings-section">
-          <span className="settings-section-label">{t("section.display")}</span>
-          <SettingsLanguageToggle language={language} onChange={onChangeLanguage} />
-          {IS_MACOS ? (
-            <SettingsToggle
-              label={t("display.mediaCardLabel")}
-              desc={t("display.mediaCardDesc")}
-              checked={mediaCardEnabled}
-              onChange={onChangeMediaCardEnabled}
-            />
-          ) : null}
-          {IS_MACOS ? (
-            <SettingsToggle
-              label={t("display.artworkBackdropLabel")}
-              desc={t("display.artworkBackdropDesc")}
-              checked={artworkBackdropEnabled}
-              onChange={onChangeArtworkBackdropEnabled}
-            />
-          ) : null}
-          {IS_MACOS ? (
-            <SettingsToggle
-              label={t("display.lyricsLabel")}
-              desc={t("display.lyricsDesc")}
-              checked={lyricsEnabled}
-              onChange={onChangeLyricsEnabled}
-            />
-          ) : null}
-          <SettingsToggle
-            label={t("display.clipboardHistoryLabel")}
-            desc={t("display.clipboardHistoryDesc")}
-            checked={clipboardHistoryEnabled}
-            onChange={onChangeClipboardHistoryEnabled}
-          />
-          <SettingsSlider
-            label={t("display.clipboardHistoryLimitLabel")}
-            value={clipboardLimit}
-            min={MIN_CLIPBOARD_LIMIT}
-            max={MAX_CLIPBOARD_LIMIT}
-            step={10}
-            unit={t("display.clipboardHistoryLimitUnit")}
-            desc={t("display.clipboardHistoryLimitDesc")}
-            onChange={onChangeClipboardLimit}
-          />
-          {IS_MACOS ? (
-            <div className="settings-card">
-              <div className="settings-card-head">
-                <span className="settings-card-title">{t("display.compactIndicatorLabel")}</span>
-                <div className="settings-segmented" role="group" aria-label={t("display.compactIndicatorLabel")}>
-                  {(["media", "tokens", "both", "none"] as CompactIndicatorMode[]).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      className={`settings-segment${compactIndicator === mode ? " is-active" : ""}`}
-                      onClick={() => onChangeCompactIndicator(mode)}
-                      data-no-drag
-                    >
-                      {t("common:displayMode." + mode)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <span className="settings-card-desc">{t("display.compactIndicatorDesc")}</span>
-            </div>
-          ) : null}
-          {showFoldedIslandSizeSetting ? (
-            <SettingsToggle
-              label={t("display.smallFoldedIslandLabel")}
-              desc={t("display.smallFoldedIslandDesc")}
-              checked={foldedIslandSize === "small"}
-              onChange={onChangeFoldedIslandSize}
-            />
-          ) : null}
-          <SettingsSlider
-            label={t("display.foldedIconLimitLabel")}
-            value={maxCompactIcons}
-            min={MIN_MAX_COMPACT_ICONS}
-            max={maxCompactIconLimit}
-            desc={
-              maxCompactIconLimit < ABSOLUTE_MAX_COMPACT_ICONS
-                ? t("display.foldedIconLimitDescLimited", { limit: maxCompactIconLimit })
-                : t("display.foldedIconLimitDescDefault")
-            }
-            onChange={onChangeMaxCompactIcons}
-          />
-          <SettingsSlider
-            label={t("display.subagentDisplayLimitLabel")}
-            value={maxSubagentDisplay}
-            min={MIN_MAX_SUBAGENT_DISPLAY}
-            max={MAX_MAX_SUBAGENT_DISPLAY}
-            desc={t("display.subagentDisplayLimitDesc")}
-            onChange={onChangeMaxSubagentDisplay}
-          />
-          <SettingsSlider
-            label={t("display.sessionAutoArchiveLabel")}
-            value={retentionMinutes}
-            min={MIN_RETENTION_MINUTES}
-            max={MAX_RETENTION_MINUTES}
-            unit={t("display.unitMinutes")}
-            desc={t("display.sessionAutoArchiveDesc")}
-            onChange={onChangeRetentionMinutes}
-          />
-          <SettingsSlider
-            label={t("display.subagentAutoArchiveLabel")}
-            value={subagentRetentionMinutes}
-            min={MIN_RETENTION_MINUTES}
-            max={MAX_RETENTION_MINUTES}
-            unit={t("display.unitMinutes")}
-            desc={t("display.subagentAutoArchiveDesc")}
-            onChange={onChangeSubagentRetentionMinutes}
-          />
-        </div>
-
-        <div className="settings-section">
-          <span className="settings-section-label">{t("section.mascot")}</span>
-          <SettingsSlider
-            label={t("mascot.activityIntervalLabel")}
-            value={idleIntervalSec}
-            min={MIN_IDLE_INTERVAL_MIN}
-            max={MAX_IDLE_INTERVAL_MIN}
-            unit={t("display.unitMinutes")}
-            desc={t("mascot.activityIntervalDesc")}
-            onChange={onChangeIdleInterval}
-          />
-          <SettingsSlider
-            label={t("mascot.activityDurationLabel")}
-            value={idleDurationSec}
-            min={MIN_IDLE_DURATION_MIN}
-            max={MAX_IDLE_DURATION_MIN}
-            unit={t("display.unitMinutes")}
-            desc={t("mascot.activityDurationDesc")}
-            onChange={onChangeIdleDuration}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ─── Approval Card ───────────────────────────────────────────── */
 
 function getPlanModeType(request: PermissionRequest): "question" | "exitPlan" | null {
@@ -5540,6 +5242,31 @@ function SessionSubviewNav({
   );
 }
 
+function SettingsPageNav({
+  onBack,
+  backLabel,
+  icon,
+  title,
+}: {
+  onBack: () => void;
+  backLabel: string;
+  icon: ReactNode;
+  title: string;
+}) {
+  return (
+    <div className="settings-subview-nav" data-no-drag>
+      <button type="button" className="back-button" onClick={onBack}>
+        <ArrowLeft size={13} />
+        <span>{backLabel}</span>
+      </button>
+      <span className="settings-header-title">
+        {icon}
+        <span>{title}</span>
+      </span>
+    </div>
+  );
+}
+
 interface SettingsSubviewNavProps {
   onBack: () => void;
 }
@@ -6089,92 +5816,6 @@ function formatHookInstallErrorMessage(error: unknown): string {
   if (typeof error === "string") return error;
   if (error instanceof Error) return error.message;
   return i18n.t("error.unknown", { ns: "hooks" });
-}
-
-function TokensSubviewNav({
-  onBack,
-  backLabel,
-}: {
-  onBack: () => void;
-  backLabel: string;
-}) {
-  const { t } = useTranslation();
-
-  return (
-    <div className="settings-subview-nav" data-no-drag>
-      <button type="button" className="back-button" onClick={onBack}>
-        <ArrowLeft size={13} />
-        <span>{backLabel}</span>
-      </button>
-      <span className="settings-header-title">
-        <Activity size={14} />
-        <span>{t("nav.tokenActivity")}</span>
-      </span>
-    </div>
-  );
-}
-
-function ClipboardSubviewNav({ onBack }: { onBack: () => void }) {
-  const { t } = useTranslation();
-
-  return (
-    <div className="settings-subview-nav" data-no-drag>
-      <button type="button" className="back-button" onClick={onBack}>
-        <ArrowLeft size={13} />
-        <span>{t("nav.back")}</span>
-      </button>
-      <span className="settings-header-title">
-        <ClipboardList size={14} />
-        <span>{t("clipboard.title")}</span>
-      </span>
-    </div>
-  );
-}
-
-function UsageSubviewNav({
-  onBack,
-  backLabel,
-}: {
-  onBack: () => void;
-  backLabel: string;
-}) {
-  const { t } = useTranslation();
-
-  return (
-    <div className="settings-subview-nav" data-no-drag>
-      <button type="button" className="back-button" onClick={onBack}>
-        <ArrowLeft size={13} />
-        <span>{backLabel}</span>
-      </button>
-      <span className="settings-header-title">
-        <CircleDollarSign size={14} />
-        <span>{t("nav.displayPricing")}</span>
-      </span>
-    </div>
-  );
-}
-
-function HooksSubviewNav({
-  onBack,
-  backLabel,
-}: {
-  onBack: () => void;
-  backLabel: string;
-}) {
-  const { t } = useTranslation("hooks");
-
-  return (
-    <div className="settings-subview-nav" data-no-drag>
-      <button type="button" className="back-button" onClick={onBack}>
-        <ArrowLeft size={13} />
-        <span>{backLabel}</span>
-      </button>
-      <span className="settings-header-title">
-        <Download size={14} />
-        <span>{t("title")}</span>
-      </span>
-    </div>
-  );
 }
 
 function HooksView({

@@ -766,7 +766,10 @@ export interface ClipboardEntry {
   preview: string;
   copiedAt: number;
   byteSize?: number;
+  favorited?: boolean;
 }
+
+export const CLIPBOARD_HISTORY_EXPIRY_SECS = 24 * 60 * 60;
 
 export async function getClipboardHistory(): Promise<ClipboardEntry[]> {
   if (!isTauriRuntime()) {
@@ -822,6 +825,13 @@ export async function getClipboardEntryThumbnail(id: string): Promise<string | n
     return null;
   }
   return invoke<string | null>("get_clipboard_entry_thumbnail", { id });
+}
+
+export async function toggleClipboardFavorite(id: string): Promise<boolean> {
+  if (!isTauriRuntime()) {
+    return false;
+  }
+  return invoke<boolean>("toggle_clipboard_favorite", { id });
 }
 
 export async function onClipboardHistoryChanged(
