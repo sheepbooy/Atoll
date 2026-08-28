@@ -581,6 +581,14 @@ export async function openAgentApp(
   return invoke<void>("open_agent_app", { agent, cwd, session: session ?? null });
 }
 
+export async function setImeActive(active: boolean) {
+  if (!isTauriRuntime()) {
+    return;
+  }
+
+  return invoke<void>("set_ime_active", { active });
+}
+
 export async function setIslandPresentation(
   mode: "micro" | "compact" | "expanded" | "dormant",
   compactWidth?: number,

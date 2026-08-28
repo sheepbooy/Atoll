@@ -83,6 +83,17 @@ pub fn apply_island_window_style(window: &WebviewWindow) {
     windows::apply_island_window_style(window);
 }
 
+/// Tell macOS to keep IME candidate UI above the island while a text field
+/// is focused or composing. No-op on other platforms.
+pub fn set_ime_active(window: &WebviewWindow, active: bool) {
+    #[cfg(target_os = "macos")]
+    macos::set_ime_active(window, active);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (window, active);
+    }
+}
+
 /// Re-assert the island's topmost state before expanding. macOS keeps its
 /// NSMainMenuWindowLevel persistently so this is a no-op there; Windows topmost
 /// can drift during a large unfocused resize, so it re-applies WS_EX_TOPMOST.

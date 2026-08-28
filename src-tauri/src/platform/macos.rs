@@ -13,6 +13,7 @@ mod panel_store {
     use std::sync::atomic::{AtomicPtr, Ordering};
 
     static PANEL: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
+    static TAURI_WINDOW: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
 
     pub fn set(ptr: *mut std::ffi::c_void) {
         PANEL.store(ptr, Ordering::Release);
@@ -20,6 +21,231 @@ mod panel_store {
 
     pub fn get_raw() -> *mut std::ffi::c_void {
         PANEL.load(Ordering::Acquire)
+    }
+
+    pub fn set_tauri(ptr: *mut std::ffi::c_void) {
+        TAURI_WINDOW.store(ptr, Ordering::Release);
+    }
+
+    pub fn get_tauri() -> *mut std::ffi::c_void {
+        TAURI_WINDOW.load(Ordering::Acquire)
+    }
+}
+
+/// Keep Chinese IME candidate windows above the island NSPanel.
+/// The island sits at NSMainMenuWindowLevel+3 so it can cover the menu bar;
+/// IMK/TSM candidate UI is usually lower (or the same level) and gets covered
+/// unless we tell the input method to draw at pop-up-menu level.
+mod ime_overlay {
+    use std::ffi::c_void;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Mutex, OnceLock};
+
+    use objc2::rc::Retained;
+    use objc2::runtime::{AnyClass, AnyObject, Imp, NSObject, Sel};
+    use objc2::{define_class, msg_send, ClassType};
+    use objc2_app_kit::{NSMainMenuWindowLevel, NSPopUpMenuWindowLevel};
+    use objc2_foundation::NSString;
+    use tauri::WebviewWindow;
+
+    use super::panel_store;
+
+    static IME_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+    define_class!(
+        #[unsafe(super(NSObject))]
+        #[name = "AtollImeWindowObserver"]
+        struct AtollImeWindowObserver;
+
+        impl AtollImeWindowObserver {
+            #[unsafe(method(atollImeWindowDidChange:))]
+            fn atoll_ime_window_did_change(&self, _notification: Option<&AnyObject>) {
+                apply_tsm_window_level();
+                if IME_ACTIVE.load(Ordering::SeqCst) {
+                    raise_in_process_ime_windows();
+                }
+            }
+        }
+    );
+
+    #[link(name = "Carbon", kind = "framework")]
+    extern "C" {
+        fn TSMGetActiveDocument() -> *mut c_void;
+        fn TSMSetDocumentProperty(
+            doc: *mut c_void,
+            property_tag: u32,
+            size: u32,
+            data: *const c_void,
+        ) -> i32;
+    }
+
+    /// FourCharCode `'wlev'` — TSM document property for the candidate window level.
+    const TSM_DOCUMENT_WINDOW_LEVEL_TAG: u32 = u32::from_be_bytes(*b"wlev");
+
+    pub fn island_window_level() -> isize {
+        NSMainMenuWindowLevel + 3
+    }
+
+    pub fn ime_window_level() -> isize {
+        NSPopUpMenuWindowLevel
+    }
+
+    pub fn should_order_island_front() -> bool {
+        !IME_ACTIVE.load(Ordering::SeqCst)
+    }
+
+    /// True when `window` is the island panel or the leftover Tauri NSWindow.
+    pub fn is_island_owned_window(window: usize, panel: usize, tauri_window: usize) -> bool {
+        window == 0 || window == panel || (tauri_window != 0 && window == tauri_window)
+    }
+
+    pub fn set_ime_active(window: &WebviewWindow, active: bool) {
+        IME_ACTIVE.store(active, Ordering::SeqCst);
+        if !active {
+            return;
+        }
+        let window = window.clone();
+        let _ = window.run_on_main_thread(|| {
+            apply_tsm_window_level();
+            raise_in_process_ime_windows();
+        });
+    }
+
+    pub fn install_observer() {
+        static OBSERVER: OnceLock<Retained<AtollImeWindowObserver>> = OnceLock::new();
+        OBSERVER.get_or_init(|| unsafe {
+            let observer: Retained<AtollImeWindowObserver> =
+                msg_send![AtollImeWindowObserver::class(), new];
+            let Some(center_class) = AnyClass::get(c"NSNotificationCenter") else {
+                return observer;
+            };
+            let center: *mut AnyObject = msg_send![center_class, defaultCenter];
+            if center.is_null() {
+                return observer;
+            }
+            let selector = objc2::sel!(atollImeWindowDidChange:);
+            for name in [
+                "NSWindowDidBecomeKeyNotification",
+                "NSWindowDidChangeOcclusionStateNotification",
+                "NSWindowDidOrderOnScreenNotification",
+            ] {
+                let ns_name = NSString::from_str(name);
+                let _: () = msg_send![
+                    center,
+                    addObserver: &*observer,
+                    selector: selector,
+                    name: &*ns_name,
+                    object: std::ptr::null_mut::<AnyObject>()
+                ];
+            }
+            observer
+        });
+    }
+
+    pub fn patch_view_tree(view: *mut AnyObject) {
+        unsafe { patch_view_tree_ime_level(view) };
+    }
+
+    fn apply_tsm_window_level() {
+        unsafe {
+            let doc = TSMGetActiveDocument();
+            if doc.is_null() {
+                return;
+            }
+            let level = ime_window_level() as i32;
+            let _ = TSMSetDocumentProperty(
+                doc,
+                TSM_DOCUMENT_WINDOW_LEVEL_TAG,
+                std::mem::size_of::<i32>() as u32,
+                (&level as *const i32).cast::<c_void>(),
+            );
+        }
+    }
+
+    fn raise_in_process_ime_windows() {
+        unsafe {
+            let Some(app_class) = AnyClass::get(c"NSApplication") else {
+                return;
+            };
+            let app: *mut AnyObject = msg_send![app_class, sharedApplication];
+            if app.is_null() {
+                return;
+            }
+            let windows: *mut AnyObject = msg_send![app, windows];
+            if windows.is_null() {
+                return;
+            }
+            let count: usize = msg_send![windows, count];
+            let panel = panel_store::get_raw();
+            let tauri = panel_store::get_tauri();
+            let ime_level = ime_window_level();
+            for index in 0..count {
+                let window: *mut AnyObject = msg_send![windows, objectAtIndex: index];
+                if is_island_owned_window(window as usize, panel as usize, tauri as usize) {
+                    continue;
+                }
+                let current: isize = msg_send![window, level];
+                if current < ime_level {
+                    let _: () = msg_send![window, setLevel: ime_level];
+                }
+            }
+        }
+    }
+
+    fn class_is_generic_appkit(class: &AnyClass) -> bool {
+        matches!(
+            class.name().to_str().unwrap_or(""),
+            "NSView" | "NSWindow" | "NSPanel" | "NSControl" | "NSResponder"
+        )
+    }
+
+    unsafe fn patch_view_tree_ime_level(view: *mut AnyObject) {
+        if view.is_null() {
+            return;
+        }
+        let class = (*view).class();
+        if !class_is_generic_appkit(class) {
+            patch_imk_window_level(class);
+        }
+        let subviews: *mut AnyObject = msg_send![view, subviews];
+        if subviews.is_null() {
+            return;
+        }
+        let count: usize = msg_send![subviews, count];
+        for index in 0..count {
+            let subview: *mut AnyObject = msg_send![subviews, objectAtIndex: index];
+            patch_view_tree_ime_level(subview);
+        }
+    }
+
+    unsafe fn patch_imk_window_level(class: &AnyClass) {
+        static PATCHED: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+        let key = class as *const AnyClass as usize;
+        {
+            let mut patched = PATCHED.lock().unwrap_or_else(|error| error.into_inner());
+            if patched.contains(&key) {
+                return;
+            }
+            patched.push(key);
+        }
+
+        extern "C-unwind" fn ime_window_level_imp(_view: *mut AnyObject, _sel: Sel) -> isize {
+            NSPopUpMenuWindowLevel
+        }
+
+        let selector = objc2::sel!(windowLevel);
+        let types = if let Some(method) = class.instance_method(selector) {
+            objc2::ffi::method_getTypeEncoding(method)
+        } else {
+            c"q@:".as_ptr()
+        };
+        let implementation: Imp = std::mem::transmute(
+            ime_window_level_imp as extern "C-unwind" fn(*mut AnyObject, Sel) -> isize,
+        );
+        let cls = class as *const AnyClass as *mut AnyClass;
+        if !objc2::ffi::class_addMethod(cls, selector, implementation, types).as_bool() {
+            objc2::ffi::class_replaceMethod(cls, selector, implementation, types);
+        }
     }
 }
 
@@ -30,10 +256,11 @@ fn ensure_island_panel_visible() {
             return;
         }
         let panel = panel_ptr as *mut objc2::runtime::AnyObject;
-        use objc2_app_kit::NSMainMenuWindowLevel;
-        let level = NSMainMenuWindowLevel + 3;
+        let level = ime_overlay::island_window_level();
         let _: () = objc2::msg_send![panel, setLevel: level];
-        let _: () = objc2::msg_send![panel, orderFrontRegardless];
+        if ime_overlay::should_order_island_front() {
+            let _: () = objc2::msg_send![panel, orderFrontRegardless];
+        }
     }
 }
 
@@ -343,8 +570,7 @@ fn appkit_window_origin_y(
 
 pub fn apply_island_window_style(window: &tauri::WebviewWindow) {
     use objc2_app_kit::{
-        NSColor, NSMainMenuWindowLevel, NSWindow, NSWindowAnimationBehavior,
-        NSWindowCollectionBehavior,
+        NSColor, NSWindow, NSWindowAnimationBehavior, NSWindowCollectionBehavior,
     };
 
     let Ok(ns_window) = window.ns_window() else {
@@ -377,7 +603,7 @@ pub fn apply_island_window_style(window: &tauri::WebviewWindow) {
                 | NSWindowCollectionBehavior::FullScreenAuxiliary
                 | NSWindowCollectionBehavior::IgnoresCycle,
         );
-        ns_window.setLevel(NSMainMenuWindowLevel + 3);
+        ns_window.setLevel(ime_overlay::island_window_level());
         eprintln!("[Atoll] step: window properties set");
 
         // Corner mask goes on the panel (where the WKWebView lives)
@@ -392,6 +618,10 @@ pub fn apply_island_window_style(window: &tauri::WebviewWindow) {
     }
 }
 
+pub fn set_ime_active(window: &WebviewWindow, active: bool) {
+    ime_overlay::set_ime_active(window, active);
+}
+
 /// Create a real NSPanel (properly initialised as a floating panel that
 /// renders above the macOS menu bar), then move the WKWebView from the
 /// Tauri window into this panel.  The Tauri window keeps an empty
@@ -403,8 +633,7 @@ fn promote_to_floating_panel(ns_window: &objc2_app_kit::NSWindow) {
     use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, Sel};
     use objc2::sel;
     use objc2_app_kit::{
-        NSColor, NSMainMenuWindowLevel, NSScreen, NSWindow, NSWindowCollectionBehavior,
-        NSWindowStyleMask,
+        NSColor, NSScreen, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask,
     };
     use objc2_foundation::NSRect;
 
@@ -431,7 +660,7 @@ fn promote_to_floating_panel(ns_window: &objc2_app_kit::NSWindow) {
         let _: () = objc2::msg_send![raw, setBackgroundColor: &*clear];
         let _: () = objc2::msg_send![raw, setHasShadow: Bool::NO];
         let _: () = objc2::msg_send![raw, setMovable: Bool::NO];
-        let _: () = objc2::msg_send![raw, setLevel: NSMainMenuWindowLevel + 3];
+        let _: () = objc2::msg_send![raw, setLevel: ime_overlay::island_window_level()];
         let _: () = objc2::msg_send![raw, setCollectionBehavior:
             NSWindowCollectionBehavior::CanJoinAllSpaces
                 | NSWindowCollectionBehavior::Stationary
@@ -507,8 +736,12 @@ fn promote_to_floating_panel(ns_window: &objc2_app_kit::NSWindow) {
                 let _: () = objc2::msg_send![wk, setAutoresizingMask: 18usize];
 
                 eprintln!("[Atoll] WKWebView moved to floating panel");
+                ime_overlay::patch_view_tree(wk);
+                ime_overlay::patch_view_tree(pcv);
             }
         }
+
+        panel_store::set_tauri(ns_window as *const NSWindow as *mut std::ffi::c_void);
 
         // The Tauri window is now content-less; keep it permanently
         // ignoring mouse events so it never blocks the panel.
@@ -520,6 +753,7 @@ fn promote_to_floating_panel(ns_window: &objc2_app_kit::NSWindow) {
         let _: () = objc2::msg_send![raw, orderFrontRegardless];
 
         panel_store::set(raw as *mut std::ffi::c_void);
+        ime_overlay::install_observer();
 
         let is_floating: Bool = objc2::msg_send![raw, isFloatingPanel];
         eprintln!(
@@ -583,8 +817,10 @@ fn apply_accepts_first_mouse(ns_window: &objc2_app_kit::NSWindow) {
                 for i in 0..count {
                     let sv: *mut AnyObject = objc2::msg_send![subviews, objectAtIndex: i];
                     patch_view_class(sv);
+                    ime_overlay::patch_view_tree(sv);
                 }
             }
+            ime_overlay::patch_view_tree(pcv);
         }
     });
 }
@@ -1075,7 +1311,9 @@ pub fn finish_show_for_approval(window: &WebviewWindow, app: &AppHandle, request
         if !panel_ptr.is_null() {
             unsafe {
                 let panel_ptr = panel_ptr as *mut objc2::runtime::AnyObject;
-                let _: () = objc2::msg_send![panel_ptr, orderFrontRegardless];
+                if ime_overlay::should_order_island_front() {
+                    let _: () = objc2::msg_send![panel_ptr, orderFrontRegardless];
+                }
                 if request_focus {
                     if let Some(ns_app_class) = objc2::runtime::AnyClass::get(c"NSApplication") {
                         let ns_app: *mut objc2::runtime::AnyObject =
@@ -1631,6 +1869,32 @@ fn find_terminal_ancestor(mut pid: u32) -> Option<String> {
         pid = ppid_str.parse::<u32>().ok()?;
     }
     None
+}
+
+#[cfg(test)]
+mod ime_overlay_tests {
+    use super::ime_overlay::{
+        ime_window_level, is_island_owned_window, island_window_level, should_order_island_front,
+    };
+
+    #[test]
+    fn ime_candidate_level_is_above_the_island() {
+        assert!(ime_window_level() > island_window_level());
+    }
+
+    #[test]
+    fn skips_null_and_owned_windows() {
+        assert!(is_island_owned_window(0, 10, 20));
+        assert!(is_island_owned_window(10, 10, 20));
+        assert!(is_island_owned_window(20, 10, 20));
+        assert!(!is_island_owned_window(30, 10, 20));
+        assert!(!is_island_owned_window(30, 10, 0));
+    }
+
+    #[test]
+    fn orders_island_front_only_when_ime_is_idle() {
+        assert!(should_order_island_front());
+    }
 }
 
 #[cfg(all(test, target_os = "macos"))]

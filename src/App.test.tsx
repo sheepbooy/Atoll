@@ -197,6 +197,7 @@ const bridge = vi.hoisted(() => ({
   deactivateAtoll: vi.fn(),
   resolvePermissionRequest: vi.fn(),
   setIslandPresentation: vi.fn(),
+  setImeActive: vi.fn(),
   setCompactLayout: vi.fn(),
   usesMicroIsland: vi.fn(),
   getClaudeHookStatus: vi.fn(),
@@ -293,6 +294,7 @@ describe("App", () => {
     bridge.onCaptureOpenHooksRequested.mockResolvedValue(() => undefined);
     bridge.onCaptureScreenshotRequested.mockResolvedValue(() => undefined);
     bridge.setIslandPresentation.mockResolvedValue(undefined);
+    bridge.setImeActive.mockResolvedValue(undefined);
     bridge.setCompactLayout.mockResolvedValue(undefined);
     bridge.usesMicroIsland.mockResolvedValue(false);
     bridge.quitAtoll.mockResolvedValue(undefined);
@@ -419,6 +421,28 @@ describe("App", () => {
         (call) => call[0] === "expanded" && call[6] === true,
       ),
     ).toBe(true);
+  });
+
+  it("notifies native code when a plan answer field is focused", async () => {
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 1,
+      activeRequest: planQuestionRequest,
+      recent: [planQuestionRequest],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    const { container } = render(<App />);
+    await waitForExpandedPanel(container);
+
+    fireEvent.click(screen.getByText("Other..."));
+    const input = container.querySelector(".plan-other-input");
+    expect(input).not.toBeNull();
+    fireEvent.focusIn(input!);
+    expect(bridge.setImeActive).toHaveBeenCalledWith(true);
+
+    fireEvent.focusOut(input!);
+    expect(bridge.setImeActive).toHaveBeenCalledWith(false);
   });
 
   it("collapses to a persistent capsule that can be reopened", async () => {

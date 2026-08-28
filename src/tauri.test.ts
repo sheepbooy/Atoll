@@ -30,6 +30,17 @@ describe("Tauri bridge", () => {
     vi.restoreAllMocks();
   });
 
+  it("invokes set_ime_active in the Tauri runtime", async () => {
+    setTauriRuntime(true);
+    const { setImeActive } = await import("./tauri");
+
+    await setImeActive(true);
+    await setImeActive(false);
+
+    expect(invoke).toHaveBeenNthCalledWith(1, "set_ime_active", { active: true });
+    expect(invoke).toHaveBeenNthCalledWith(2, "set_ime_active", { active: false });
+  });
+
   it("starts with an empty browser fallback snapshot", async () => {
     const { EMPTY_HOOK_HEALTH, getSnapshot } = await import("./tauri");
 

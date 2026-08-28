@@ -198,6 +198,7 @@ import {
   resolvePermissionRequest,
   resolvePermissionWithInput,
   setIslandPresentation,
+  setImeActive,
   setCompactLayout,
   usesMicroIsland,
   usesMicroIslandSync,
@@ -1200,6 +1201,49 @@ export function App() {
     if (!hookHealthHydrated) return;
     setConfiguredHookAgents(seedConfiguredFromHookHealth(snapshot.hookHealth));
   }, [hookHealthHydrated, snapshot.hookHealth]);
+
+  useEffect(() => {
+    let composing = false;
+
+    const syncIme = (active: boolean) => {
+      void setImeActive(active);
+    };
+
+    const onFocusIn = (event: Event) => {
+      if (isImeTextTarget(event.target)) {
+        syncIme(true);
+      }
+    };
+    const onFocusOut = (event: globalThis.FocusEvent) => {
+      if (!isImeTextTarget(event.target) || composing) {
+        return;
+      }
+      if (isImeTextTarget(event.relatedTarget)) {
+        return;
+      }
+      syncIme(false);
+    };
+    const onCompositionStart = () => {
+      composing = true;
+      syncIme(true);
+    };
+    const onCompositionEnd = () => {
+      composing = false;
+      syncIme(isTextEntryActive());
+    };
+
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", onFocusOut);
+    document.addEventListener("compositionstart", onCompositionStart);
+    document.addEventListener("compositionend", onCompositionEnd);
+    return () => {
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", onFocusOut);
+      document.removeEventListener("compositionstart", onCompositionStart);
+      document.removeEventListener("compositionend", onCompositionEnd);
+      syncIme(false);
+    };
+  }, []);
 
   useEffect(() => {
     getPricing()
@@ -6472,14 +6516,31 @@ function IdleView({
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
 
+const NON_TEXT_INPUT_TYPES = new Set([
+  "button",
+  "checkbox",
+  "radio",
+  "range",
+  "file",
+  "submit",
+  "reset",
+  "hidden",
+  "color",
+  "image",
+]);
+
+function isImeTextTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.tagName === "TEXTAREA" || target.isContentEditable) return true;
+  if (target.tagName !== "INPUT") return false;
+  return !NON_TEXT_INPUT_TYPES.has((target as HTMLInputElement).type);
+}
+
 // True only while a real text field is focused (the reply input). Used to keep
 // the island open while typing, without letting a stray button focus pin it.
 function isTextEntryActive() {
   if (typeof document === "undefined") return false;
-  const element = document.activeElement as HTMLElement | null;
-  if (!element) return false;
-  const tag = element.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || element.isContentEditable;
+  return isImeTextTarget(document.activeElement);
 }
 
 function sessionDisplayName(cwd: string) {

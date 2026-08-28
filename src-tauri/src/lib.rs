@@ -1444,6 +1444,11 @@ fn get_notch_metrics(state: State<'_, AppState>) -> NotchMetrics {
 }
 
 #[tauri::command]
+fn set_ime_active(window: tauri::WebviewWindow, active: bool) {
+    platform::set_ime_active(&window, active);
+}
+
+#[tauri::command]
 fn set_session_auto_approve(
     state: State<'_, AppState>,
     session: String,
@@ -6920,6 +6925,7 @@ pub fn run() {
             pin_session,
             set_island_presentation,
             get_notch_metrics,
+            set_ime_active,
             uses_micro_island,
             get_claude_hook_status,
             install_claude_hooks,
