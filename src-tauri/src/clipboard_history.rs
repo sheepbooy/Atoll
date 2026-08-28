@@ -349,7 +349,8 @@ pub fn clipboard_sequence() -> u64 {
     }
     #[cfg(target_os = "windows")]
     {
-        GetClipboardSequenceNumber() as u64
+        use windows::Win32::System::DataExchange::GetClipboardSequenceNumber;
+        unsafe { GetClipboardSequenceNumber() as u64 }
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
@@ -569,7 +570,7 @@ fn read_clipboard_windows() -> Option<ClipboardPayload> {
             return None;
         }
         let result = (|| {
-            let has = |format: u32| IsClipboardFormatAvailable(format).as_bool();
+            let has = |format: u32| IsClipboardFormatAvailable(format).is_ok();
             // File lists win when present (Explorer copies), then text, then image.
             if has(CF_HDROP.0 as u32) {
                 if let Some(handle) = GetClipboardData(CF_HDROP.0 as u32).ok() {
@@ -634,22 +635,16 @@ fn read_clipboard_windows() -> Option<ClipboardPayload> {
 #[cfg(target_os = "windows")]
 unsafe fn hdrop_paths(hdrop: windows::Win32::UI::Shell::HDROP, ptr: *const u8) -> Vec<String> {
     use windows::Win32::UI::Shell::DragQueryFileW;
-    use windows::core::PWSTR;
 
     let mut paths = Vec::new();
-    let count = DragQueryFileW(hdrop, u32::MAX, None, 0);
+    let count = DragQueryFileW(hdrop, u32::MAX, None);
     for index in 0..count {
-        let len = DragQueryFileW(hdrop, index, None, 0);
+        let len = DragQueryFileW(hdrop, index, None);
         if len == 0 {
             continue;
         }
         let mut buf = vec![0u16; len as usize + 1];
-        DragQueryFileW(
-            hdrop,
-            index,
-            Some(PWSTR(buf.as_mut_ptr())),
-            buf.len() as u32,
-        );
+        DragQueryFileW(hdrop, index, Some(&mut buf));
         paths.push(String::from_utf16_lossy(&buf[..len as usize]));
     }
     paths
@@ -762,7 +757,7 @@ fn write_clipboard_windows_image(png: &[u8]) -> bool {
 
 #[cfg(target_os = "windows")]
 fn write_clipboard_windows_files(paths: &[String]) -> bool {
-    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::Foundation::{BOOL, HANDLE};
     use windows::Win32::System::DataExchange::{
         CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
     };
@@ -791,7 +786,7 @@ fn write_clipboard_windows_files(paths: &[String]) -> bool {
                 std::ptr::write_bytes(ptr, 0, byte_len);
                 let dropfiles = ptr as *mut DROPFILES;
                 (*dropfiles).pFiles = header as u32;
-                (*dropfiles).fWide = 1;
+                (*dropfiles).fWide = BOOL(1);
                 std::ptr::copy_nonoverlapping(
                     wide.as_ptr() as *const u8,
                     ptr.add(header),
@@ -812,7 +807,7 @@ fn write_clipboard_windows_files(paths: &[String]) -> bool {
 fn png_to_dib(png: &[u8]) -> Option<Vec<u8>> {
     let img = image::load_from_memory_with_format(png, image::ImageFormat::Png).ok()?;
     let mut bmp = Vec::new();
-    let encoder = image::codecs::bmp::BmpEncoder::new(&mut bmp);
+    let mut encoder = image::codecs::bmp::BmpEncoder::new(&mut bmp);
     encoder
         .encode(
             img.as_bytes(),

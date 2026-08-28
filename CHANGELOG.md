@@ -2,6 +2,11 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.56] - 2026-08-28
+
+### 修复
+- **Windows 构建**：剪贴板历史的文件/图片记录沿用了旧版 `windows` crate API（`DragQueryFileW` 四参数调用、`IsClipboardFormatAvailable().as_bool()`、`DROPFILES.fWide` 整型赋值、`BmpEncoder` 缺 `mut`），与工程锁定的 0.58 版不兼容，导致 v0.1.55 的 Windows 安装包构建失败；已全部适配 0.58 签名，并补上缺失的 `GetClipboardSequenceNumber` 导入与 `unsafe` 块
+
 ## [0.1.54] - 2026-08-27
 
 ### 修复
