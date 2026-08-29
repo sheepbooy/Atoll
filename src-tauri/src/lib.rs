@@ -23,6 +23,11 @@ mod local_time;
 mod lyrics;
 #[cfg(target_os = "macos")]
 mod media;
+// Compiled on every platform so the pure-logic unit tests run on any host;
+// the WinRT calls are cfg(windows) inside, hence the dead-code allowance on
+// non-Windows targets where only the tests reference them.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+mod media_windows;
 mod platform;
 mod pricing;
 mod shortcuts;
@@ -364,11 +369,16 @@ enum IslandWindowMode {
 }
 
 /// Re-exported so `get_now_playing` can return the type on all platforms.
+/// All three definitions are field-for-field identical (serde camelCase).
 #[cfg(target_os = "macos")]
 pub(crate) use media::NowPlayingTrack;
 
-/// Non-macOS stub so the command signature compiles without the media module.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+pub(crate) use media_windows::NowPlayingTrack;
+
+/// Stub for platforms without a media source (e.g. Linux) so the command
+/// signature compiles without the platform media modules.
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct NowPlayingTrack {
@@ -3407,16 +3417,26 @@ fn persist_lyrics_enabled(enabled: bool) {
     }
 }
 
+/// Fetch the current Now Playing track from the platform media source —
+/// the macOS MediaRemote adapter or the Windows SMTC session manager.
+#[cfg(target_os = "macos")]
+fn platform_now_playing() -> Option<NowPlayingTrack> {
+    media::fetch_now_playing()
+}
+
+#[cfg(target_os = "windows")]
+fn platform_now_playing() -> Option<NowPlayingTrack> {
+    media_windows::fetch_now_playing()
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn platform_now_playing() -> Option<NowPlayingTrack> {
+    None
+}
+
 #[tauri::command]
 fn get_now_playing() -> Option<NowPlayingTrack> {
-    #[cfg(target_os = "macos")]
-    {
-        media::fetch_now_playing()
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        None
-    }
+    platform_now_playing()
 }
 
 #[tauri::command]
@@ -3433,7 +3453,11 @@ fn send_media_command(command: String) -> bool {
         };
         media::send_media_command_raw(cmd)
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        media_windows::send_media_command(&command)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = command;
         false
@@ -8355,10 +8379,11 @@ const TOKEN_HISTORY_WRITE_INTERVAL: Duration = Duration::from_secs(2);
 /// (and risk rate limits) for lyric-less tracks.
 const LYRICS_MISS_RETRY_AFTER: Duration = Duration::from_secs(30);
 
-/// Polls the MediaRemote framework every 1s and emits `now-playing-changed`
-/// only when the track metadata or playing state actually changes. Also
-/// emits `now-playing-position` every poll so the frontend can calibrate
-/// its local playback clock for lyric sync. No-op on non-macOS.
+/// Polls the platform media source (macOS MediaRemote adapter, Windows SMTC)
+/// every 1s and emits `now-playing-changed` only when the track metadata or
+/// playing state actually changes. Also emits `now-playing-position` every
+/// poll so the frontend can calibrate its local playback clock for lyric
+/// sync. No-op on platforms without a media source.
 /// Position to report for the `now-playing-position` event, with paused
 /// creep removed. Some players (QQ Music) keep advancing elapsedTime while
 /// paused and snap it back on resume; while paused, hold the last adopted
@@ -8385,7 +8410,7 @@ fn sanitize_paused_position(
 }
 
 fn start_media_monitor(app: AppHandle) {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
         thread::spawn(move || {
             // Let the app settle before the first fetch.
@@ -8395,7 +8420,7 @@ fn start_media_monitor(app: AppHandle) {
             let mut held: Option<f64> = None;
             loop {
                 thread::sleep(Duration::from_millis(1000));
-                let current = media::fetch_now_playing();
+                let current = platform_now_playing();
                 let changed = match (&last, &current) {
                     (None, None) => false,
                     (None, Some(_)) | (Some(_), None) => true,
@@ -8435,7 +8460,7 @@ fn start_media_monitor(app: AppHandle) {
             }
         });
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = app;
     }
@@ -8558,11 +8583,9 @@ fn start_lyrics_monitor(app: AppHandle) {
                 continue;
             }
 
-            // Fetch current track from the MediaRemote adapter directly.
-            #[cfg(target_os = "macos")]
-            let track: Option<NowPlayingTrack> = media::fetch_now_playing();
-            #[cfg(not(target_os = "macos"))]
-            let track: Option<NowPlayingTrack> = None;
+            // Fetch the current track from the platform media source
+            // (MediaRemote adapter on macOS, SMTC on Windows; None elsewhere).
+            let track: Option<NowPlayingTrack> = platform_now_playing();
 
             let Some(track) = track else {
                 let was_some = lock_state(&state.lyrics).is_some();
