@@ -11,7 +11,7 @@ use socket2::{Domain, Socket, Type};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
-    approval_notice_is_notify, build_snapshot, complete_subagent,
+    approval_history, approval_notice_is_notify, build_snapshot, complete_subagent,
     cursor_lifecycle_token_seen, cursor_payload_has_token_usage, emit_subagent_snapshot,
     get_stored_session_host, ingest_cursor_token_usage_from_payload, is_codex_internal_session,
     iso_timestamp_now, payload_subagent_id, payload_subagent_parent_session_id, platform,
@@ -1287,6 +1287,7 @@ fn process_cursor_observer_event(
                 request.detail = format!("{} Auto-approved.", request.detail);
                 let session_id = request.session.clone();
                 touch_session_activity(&state, &session_id);
+                approval_history::record_outcome(&state, &request, approval_history::HistoryStatus::Approved);
                 if let Ok(mut requests) = state.requests.lock() {
                     requests.insert(0, request);
                     record_and_prune_request(&state, &mut requests, &session_id);
@@ -1396,13 +1397,19 @@ fn submit_blocking_permission_request(
         .unwrap_or(false);
 
     if is_auto_approved {
+        let mut auto_request = request;
+        auto_request.status = PermissionStatus::Approved;
+        auto_request.detail = format!("{} Auto-approved.", auto_request.detail);
+        let session_id = auto_request.session.clone();
+        touch_session_activity(&state, &session_id);
+        // Record outside the requests lock: history writes do disk I/O.
+        approval_history::record_outcome(
+            &state,
+            &auto_request,
+            approval_history::HistoryStatus::Approved,
+        );
         {
             let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
-            let mut auto_request = request;
-            auto_request.status = PermissionStatus::Approved;
-            auto_request.detail = format!("{} Auto-approved.", auto_request.detail);
-            let session_id = auto_request.session.clone();
-            touch_session_activity(&state, &session_id);
             requests.insert(0, auto_request);
             record_and_prune_request(&state, &mut requests, &session_id);
         }
@@ -1437,9 +1444,11 @@ fn submit_blocking_permission_request(
     let request_command = request.command.clone();
     let request_transcript_path = request.transcript_path.clone();
 
+    touch_session_activity(&state, &request.session);
+    // Record outside the requests lock: history writes do disk I/O.
+    approval_history::record_pending(&state, &request);
     {
         let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
-        touch_session_activity(&state, &request.session);
         requests.insert(0, request);
         record_and_prune_request(&state, &mut requests, &session_id);
     }
@@ -1583,7 +1592,7 @@ fn mark_request_completed_externally(
     agent_label: &str,
 ) {
     let resolved_suffix = format!("Resolved in {agent_label}.");
-    let (resolved_session_id, resolved_transcript_path, resolved_agent) = {
+    let (resolved_session_id, resolved_transcript_path, resolved_agent, resolved_request) = {
         let Ok(mut requests) = state.requests.lock() else {
             return;
         };
@@ -1591,6 +1600,7 @@ fn mark_request_completed_externally(
         let mut resolved_session_id: Option<String> = None;
         let mut resolved_transcript_path: Option<String> = None;
         let mut resolved_agent: Option<AgentKind> = None;
+        let mut resolved_request: Option<PermissionRequest> = None;
         if let Some(request) = requests.iter_mut().find(|r| r.id == request_id) {
             if request.status == PermissionStatus::Pending {
                 request.status = PermissionStatus::Approved;
@@ -1601,14 +1611,19 @@ fn mark_request_completed_externally(
                 resolved_session_id = Some(request.session.clone());
                 resolved_transcript_path = request.transcript_path.clone();
                 resolved_agent = Some(request.agent.clone());
+                resolved_request = Some(request.clone());
             }
         }
         (
             resolved_session_id,
             resolved_transcript_path,
             resolved_agent,
+            resolved_request,
         )
     };
+    if let Some(request) = &resolved_request {
+        approval_history::record_outcome(state, request, approval_history::HistoryStatus::AnsweredElsewhere);
+    }
     roll_over_token_usage_if_needed(state);
 
     if let Some(session_id) = resolved_session_id.as_deref() {
@@ -1627,17 +1642,22 @@ fn mark_request_completed_externally(
 }
 
 fn mark_request_denied(state: &AppState, app: &AppHandle, request_id: &str, note: &str) {
-    {
+    let denied_request = {
         let Ok(mut requests) = state.requests.lock() else {
             return;
         };
 
+        let mut denied_request: Option<PermissionRequest> = None;
         if let Some(request) = requests.iter_mut().find(|request| request.id == request_id) {
             request.status = PermissionStatus::Denied;
             request.detail = format!("{} {note}", request.detail);
             touch_session_activity(state, &request.session);
+            denied_request = Some(request.clone());
         }
-
+        denied_request
+    };
+    if let Some(request) = &denied_request {
+        approval_history::record_outcome(state, request, approval_history::HistoryStatus::Expired);
     }
     roll_over_token_usage_if_needed(state);
 
@@ -1709,21 +1729,22 @@ fn sync_tool_completion(
         }
     }
 
-    let completed_request_id = {
+    let (completed_request_id, completed_request) = {
         let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
         let completed_request_id =
             mark_matching_pending_request_complete(&mut requests, &payload, &completed_suffix);
+        let mut completed_request: Option<PermissionRequest> = None;
 
         if let Some(request_id) = completed_request_id.as_deref() {
-            if let Some(completed_request) =
-                requests.iter().find(|request| request.id == request_id)
+            if let Some(matched_request) = requests.iter().find(|request| request.id == request_id)
             {
                 if completed_session_id.is_none() {
-                    completed_session_id = Some(completed_request.session.clone());
+                    completed_session_id = Some(matched_request.session.clone());
                 }
                 if completed_transcript_path.is_none() {
-                    completed_transcript_path = completed_request.transcript_path.clone();
+                    completed_transcript_path = matched_request.transcript_path.clone();
                 }
+                completed_request = Some(matched_request.clone());
             }
         }
 
@@ -1735,8 +1756,18 @@ fn sync_tool_completion(
                     .find_map(|request| request.transcript_path.clone());
             }
         }
-        completed_request_id
+        (completed_request_id, completed_request)
     };
+
+    // The tool ran while the request was still pending, i.e. it was resolved
+    // in the agent's own flow rather than through an Atoll click.
+    if let Some(request) = &completed_request {
+        approval_history::record_outcome(
+            &state,
+            request,
+            approval_history::HistoryStatus::AnsweredElsewhere,
+        );
+    }
 
     if let Some(session_id) = completed_session_id.as_deref() {
         if !codex_internal {
@@ -1801,6 +1832,7 @@ fn sync_turn_completion(
             .to_string(),
     };
     let mut completed_request_id: Option<String> = None;
+    let mut completed_request: Option<PermissionRequest> = None;
     let codex_internal =
         matches!(agent, AgentKind::Codex) && is_codex_internal_session(&agent, &cwd, None);
 
@@ -1816,7 +1848,17 @@ fn sync_turn_completion(
                     request.detail = format!("{} {completed_suffix}", request.detail);
                 }
                 completed_request_id = Some(request.id.clone());
+                completed_request = Some(request.clone());
             }
+        }
+        // The tool ran while the request was still pending, i.e. it was
+        // resolved in the agent's own flow rather than through an Atoll click.
+        if let Some(request) = &completed_request {
+            approval_history::record_outcome(
+                &state,
+                request,
+                approval_history::HistoryStatus::AnsweredElsewhere,
+            );
         }
 
         if codex_internal {

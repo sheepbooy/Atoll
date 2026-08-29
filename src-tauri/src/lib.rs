@@ -13,6 +13,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::utils::config::Color;
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalSize, State};
 
+mod approval_history;
 mod capture;
 mod clipboard_history;
 mod debug_agent;
@@ -55,6 +56,9 @@ pub(crate) fn lock_state<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 #[cfg(test)]
 pub(crate) static TOKEN_HISTORY_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
+pub(crate) static APPROVAL_HISTORY_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 #[cfg(test)]
 pub(crate) static PRICING_ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -1304,6 +1308,7 @@ fn resolve_permission_request(
     }
 
     let session_id = request.session.clone();
+    let resolved_request = request.clone();
 
     let waiter = state
         .hook_waiters
@@ -1320,6 +1325,14 @@ fn resolve_permission_request(
 
     touch_session_activity(&state, &session_id);
     drop(requests);
+    approval_history::record_outcome(
+        &state,
+        &resolved_request,
+        match decision {
+            Decision::Approved => approval_history::HistoryStatus::Approved,
+            Decision::Denied => approval_history::HistoryStatus::Denied,
+        },
+    );
     roll_over_token_usage_if_needed(&state);
     let snapshot = build_snapshot(&app, &state);
     app.emit("snapshot-changed", &snapshot)
@@ -1352,6 +1365,7 @@ fn resolve_permission_with_input(
     }
 
     let session_id = request.session.clone();
+    let resolved_request = request.clone();
 
     let waiter = state
         .hook_waiters
@@ -1368,6 +1382,14 @@ fn resolve_permission_with_input(
 
     touch_session_activity(&state, &session_id);
     drop(requests);
+    approval_history::record_outcome(
+        &state,
+        &resolved_request,
+        match decision {
+            Decision::Approved => approval_history::HistoryStatus::Approved,
+            Decision::Denied => approval_history::HistoryStatus::Denied,
+        },
+    );
     roll_over_token_usage_if_needed(&state);
     let snapshot = build_snapshot(&app, &state);
     app.emit("snapshot-changed", &snapshot)
@@ -3522,6 +3544,41 @@ fn get_clipboard_history(state: State<'_, AppState>) -> Vec<clipboard_history::C
         clipboard_history::save_history(&entries);
     }
     result
+}
+
+#[tauri::command]
+async fn get_approval_history(
+    query: approval_history::ApprovalHistoryQuery,
+) -> Result<approval_history::ApprovalHistoryPage, String> {
+    tauri::async_runtime::spawn_blocking(move || approval_history::query_history(&query))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn export_approval_history(
+    query: approval_history::ApprovalHistoryQuery,
+    format: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || approval_history::export_history(&query, &format))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn clear_approval_history() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(approval_history::clear_history)
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+/// Reveal an exported file in the system file manager (Finder / Explorer).
+#[tauri::command]
+fn reveal_path(app: AppHandle, path: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .reveal_item_in_dir(&path)
+        .map_err(|error| format!("Failed to reveal path: {error}"))
 }
 
 #[tauri::command]
@@ -8074,6 +8131,10 @@ pub fn run() {
             get_clipboard_history,
             copy_clipboard_entry,
             clear_clipboard_history,
+            get_approval_history,
+            export_approval_history,
+            clear_approval_history,
+            reveal_path,
             get_clipboard_history_enabled,
             set_clipboard_history_enabled,
             get_clipboard_history_limit,
@@ -8574,7 +8635,7 @@ fn start_auto_archive_timer(app: AppHandle) {
         thread::sleep(AUTO_ARCHIVE_INTERVAL);
 
         let state = app.state::<AppState>();
-        let (changed, expired, stale_pending_ids) = {
+        let (changed, expired, stale_pending_requests) = {
             let Ok(mut requests) = state.requests.lock() else {
                 continue;
             };
@@ -8597,7 +8658,7 @@ fn start_auto_archive_timer(app: AppHandle) {
                 .as_secs();
 
             let mut changed = false;
-            let mut stale_pending_ids: Vec<String> = Vec::new();
+            let mut stale_pending_requests: Vec<PermissionRequest> = Vec::new();
             for request in requests.iter_mut() {
                 if request.archived {
                     continue;
@@ -8619,7 +8680,7 @@ fn start_auto_archive_timer(app: AppHandle) {
                         request.detail =
                             format!("{} Auto-archived after idle timeout.", request.detail);
                     }
-                    stale_pending_ids.push(request.id.clone());
+                    stale_pending_requests.push(request.clone());
                 }
                 request.archived = true;
                 changed = true;
@@ -8659,13 +8720,17 @@ fn start_auto_archive_timer(app: AppHandle) {
                 changed = true;
             }
 
-            (changed, expired, stale_pending_ids)
+            (changed, expired, stale_pending_requests)
         };
 
-        if !stale_pending_ids.is_empty() {
+        for request in &stale_pending_requests {
+            approval_history::record_outcome(&state, request, approval_history::HistoryStatus::Expired);
+        }
+
+        if !stale_pending_requests.is_empty() {
             if let Ok(mut waiters) = state.hook_waiters.lock() {
-                for request_id in stale_pending_ids {
-                    if let Some(waiter) = waiters.remove(&request_id) {
+                for request in &stale_pending_requests {
+                    if let Some(waiter) = waiters.remove(&request.id) {
                         let _ = waiter.send(DecisionWithNote {
                             decision: Decision::Denied,
                             note: "Auto-archived after idle timeout.".into(),
