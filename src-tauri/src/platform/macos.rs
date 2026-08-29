@@ -2211,3 +2211,65 @@ mod live_probes {
         );
     }
 }
+
+/// Reveal a pending approval when Atoll becomes the active app — clicking its
+/// macOS notification or the dock icon activates the app, which is how
+/// notify-mode "click the notification to jump" reaches the island.
+mod activation_observer {
+    use std::sync::OnceLock;
+
+    use objc2::rc::Retained;
+    use objc2::runtime::{AnyClass, AnyObject, NSObject};
+    use objc2::{define_class, msg_send, ClassType};
+    use objc2_foundation::NSString;
+    use tauri::AppHandle;
+
+    static ACTIVATION_APP: OnceLock<AppHandle> = OnceLock::new();
+
+    define_class!(
+        #[unsafe(super(NSObject))]
+        #[name = "AtollActivationObserver"]
+        struct AtollActivationObserver;
+
+        impl AtollActivationObserver {
+            #[unsafe(method(atollAppDidBecomeActive:))]
+            fn atoll_app_did_become_active(&self, _notification: Option<&AnyObject>) {
+                if let Some(app) = ACTIVATION_APP.get() {
+                    crate::handle_island_reveal_request(app);
+                }
+            }
+        }
+    );
+
+    pub fn start(app: AppHandle) {
+        let _ = ACTIVATION_APP.set(app);
+        static OBSERVER: OnceLock<Retained<AtollActivationObserver>> = OnceLock::new();
+        OBSERVER.get_or_init(|| unsafe {
+            let observer: Retained<AtollActivationObserver> =
+                msg_send![AtollActivationObserver::class(), new];
+            let Some(center_class) = AnyClass::get(c"NSNotificationCenter") else {
+                return observer;
+            };
+            let center: *mut AnyObject = msg_send![center_class, defaultCenter];
+            if center.is_null() {
+                return observer;
+            }
+            let selector = objc2::sel!(atollAppDidBecomeActive:);
+            let ns_name = NSString::from_str("NSApplicationDidBecomeActiveNotification");
+            let _: () = msg_send![
+                center,
+                addObserver: &*observer,
+                selector: selector,
+                name: &*ns_name,
+                object: std::ptr::null_mut::<AnyObject>()
+            ];
+            observer
+        });
+    }
+}
+
+/// Watch for Atoll becoming the active application (notification click, dock
+/// click, Cmd-Tab) so notify-mode pending approvals surface on reveal.
+pub fn start_activation_observer(app: AppHandle) {
+    activation_observer::start(app);
+}

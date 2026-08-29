@@ -5,6 +5,7 @@
     "appearance": "外观",
     "media": "媒体",
     "clipboard": "剪贴板",
+    "notifications": "通知",
     "sessions": "会话",
     "usage": "用量",
     "integrations": "集成",
@@ -25,6 +26,8 @@
     "mediaDesc": "正在播放卡片、封面背景与歌词。",
     "clipboardTitle": "剪贴板",
     "clipboardDesc": "历史记录与条数上限。",
+    "notificationsTitle": "通知",
+    "notificationsDesc": "新请求到达时的提醒方式。",
     "sessionsTitle": "会话",
     "sessionsDesc": "空闲会话与子 Agent 的自动归档。"
   },
@@ -85,6 +88,13 @@
     "activityIntervalDesc": "吉祥物随机活动切换之间的分钟数。",
     "activityDurationLabel": "活动时长",
     "activityDurationDesc": "每次活动播放的时长，之后切换。"
+  },
+  "notice": {
+    "modeLabel": "提醒模式",
+    "modeInterrupt": "强制打断",
+    "modeNotify": "仅通知",
+    "modeInterruptDesc": "新请求时自动展开浮岛并置前，立即处理。默认。",
+    "modeNotifyDesc": "不打断当前工作：发送系统通知，点击通知或浮岛展开审批。"
   },
   "usagePage": {
     "foldedCounterLabel": "折叠计数器",

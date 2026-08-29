@@ -22,6 +22,7 @@ export interface SettingsViewProps {
   onOpenClipboard: () => void;
   onOpenSessions: () => void;
   onOpenMascot: () => void;
+  onOpenNotifications: () => void;
   todayLabel: string;
   usageDisplaySummary: string;
   hooksSummary: string;
@@ -30,6 +31,7 @@ export interface SettingsViewProps {
   showMediaSettings: boolean;
   mediaCardEnabled: boolean;
   clipboardHistoryEnabled: boolean;
+  noticeModeLabel: string;
 }
 
 export function SettingsView({
@@ -46,6 +48,7 @@ export function SettingsView({
   onOpenClipboard,
   onOpenSessions,
   onOpenMascot,
+  onOpenNotifications,
   todayLabel,
   usageDisplaySummary,
   hooksSummary,
@@ -54,6 +57,7 @@ export function SettingsView({
   showMediaSettings,
   mediaCardEnabled,
   clipboardHistoryEnabled,
+  noticeModeLabel,
 }: SettingsViewProps) {
   const { t } = useTranslation("settings");
 
@@ -107,6 +111,17 @@ export function SettingsView({
             badge={clipboardHistoryEnabled ? t("badge.on") : t("badge.off")}
             badgeTone={clipboardHistoryEnabled ? "installed" : ""}
             onClick={onOpenClipboard}
+          />
+        </div>
+
+        <div className="settings-section">
+          <span className="settings-section-label">{t("section.notifications")}</span>
+          <SettingsNavCard
+            title={t("pages.notificationsTitle")}
+            desc={t("pages.notificationsDesc")}
+            badge={noticeModeLabel}
+            badgeTone="installed"
+            onClick={onOpenNotifications}
           />
         </div>
 

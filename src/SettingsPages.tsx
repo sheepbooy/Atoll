@@ -4,6 +4,7 @@ import {
   MIN_MAX_COMPACT_ICONS,
 } from "./compactLayout";
 import type { CompactIndicatorMode } from "./displayPrefs";
+import type { ApprovalNoticeMode } from "./tauri";
 import { SettingsSlider, SettingsToggle } from "./SettingsControls";
 import type { FoldedIslandSize } from "./SettingsView";
 
@@ -269,6 +270,54 @@ export function MascotSettingsView({
             desc={t("mascot.activityDurationDesc")}
             onChange={onChangeIdleDuration}
           />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function NotificationSettingsView({
+  mode,
+  onChangeMode,
+}: {
+  mode: ApprovalNoticeMode;
+  onChangeMode: (mode: ApprovalNoticeMode) => void;
+}) {
+  const { t } = useTranslation("settings");
+  const modes: { value: ApprovalNoticeMode; labelKey: string; descKey: string }[] = [
+    { value: "interrupt", labelKey: "notice.modeInterrupt", descKey: "notice.modeInterruptDesc" },
+    { value: "notify", labelKey: "notice.modeNotify", descKey: "notice.modeNotifyDesc" },
+  ];
+  const activeMode = modes.find((entry) => entry.value === mode) ?? modes[0];
+
+  return (
+    <div className="settings-view" data-no-drag>
+      <div className="settings-body">
+        <div className="settings-section">
+          <span className="settings-section-label">{t("section.notifications")}</span>
+          <div className="settings-card">
+            <div className="settings-card-head">
+              <span className="settings-card-title">{t("notice.modeLabel")}</span>
+              <div
+                className="settings-segmented"
+                role="group"
+                aria-label={t("notice.modeLabel")}
+              >
+                {modes.map((entry) => (
+                  <button
+                    key={entry.value}
+                    type="button"
+                    className={`settings-segment${mode === entry.value ? " is-active" : ""}`}
+                    onClick={() => onChangeMode(entry.value)}
+                    data-no-drag
+                  >
+                    {t(entry.labelKey)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <span className="settings-card-desc">{t(activeMode.descKey)}</span>
+          </div>
         </div>
       </div>
     </div>

@@ -5,6 +5,7 @@
     "appearance": "Appearance",
     "media": "Media",
     "clipboard": "Clipboard",
+    "notifications": "Notifications",
     "sessions": "Sessions",
     "usage": "Usage",
     "integrations": "Integrations",
@@ -25,6 +26,8 @@
     "mediaDesc": "Now Playing card, artwork backdrop, and lyrics.",
     "clipboardTitle": "Clipboard",
     "clipboardDesc": "History recording and how many entries to keep.",
+    "notificationsTitle": "Notifications",
+    "notificationsDesc": "How new requests get your attention.",
     "sessionsTitle": "Sessions",
     "sessionsDesc": "Auto-archive idle sessions and completed subagents."
   },
@@ -85,6 +88,13 @@
     "activityIntervalDesc": "Minutes between random mascot activity switches.",
     "activityDurationLabel": "Activity duration",
     "activityDurationDesc": "How long each activity plays before switching."
+  },
+  "notice": {
+    "modeLabel": "Notice mode",
+    "modeInterrupt": "Interrupt",
+    "modeNotify": "Notify only",
+    "modeInterruptDesc": "New requests expand and focus the island right away for immediate handling. Default.",
+    "modeNotifyDesc": "Keep working undisturbed: a system notification arrives; click it or the island to open the approval."
   },
   "usagePage": {
     "foldedCounterLabel": "Folded counter",

@@ -44,6 +44,7 @@
 
 - **平时** — 紧凑胶囊，显示在线状态、活跃会话、待审批数量
 - **有请求时** — 自动展开，展示命令详情，一键 **Approve / Deny / Always**
+- **通知中心提醒** — Settings → Notifications 可切换提醒模式：默认**强制打断**（浮岛自动展开并置前）；**仅通知**模式不打断当前工作，发送系统通知，点击通知或浮岛即展开审批
 - **Plan 模式** — 在顶栏回答规划问题、预览 Markdown 计划，再决定是否开始构建
 - **Subagent** — 追踪子 agent 生命周期，会话内 chip 预览、列表视图与 transcript 详情，支持批量归档
 - **Now Playing** — 音乐播放卡片显示当前曲目与封面，紧凑态指标器同步播放状态；支持上一首/下一首控制
@@ -256,7 +257,7 @@ npm run export:brand     # Logo 状态 + Agent 形象
 - [x] ZCode token 用量统计（rollout JSONL，含子代理归集）
 - [ ] Gemini 等更多 Agent 适配
 - [x] Cursor hook 适配
-- [ ] 新请求自动展开、通知中心提醒
+- [x] 新请求自动展开、通知中心提醒（强制打断 / 仅通知两种模式，Settings → Notifications）
 - [ ] 审批历史导出、会话搜索
 - [x] Codex hook 适配
 

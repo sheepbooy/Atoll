@@ -830,6 +830,19 @@ pub fn finish_show_for_approval(window: &WebviewWindow, app: &AppHandle, request
     }
 }
 
+/// macOS: observe app activation (notification/dock click) so notify-mode
+/// pending approvals surface when the user reveals Atoll; other platforms
+/// rely on window focus events instead.
+#[cfg(target_os = "macos")]
+pub fn start_activation_observer(app: AppHandle) {
+    macos::start_activation_observer(app);
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn start_activation_observer(app: AppHandle) {
+    let _ = app;
+}
+
 const TRAY_ICON_CANVAS: u32 = 64;
 const TRAY_ICON_FILL: f32 = 0.95;
 

@@ -489,6 +489,11 @@ pub(crate) struct AppState {
     lyrics: Mutex<Option<lyrics::LyricPayload>>,
     /// Dedup key (`artist|title`) so we don't refetch the same track.
     lyrics_track_key: Mutex<String>,
+    /// How new permission requests grab attention: "interrupt" (expand island
+    /// and steal focus) or "notify" (system notification, no focus steal).
+    approval_notice_mode: Mutex<String>,
+    /// UI language used for notification copy ("en" or "zh-CN").
+    notification_language: Mutex<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -3124,6 +3129,93 @@ fn persist_media_card_enabled(enabled: bool) {
     }
 }
 
+const APPROVAL_NOTICE_INTERRUPT: &str = "interrupt";
+const APPROVAL_NOTICE_NOTIFY: &str = "notify";
+
+/// Clamp a persisted/UI-supplied notice mode to a known value; unknown input
+/// falls back to the historical interrupt behavior.
+fn normalize_approval_notice_mode(mode: &str) -> &'static str {
+    if mode == APPROVAL_NOTICE_NOTIFY {
+        APPROVAL_NOTICE_NOTIFY
+    } else {
+        APPROVAL_NOTICE_INTERRUPT
+    }
+}
+
+/// Notification copy follows the UI language; unknown values fall back to English.
+fn normalize_notification_language(language: &str) -> &'static str {
+    if language == "zh-CN" {
+        "zh-CN"
+    } else {
+        "en"
+    }
+}
+
+fn load_approval_notice_mode() -> String {
+    let Some(path) = atoll_settings_path() else {
+        return APPROVAL_NOTICE_INTERRUPT.to_string();
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return APPROVAL_NOTICE_INTERRUPT.to_string();
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+        return APPROVAL_NOTICE_INTERRUPT.to_string();
+    };
+    value
+        .get("approvalNoticeMode")
+        .and_then(Value::as_str)
+        .map(normalize_approval_notice_mode)
+        .unwrap_or(APPROVAL_NOTICE_INTERRUPT)
+        .to_string()
+}
+
+fn persist_settings_value(key: &str, value: Value) {
+    let Some(path) = atoll_settings_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut config: Value = path
+        .exists()
+        .then(|| std::fs::read_to_string(&path).ok())
+        .flatten()
+        .and_then(|c| serde_json::from_str(&c).ok())
+        .unwrap_or_else(|| Value::Object(Default::default()));
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert(key.into(), value);
+    }
+    if let Ok(formatted) = serde_json::to_string_pretty(&config) {
+        let _ = std::fs::write(path, formatted);
+    }
+}
+
+fn persist_approval_notice_mode(mode: &str) {
+    persist_settings_value("approvalNoticeMode", Value::from(mode));
+}
+
+fn load_notification_language() -> String {
+    let Some(path) = atoll_settings_path() else {
+        return "en".to_string();
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return "en".to_string();
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+        return "en".to_string();
+    };
+    value
+        .get("notificationLanguage")
+        .and_then(Value::as_str)
+        .map(normalize_notification_language)
+        .unwrap_or("en")
+        .to_string()
+}
+
+fn persist_notification_language(language: &str) {
+    persist_settings_value("notificationLanguage", Value::from(language));
+}
+
 fn load_artwork_backdrop_enabled() -> bool {
     let Some(path) = atoll_settings_path() else {
         return false;
@@ -3328,6 +3420,27 @@ fn set_media_card_enabled(state: State<'_, AppState>, enabled: bool) -> bool {
     *lock_state(&state.media_card_enabled) = enabled;
     persist_media_card_enabled(enabled);
     enabled
+}
+
+#[tauri::command]
+fn get_approval_notice_mode(state: State<'_, AppState>) -> String {
+    lock_state(&state.approval_notice_mode).clone()
+}
+
+#[tauri::command]
+fn set_approval_notice_mode(state: State<'_, AppState>, mode: String) -> String {
+    let mode = normalize_approval_notice_mode(&mode);
+    *lock_state(&state.approval_notice_mode) = mode.to_string();
+    persist_approval_notice_mode(mode);
+    mode.to_string()
+}
+
+#[tauri::command]
+fn set_notification_language(state: State<'_, AppState>, language: String) -> String {
+    let language = normalize_notification_language(&language);
+    *lock_state(&state.notification_language) = language.to_string();
+    persist_notification_language(language);
+    language.to_string()
 }
 
 #[tauri::command]
@@ -7891,6 +8004,8 @@ pub fn run() {
             lyrics_enabled: Mutex::new(load_lyrics_enabled()),
             lyrics: Mutex::new(None),
             lyrics_track_key: Mutex::new(String::new()),
+            approval_notice_mode: Mutex::new(load_approval_notice_mode()),
+            notification_language: Mutex::new(load_notification_language()),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -7929,6 +8044,9 @@ pub fn run() {
             send_media_command,
             get_media_card_enabled,
             set_media_card_enabled,
+            get_approval_notice_mode,
+            set_approval_notice_mode,
+            set_notification_language,
             get_artwork_backdrop_enabled,
             set_artwork_backdrop_enabled,
             get_lyrics_enabled,
@@ -7968,6 +8086,7 @@ pub fn run() {
                 app.handle()
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
                 app.handle().plugin(tauri_plugin_process::init())?;
+                app.handle().plugin(tauri_plugin_notification::init())?;
             }
 
             if !platform::setup_app(app) {
@@ -7977,6 +8096,15 @@ pub fn run() {
             build_tray(app.handle())?;
             hook_bridge::start_server(app.handle().clone());
             start_island_hover_monitor(app.handle().clone());
+            platform::start_activation_observer(app.handle().clone());
+            if let Some(window) = app.get_webview_window("main") {
+                let reveal_handle = app.handle().clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::Focused(true) = event {
+                        handle_island_reveal_request(&reveal_handle);
+                    }
+                });
+            }
             {
                 let state = app.state::<AppState>();
                 let retention = load_persisted_retention_secs();
@@ -8701,6 +8829,99 @@ fn show_main_window(app: &AppHandle) {
 
 pub(crate) fn show_main_window_for_approval(app: &AppHandle) {
     show_main_window_with_focus(app, true);
+}
+
+/// Surface the island window without expanding it or taking focus — used when
+/// a new approval arrives in notify mode and must not interrupt the user.
+pub(crate) fn show_island_quietly(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        platform::finish_show_for_approval(&window, app, false);
+    }
+}
+
+pub(crate) fn approval_notice_is_notify(state: &AppState) -> bool {
+    lock_state(&state.approval_notice_mode).as_str() == APPROVAL_NOTICE_NOTIFY
+}
+
+fn approval_notice_has_pending(state: &AppState) -> bool {
+    state
+        .requests
+        .lock()
+        .map(|requests| {
+            requests
+                .iter()
+                .any(|request| request.status == PermissionStatus::Pending && !request.archived)
+        })
+        .unwrap_or(false)
+}
+
+/// Expand the island onto a pending approval when the user reveals Atoll —
+/// clicking its notification, the dock icon, or the island itself — in notify
+/// mode. No-op in interrupt mode, which already expands on request arrival.
+pub(crate) fn handle_island_reveal_request(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    if !approval_notice_is_notify(&state) {
+        return;
+    }
+    if !approval_notice_has_pending(&state) {
+        return;
+    }
+    show_main_window(app);
+}
+
+/// Compose the system-notification copy for a new approval request.
+fn approval_notification_copy(
+    agent_label: &str,
+    command: &str,
+    cwd: &str,
+    language: &str,
+) -> (String, String) {
+    let first_line = command.lines().next().unwrap_or("").trim();
+    let mut summary: String = first_line.chars().take(140).collect();
+    if first_line.chars().count() > 140 {
+        summary.push('…');
+    }
+    let project = cwd
+        .rsplit(['/', '\\'])
+        .find(|part| !part.is_empty())
+        .unwrap_or(cwd);
+    if language == "zh-CN" {
+        (
+            format!("{agent_label} 请求批准"),
+            format!("{summary}\n{project} · 点击通知打开 Atoll"),
+        )
+    } else {
+        (
+            format!("{agent_label} requests approval"),
+            format!("{summary}\n{project} · Click to open Atoll"),
+        )
+    }
+}
+
+/// Post the system notification for a new pending approval (notify mode).
+pub(crate) fn send_approval_notification(
+    app: &AppHandle,
+    agent_label: &str,
+    command: &str,
+    cwd: &str,
+) {
+    use tauri_plugin_notification::NotificationExt;
+    let language = {
+        let state = app.state::<AppState>();
+        let value = lock_state(&state.notification_language).clone();
+        value
+    };
+    let (title, body) = approval_notification_copy(agent_label, command, cwd, &language);
+    if let Err(error) = app
+        .notification()
+        .builder()
+        .title(title)
+        .body(body)
+        .sound("default")
+        .show()
+    {
+        eprintln!("[Atoll] approval notification failed: {error}");
+    }
 }
 
 fn start_island_hover_monitor(app: AppHandle) {
@@ -9685,6 +9906,47 @@ fn is_leap_year(year: i32) -> bool {
 #[cfg(test)]
 mod core_tests {
     use super::*;
+
+    #[test]
+    fn approval_notice_mode_normalization_falls_back_to_interrupt() {
+        assert_eq!(normalize_approval_notice_mode("notify"), "notify");
+        assert_eq!(normalize_approval_notice_mode("interrupt"), "interrupt");
+        assert_eq!(normalize_approval_notice_mode(""), "interrupt");
+        assert_eq!(normalize_approval_notice_mode("yolo"), "interrupt");
+    }
+
+    #[test]
+    fn notification_language_normalization_falls_back_to_english() {
+        assert_eq!(normalize_notification_language("zh-CN"), "zh-CN");
+        assert_eq!(normalize_notification_language("en"), "en");
+        assert_eq!(normalize_notification_language("fr"), "en");
+    }
+
+    #[test]
+    fn approval_notification_copy_summarizes_command_and_project() {
+        let (title_en, body_en) = approval_notification_copy(
+            "Claude",
+            "git push --force origin main\nsecond line",
+            "/Users/dev/Atoll",
+            "en",
+        );
+        assert_eq!(title_en, "Claude requests approval");
+        assert!(body_en.starts_with("git push --force origin main"));
+        assert!(body_en.contains("Atoll"));
+
+        let (title_zh, body_zh) =
+            approval_notification_copy("Claude", "rm -rf /tmp/x", "/home/dev/Atoll", "zh-CN");
+        assert_eq!(title_zh, "Claude 请求批准");
+        assert!(body_zh.contains("rm -rf /tmp/x"));
+    }
+
+    #[test]
+    fn approval_notification_copy_truncates_long_commands() {
+        let long_command = "echo ".repeat(80);
+        let (_, body) = approval_notification_copy("Claude", &long_command, "/tmp/x", "en");
+        assert!(body.chars().count() < 200);
+        assert!(body.ends_with('…') || body.contains('…'));
+    }
 
     #[test]
     fn archived_requests_still_appear_in_session_list_until_retention_expires() {
@@ -10978,6 +11240,8 @@ mod core_tests {
             lyrics_enabled: Mutex::new(false),
             lyrics: Mutex::new(None),
             lyrics_track_key: Mutex::new(String::new()),
+            approval_notice_mode: Mutex::new(APPROVAL_NOTICE_INTERRUPT.to_string()),
+            notification_language: Mutex::new("en".to_string()),
         }
     }
 
@@ -11772,6 +12036,8 @@ mod cursor_subagent_tests {
             lyrics_enabled: Mutex::new(false),
             lyrics: Mutex::new(None),
             lyrics_track_key: Mutex::new(String::new()),
+            approval_notice_mode: Mutex::new(APPROVAL_NOTICE_INTERRUPT.to_string()),
+            notification_language: Mutex::new("en".to_string()),
         }
     }
 

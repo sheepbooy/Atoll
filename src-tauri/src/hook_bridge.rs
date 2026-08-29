@@ -11,16 +11,17 @@ use socket2::{Domain, Socket, Type};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
-    build_snapshot, complete_subagent, cursor_lifecycle_token_seen, cursor_payload_has_token_usage,
-    emit_subagent_snapshot, get_stored_session_host, ingest_cursor_token_usage_from_payload,
-    is_codex_internal_session, iso_timestamp_now, payload_subagent_id,
-    payload_subagent_parent_session_id, platform, purge_tracked_session,
-    refresh_session_token_usage, register_known_session, register_subagent_start,
-    remember_cursor_lifecycle_token_session, resolve_codex_session_cwd,
-    resolve_cursor_session_for_payload, roll_over_token_usage_if_needed,
-    schedule_observer_snapshot_emit, show_main_window_for_approval, touch_hook_activity,
-    touch_session_activity, AgentKind, AppState, Decision, DecisionWithNote, PermissionRequest,
-    PermissionStatus,
+    approval_notice_is_notify, build_snapshot, complete_subagent,
+    cursor_lifecycle_token_seen, cursor_payload_has_token_usage, emit_subagent_snapshot,
+    get_stored_session_host, ingest_cursor_token_usage_from_payload, is_codex_internal_session,
+    iso_timestamp_now, payload_subagent_id, payload_subagent_parent_session_id, platform,
+    purge_tracked_session, refresh_session_token_usage, register_known_session,
+    register_subagent_start, remember_cursor_lifecycle_token_session,
+    resolve_codex_session_cwd, resolve_cursor_session_for_payload,
+    roll_over_token_usage_if_needed, schedule_observer_snapshot_emit,
+    send_approval_notification, show_island_quietly, show_main_window_for_approval,
+    touch_hook_activity, touch_session_activity, AgentKind, AppState, Decision,
+    DecisionWithNote, PermissionRequest, PermissionStatus,
 };
 
 pub(crate) const DEFAULT_HOOK_PORT: u16 = 47_777;
@@ -1433,6 +1434,7 @@ fn submit_blocking_permission_request(
     let session_id = request.session.clone();
     let session_cwd = request.cwd.clone();
     let session_agent = request.agent.clone();
+    let request_command = request.command.clone();
     let request_transcript_path = request.transcript_path.clone();
 
     {
@@ -1489,7 +1491,12 @@ fn submit_blocking_permission_request(
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
 
-    show_main_window_for_approval(&app);
+    if approval_notice_is_notify(&state) {
+        show_island_quietly(&app);
+        send_approval_notification(&app, agent_label, &request_command, &session_cwd);
+    } else {
+        show_main_window_for_approval(&app);
+    }
 
     let deadline = Instant::now() + HOOK_RESPONSE_TIMEOUT;
     loop {

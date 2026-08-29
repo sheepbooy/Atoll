@@ -771,6 +771,41 @@ export async function setLyricsEnabled(enabled: boolean): Promise<boolean> {
   return invoke<boolean>("set_lyrics_enabled", { enabled });
 }
 
+export type ApprovalNoticeMode = "interrupt" | "notify";
+
+const APPROVAL_NOTICE_MODES: ApprovalNoticeMode[] = ["interrupt", "notify"];
+
+export function normalizeApprovalNoticeMode(value: unknown): ApprovalNoticeMode {
+  return APPROVAL_NOTICE_MODES.includes(value as ApprovalNoticeMode)
+    ? (value as ApprovalNoticeMode)
+    : "interrupt";
+}
+
+export async function getApprovalNoticeMode(): Promise<ApprovalNoticeMode> {
+  if (!isTauriRuntime()) {
+    return "interrupt";
+  }
+  return normalizeApprovalNoticeMode(await invoke<string>("get_approval_notice_mode"));
+}
+
+export async function setApprovalNoticeMode(
+  mode: ApprovalNoticeMode,
+): Promise<ApprovalNoticeMode> {
+  if (!isTauriRuntime()) {
+    return mode;
+  }
+  return normalizeApprovalNoticeMode(
+    await invoke<string>("set_approval_notice_mode", { mode }),
+  );
+}
+
+export async function setNotificationLanguage(language: string): Promise<void> {
+  if (!isTauriRuntime()) {
+    return;
+  }
+  await invoke("set_notification_language", { language });
+}
+
 export async function getCurrentLyrics(): Promise<LyricPayload | null> {
   if (!isTauriRuntime()) {
     return null;

@@ -2,6 +2,11 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### 新增
+- **通知中心提醒**：新权限请求的提醒模式可在 Settings → Notifications 切换——默认**强制打断**（浮岛自动展开并置前，行为不变）；新增**仅通知**模式，不打断当前工作，改为发送系统通知（标题含 Agent 名，正文含命令摘要与项目目录，跟随界面语言），点击通知、Dock 图标或浮岛本体即展开到审批卡片；模式持久化于 `~/.atoll/settings.json`（`approvalNoticeMode`）
+
 ## [0.1.56] - 2026-08-28
 
 ### 修复

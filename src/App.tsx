@@ -47,6 +47,7 @@ import {
   FolderClosed,
   Hammer,
   HelpCircle,
+  Bell,
   Layers,
   Music,
   Pin,
@@ -113,6 +114,7 @@ import {
   ClipboardSettingsView,
   IslandSettingsView,
   MascotSettingsView,
+  NotificationSettingsView,
   MAX_CLIPBOARD_LIMIT,
   MAX_IDLE_DURATION_MIN,
   MAX_IDLE_INTERVAL_MIN,
@@ -196,6 +198,10 @@ import {
   MediaCommand,
   getMediaCardEnabled,
   getArtworkBackdropEnabled,
+  getApprovalNoticeMode,
+  setApprovalNoticeMode,
+  setNotificationLanguage,
+  ApprovalNoticeMode,
   onNowPlayingChanged,
   sendMediaCommand,
   setMediaCardEnabled,
@@ -272,7 +278,8 @@ type SettingsPage =
   | "media"
   | "clipboard"
   | "sessions"
-  | "mascot";
+  | "mascot"
+  | "notifications";
 type FoldedIslandSize = "small" | "regular";
 // Window-space rect of the compact media thumb plus the window size it was
 // measured against; scales the expanded artwork backdrop back onto the thumb.
@@ -861,6 +868,8 @@ export function App() {
   const [launchAtLoginBusy, setLaunchAtLoginBusy] = useState(false);
   const [nowPlayingTrack, setNowPlayingTrack] = useState<NowPlayingTrack | null>(null);
   const [mediaCardEnabled, setMediaCardEnabledState] = useState(true);
+  const [approvalNoticeMode, setApprovalNoticeModeState] =
+    useState<ApprovalNoticeMode>("interrupt");
   const [artworkBackdropEnabled, setArtworkBackdropEnabledState] = useState(false);
   // Rect of the compact media thumb (window coords) captured right before the
   // expand animation starts; drives the artwork backdrop grow-from-thumb origin.
@@ -1351,6 +1360,10 @@ export function App() {
     getMediaCardEnabled()
       .then(setMediaCardEnabledState)
       .catch(() => undefined);
+    getApprovalNoticeMode()
+      .then(setApprovalNoticeModeState)
+      .catch(() => undefined);
+    setNotificationLanguage(readLanguage()).catch(() => undefined);
     getArtworkBackdropEnabled()
       .then(setArtworkBackdropEnabledState)
       .catch(() => undefined);
@@ -2968,8 +2981,14 @@ export function App() {
 
   async function handleChangeLanguage(nextLanguage: AppLanguage) {
     setLanguage(nextLanguage);
+    setNotificationLanguage(nextLanguage).catch(() => undefined);
     await changeAppLanguage(nextLanguage);
   }
+
+  const handleChangeApprovalNoticeMode = useCallback((mode: ApprovalNoticeMode) => {
+    setApprovalNoticeModeState(mode);
+    setApprovalNoticeMode(mode).catch(() => undefined);
+  }, []);
 
   const handleChangeMediaCardEnabled = useCallback((enabled: boolean) => {
     setMediaCardEnabledState(enabled);
@@ -3748,6 +3767,15 @@ export function App() {
         );
       }
 
+      if (panelView.page === "notifications") {
+        return (
+          <NotificationSettingsView
+            mode={approvalNoticeMode}
+            onChangeMode={handleChangeApprovalNoticeMode}
+          />
+        );
+      }
+
       return (
         <SettingsView
           launchAtLogin={launchAtLogin}
@@ -3763,6 +3791,12 @@ export function App() {
           onOpenClipboard={() => openSettingsSubpage("clipboard")}
           onOpenSessions={() => openSettingsSubpage("sessions")}
           onOpenMascot={() => openSettingsSubpage("mascot")}
+          onOpenNotifications={() => openSettingsSubpage("notifications")}
+          noticeModeLabel={tSettings(
+            approvalNoticeMode === "notify"
+              ? "notice.modeNotify"
+              : "notice.modeInterrupt",
+          )}
           todayLabel={settingsTodayLabel}
           usageDisplaySummary={usageDisplaySummary}
           hooksSummary={hooksSetupSummary}
@@ -4075,6 +4109,13 @@ export function App() {
                 backLabel={t("nav.settings")}
                 icon={<Sparkles size={14} />}
                 title={t("nav.mascot")}
+              />
+            ) : panelView.kind === "settings" && panelView.page === "notifications" ? (
+              <SettingsPageNav
+                onBack={navigateBackToSettingsMain}
+                backLabel={t("nav.settings")}
+                icon={<Bell size={14} />}
+                title={t("nav.notifications")}
               />
             ) : panelView.kind === "settings" ? (
               <SettingsSubviewNav onBack={navigateBack} />
