@@ -7,6 +7,7 @@ export const HOOK_AGENT_LABELS = {
   claude: "Claude Code",
   codex: "Codex",
   cursor: "Cursor",
+  zcode: "ZCode",
 } as const;
 
 export type HookAgentKey = keyof typeof HOOK_AGENT_LABELS;
@@ -82,10 +83,13 @@ export function mergeHookHealthPreferReady(
 ): HookHealthSnapshot {
   const baseCursor = base.cursor ?? EMPTY_HOOK_HEALTH.cursor;
   const upgradeCursor = upgrade.cursor ?? baseCursor;
+  const baseZcode = base.zcode ?? EMPTY_HOOK_HEALTH.zcode;
+  const upgradeZcode = upgrade.zcode ?? baseZcode;
   return {
     claude: preferHookStatus(base.claude, upgrade.claude),
     codex: preferHookStatus(base.codex, upgrade.codex),
     cursor: preferHookStatus(baseCursor, upgradeCursor),
+    zcode: preferHookStatus(baseZcode, upgradeZcode),
   };
 }
 
@@ -134,6 +138,7 @@ export function analyzeHookHealth(
     { key: "claude", label: HOOK_AGENT_LABELS.claude, status: health?.claude },
     { key: "codex", label: HOOK_AGENT_LABELS.codex, status: health?.codex },
     { key: "cursor", label: HOOK_AGENT_LABELS.cursor, status: health?.cursor },
+    { key: "zcode", label: HOOK_AGENT_LABELS.zcode, status: health?.zcode },
   ];
   const agents = agentEntries.filter(
     (agent): agent is { key: HookAgentKey; label: string; status: HookStatus } =>
@@ -234,6 +239,8 @@ export function hookRetrustNote(agentKey: HookAgentKey): string {
       return i18n.t("retrust.claude", { ns: "hooks" });
     case "cursor":
       return i18n.t("retrust.cursor", { ns: "hooks" });
+    case "zcode":
+      return i18n.t("retrust.zcode", { ns: "hooks" });
     default:
       return i18n.t("retrust.default", { ns: "hooks" });
   }

@@ -174,7 +174,7 @@ Hook 注册 `PermissionRequest`、`PostToolUse`、`Stop` 等事件，写入 `~/.
 
 ### Agent 形象
 
-每个 Agent 有独立形象：Claude 是像素风 Clawd，Codex / Cursor 使用官方图标，Gemini 复用 Clawd 造型并着色为绿色：
+每个 Agent 有独立形象：Claude 是像素风 Clawd，Codex / Cursor 使用官方图标，ZCode 是带 "Z" 终端块的专属形象，Gemini 复用 Clawd 造型并着色为绿色：
 
 <p align="center">
   <img src="docs/assets/agent-mascots.png" alt="Claude / Codex / Cursor / Gemini mascots" width="420" />
@@ -252,6 +252,7 @@ npm run export:brand     # Logo 状态 + Agent 形象
 
 - [ ] Apple 签名 & 公证、Intel Mac 构建
 - [ ] Windows 代码签名
+- [x] ZCode hook 适配
 - [ ] Gemini 等更多 Agent 适配
 - [x] Cursor hook 适配
 - [ ] 新请求自动展开、通知中心提醒

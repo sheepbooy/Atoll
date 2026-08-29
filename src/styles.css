@@ -1541,6 +1541,9 @@ kbd {
 .agent-tab.cyan.is-active {
   background: linear-gradient(130deg, #8ee6ff, #43c3ed);
 }
+.agent-tab.sky.is-active {
+  background: linear-gradient(130deg, #b8e4ff, #38a8e8);
+}
 .agent-tab.lime.is-active {
   background: linear-gradient(130deg, #ccf39e, #8dd157);
 }
@@ -2252,7 +2255,8 @@ kbd {
 
 .clawd,
 .codex,
-.cursor-mascot {
+.cursor-mascot,
+.zcode {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2262,13 +2266,15 @@ kbd {
 
 .clawd-svg,
 .codex-svg,
-.cursor-mascot-svg {
+.cursor-mascot-svg,
+.zcode-svg {
   overflow: visible;
 }
 
 .clawd-body,
 .codex-body,
-.cursor-mascot-body {
+.cursor-mascot-body,
+.zcode-body {
   transform-box: fill-box;
   transform-origin: center bottom;
 }
@@ -2286,6 +2292,12 @@ kbd {
 .codex-sweat,
 .codex-bang,
 .codex-mark,
+.zcode-star,
+.zcode-heart,
+.zcode-z,
+.zcode-sweat,
+.zcode-bang,
+.zcode-mark,
 .cursor-mascot-star,
 .cursor-mascot-heart,
 .cursor-mascot-z,
@@ -2299,32 +2311,38 @@ kbd {
 
 .clawd.is-calm .clawd-body,
 .codex.is-calm .codex-body,
-.cursor-mascot.is-calm .cursor-mascot-body {
+.cursor-mascot.is-calm .cursor-mascot-body,
+.zcode.is-calm .zcode-body {
   animation: clawd-float 2.8s ease-in-out infinite;
 }
 .clawd.is-sleeping .clawd-body,
 .codex.is-sleeping .codex-body,
-.cursor-mascot.is-sleeping .cursor-mascot-body {
+.cursor-mascot.is-sleeping .cursor-mascot-body,
+.zcode.is-sleeping .zcode-body {
   animation: clawd-float-slow 3.6s ease-in-out infinite;
 }
 .clawd.is-alert .clawd-body,
 .codex.is-alert .codex-body,
-.cursor-mascot.is-alert .cursor-mascot-body {
+.cursor-mascot.is-alert .cursor-mascot-body,
+.zcode.is-alert .zcode-body {
   animation: clawd-alert-hop 0.85s ease-in-out infinite;
 }
 .clawd.is-happy .clawd-body,
 .codex.is-happy .codex-body,
-.cursor-mascot.is-happy .cursor-mascot-body {
+.cursor-mascot.is-happy .cursor-mascot-body,
+.zcode.is-happy .zcode-body {
   animation: clawd-bounce 0.6s ease-in-out infinite;
 }
 .clawd.is-worried .clawd-body,
 .codex.is-worried .codex-body,
-.cursor-mascot.is-worried .cursor-mascot-body {
+.cursor-mascot.is-worried .cursor-mascot-body,
+.zcode.is-worried .zcode-body {
   animation: clawd-tremble 0.5s ease-in-out infinite;
 }
 .clawd.is-sad .clawd-body,
 .codex.is-sad .codex-body,
-.cursor-mascot.is-sad .cursor-mascot-body {
+.cursor-mascot.is-sad .cursor-mascot-body,
+.zcode.is-sad .zcode-body {
   transform: translateY(8%);
 }
 
@@ -2335,7 +2353,8 @@ kbd {
 
 .atoll-indicator .clawd.is-dead,
 .atoll-indicator .codex.is-dead,
-.atoll-indicator .cursor-mascot.is-dead {
+.atoll-indicator .cursor-mascot.is-dead,
+.atoll-indicator .zcode.is-dead {
   animation: mascot-dead-slump 4.5s ease-in-out infinite;
 }
 
@@ -2365,44 +2384,57 @@ kbd {
 
 .clawd-star,
 .codex-star,
-.cursor-mascot-star { opacity: 0; }
+.cursor-mascot-star,
+.zcode-star { opacity: 0; }
 .clawd-star-0,
 .codex-star-0,
-.cursor-mascot-star-0 { animation: clawd-twinkle 1.2s ease-in-out infinite; }
+.cursor-mascot-star-0,
+.zcode-star-0 { animation: clawd-twinkle 1.2s ease-in-out infinite; }
 .clawd-star-1,
 .codex-star-1,
-.cursor-mascot-star-1 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.4s; }
+.cursor-mascot-star-1,
+.zcode-star-1 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.4s; }
 .clawd-star-2,
 .codex-star-2,
-.cursor-mascot-star-2 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.8s; }
+.cursor-mascot-star-2,
+.zcode-star-2 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.8s; }
 .clawd-heart,
 .codex-heart,
-.cursor-mascot-heart { animation: clawd-heart-rise 1.8s ease-out infinite; }
+.cursor-mascot-heart,
+.zcode-heart { animation: clawd-heart-rise 1.8s ease-out infinite; }
 .clawd-z,
 .codex-z,
-.cursor-mascot-z { opacity: 0; }
+.cursor-mascot-z,
+.zcode-z { opacity: 0; }
 .clawd-z-0,
 .codex-z-0,
-.cursor-mascot-z-0 { animation: clawd-zzz-rise 2.4s ease-in-out infinite; }
+.cursor-mascot-z-0,
+.zcode-z-0 { animation: clawd-zzz-rise 2.4s ease-in-out infinite; }
 .clawd-z-1,
 .codex-z-1,
-.cursor-mascot-z-1 { animation: clawd-zzz-rise 2.4s ease-in-out infinite 0.5s; }
+.cursor-mascot-z-1,
+.zcode-z-1 { animation: clawd-zzz-rise 2.4s ease-in-out infinite 0.5s; }
 .clawd-z-2,
 .codex-z-2,
-.cursor-mascot-z-2 { animation: clawd-zzz-rise 2.4s ease-in-out infinite 1s; }
+.cursor-mascot-z-2,
+.zcode-z-2 { animation: clawd-zzz-rise 2.4s ease-in-out infinite 1s; }
 .clawd-sweat,
 .codex-sweat,
-.cursor-mascot-sweat { animation: clawd-sweat-fall 1.3s ease-in-out infinite; }
+.cursor-mascot-sweat,
+.zcode-sweat { animation: clawd-sweat-fall 1.3s ease-in-out infinite; }
 .clawd-bang,
 .codex-bang,
-.cursor-mascot-bang { animation: clawd-bang-pop 0.7s ease-in-out infinite; }
+.cursor-mascot-bang,
+.zcode-bang { animation: clawd-bang-pop 0.7s ease-in-out infinite; }
 
-.codex.is-alert .codex-mark {
+.codex.is-alert .codex-mark,
+.zcode.is-alert .zcode-mark {
   animation: official-mark-pulse 0.85s ease-in-out infinite;
 }
 
 .codex.is-sleeping .codex-mark,
-.cursor-mascot.is-sleeping .cursor-mascot-mark {
+.cursor-mascot.is-sleeping .cursor-mascot-mark,
+.zcode.is-sleeping .zcode-mark {
   opacity: 0.72;
 }
 
@@ -2434,14 +2466,17 @@ kbd {
 .codex.is-static,
 .codex.is-static *,
 .cursor-mascot.is-static,
-.cursor-mascot.is-static * {
+.cursor-mascot.is-static *,
+.zcode.is-static,
+.zcode.is-static * {
   animation: none !important;
   will-change: auto;
 }
 
 .agent-slot .clawd,
 .agent-slot .codex,
-.agent-slot .cursor-mascot {
+.agent-slot .cursor-mascot,
+.agent-slot .zcode {
   width: 21px;
   height: 18px;
   transition:
@@ -2451,7 +2486,8 @@ kbd {
 
 .is-expanded .agent-slot .clawd,
 .is-expanded .agent-slot .codex,
-.is-expanded .agent-slot .cursor-mascot {
+.is-expanded .agent-slot .cursor-mascot,
+.is-expanded .agent-slot .zcode {
   width: 40px;
   height: 35px;
 }

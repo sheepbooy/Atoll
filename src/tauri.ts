@@ -6,10 +6,17 @@ import {
   getDemoHookStatus,
   getDemoMode,
   getDemoSnapshot,
+  getDemoZcodeHookStatus,
 } from "./demoSnapshot";
 
 export type PermissionStatus = "pending" | "approved" | "denied";
-export type AgentKind = "claude" | "codex" | "cursor" | "gemini" | "other";
+export type AgentKind =
+  | "claude"
+  | "codex"
+  | "cursor"
+  | "zcode"
+  | "gemini"
+  | "other";
 
 export interface TokenUsage {
   inputTokens: number;
@@ -53,7 +60,9 @@ export type SessionHost =
   | "claudeCli"
   | "codexDesktop"
   | "codexCli"
-  | "cursorIde";
+  | "cursorIde"
+  | "zcodeDesktop"
+  | "zcodeCli";
 
 export interface SubagentSummary {
   agentId: string;
@@ -347,6 +356,7 @@ export interface HookHealthSnapshot {
   claude: HookStatus;
   codex: HookStatus;
   cursor: HookStatus;
+  zcode: HookStatus;
 }
 
 export const EMPTY_HOOK_HEALTH: HookHealthSnapshot = {
@@ -369,6 +379,15 @@ export const EMPTY_HOOK_HEALTH: HookHealthSnapshot = {
     needsRetrust: false,
   },
   cursor: {
+    installed: false,
+    scriptFound: false,
+    settingsPath: "",
+    scriptPath: "",
+    nodePath: "",
+    nodeFound: true,
+    needsRetrust: false,
+  },
+  zcode: {
     installed: false,
     scriptFound: false,
     settingsPath: "",
@@ -433,6 +452,7 @@ export function normalizeHookHealth(raw: unknown): HookHealthSnapshot {
     claude: normalizeHookStatus(record.claude),
     codex: normalizeHookStatus(record.codex),
     cursor: normalizeHookStatus(record.cursor ?? EMPTY_HOOK_HEALTH.cursor),
+    zcode: normalizeHookStatus(record.zcode ?? EMPTY_HOOK_HEALTH.zcode),
   };
 }
 
@@ -540,6 +560,35 @@ export async function installCursorHooks(): Promise<HookStatus> {
 export async function uninstallCursorHooks(): Promise<HookStatus> {
   if (isTauriRuntime()) {
     return normalizeHookStatus(await invoke<HookStatus>("uninstall_cursor_hooks"));
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
+export async function getZcodeHookStatus(): Promise<HookStatus> {
+  if (isTauriRuntime()) {
+    return normalizeHookStatus(await invoke<HookStatus>("get_zcode_hook_status"));
+  }
+
+  const demoMode = getDemoMode();
+  if (demoMode) {
+    return getDemoZcodeHookStatus(demoMode);
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
+export async function installZcodeHooks(): Promise<HookStatus> {
+  if (isTauriRuntime()) {
+    return normalizeHookStatus(await invoke<HookStatus>("install_zcode_hooks"));
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
+export async function uninstallZcodeHooks(): Promise<HookStatus> {
+  if (isTauriRuntime()) {
+    return normalizeHookStatus(await invoke<HookStatus>("uninstall_zcode_hooks"));
   }
 
   return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };

@@ -39,8 +39,9 @@ function hookHealth(
   claude: typeof ready,
   codex: typeof ready,
   cursor: typeof ready = ready,
+  zcode: typeof ready = cursor,
 ): HookHealthSnapshot {
-  return { claude, codex, cursor };
+  return { claude, codex, cursor, zcode };
 }
 
 describe("hookHealth", () => {
@@ -58,7 +59,7 @@ describe("hookHealth", () => {
 
     expect(analysis.needsFirstTimeSetup).toBe(false);
     expect(analysis.needsReconnect).toBe(false);
-    expect(analysis.connectedCount).toBe(2);
+    expect(analysis.connectedCount).toBe(3);
     expect(analysis.disconnectedAgents).toEqual([]);
     expect(analysis.summary).toBe("All agents connected");
   });
@@ -68,7 +69,7 @@ describe("hookHealth", () => {
 
     expect(analysis.needsFirstTimeSetup).toBe(false);
     expect(analysis.needsReconnect).toBe(true);
-    expect(analysis.connectedCount).toBe(2);
+    expect(analysis.connectedCount).toBe(3);
     expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["claude"]);
     expect(hookAttentionTitle(analysis)).toContain("Claude Code");
   });
@@ -157,7 +158,7 @@ describe("hookHealth", () => {
     );
     expect(merged).toEqual(hookHealth(ready, ready, ready));
     const analysis = analyzeHookHealth(merged);
-    expect(analysis.connectedCount).toBe(3);
+    expect(analysis.connectedCount).toBe(4);
     expect(analysis.disconnectedAgents).toEqual([]);
     expect(analysis.allConnected).toBe(true);
   });
@@ -204,6 +205,7 @@ describe("hookHealth", () => {
       claude: ready,
       codex: ready,
       cursor: cursorDrifted,
+      zcode: ready,
     });
     expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["cursor"]);
     expect(deriveHeaderLogoDisplay(analysis, "idle")).toEqual({
@@ -220,6 +222,7 @@ describe("hookHealth", () => {
         claude: ready,
         codex: ready,
         cursor: missing,
+        zcode: ready,
       },
       { configuredAgents: configuredCursor },
     );
@@ -236,6 +239,7 @@ describe("hookHealth", () => {
       claude: ready,
       codex: ready,
       cursor: missing,
+      zcode: ready,
     });
     expect(analysis.disconnectedAgents).toEqual([]);
     expect(analysis.needsReconnect).toBe(false);
@@ -258,7 +262,7 @@ describe("hookHealth", () => {
     const codexNeedsRetrust = { ...ready, needsRetrust: true };
     const analysis = analyzeHookHealth(hookHealth(ready, codexNeedsRetrust, ready));
 
-    expect(analysis.connectedCount).toBe(3);
+    expect(analysis.connectedCount).toBe(4);
     expect(analysis.disconnectedAgents).toEqual([]);
     expect(analysis.retrustAgents.map((agent) => agent.key)).toEqual(["codex"]);
     expect(analysis.needsReconnect).toBe(true);
@@ -279,7 +283,9 @@ describe("hookHealth", () => {
 
   it("combines disconnected and retrust agents in the attention title", () => {
     const cursorNeedsRetrust = { ...ready, needsRetrust: true };
-    const analysis = analyzeHookHealth(hookHealth(drifted, ready, cursorNeedsRetrust));
+    const analysis = analyzeHookHealth(
+      hookHealth(drifted, ready, cursorNeedsRetrust, ready),
+    );
     expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["claude"]);
     expect(analysis.retrustAgents.map((agent) => agent.key)).toEqual(["cursor"]);
     const title = hookAttentionTitle(analysis);

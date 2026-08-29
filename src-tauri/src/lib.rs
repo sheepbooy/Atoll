@@ -329,6 +329,7 @@ pub(crate) enum AgentKind {
     Claude,
     Codex,
     Cursor,
+    Zcode,
     Gemini,
     Other,
 }
@@ -893,6 +894,8 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
             resolve_hook_script_path(app, "atoll-codex-hook.mjs").unwrap_or_default();
         let cursor_script_path =
             resolve_hook_script_path(app, "atoll-cursor-hook.mjs").unwrap_or_default();
+        let zcode_script_path =
+            resolve_hook_script_path(app, "atoll-zcode-hook.mjs").unwrap_or_default();
         return HookHealthSnapshot {
             claude: HookStatus {
                 installed: false,
@@ -933,12 +936,26 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
                 needs_retrust: false,
                 competing_hooks: Vec::new(),
             },
+            zcode: HookStatus {
+                installed: false,
+                script_found: !zcode_script_path.is_empty()
+                    && std::path::Path::new(&zcode_script_path).exists(),
+                settings_path: zcode_config_path()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                script_path: zcode_script_path,
+                node_path: String::new(),
+                node_found: resolve_node_executable().is_ok(),
+                needs_retrust: false,
+                competing_hooks: Vec::new(),
+            },
         };
     }
 
     let claude_status = claude_hook_status(app);
     let codex_status = codex_hook_status(app);
     let cursor_status = cursor_hook_status(app);
+    let zcode_status = zcode_hook_status(app);
 
     // #region agent log (diagA)
     crate::debug_agent::log(
@@ -969,6 +986,13 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
                 "nodeFound": cursor_status.node_found,
                 "nodePath": cursor_status.node_path,
             },
+            "zcode": {
+                "installed": zcode_status.installed,
+                "scriptFound": zcode_status.script_found,
+                "scriptPath": zcode_status.script_path,
+                "nodeFound": zcode_status.node_found,
+                "nodePath": zcode_status.node_path,
+            },
         }),
     );
     // #endregion
@@ -977,6 +1001,7 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
         claude: claude_status,
         codex: codex_status,
         cursor: cursor_status,
+        zcode: zcode_status,
     }
 }
 
@@ -1058,6 +1083,57 @@ fn codex_hook_status(app: &AppHandle) -> HookStatus {
         config.as_ref(),
         "atoll-codex-hook",
         "codex",
+    )
+}
+
+fn zcode_hook_status(app: &AppHandle) -> HookStatus {
+    let config_path = zcode_config_path()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let config = read_json_file(&config_path);
+    let installed = config
+        .as_ref()
+        .map(|hooks| has_atoll_zcode_hooks(hooks))
+        .unwrap_or(false);
+    if installed {
+        refresh_deployed_hook_assets_if_needed(app, "atoll-zcode-hook.mjs");
+    }
+    let (mut script_path, mut script_found) =
+        resolve_hook_script_readiness(app, "atoll-zcode-hook.mjs", config.as_ref());
+    if installed {
+        #[cfg(windows)]
+        maybe_repair_hook_launcher_config(app, "atoll-zcode-hook.mjs", "zcode-hook-launcher.json");
+        if let (Some(cfg), Ok(preferred)) = (
+            config.as_ref(),
+            resolve_install_hook_script_path(app, "atoll-zcode-hook.mjs"),
+        ) {
+            if let Some(configured) = configured_atoll_hook_script_path(cfg, "atoll-zcode-hook") {
+                if should_flag_dev_hook_drift(&configured, &preferred)
+                    && deployed_hook_script_path("atoll-zcode-hook.mjs").is_none()
+                {
+                    script_found = false;
+                }
+            }
+        }
+    }
+    script_path = canonical_hook_script_path(
+        app,
+        "atoll-zcode-hook.mjs",
+        config.as_ref(),
+        "atoll-zcode-hook",
+        &script_path,
+    );
+    if !script_path.is_empty() && std::path::Path::new(&script_path).is_file() {
+        script_found = true;
+    }
+    build_hook_status(
+        installed,
+        script_found,
+        config_path,
+        script_path,
+        config.as_ref(),
+        "atoll-zcode-hook",
+        "zcode",
     )
 }
 
@@ -2207,6 +2283,9 @@ pub(crate) fn refresh_session_token_usage(
         Some(AgentKind::Codex) => transcript::TranscriptFormat::Codex,
         Some(AgentKind::Claude) => transcript::TranscriptFormat::Claude,
         Some(AgentKind::Cursor) => transcript::TranscriptFormat::Cursor,
+        // ZCode transcripts are ephemeral temp files (removed after each hook
+        // invocation); token usage is parsed from rollout JSONL instead.
+        Some(AgentKind::Zcode) => return Ok(()),
         _ => transcript::detect_transcript_format(transcript_path),
     };
 
@@ -3403,6 +3482,26 @@ pub(crate) fn cursor_session_host(state: &AppState, session_id: &str) -> platfor
     detected
 }
 
+pub(crate) fn zcode_session_host(
+    state: &AppState,
+    session_id: &str,
+    cwd: &str,
+) -> platform::SessionHost {
+    if let Ok(known) = state.known_sessions.lock() {
+        if let Some(entry) = known.get(session_id) {
+            if entry.host != platform::SessionHost::Unknown {
+                return entry.host;
+            }
+        }
+    }
+
+    let detected = platform::detect_zcode_session_host(cwd);
+    if detected != platform::SessionHost::Unknown {
+        store_session_host(state, session_id, detected);
+    }
+    detected
+}
+
 pub(crate) fn store_session_host(state: &AppState, session_id: &str, host: platform::SessionHost) {
     if let Ok(mut known) = state.known_sessions.lock() {
         if let Some(entry) = known.get_mut(session_id) {
@@ -4547,6 +4646,7 @@ struct HookHealthSnapshot {
     claude: HookStatus,
     codex: HookStatus,
     cursor: HookStatus,
+    zcode: HookStatus,
 }
 
 impl Default for HookStatus {
@@ -4838,6 +4938,11 @@ fn codex_hooks_path() -> Option<std::path::PathBuf> {
 
 fn cursor_hooks_path() -> Option<std::path::PathBuf> {
     dirs::home_dir().map(|home| home.join(".cursor").join("hooks.json"))
+}
+
+fn zcode_config_path() -> Option<std::path::PathBuf> {
+    dirs::home_dir()
+        .map(|home| home.join(".zcode").join("cli").join("config.json"))
 }
 
 #[tauri::command]
@@ -5307,6 +5412,196 @@ fn uninstall_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
         .map_err(|error| error.to_string())?;
 
     Ok(codex_hook_status(&app))
+}
+
+#[tauri::command]
+fn get_zcode_hook_status(app: AppHandle) -> Result<HookStatus, String> {
+    if capture::force_hook_uninstalled() {
+        let script_path =
+            resolve_hook_script_path(&app, "atoll-zcode-hook.mjs").unwrap_or_default();
+        return Ok(HookStatus {
+            installed: false,
+            script_found: !script_path.is_empty() && std::path::Path::new(&script_path).exists(),
+            settings_path: zcode_config_path()
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            script_path,
+            node_path: String::new(),
+            node_found: resolve_node_executable().is_ok(),
+            needs_retrust: false,
+            competing_hooks: Vec::new(),
+        });
+    }
+    Ok(zcode_hook_status(&app))
+}
+
+#[tauri::command]
+fn install_zcode_hooks(app: AppHandle) -> Result<HookStatus, String> {
+    let source_script_path = resolve_install_hook_script_path(&app, "atoll-zcode-hook.mjs")?;
+    let script_path =
+        materialize_hook_deployment(&app, "atoll-zcode-hook.mjs", &source_script_path)?;
+
+    if !std::path::Path::new(&script_path).exists() {
+        return Err(format!("Hook script not found at: {script_path}"));
+    }
+
+    let node_path = resolve_node_executable()?;
+
+    let config_path =
+        zcode_config_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
+
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Cannot create ~/.zcode/cli directory: {e}"))?;
+    }
+
+    let mut config: Value = if config_path.exists() {
+        let content =
+            std::fs::read_to_string(&config_path).map_err(|e| format!("Cannot read config: {e}"))?;
+        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()))
+    } else {
+        Value::Object(Default::default())
+    };
+
+    let hook_command = write_zcode_hook_launcher_command(&app, &node_path, &script_path)?;
+
+    // ZCode's matcher is a case-sensitive regex on the tool name; omitting it
+    // matches every tool (a literal "*" is not guaranteed by the schema).
+    // PreToolUse is intentionally NOT registered: it fires for every tool call,
+    // while PermissionRequest already covers the approval flow (same split as
+    // the Claude/Codex integrations).
+    let zcode_hook = |timeout: i64, status_message: &str| {
+        json!({
+            "type": "command",
+            "command": hook_command,
+            "timeout": timeout,
+            "statusMessage": status_message
+        })
+    };
+    let atoll_hooks = serde_json::json!({
+        "PermissionRequest": [
+            { "hooks": [zcode_hook(1800, "Atoll approval")] }
+        ],
+        "PostToolUse": [
+            { "hooks": [zcode_hook(30, "Atoll session sync")] }
+        ],
+        "PostToolUseFailure": [
+            { "hooks": [zcode_hook(30, "Atoll session sync")] }
+        ],
+        "Stop": [
+            { "hooks": [zcode_hook(30, "Atoll session sync")] }
+        ],
+        "SessionStart": [
+            { "hooks": [zcode_hook(30, "Atoll session sync")] }
+        ],
+        "UserPromptSubmit": [
+            { "hooks": [zcode_hook(30, "Atoll session sync")] }
+        ]
+    });
+
+    let config_obj = config
+        .as_object_mut()
+        .ok_or_else(|| "config.json is not a JSON object".to_string())?;
+    let hooks_obj = config_obj
+        .entry("hooks")
+        .or_insert_with(|| Value::Object(Default::default()));
+    if !hooks_obj.is_object() {
+        *hooks_obj = Value::Object(Default::default());
+    }
+    let hooks_map = hooks_obj
+        .as_object_mut()
+        .ok_or_else(|| "config.json hooks is not a JSON object".to_string())?;
+    // Configuration-file hooks are disabled by default in ZCode; the hook
+    // runner only runs when this flag is set.
+    hooks_map.insert("enabled".to_string(), Value::Bool(true));
+    let events_obj = hooks_map
+        .entry("events")
+        .or_insert_with(|| Value::Object(Default::default()));
+    if !events_obj.is_object() {
+        *events_obj = Value::Object(Default::default());
+    }
+    upsert_zcode_hook_events(events_obj, &atoll_hooks);
+
+    let formatted = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Cannot serialize config: {e}"))?;
+    std::fs::write(&config_path, formatted).map_err(|e| format!("Cannot write config: {e}"))?;
+
+    let written =
+        std::fs::read_to_string(&config_path).map_err(|e| format!("Cannot verify config: {e}"))?;
+    let verify: Value = serde_json::from_str(&written)
+        .map_err(|e| format!("Cannot parse config after write: {e}"))?;
+    if !has_atoll_zcode_hooks(&verify) {
+        return Err(
+            "ZCode hooks were not saved correctly. Check permissions on ~/.zcode/cli/config.json."
+                .into(),
+        );
+    }
+
+    if let Err(error) = hook_bridge::refresh_bridge_config_file(&app) {
+        eprintln!("Atoll failed to refresh bridge.json after ZCode hook install: {error}");
+    }
+    hook_trust::record_hook_installed("zcode", &script_path);
+
+    let state = app.state::<AppState>();
+    let snapshot = build_snapshot(&app, &state);
+    if let Ok(mut last) = state.last_listening_online.lock() {
+        *last = Some(snapshot.online);
+    }
+    remember_hook_health(&state, &snapshot.hook_health);
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+
+    Ok(zcode_hook_status(&app))
+}
+
+#[tauri::command]
+fn uninstall_zcode_hooks(app: AppHandle) -> Result<HookStatus, String> {
+    let config_path =
+        zcode_config_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
+
+    if !config_path.exists() {
+        hook_trust::clear_hook_installed("zcode");
+        return Ok(HookStatus {
+            installed: false,
+            script_found: false,
+            settings_path: config_path.to_string_lossy().into(),
+            script_path: String::new(),
+            node_path: String::new(),
+            node_found: resolve_node_executable().is_ok(),
+            needs_retrust: false,
+            competing_hooks: Vec::new(),
+        });
+    }
+
+    let content =
+        std::fs::read_to_string(&config_path).map_err(|e| format!("Cannot read config: {e}"))?;
+    let mut config: Value =
+        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()));
+
+    // `hooks.enabled` is left untouched: the user may have other configuration
+    // hooks that depend on the flag being set.
+    if let Some(events) = config
+        .get_mut("hooks")
+        .and_then(|hooks| hooks.get_mut("events"))
+    {
+        remove_atoll_zcode_hooks(events);
+    }
+
+    let formatted = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Cannot serialize config: {e}"))?;
+    std::fs::write(&config_path, formatted).map_err(|e| format!("Cannot write config: {e}"))?;
+    hook_trust::clear_hook_installed("zcode");
+
+    let state = app.state::<AppState>();
+    let snapshot = build_snapshot(&app, &state);
+    if let Ok(mut last) = state.last_listening_online.lock() {
+        *last = Some(snapshot.online);
+    }
+    remember_hook_health(&state, &snapshot.hook_health);
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+
+    Ok(zcode_hook_status(&app))
 }
 
 #[tauri::command]
@@ -5846,6 +6141,31 @@ fn write_codex_hook_launcher_command(
     Ok(format_hook_command(None, node_path, script_path))
 }
 
+#[cfg(windows)]
+fn write_zcode_hook_launcher_command(
+    app: &AppHandle,
+    node_path: &str,
+    script_path: &str,
+) -> Result<String, String> {
+    write_windows_hook_launcher_command(
+        app,
+        node_path,
+        script_path,
+        "zcode-hook-launcher.json",
+        "atoll-zcode-hook.ps1",
+        "{}",
+    )
+}
+
+#[cfg(not(windows))]
+fn write_zcode_hook_launcher_command(
+    _app: &AppHandle,
+    node_path: &str,
+    script_path: &str,
+) -> Result<String, String> {
+    Ok(format_hook_command(None, node_path, script_path))
+}
+
 #[cfg(not(windows))]
 fn write_cursor_hook_launcher_command(
     _app: &AppHandle,
@@ -6140,6 +6460,74 @@ fn remove_atoll_codex_hooks(hooks: &mut Value) {
     });
 }
 
+fn upsert_zcode_hook_events(existing_events: &mut Value, atoll_hooks: &Value) {
+    let Some(atoll_map) = atoll_hooks.as_object() else {
+        return;
+    };
+    let events_obj = existing_events
+        .as_object_mut()
+        .expect("zcode events value should be object");
+
+    for (event, atoll_matchers) in atoll_map {
+        let Some(atoll_array) = atoll_matchers.as_array() else {
+            continue;
+        };
+
+        let mut merged: Vec<Value> = events_obj
+            .get(event)
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter(|matcher| !matcher_group_has_atoll_zcode(matcher))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        for matcher in atoll_array {
+            merged.push(matcher.clone());
+        }
+
+        events_obj.insert(event.clone(), Value::Array(merged));
+    }
+}
+
+fn remove_atoll_zcode_hooks(events: &mut Value) {
+    let Some(events_obj) = events.as_object_mut() else {
+        return;
+    };
+
+    for matchers in events_obj.values_mut() {
+        if let Some(arr) = matchers.as_array_mut() {
+            for matcher in arr.iter_mut() {
+                if let Some(hook_arr) = matcher.get_mut("hooks").and_then(Value::as_array_mut) {
+                    hook_arr.retain(|hook| {
+                        !hook
+                            .get("command")
+                            .and_then(Value::as_str)
+                            .map(|cmd| cmd.contains("atoll-zcode-hook"))
+                            .unwrap_or(false)
+                    });
+                }
+            }
+            arr.retain(|matcher| {
+                matcher
+                    .get("hooks")
+                    .and_then(Value::as_array)
+                    .map(|hooks| !hooks.is_empty())
+                    .unwrap_or(false)
+            });
+        }
+    }
+
+    events_obj.retain(|_, matchers| {
+        matchers
+            .as_array()
+            .map(|arr| !arr.is_empty())
+            .unwrap_or(false)
+    });
+}
+
 fn read_json_file(path: &str) -> Option<Value> {
     if path.is_empty() || !std::path::Path::new(path).exists() {
         return None;
@@ -6297,14 +6685,24 @@ fn extract_node_script_path(command: &str) -> Option<String> {
 
 fn configured_atoll_hook_command(config: &Value, marker: &str) -> Option<String> {
     let hooks = config.get("hooks")?.as_object()?;
-    for matchers in hooks.values() {
-        let arr = matchers.as_array()?;
+    // ZCode nests event matchers under `hooks.events` (alongside `enabled` and
+    // `timeoutMs`); Claude/Codex/Cursor list the event arrays directly under
+    // `hooks`.
+    let events = hooks
+        .get("events")
+        .and_then(Value::as_object)
+        .unwrap_or(hooks);
+    for matchers in events.values() {
+        let Some(arr) = matchers.as_array() else {
+            continue;
+        };
         for matcher in arr {
             if let Some(hook_arr) = matcher.get("hooks").and_then(Value::as_array) {
                 for hook in hook_arr {
-                    let cmd = hook.get("command")?.as_str()?;
-                    if cmd.contains(marker) {
-                        return Some(cmd.to_string());
+                    if let Some(cmd) = hook.get("command").and_then(Value::as_str) {
+                        if cmd.contains(marker) {
+                            return Some(cmd.to_string());
+                        }
                     }
                 }
             }
@@ -6522,6 +6920,52 @@ fn matcher_group_has_atoll_codex(matcher: &Value) -> bool {
                 hook.get("command")
                     .and_then(Value::as_str)
                     .map(|cmd| cmd.contains("atoll-codex-hook"))
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
+
+fn has_atoll_zcode_hooks(config: &Value) -> bool {
+    let Some(hooks) = config.get("hooks").and_then(Value::as_object) else {
+        return false;
+    };
+    // ZCode runs configuration-file hooks only when `hooks.enabled` is true.
+    if !hooks
+        .get("enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return false;
+    }
+    let Some(events) = hooks.get("events").and_then(Value::as_object) else {
+        return false;
+    };
+
+    ["PermissionRequest", "PostToolUse", "Stop"]
+        .iter()
+        .all(|event| {
+            events
+                .get(*event)
+                .map(|matchers| {
+                    matchers
+                        .as_array()
+                        .map(|arr| arr.iter().any(matcher_group_has_atoll_zcode))
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false)
+        })
+}
+
+fn matcher_group_has_atoll_zcode(matcher: &Value) -> bool {
+    matcher
+        .get("hooks")
+        .and_then(Value::as_array)
+        .map(|hook_arr| {
+            hook_arr.iter().any(|hook| {
+                hook.get("command")
+                    .and_then(Value::as_str)
+                    .map(|cmd| cmd.contains("atoll-zcode-hook"))
                     .unwrap_or(false)
             })
         })
@@ -6949,6 +7393,9 @@ pub fn run() {
             get_codex_hook_status,
             install_codex_hooks,
             uninstall_codex_hooks,
+            get_zcode_hook_status,
+            install_zcode_hooks,
+            uninstall_zcode_hooks,
             get_cursor_hook_status,
             install_cursor_hooks,
             uninstall_cursor_hooks,
@@ -12160,6 +12607,114 @@ mod codex_hooks_tests {
                 assert!(std::path::Path::new(&resolved).exists());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod zcode_hooks_tests {
+    use super::{
+        configured_atoll_hook_command, has_atoll_zcode_hooks, remove_atoll_zcode_hooks,
+        upsert_zcode_hook_events,
+    };
+    use serde_json::{json, Value};
+
+    fn sample_atoll_zcode_hooks() -> Value {
+        json!({
+            "PermissionRequest": [
+                { "hooks": [{ "type": "command", "command": "node /opt/Atoll/hooks/atoll-zcode-hook.mjs", "timeout": 1800 }] }
+            ],
+            "PostToolUse": [
+                { "hooks": [{ "type": "command", "command": "node /opt/Atoll/hooks/atoll-zcode-hook.mjs", "timeout": 30 }] }
+            ],
+            "Stop": [
+                { "hooks": [{ "type": "command", "command": "node /opt/Atoll/hooks/atoll-zcode-hook.mjs", "timeout": 30 }] }
+            ]
+        })
+    }
+
+    #[test]
+    fn has_atoll_zcode_hooks_requires_enabled_flag() {
+        let hooks = sample_atoll_zcode_hooks();
+        let enabled_config = json!({ "hooks": { "enabled": true, "events": hooks } });
+        assert!(has_atoll_zcode_hooks(&enabled_config));
+
+        let disabled_config = json!({ "hooks": { "enabled": false, "events": hooks } });
+        assert!(!has_atoll_zcode_hooks(&disabled_config));
+
+        let missing_flag_config = json!({ "hooks": { "events": hooks } });
+        assert!(!has_atoll_zcode_hooks(&missing_flag_config));
+    }
+
+    #[test]
+    fn upsert_zcode_hook_events_is_idempotent_and_keeps_foreign_hooks() {
+        let mut events = json!({
+            "PermissionRequest": [
+                { "hooks": [{ "type": "command", "command": "node /other/island-hook.mjs" }] }
+            ]
+        });
+        let atoll = sample_atoll_zcode_hooks();
+
+        upsert_zcode_hook_events(&mut events, &atoll);
+        upsert_zcode_hook_events(&mut events, &atoll);
+
+        let permission_matchers = events
+            .get("PermissionRequest")
+            .and_then(Value::as_array)
+            .unwrap();
+        assert_eq!(permission_matchers.len(), 2);
+
+        let config = json!({
+            "hooks": { "enabled": true, "events": events }
+        });
+        assert!(has_atoll_zcode_hooks(&config));
+    }
+
+    #[test]
+    fn remove_atoll_zcode_hooks_keeps_foreign_hooks() {
+        let mut events = json!({
+            "PermissionRequest": [
+                { "hooks": [{ "type": "command", "command": "node /other/island-hook.mjs" }] },
+                { "hooks": [{ "type": "command", "command": "node /opt/Atoll/hooks/atoll-zcode-hook.mjs" }] }
+            ],
+            "Stop": [
+                { "hooks": [{ "type": "command", "command": "node /opt/Atoll/hooks/atoll-zcode-hook.mjs" }] }
+            ]
+        });
+
+        remove_atoll_zcode_hooks(&mut events);
+
+        let events_obj = events.as_object().unwrap();
+        assert_eq!(events_obj.len(), 1);
+        let remaining = events_obj
+            .get("PermissionRequest")
+            .and_then(Value::as_array)
+            .unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert!(remaining[0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap()
+            .contains("island-hook.mjs"));
+    }
+
+    #[test]
+    fn configured_atoll_hook_command_reads_zcode_events_nesting() {
+        let config = json!({
+            "hooks": {
+                "enabled": true,
+                "timeoutMs": 60000,
+                "events": {
+                    "PermissionRequest": [
+                        { "hooks": [{ "type": "command", "command": "node /opt/Atoll/hooks/atoll-zcode-hook.mjs" }] }
+                    ]
+                }
+            }
+        });
+
+        let command = configured_atoll_hook_command(&config, "atoll-zcode-hook");
+        assert_eq!(
+            command.as_deref(),
+            Some("node /opt/Atoll/hooks/atoll-zcode-hook.mjs")
+        );
     }
 }
 

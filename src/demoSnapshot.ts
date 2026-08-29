@@ -202,6 +202,24 @@ const demoCursorHookMissing: HookStatus = {
   nodeFound: true,
 };
 
+const demoZcodeHookInstalled: HookStatus = {
+  installed: true,
+  scriptFound: true,
+  settingsPath: "~/.zcode/cli/config.json",
+  scriptPath: "/Applications/Atoll.app/.../atoll-zcode-hook.mjs",
+  nodePath: "/opt/homebrew/bin/node",
+  nodeFound: true,
+};
+
+const demoZcodeHookMissing: HookStatus = {
+  installed: false,
+  scriptFound: true,
+  settingsPath: "~/.zcode/cli/config.json",
+  scriptPath: "/Applications/Atoll.app/.../atoll-zcode-hook.mjs",
+  nodePath: "/opt/homebrew/bin/node",
+  nodeFound: true,
+};
+
 function refreshRequestTimestamp(request: PermissionRequest): PermissionRequest {
   return { ...request, requestedAt: new Date().toISOString() };
 }
@@ -255,6 +273,7 @@ export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {
       claude: demoHookInstalled,
       codex: demoCodexHookInstalled,
       cursor: demoCursorHookInstalled,
+      zcode: demoZcodeHookInstalled,
     },
   };
 
@@ -309,6 +328,10 @@ export function getDemoCodexHookStatus(mode: DemoMode): HookStatus {
 
 export function getDemoCursorHookStatus(mode: DemoMode): HookStatus {
   return mode === "idle" ? demoCursorHookMissing : demoCursorHookInstalled;
+}
+
+export function getDemoZcodeHookStatus(mode: DemoMode): HookStatus {
+  return mode === "idle" ? demoZcodeHookMissing : demoZcodeHookInstalled;
 }
 
 export function shouldAutoExpandDemo(mode: DemoMode): boolean {

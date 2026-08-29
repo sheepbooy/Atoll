@@ -57,6 +57,12 @@ const connectedHookHealth = {
     settingsPath: "",
     scriptPath: "",
   },
+  zcode: {
+    installed: true,
+    scriptFound: true,
+    settingsPath: "",
+    scriptPath: "",
+  },
 };
 
 const emptyHookHealth = {
@@ -73,6 +79,12 @@ const emptyHookHealth = {
     scriptPath: "",
   },
   cursor: {
+    installed: false,
+    scriptFound: false,
+    settingsPath: "",
+    scriptPath: "",
+  },
+  zcode: {
     installed: false,
     scriptFound: false,
     settingsPath: "",

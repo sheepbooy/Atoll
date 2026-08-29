@@ -1,3 +1,4 @@
+import { useId } from "react";
 import type { ClawdMood } from "./mascotShared";
 
 /** Official Codex mark: OpenAI blossom with a `>_` prompt cutout. */
@@ -63,6 +64,61 @@ export function CodexOfficialMark({ fill, className }: { fill: string; className
     <g className={className}>
       <g transform="translate(56 26.4) scale(3.5) translate(-12.15 -8)">
         <path fill={fill} fillRule="evenodd" clipRule="evenodd" d={CODEX_OFFICIAL_PATH} />
+      </g>
+    </g>
+  );
+}
+
+/** ZCode mark: rounded tile with a bold italic "Z" after the official app icon.
+ * The tile uses the agent's sky-blue brand gradient so it reads on both the dark
+ * island panel and light surfaces without needing an outline. */
+export const ZCODE_TILE_PATH =
+  "M5.3 .6h13.4a5.3 5.3 0 015.3 5.3v12.2a5.3 5.3 0 01-5.3 5.3H5.3A5.3 5.3 0 010 18.1V5.9A5.3 5.3 0 015.3 .6Z";
+
+export const ZCODE_Z_PATH = "M5.2 5.8H18.8V8L9.2 16H18.8V18.2H5.2V16L14.8 8H5.2Z";
+
+export function zcodeTileGradientStops(mood: ClawdMood): { from: string; to: string } {
+  if (mood === "dead") return { from: "#55585e", to: "#3a3d42" };
+  if (mood === "sleeping") return { from: "#3f6379", to: "#28455a" };
+  if (mood === "worried") return { from: "#4a5a66", to: "#35434d" };
+  return { from: "#58c7f5", to: "#1f8fd0" };
+}
+
+export function zcodeMarkFill(mood: ClawdMood): string {
+  if (mood === "dead") return "#c8ccd2";
+  if (mood === "worried") return "#7cb97c";
+  if (mood === "sleeping") return "#dbe7ee";
+  return "#ffffff";
+}
+
+export function ZcodeOfficialMark({
+  mood,
+  className,
+}: {
+  mood: ClawdMood;
+  className?: string;
+}) {
+  // Per-instance gradient id: several mascots with different moods (e.g. a dead
+  // header logo next to a live agent tab) must not share one gradient def.
+  const gradientId = `zcode-tile-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
+  const { from, to } = zcodeTileGradientStops(mood);
+
+  return (
+    <g className={className}>
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0.35" y2="1">
+          <stop offset="0" stopColor={from} />
+          <stop offset="1" stopColor={to} />
+        </linearGradient>
+      </defs>
+      {/* Same visual band as the Codex blossom / Cursor cube (center ≈ y 37-40). */}
+      <g transform="translate(56 39) scale(3.15) translate(-12 -12)">
+        <path fill={`url(#${gradientId})`} d={ZCODE_TILE_PATH} />
+        <path
+          fill={zcodeMarkFill(mood)}
+          transform="translate(2 0) skewX(-9.5)"
+          d={ZCODE_Z_PATH}
+        />
       </g>
     </g>
   );

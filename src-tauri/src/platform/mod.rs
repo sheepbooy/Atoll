@@ -41,6 +41,8 @@ pub enum SessionHost {
     CodexDesktop,
     CodexCli,
     CursorIde,
+    ZcodeDesktop,
+    ZcodeCli,
 }
 
 #[cfg(target_os = "macos")]
@@ -377,6 +379,22 @@ pub fn detect_codex_session_host(cwd: &str) -> SessionHost {
     }
 }
 
+pub fn detect_zcode_session_host(cwd: &str) -> SessionHost {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::detect_zcode_session_host(cwd);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return windows::detect_zcode_session_host(cwd);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = cwd;
+        SessionHost::Unknown
+    }
+}
+
 pub fn detect_codex_session_host_at_hook(cwd: &str, previous_app_pid: Option<i64>) -> SessionHost {
     #[cfg(target_os = "macos")]
     {
@@ -475,6 +493,7 @@ enum ApprovalFocusFallback {
     OpenTerminal,
     ActivateClaude,
     ActivateCodex,
+    ActivateZcode,
     DeactivateOnly,
 }
 
@@ -491,6 +510,15 @@ fn codex_approval_focus_fallback(host: SessionHost) -> ApprovalFocusFallback {
     match host {
         SessionHost::CodexCli => ApprovalFocusFallback::OpenTerminal,
         SessionHost::CodexDesktop => ApprovalFocusFallback::ActivateCodex,
+        SessionHost::Unknown => ApprovalFocusFallback::DeactivateOnly,
+        _ => ApprovalFocusFallback::DeactivateOnly,
+    }
+}
+
+fn zcode_approval_focus_fallback(host: SessionHost) -> ApprovalFocusFallback {
+    match host {
+        SessionHost::ZcodeCli => ApprovalFocusFallback::OpenTerminal,
+        SessionHost::ZcodeDesktop => ApprovalFocusFallback::ActivateZcode,
         SessionHost::Unknown => ApprovalFocusFallback::DeactivateOnly,
         _ => ApprovalFocusFallback::DeactivateOnly,
     }
@@ -521,7 +549,9 @@ pub fn restore_focus_after_approval(
                         return;
                     }
                 }
-                ApprovalFocusFallback::ActivateCodex | ApprovalFocusFallback::DeactivateOnly => {}
+                ApprovalFocusFallback::ActivateCodex
+                | ApprovalFocusFallback::ActivateZcode
+                | ApprovalFocusFallback::DeactivateOnly => {}
             }
         }
     }
@@ -540,7 +570,30 @@ pub fn restore_focus_after_approval(
                         return;
                     }
                 }
-                ApprovalFocusFallback::ActivateClaude | ApprovalFocusFallback::DeactivateOnly => {}
+                ApprovalFocusFallback::ActivateClaude
+                | ApprovalFocusFallback::ActivateZcode
+                | ApprovalFocusFallback::DeactivateOnly => {}
+            }
+        }
+    }
+
+    if agent == Some("zcode") {
+        if let (Some(session_id), Some(cwd)) = (session_id, cwd) {
+            let host = crate::zcode_session_host(state, session_id, cwd);
+            match zcode_approval_focus_fallback(host) {
+                ApprovalFocusFallback::OpenTerminal => {
+                    if open_in_terminal(cwd).is_ok() {
+                        return;
+                    }
+                }
+                ApprovalFocusFallback::ActivateZcode => {
+                    if activate_zcode_app(app).is_ok() {
+                        return;
+                    }
+                }
+                ApprovalFocusFallback::ActivateClaude
+                | ApprovalFocusFallback::ActivateCodex
+                | ApprovalFocusFallback::DeactivateOnly => {}
             }
         }
     }
@@ -575,6 +628,18 @@ pub fn open_agent_app(
             SessionHost::CodexDesktop => focus_codex_app(app),
             SessionHost::CodexCli => open_in_terminal(cwd),
             SessionHost::Unknown => focus_codex_app(app),
+            _ => open_in_terminal(cwd),
+        };
+    }
+
+    if agent == "zcode" {
+        let host = session_id
+            .map(|id| crate::zcode_session_host(state, id, cwd))
+            .unwrap_or_else(|| detect_zcode_session_host(cwd));
+        return match host {
+            SessionHost::ZcodeDesktop => focus_zcode_app(app),
+            SessionHost::ZcodeCli => open_in_terminal(cwd),
+            SessionHost::Unknown => open_in_terminal(cwd),
             _ => open_in_terminal(cwd),
         };
     }
@@ -713,6 +778,40 @@ pub fn focus_codex_app(app: &AppHandle) -> Result<(), String> {
     {
         let _ = app;
         Err("focus_codex_app is not supported on this platform".to_string())
+    }
+}
+
+pub fn activate_zcode_app(app: &AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::activate_zcode_app(app);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        return windows::activate_zcode_app();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = app;
+        Err("activate_zcode_app is not supported on this platform".to_string())
+    }
+}
+
+pub fn focus_zcode_app(app: &AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::focus_zcode_app(app);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        return windows::focus_zcode_app();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = app;
+        Err("focus_zcode_app is not supported on this platform".to_string())
     }
 }
 

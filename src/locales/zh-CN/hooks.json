@@ -37,13 +37,15 @@
   "note": {
     "claude": "适用于 Claude Code CLI 与 Desktop。安装后：在 Claude Desktop 中使用 Ask 权限，重启 Claude，然后触发一次 Bash 权限。",
     "codex": "适用于 Codex CLI 与 Desktop。安装后：在 Codex Desktop 或通过 /hooks 信任 Atoll 钩子，重启 Codex，然后触发一次 shell 权限。",
-    "cursor": "适用于 Cursor IDE Agent 与 Ask 模式。安装后：在 Cursor 设置中确认钩子，重启 Cursor，然后在 Agent 或 Ask 模式中发送消息验证。"
+    "cursor": "适用于 Cursor IDE Agent 与 Ask 模式。安装后：在 Cursor 设置中确认钩子，重启 Cursor，然后在 Agent 或 Ask 模式中发送消息验证。",
+    "zcode": "适用于 ZCode 桌面端与 CLI。安装后：重启 ZCode 以加载新的钩子配置，然后触发一次 shell 权限验证。"
   },
   "register": {
     "withPath": "在 {{path}} 中注册钩子。{{note}}",
     "claude": "注册 Claude Code 权限审批钩子。{{note}}",
     "codex": "注册 Codex 权限审批钩子。{{note}}",
-    "cursor": "注册 Cursor 权限审批钩子。{{note}}"
+    "cursor": "注册 Cursor 权限审批钩子。{{note}}",
+    "zcode": "注册 ZCode 权限审批钩子。{{note}}"
   },
   "checklist": {
     "claudeTitle": "Claude Desktop 检查清单",
@@ -60,7 +62,12 @@
     "cursorNode": "安装钩子前请在本机安装 Node.js。",
     "cursorSettings": "在 Cursor 中打开 设置 → Hooks 并确认 Atoll 钩子已加载。",
     "cursorRestart": "安装钩子后重启 Cursor。",
-    "cursorVerify": "在 Agent 或 Ask 模式中发送消息以验证。"
+    "cursorVerify": "在 Agent 或 Ask 模式中发送消息以验证。",
+    "zcodeTitle": "ZCode 检查清单",
+    "zcodeNode": "安装钩子前请在本机安装 Node.js。",
+    "zcodeEnable": "启用 Atoll 钩子会同时启用 ZCode 的配置文件钩子开关（hooks.enabled）。",
+    "zcodeRestart": "安装钩子后退出并重新打开 ZCode。",
+    "zcodeVerify": "在本地会话中触发一次 shell 权限以验证。"
   },
   "warning": {
     "scriptMissing": "应用包中缺少钩子脚本。若安装失败请重新安装 Atoll。",
@@ -78,6 +85,7 @@
     "codex": "Codex 可能仍在使用旧版缓存的 Atoll 钩子脚本。在 Atoll 中点击重新安装钩子，或在 Codex 中打开 /hooks 重新批准 Atoll 钩子，然后重启 Codex。",
     "claude": "Atoll 自上次批准后已更新 Claude 钩子脚本。请重新打开 Claude Code / Claude Desktop 权限并重新允许 Atoll 钩子，然后重启 Claude。",
     "cursor": "Atoll 自上次加载后已更新 Cursor 钩子脚本。请重新打开 Cursor 设置 → Hooks 以重新加载，然后重启 Cursor。",
+    "zcode": "Atoll 自上次信任后已更新 ZCode 钩子脚本。请在 Atoll 中点击重新安装钩子，然后重启 ZCode。",
     "default": "Atoll 自上次信任后已更新此钩子脚本。请在 Agent 应用中重新确认，然后重启。"
   },
   "error": {

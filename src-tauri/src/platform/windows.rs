@@ -304,6 +304,27 @@ pub fn is_codex_desktop_app_running() -> bool {
     codex_desktop_window_exists()
 }
 
+pub fn detect_zcode_session_host(cwd: &str) -> SessionHost {
+    let _ = cwd;
+    if foreground_process_name()
+        .map(|name| name.eq_ignore_ascii_case("ZCode.exe"))
+        .unwrap_or(false)
+    {
+        return SessionHost::ZcodeDesktop;
+    }
+    if foreground_is_terminal_process() {
+        return SessionHost::ZcodeCli;
+    }
+    if zcode_desktop_window_exists() {
+        return SessionHost::ZcodeDesktop;
+    }
+    SessionHost::Unknown
+}
+
+pub fn is_zcode_desktop_app_running() -> bool {
+    zcode_desktop_window_exists()
+}
+
 fn foreground_process_name() -> Option<String> {
     unsafe {
         let hwnd = GetForegroundWindow();
@@ -511,6 +532,33 @@ fn codex_desktop_window_exists() -> bool {
 
 fn claude_desktop_window_exists() -> bool {
     window_exists_by_title("Claude")
+}
+
+fn zcode_desktop_window_exists() -> bool {
+    window_exists_by_title("ZCode")
+}
+
+fn try_focus_zcode_process() -> bool {
+    try_focus_process_by_title("ZCode")
+}
+
+pub fn focus_zcode_app() -> Result<(), String> {
+    if try_focus_zcode_process() {
+        return Ok(());
+    }
+
+    hidden_command("cmd")
+        .args(["/C", "start", "", "ZCode"])
+        .spawn()
+        .map_err(|error| format!("Failed to focus ZCode: {error}"))?;
+    Ok(())
+}
+
+/// Activate an already-running ZCode window without launching a new instance.
+/// See `activate_codex_app` for rationale.
+pub fn activate_zcode_app() -> Result<(), String> {
+    let _ = try_focus_zcode_process();
+    Ok(())
 }
 
 /// Focus an existing window whose title contains `app_name`. Returns false if

@@ -58,6 +58,12 @@ describe("hookAgentsConfigured", () => {
         settingsPath: "/tmp/cursor.json",
         scriptPath: "/tmp/cursor.mjs",
       },
+      zcode: {
+        installed: false,
+        scriptFound: false,
+        settingsPath: "/tmp/zcode.json",
+        scriptPath: "",
+      },
     });
 
     expect([...configured].sort()).toEqual(["claude", "cursor"]);

@@ -59,6 +59,7 @@ enum ObserverKind {
     Claude,
     Codex,
     Cursor,
+    Zcode,
 }
 
 struct ObserverJob {
@@ -91,6 +92,9 @@ fn start_observer_worker() {
                     }
                     ObserverKind::Cursor => {
                         process_cursor_observer_event(job.app, job.hook_event_name, job.payload)
+                    }
+                    ObserverKind::Zcode => {
+                        process_zcode_observer_event(job.app, job.hook_event_name, job.payload)
                     }
                 };
                 if let Err(error) = result {
@@ -164,6 +168,7 @@ pub(crate) fn write_bridge_config(port: u16, token: &str) -> std::io::Result<()>
         "claudeUrl": format!("http://{HOOK_BIND_HOST}:{port}/claude/pre-tool-use"),
         "codexUrl": format!("http://{HOOK_BIND_HOST}:{port}/codex/hook"),
         "cursorUrl": format!("http://{HOOK_BIND_HOST}:{port}/cursor/hook"),
+        "zcodeUrl": format!("http://{HOOK_BIND_HOST}:{port}/zcode/hook"),
         "token": token,
     });
     std::fs::write(path, serde_json::to_string_pretty(&config)?)
@@ -430,6 +435,19 @@ pub(crate) fn permission_request_from_codex_payload(
     Some(request)
 }
 
+pub(crate) fn permission_request_from_zcode_payload(
+    id: String,
+    payload: Value,
+    requested_at: String,
+) -> Option<PermissionRequest> {
+    let event_name = payload.get("hook_event_name")?.as_str()?;
+    if !matches!(event_name, "PreToolUse" | "PermissionRequest") {
+        return None;
+    }
+
+    permission_request_from_tool_payload(id, payload, requested_at, AgentKind::Zcode, true)
+}
+
 pub(crate) fn permission_request_from_cursor_payload(
     id: String,
     payload: Value,
@@ -484,6 +502,7 @@ fn permission_request_from_tool_payload(
     let default_session = match agent {
         AgentKind::Codex => "codex",
         AgentKind::Cursor => "cursor",
+        AgentKind::Zcode => "zcode",
         _ => "claude-code",
     };
 
@@ -727,6 +746,10 @@ fn route_request(
             require_hook_auth(&app, &request)?;
             route_codex_request(app, request, stream)
         }
+        "/zcode/hook" => {
+            require_hook_auth(&app, &request)?;
+            route_zcode_request(app, request, stream)
+        }
         "/cursor/hook" => {
             require_hook_auth(&app, &request)?;
             route_cursor_request(app, request, stream)
@@ -941,6 +964,91 @@ fn process_codex_observer_event(
             let state = app.state::<AppState>();
             complete_subagent(&state, &payload);
             sync_turn_completion(app, payload, AgentKind::Codex, false, None)
+        }
+        _ => Ok(()),
+    }
+}
+
+fn route_zcode_request(
+    app: AppHandle,
+    request: HttpRequest,
+    stream: &TcpStream,
+) -> Result<Value, String> {
+    let payload: Value = serde_json::from_slice(strip_utf8_bom(&request.body))
+        .map_err(|error| format!("Invalid ZCode hook payload: {error}"))?;
+
+    let hook_event_name = payload
+        .get("hook_event_name")
+        .and_then(Value::as_str)
+        .unwrap_or("PermissionRequest")
+        .to_string();
+
+    crate::debug_agent::log(
+        "H-C",
+        "hook_bridge.rs:route_zcode_request",
+        "zcode hook received",
+        json!({
+            "event": hook_event_name,
+            "sessionId": payload.get("session_id"),
+            "cwd": payload.get("cwd"),
+        }),
+    );
+
+    match hook_event_name.as_str() {
+        "PreToolUse" | "PermissionRequest" => submit_blocking_permission_request(
+            app,
+            payload,
+            stream,
+            |id, payload, at| permission_request_from_zcode_payload(id, payload, at),
+            &hook_event_name,
+            PermissionResponseStyle::ClaudeCodex,
+        )
+        .or_else(|error| {
+            Ok(build_hook_defer_response(
+                PermissionResponseStyle::ClaudeCodex,
+                &hook_event_name,
+                &error,
+            ))
+        }),
+        _ => {
+            enqueue_observer(ObserverJob {
+                app,
+                hook_event_name,
+                payload,
+                kind: ObserverKind::Zcode,
+            })?;
+            Ok(json!({}))
+        }
+    }
+}
+
+fn process_zcode_observer_event(
+    app: AppHandle,
+    hook_event_name: String,
+    payload: Value,
+) -> Result<(), String> {
+    match hook_event_name.as_str() {
+        "PostToolUse" | "PostToolUseFailure" => {
+            sync_tool_completion(app, payload, AgentKind::Zcode, None)
+        }
+        "Stop" => sync_turn_completion(app, payload, AgentKind::Zcode, true, None),
+        "SessionStart" | "UserPromptSubmit" => {
+            let state = app.state::<AppState>();
+            let session_id = payload
+                .get("session_id")
+                .and_then(Value::as_str)
+                .unwrap_or("zcode");
+            let cwd = payload.get("cwd").and_then(Value::as_str).unwrap_or(".");
+            register_known_session(
+                &state,
+                session_id,
+                AgentKind::Zcode,
+                cwd,
+                payload_transcript_path(&payload).as_deref(),
+            );
+            touch_session_activity(&state, session_id);
+            schedule_observer_snapshot_emit(&app);
+            Ok(())
         }
         _ => Ok(()),
     }
@@ -1437,6 +1545,7 @@ fn agent_resolved_label(agent: &AgentKind) -> &'static str {
         AgentKind::Codex => "Codex",
         AgentKind::Claude => "Claude",
         AgentKind::Cursor => "Cursor",
+        AgentKind::Zcode => "ZCode",
         _ => "Agent",
     }
 }

@@ -235,6 +235,8 @@ import {
   uninstallCodexHooks,
   installCursorHooks,
   uninstallCursorHooks,
+  installZcodeHooks,
+  uninstallZcodeHooks,
   getSessionRetention,
   setSessionRetention,
   setSubagentRetention,
@@ -521,6 +523,7 @@ const agentLabels: Record<AgentKind, string> = {
   claude: "Claude",
   codex: "Codex",
   cursor: "Cursor",
+  zcode: "ZCode",
   gemini: "Gemini",
   other: "Agent",
 };
@@ -529,6 +532,7 @@ const agentTone: Record<AgentKind, string> = {
   claude: "coral",
   codex: "cyan",
   cursor: "violet",
+  zcode: "sky",
   gemini: "lime",
   other: "neutral",
 };
@@ -537,6 +541,7 @@ const agentSortRank: Record<AgentKind, number> = {
   claude: 0,
   codex: 1,
   cursor: 2,
+  zcode: 2,
   gemini: 2,
   other: 3,
 };
@@ -547,6 +552,7 @@ const PANEL_GLOW: Record<AgentKind, string> = {
   claude: "rgba(255, 129, 117, 0.18)",
   codex: "rgba(97, 216, 247, 0.18)",
   cursor: "rgba(167, 139, 250, 0.18)",
+  zcode: "rgba(56, 189, 248, 0.18)",
   gemini: "rgba(178, 229, 120, 0.18)",
   other: "rgba(201, 188, 255, 0.16)",
 };
@@ -939,6 +945,7 @@ export function App() {
   const claudeHookStatus = snapshot.hookHealth?.claude ?? null;
   const codexHookStatus = snapshot.hookHealth?.codex ?? null;
   const cursorHookStatus = snapshot.hookHealth?.cursor ?? null;
+  const zcodeHookStatus = snapshot.hookHealth?.zcode ?? null;
   const hookAttention = hookAttentionTitle(
     hookHealthAnalysis,
     hookHealthHydrated,
@@ -1135,6 +1142,7 @@ export function App() {
       claude: 0,
       codex: 0,
       cursor: 0,
+      zcode: 0,
       gemini: 0,
       other: 0,
     };
@@ -2573,12 +2581,15 @@ export function App() {
     snapshotLoadSeqRef.current += 1;
   }
 
-  function applyHookInstallSnapshot(statuses: Partial<Record<"claude" | "codex" | "cursor", HookStatus>>) {
+  function applyHookInstallSnapshot(
+    statuses: Partial<Record<"claude" | "codex" | "cursor" | "zcode", HookStatus>>,
+  ) {
     invalidatePendingSnapshotLoads();
     const installedHealth: HookHealthSnapshot = {
       claude: statuses.claude ?? snapshotRef.current.hookHealth.claude,
       codex: statuses.codex ?? snapshotRef.current.hookHealth.codex,
       cursor: statuses.cursor ?? snapshotRef.current.hookHealth.cursor,
+      zcode: statuses.zcode ?? snapshotRef.current.hookHealth.zcode,
     };
     const optimisticHookHealth = mergeHookHealthPreferReady(
       snapshotRef.current.hookHealth,
@@ -2659,28 +2670,61 @@ export function App() {
     }
   }
 
+  async function handleInstallZcodeHooks() {
+    setHookBusy(true);
+    setHookInstallError(null);
+    try {
+      const status = await installZcodeHooks();
+      if (status.installed) {
+        setConfiguredHookAgents(markHookAgentConfigured("zcode"));
+      }
+      await applyHookInstallSnapshot({ zcode: status });
+      if (status.installed) {
+        collapseIsland(true);
+      }
+    } catch (error) {
+      setHookInstallError(
+        i18n.t("error.installFailed", {
+          ns: "hooks",
+          agentLabel: "ZCode",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
   async function handleInstallAllHooks() {
     setHookBusy(true);
     setHookInstallError(null);
     try {
       setConfiguredHookAgents(markAllHookAgentsConfigured());
-      const [claudeStatus, codexStatus, cursorStatus] = await Promise.all([
+      const [claudeStatus, codexStatus, cursorStatus, zcodeStatus] = await Promise.all([
         installClaudeHooks(),
         installCodexHooks(),
         installCursorHooks(),
+        installZcodeHooks(),
       ]);
       await applyHookInstallSnapshot({
         claude: claudeStatus,
         codex: codexStatus,
         cursor: cursorStatus,
+        zcode: zcodeStatus,
       });
-      if (claudeStatus.installed || codexStatus.installed || cursorStatus.installed) {
+      if (
+        claudeStatus.installed ||
+        codexStatus.installed ||
+        cursorStatus.installed ||
+        zcodeStatus.installed
+      ) {
         collapseIsland(true);
       }
       const failures = [
         !claudeStatus.installed ? "Claude Code" : null,
         !codexStatus.installed ? "Codex" : null,
         !cursorStatus.installed ? "Cursor" : null,
+        !zcodeStatus.installed ? "ZCode" : null,
       ].filter(Boolean);
       if (failures.length > 0) {
         setHookInstallError(
@@ -2794,15 +2838,46 @@ export function App() {
     }
   }
 
+  async function handleUninstallZcodeHooks() {
+    setMenuOpen(false);
+    setHookBusy(true);
+    try {
+      const status = await uninstallZcodeHooks();
+      const nextSnapshot = await getSnapshot().catch(() => null);
+      if (nextSnapshot) {
+        applySnapshot(nextSnapshot);
+      } else {
+        applySnapshot({
+          ...snapshotRef.current,
+          hookHealth: {
+            ...snapshotRef.current.hookHealth,
+            zcode: status,
+          },
+        });
+      }
+    } catch (error) {
+      setHookInstallError(
+        i18n.t("error.uninstallFailed", {
+          ns: "hooks",
+          agentLabel: "ZCode",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
   async function handleUninstallHooks() {
     setMenuOpen(false);
     setHookBusy(true);
     setHookInstallError(null);
     try {
-      const [claudeStatus, codexStatus, cursorStatus] = await Promise.all([
+      const [claudeStatus, codexStatus, cursorStatus, zcodeStatus] = await Promise.all([
         uninstallClaudeHooks(),
         uninstallCodexHooks(),
         uninstallCursorHooks(),
+        uninstallZcodeHooks(),
       ]);
       const nextSnapshot = await getSnapshot().catch(() => null);
       if (nextSnapshot) {
@@ -2815,6 +2890,7 @@ export function App() {
             claude: claudeStatus,
             codex: codexStatus,
             cursor: cursorStatus,
+            zcode: zcodeStatus,
           },
         });
       }
@@ -2984,6 +3060,23 @@ export function App() {
           }),
       onInstall: handleInstallCursorHooks,
       onUninstall: handleUninstallCursorHooks,
+    },
+    {
+      key: "zcode",
+      label: "ZCode",
+      status: zcodeHookStatus,
+      note: zcodeHookStatus.settingsPath
+        ? i18n.t("register.withPath", {
+            ns: "hooks",
+            path: zcodeHookStatus.settingsPath,
+            note: hookAgentNote("zcode"),
+          })
+        : i18n.t("register.zcode", {
+            ns: "hooks",
+            note: hookAgentNote("zcode"),
+          }),
+      onInstall: handleInstallZcodeHooks,
+      onUninstall: handleUninstallZcodeHooks,
     },
   ];
 
@@ -5211,6 +5304,10 @@ function sessionJumpLabel(agent?: AgentKind, sessionHost?: SessionHost): string 
   if (agent === "cursor") {
     return i18n.t("nav.openCursor");
   }
+  if (agent === "zcode") {
+    if (sessionHost === "zcodeCli") return i18n.t("nav.terminal");
+    return i18n.t("nav.openZcode");
+  }
   return i18n.t("nav.terminal");
 }
 
@@ -5903,7 +6000,7 @@ function HooksView({
                     {agent.status.settingsPath}
                   </span>
                 ) : null}
-                {agent.note && (!installed || agent.key === "codex" || agent.key === "claude" || agent.key === "cursor") ? (
+                {agent.note && (!installed || agent.key === "codex" || agent.key === "claude" || agent.key === "cursor" || agent.key === "zcode") ? (
                   <span className="settings-card-desc">{agent.note}</span>
                 ) : null}
                 {agent.key === "claude" ? (
@@ -5925,6 +6022,17 @@ function HooksView({
                       <li>{t("checklist.codexTrust")}</li>
                       <li>{t("checklist.codexRestart")}</li>
                       <li>{t("checklist.codexVerify")}</li>
+                    </ul>
+                  </details>
+                ) : null}
+                {agent.key === "zcode" ? (
+                  <details className="settings-hook-desktop-note">
+                    <summary>{t("checklist.zcodeTitle")}</summary>
+                    <ul>
+                      <li>{t("checklist.zcodeNode")}</li>
+                      <li>{t("checklist.zcodeEnable")}</li>
+                      <li>{t("checklist.zcodeRestart")}</li>
+                      <li>{t("checklist.zcodeVerify")}</li>
                     </ul>
                   </details>
                 ) : null}

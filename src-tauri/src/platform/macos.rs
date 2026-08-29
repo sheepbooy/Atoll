@@ -1054,6 +1054,103 @@ pub fn activate_claude_app(app: &AppHandle) -> Result<(), String> {
     focus_claude_app_impl(app, false)
 }
 
+pub fn activate_zcode_app(app: &AppHandle) -> Result<(), String> {
+    focus_zcode_app_impl(app, false)
+}
+
+pub fn focus_zcode_app(app: &AppHandle) -> Result<(), String> {
+    focus_zcode_app_impl(app, true)
+}
+
+fn focus_zcode_app_impl(app: &AppHandle, launch_if_needed: bool) -> Result<(), String> {
+    let app = app.clone();
+    if is_main_thread() {
+        return focus_zcode_app_on_main_thread(&app, launch_if_needed);
+    }
+
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    window
+        .run_on_main_thread(move || {
+            let _ = tx.send(focus_zcode_app_on_main_thread(&app, launch_if_needed));
+        })
+        .map_err(|error| format!("Failed to dispatch ZCode focus: {error}"))?;
+    rx.recv_timeout(std::time::Duration::from_secs(2))
+        .map_err(|_| "ZCode focus dispatch timed out".to_string())?
+}
+
+fn focus_zcode_app_on_main_thread(_app: &AppHandle, launch_if_needed: bool) -> Result<(), String> {
+    deactivate_own_application();
+
+    let focused = if launch_if_needed {
+        run_open_zcode() || activate_zcode_by_bundle_id() || activate_zcode_via_applescript()
+    } else {
+        activate_zcode_by_bundle_id() || activate_zcode_via_applescript()
+    };
+    if !focused {
+        return Err("Failed to focus ZCode".to_string());
+    }
+
+    ensure_island_panel_visible();
+    Ok(())
+}
+
+fn run_open_zcode() -> bool {
+    Command::new("/usr/bin/open")
+        .args(["-a", "ZCode"])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn activate_zcode_via_applescript() -> bool {
+    Command::new("/usr/bin/osascript")
+        .args(["-e", r#"tell application "ZCode" to activate"#])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn activate_zcode_by_bundle_id() -> bool {
+    const ACTIVATE_ALL_WINDOWS: usize = 1;
+    const ACTIVATE_IGNORING_OTHER_APPS: usize = 1 << 1;
+    let options = ACTIVATE_ALL_WINDOWS | ACTIVATE_IGNORING_OTHER_APPS;
+
+    unsafe {
+        let Some(running_app_class) = objc2::runtime::AnyClass::get(c"NSRunningApplication") else {
+            return false;
+        };
+
+        for bundle_id in ZCODE_DESKTOP_BUNDLE_IDS {
+            let bundle = objc2_foundation::NSString::from_str(bundle_id);
+            let apps: *mut objc2::runtime::AnyObject = objc2::msg_send![
+                running_app_class,
+                runningApplicationsWithBundleIdentifier: &*bundle
+            ];
+            if apps.is_null() {
+                continue;
+            }
+
+            let count: usize = objc2::msg_send![apps, count];
+            for index in 0..count {
+                let app: *mut objc2::runtime::AnyObject =
+                    objc2::msg_send![apps, objectAtIndex: index];
+                if app.is_null() {
+                    continue;
+                }
+
+                let ok: objc2::runtime::Bool = objc2::msg_send![app, activateWithOptions: options];
+                if ok.as_bool() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
 pub fn focus_claude_app(app: &AppHandle) -> Result<(), String> {
     focus_claude_app_impl(app, true)
 }
@@ -1636,6 +1733,158 @@ fn is_codex_desktop_pid(pid: u32) -> bool {
     bundle_id_for_pid(pid as i32)
         .as_deref()
         .is_some_and(is_codex_desktop_bundle)
+}
+
+const ZCODE_DESKTOP_BUNDLE_IDS: &[&str] = &["dev.zcode.app"];
+
+fn is_zcode_desktop_bundle(bundle: &str) -> bool {
+    ZCODE_DESKTOP_BUNDLE_IDS.contains(&bundle)
+}
+
+fn is_zcode_desktop_pid(pid: u32) -> bool {
+    bundle_id_for_pid(pid as i32)
+        .as_deref()
+        .is_some_and(is_zcode_desktop_bundle)
+}
+
+pub(crate) fn is_zcode_desktop_app_running() -> bool {
+    unsafe {
+        let Some(cls) = objc2::runtime::AnyClass::get(c"NSRunningApplication") else {
+            return false;
+        };
+        for bundle_id in ZCODE_DESKTOP_BUNDLE_IDS {
+            let bundle = objc2_foundation::NSString::from_str(bundle_id);
+            let apps: *mut objc2::runtime::AnyObject = objc2::msg_send![
+                cls,
+                runningApplicationsWithBundleIdentifier: &*bundle
+            ];
+            if apps.is_null() {
+                continue;
+            }
+            let count: usize = objc2::msg_send![apps, count];
+            if count > 0 {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+fn is_in_zcode_desktop_tree(mut pid: u32) -> bool {
+    for _ in 0..32 {
+        if pid <= 1 {
+            return false;
+        }
+        if is_zcode_desktop_process(pid) {
+            return true;
+        }
+        let output = match super::command_output_with_timeout(
+            Command::new("ps").args(["-p", &pid.to_string(), "-o", "ppid="]),
+            std::time::Duration::from_secs(2),
+        ) {
+            Ok(output) => output,
+            Err(_) => return false,
+        };
+        let ppid_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        pid = match ppid_str.parse::<u32>() {
+            Ok(ppid) => ppid,
+            Err(_) => return false,
+        };
+    }
+    false
+}
+
+fn command_line_matches_zcode(command_line: &str) -> bool {
+    let trimmed = command_line.trim();
+    trimmed == "zcode"
+        || trimmed.ends_with("/zcode")
+        || trimmed.contains("/zcode ")
+        || command_line.contains("ZCode.app")
+        || command_line.contains("ZCode Helper")
+        || command_line.contains("dev.zcode.app")
+}
+
+fn is_zcode_related_process(pid: u32) -> bool {
+    if is_zcode_desktop_pid(pid) {
+        return true;
+    }
+    if process_executable(pid).is_some_and(|comm| command_line_matches_zcode(&comm)) {
+        return true;
+    }
+    process_command_line(pid).is_some_and(|args| command_line_matches_zcode(&args))
+}
+
+fn is_zcode_desktop_process(pid: u32) -> bool {
+    if find_terminal_ancestor(pid).is_some() {
+        return false;
+    }
+    if is_zcode_desktop_pid(pid) {
+        return true;
+    }
+    if process_executable(pid).is_some_and(|comm| command_line_matches_zcode(&comm)) {
+        return true;
+    }
+    process_command_line(pid).is_some_and(|args| command_line_matches_zcode(&args))
+}
+
+pub(crate) fn frontmost_is_zcode_desktop() -> bool {
+    frontmost_app_pid().is_some_and(|pid| {
+        !is_terminal_pid(pid) && (is_zcode_desktop_pid(pid) || is_in_zcode_desktop_tree(pid))
+    })
+}
+
+fn zcode_cwd_signals(cwd: &str) -> (bool, bool) {
+    let mut has_terminal_zcode = false;
+    let mut has_desktop_zcode = false;
+    for pid in pids_with_cwd(cwd) {
+        if find_terminal_ancestor(pid).is_some() && is_zcode_related_process(pid) {
+            has_terminal_zcode = true;
+        } else if find_terminal_ancestor(pid).is_none() && is_in_zcode_desktop_tree(pid) {
+            has_desktop_zcode = true;
+        }
+    }
+    (has_terminal_zcode, has_desktop_zcode)
+}
+
+pub fn resolve_zcode_session_host(cwd: &str, hint_pid: Option<u32>) -> SessionHost {
+    if cwd.is_empty() || cwd == "." {
+        return SessionHost::Unknown;
+    }
+
+    if let Some(pid) = hint_pid {
+        if is_zcode_desktop_pid(pid) || is_in_zcode_desktop_tree(pid) {
+            return SessionHost::ZcodeDesktop;
+        }
+        if is_terminal_pid(pid) {
+            return SessionHost::ZcodeCli;
+        }
+    }
+
+    let (has_terminal_zcode, has_desktop_zcode) = zcode_cwd_signals(cwd);
+    match (has_terminal_zcode, has_desktop_zcode) {
+        (true, false) => return SessionHost::ZcodeCli,
+        (false, true) => return SessionHost::ZcodeDesktop,
+        (true, true) => return SessionHost::Unknown,
+        (false, false) => {}
+    }
+
+    if frontmost_is_zcode_desktop() {
+        return SessionHost::ZcodeDesktop;
+    }
+
+    if frontmost_is_terminal() {
+        return SessionHost::ZcodeCli;
+    }
+
+    if is_zcode_desktop_app_running() {
+        return SessionHost::ZcodeDesktop;
+    }
+
+    SessionHost::Unknown
+}
+
+pub fn detect_zcode_session_host(cwd: &str) -> SessionHost {
+    resolve_zcode_session_host(cwd, None)
 }
 
 pub(crate) fn frontmost_is_claude_desktop() -> bool {

@@ -179,6 +179,7 @@ pub(crate) fn agent_kind_key(agent: &AgentKind) -> String {
         AgentKind::Claude => "claude".to_string(),
         AgentKind::Codex => "codex".to_string(),
         AgentKind::Cursor => "cursor".to_string(),
+        AgentKind::Zcode => "zcode".to_string(),
         AgentKind::Gemini => "gemini".to_string(),
         AgentKind::Other => "other".to_string(),
     }
