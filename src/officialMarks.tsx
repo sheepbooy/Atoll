@@ -77,10 +77,17 @@ export const ZCODE_TILE_PATH =
 
 export const ZCODE_Z_PATH = "M5.2 5.8H18.8V8L9.2 16H18.8V18.2H5.2V16L14.8 8H5.2Z";
 
-export function zcodeTileGradientStops(mood: ClawdMood): { from: string; to: string } {
+export function zcodeTileGradientStops(
+  mood: ClawdMood,
+  accent?: string,
+  accentDark?: string,
+): { from: string; to: string } {
   if (mood === "dead") return { from: "#55585e", to: "#3a3d42" };
-  if (mood === "sleeping") return { from: "#3f6379", to: "#28455a" };
   if (mood === "worried") return { from: "#4a5a66", to: "#35434d" };
+  // Session rows tint the tile with the per-session palette color; agent tabs
+  // keep the brand gradient by not passing an accent.
+  if (accent) return { from: accent, to: accentDark || accent };
+  if (mood === "sleeping") return { from: "#3f6379", to: "#28455a" };
   return { from: "#58c7f5", to: "#1f8fd0" };
 }
 
@@ -93,15 +100,19 @@ export function zcodeMarkFill(mood: ClawdMood): string {
 
 export function ZcodeOfficialMark({
   mood,
+  accent,
+  accentDark,
   className,
 }: {
   mood: ClawdMood;
+  accent?: string;
+  accentDark?: string;
   className?: string;
 }) {
   // Per-instance gradient id: several mascots with different moods (e.g. a dead
   // header logo next to a live agent tab) must not share one gradient def.
   const gradientId = `zcode-tile-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
-  const { from, to } = zcodeTileGradientStops(mood);
+  const { from, to } = zcodeTileGradientStops(mood, accent, accentDark);
 
   return (
     <g className={className}>

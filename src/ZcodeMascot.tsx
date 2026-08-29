@@ -45,7 +45,12 @@ export function ZcodeMascot({
         <MascotShadow className="zcode-shadow" />
 
         <g className="zcode-body">
-          <ZcodeOfficialMark mood={mood} className="zcode-mark" />
+          <ZcodeOfficialMark
+            mood={mood}
+            accent={accent}
+            accentDark={accentDark}
+            className="zcode-mark"
+          />
           <MascotExtras
             mood={mood}
             classPrefix="zcode"
