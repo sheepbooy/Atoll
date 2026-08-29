@@ -218,10 +218,21 @@ mod winrt {
     /// All registered SMTC sessions. Iteration skips entries the OS fails to
     /// hand out (a player mid-teardown).
     fn sessions(manager: &SmtcManager) -> Vec<SmtcSession> {
-        manager
-            .GetSessions()
-            .map(|view| view.into_iter().collect())
-            .unwrap_or_default()
+        let Ok(view) = manager.GetSessions() else {
+            return Vec::new();
+        };
+        if is_null(&view) {
+            return Vec::new();
+        }
+        view.into_iter().collect()
+    }
+
+    /// True for a WinRT "null object": class/nullable getters may return S_OK
+    /// with a null pointer (an unset `Thumbnail()` is documented to do so),
+    /// and windows-rs calls the vtable directly, so touching such an object
+    /// would dereference null. Treat them as "missing" instead.
+    fn is_null<T: windows::core::Interface>(value: &T) -> bool {
+        value.as_raw().is_null()
     }
 
     /// The session to present: prefer actively-playing, else first.
@@ -231,7 +242,9 @@ mod winrt {
             .iter()
             .map(|s| {
                 s.GetPlaybackInfo()
-                    .and_then(|p| p.PlaybackStatus())
+                    .ok()
+                    .filter(|p| !is_null(p))
+                    .and_then(|p| p.PlaybackStatus().ok())
                     .map(|st| st == SmtcPlaybackStatus::Playing)
                     .unwrap_or(false)
             })
@@ -269,6 +282,7 @@ mod winrt {
         let value = properties
             .Thumbnail()
             .ok()
+            .filter(|reference| !is_null(reference))
             .and_then(|reference| read_thumbnail(&reference))
             .and_then(artwork_base64);
         *guard = Some(ArtworkCache {
@@ -287,11 +301,16 @@ mod winrt {
 
         let playing = session
             .GetPlaybackInfo()
-            .and_then(|p| p.PlaybackStatus())
+            .ok()
+            .filter(|p| !is_null(p))
+            .and_then(|p| p.PlaybackStatus().ok())
             .map(|st| st == SmtcPlaybackStatus::Playing)
             .unwrap_or(false);
 
         let properties = session.TryGetMediaPropertiesAsync().ok()?.get().ok()?;
+        if is_null(&properties) {
+            return None;
+        }
         let title = properties.Title().map(hstring_to_string).ok();
         let artist = properties.Artist().map(hstring_to_string).ok();
         let album = properties.AlbumTitle().map(hstring_to_string).ok();
@@ -303,8 +322,11 @@ mod winrt {
 
         // Most players only update the timeline on track change / seek; the
         // position must be extrapolated from LastUpdatedTime while playing.
-        let (position, duration) = match session.GetTimelineProperties() {
-            Ok(timeline) => {
+        let (position, duration) = session
+            .GetTimelineProperties()
+            .ok()
+            .filter(|t| !is_null(t))
+            .map(|timeline| {
                 let raw_position = timeline.Position().map(|t| ticks_to_secs(t.Duration)).ok();
                 let last_updated = timeline
                     .LastUpdatedTime()
@@ -319,9 +341,8 @@ mod winrt {
                     .ok()
                     .flatten();
                 (position, duration)
-            }
-            Err(_) => (None, None),
-        };
+            })
+            .unwrap_or((None, None));
 
         let title_key = title.clone().unwrap_or_default();
         let artist_key = artist.clone().unwrap_or_default();
