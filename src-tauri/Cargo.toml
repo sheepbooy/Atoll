@@ -39,10 +39,14 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 auto-launch = "0.5"
 raw-window-handle = "0.6"
 encoding_rs = "0.8"
+# jpeg decode for SMTC thumbnails (features unify with the image entry above;
+# other targets keep the smaller feature set).
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 windows = { version = "0.58", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
   "Win32_Security",
+  "Win32_System_Com",
   "Win32_System_DataExchange",
   "Win32_System_Memory",
   "Win32_System_Ole",
@@ -50,6 +54,11 @@ windows = { version = "0.58", features = [
   "Win32_System_Threading",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
+  # SMTC now playing (Windows.Media.Control + Storage.Streams thumbnails).
+  "Foundation",
+  "Foundation_Collections",
+  "Media_Control",
+  "Storage_Streams",
 ] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
