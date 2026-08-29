@@ -253,6 +253,7 @@ npm run export:brand     # Logo 状态 + Agent 形象
 - [ ] Apple 签名 & 公证、Intel Mac 构建
 - [ ] Windows 代码签名
 - [x] ZCode hook 适配
+- [x] ZCode token 用量统计（rollout JSONL，含子代理归集）
 - [ ] Gemini 等更多 Agent 适配
 - [x] Cursor hook 适配
 - [ ] 新请求自动展开、通知中心提醒

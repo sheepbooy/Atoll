@@ -7093,6 +7093,10 @@ kbd {
   background: #b2e578;
 }
 
+.token-heatmap-agent-dot.is-zcode {
+  background: #4d9df8;
+}
+
 .token-heatmap-agent-dot.is-other {
   background: #c9bcff;
 }

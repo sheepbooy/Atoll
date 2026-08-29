@@ -33,6 +33,7 @@ const AGENT_DOT_CLASS: Record<string, string> = {
   codex: "is-codex",
   cursor: "is-cursor",
   gemini: "is-gemini",
+  zcode: "is-zcode",
   other: "is-other",
 };
 
@@ -41,6 +42,7 @@ const AGENT_COLOR: Record<string, string> = {
   codex: "#61d8f7",
   cursor: "#a78bfa",
   gemini: "#b2e578",
+  zcode: "#4d9df8",
   other: "#c9bcff",
 };
 
@@ -49,6 +51,7 @@ const AGENT_LABEL: Record<string, string> = {
   codex: "Codex",
   cursor: "Cursor",
   gemini: "Gemini",
+  zcode: "ZCode",
   other: "Other",
 };
 

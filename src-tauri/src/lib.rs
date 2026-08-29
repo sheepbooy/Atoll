@@ -1889,6 +1889,9 @@ pub(crate) fn resolve_session_transcript_path(
 ) -> Option<String> {
     if let Ok(known) = state.known_sessions.lock() {
         if let Some(entry) = known.get(session_id) {
+            if matches!(entry.agent, AgentKind::Zcode) {
+                return zcode_db_session_path(session_id);
+            }
             if let Some(path) = entry.transcript_path.clone() {
                 if std::path::Path::new(&path).is_file() {
                     return Some(path);
@@ -1904,6 +1907,9 @@ pub(crate) fn resolve_session_transcript_path(
 
     for request in requests {
         if request.session == session_id {
+            if matches!(request.agent, AgentKind::Zcode) {
+                return zcode_db_session_path(session_id);
+            }
             if let Some(path) = request.transcript_path.clone() {
                 if std::path::Path::new(&path).is_file() {
                     return Some(path);
@@ -1961,9 +1967,19 @@ async fn get_session_transcript(
     transcript_path: String,
 ) -> Result<Vec<ChatMessage>, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        if let Some(session_id) = parse_zcode_db_session_path(&transcript_path) {
+            let result = read_zcode_chat_messages(session_id);
+            if let Err(error) = &result {
+                eprintln!("Atoll chat read failed for {session_id}: {error}");
+            }
+            return result;
+        }
         let state = app.state::<AppState>();
-        let canonical = validate_trusted_transcript_path(&state, &transcript_path)?;
-        read_transcript_messages_cached(&state, &canonical)
+        let canonical = validate_trusted_transcript_path(&state, &transcript_path);
+        if let Err(error) = &canonical {
+            eprintln!("Atoll transcript path rejected ({transcript_path}): {error}");
+        }
+        read_transcript_messages_cached(&state, &canonical?)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -1975,7 +1991,17 @@ async fn get_session_chat(app: AppHandle, session_id: String) -> Result<Vec<Chat
         let state = app.state::<AppState>();
         let requests = lock_state(&state.requests).clone();
         let path = resolve_session_transcript_path(&state, &session_id, &requests)
-            .ok_or_else(|| format!("No transcript found for session {session_id}"))?;
+            .ok_or_else(|| {
+                eprintln!("Atoll chat: no transcript resolved for session {session_id}");
+                format!("No transcript found for session {session_id}")
+            })?;
+        if let Some(session_id) = parse_zcode_db_session_path(&path) {
+            let result = read_zcode_chat_messages(session_id);
+            if let Err(error) = &result {
+                eprintln!("Atoll chat read failed for {session_id}: {error}");
+            }
+            return result;
+        }
         persist_session_transcript_path(&state, &session_id, &path);
         let canonical = std::fs::canonicalize(&path)
             .map_err(|error| format!("Cannot resolve transcript path: {error}"))?;
@@ -2048,12 +2074,19 @@ fn collect_session_transcript_paths(
             .or_insert_with(|| (transcript_path.to_string(), request.agent.clone()));
     }
     for (session_id, known_session) in known_sessions {
-        let Some(transcript_path) = known_session.transcript_path.as_deref() else {
+        // ZCode transcript paths from hook payloads are ephemeral temp files;
+        // track the durable rollout file instead.
+        let transcript_path = if matches!(known_session.agent, AgentKind::Zcode) {
+            zcode_rollout_path(session_id).map(|path| path.to_string_lossy().into_owned())
+        } else {
+            known_session.transcript_path.clone()
+        };
+        let Some(transcript_path) = transcript_path else {
             continue;
         };
         session_paths
             .entry(session_id.clone())
-            .or_insert_with(|| (transcript_path.to_string(), known_session.agent.clone()));
+            .or_insert_with(|| (transcript_path, known_session.agent.clone()));
     }
     session_paths
         .into_iter()
@@ -2259,15 +2292,59 @@ fn parse_codex_token_usage_from_transcript(
     ))
 }
 
+fn parse_zcode_token_usage_from_transcript(
+    transcript_path: &str,
+    offset: u64,
+    today_key: &str,
+) -> Result<(TokenUsage, HashMap<String, TokenUsage>, u64, bool), String> {
+    use std::fs::File;
+    use std::io::BufReader;
+
+    // Sessions register on SessionStart before the first model I/O line is
+    // written; treat a missing rollout as "nothing to count yet".
+    if !std::path::Path::new(transcript_path).exists() {
+        return Ok((TokenUsage::default(), HashMap::new(), offset, false));
+    }
+
+    let file =
+        File::open(transcript_path).map_err(|error| format!("Cannot open transcript: {error}"))?;
+    let file_len = file
+        .metadata()
+        .map_err(|error| format!("Cannot read transcript metadata: {error}"))?
+        .len();
+    let start_offset = if offset > file_len { 0 } else { offset };
+    let is_full_scan = start_offset == 0;
+
+    let mut reader = BufReader::new(file);
+    let parsed = transcript::parse_zcode_tokens_from_reader(&mut reader, start_offset, today_key)?;
+    Ok((
+        token_usage_from_codex_delta(parsed.daily_delta),
+        token_usage_map_from_delta_map(&parsed.daily_delta_by_model),
+        parsed.next_offset,
+        is_full_scan,
+    ))
+}
+
 pub(crate) fn refresh_session_token_usage(
     state: &AppState,
     session_id: &str,
     transcript_path: Option<&str>,
     agent: Option<&AgentKind>,
 ) -> Result<(), String> {
-    let Some(transcript_path) = transcript_path else {
-        return Ok(());
+    // ZCode hook payloads point at ephemeral temp transcripts that are deleted
+    // as soon as the hook returns; the durable token data lives in the
+    // session's rollout JSONL, derived from the session id instead.
+    let transcript_path = match agent {
+        Some(AgentKind::Zcode) => match zcode_rollout_path(session_id) {
+            Some(path) => path.to_string_lossy().into_owned(),
+            None => return Ok(()),
+        },
+        _ => match transcript_path {
+            Some(path) => path.to_string(),
+            None => return Ok(()),
+        },
     };
+    let transcript_path = transcript_path.as_str();
 
     roll_over_token_usage_if_needed(state);
     let today_key = current_local_day_key();
@@ -2283,15 +2360,16 @@ pub(crate) fn refresh_session_token_usage(
         Some(AgentKind::Codex) => transcript::TranscriptFormat::Codex,
         Some(AgentKind::Claude) => transcript::TranscriptFormat::Claude,
         Some(AgentKind::Cursor) => transcript::TranscriptFormat::Cursor,
-        // ZCode transcripts are ephemeral temp files (removed after each hook
-        // invocation); token usage is parsed from rollout JSONL instead.
-        Some(AgentKind::Zcode) => return Ok(()),
+        Some(AgentKind::Zcode) => transcript::TranscriptFormat::Zcode,
         _ => transcript::detect_transcript_format(transcript_path),
     };
 
     let (parsed_usage, parsed_usage_by_model, next_offset, is_full_scan) = match format {
         transcript::TranscriptFormat::Codex => {
             parse_codex_token_usage_from_transcript(transcript_path, last_offset, &today_key)?
+        }
+        transcript::TranscriptFormat::Zcode => {
+            parse_zcode_token_usage_from_transcript(transcript_path, last_offset, &today_key)?
         }
         transcript::TranscriptFormat::Claude => {
             parse_claude_token_usage_from_transcript(transcript_path, last_offset, &today_key)?
@@ -2353,6 +2431,224 @@ pub(crate) fn refresh_session_token_usage(
     state.token_history_dirty.store(true, Ordering::Release);
 
     Ok(())
+}
+
+struct ZcodeSubagentMeta {
+    child_session_id: String,
+    is_active: bool,
+    agent_type: String,
+    started_at: String,
+    completed_at: Option<String>,
+    last_message: Option<String>,
+}
+
+/// ZCode has no subagent hook events, so subagent lifecycle and token usage
+/// are derived from on-disk artifacts instead: per-subagent
+/// `~/.zcode/cli/agents/<parent>/agent_*/metadata.json` files (lifecycle +
+/// child session id) and each child's own model-I/O rollout (usage).
+fn refresh_zcode_subagents(
+    app: &AppHandle,
+    state: &AppState,
+    parent_session_id: &str,
+    today_key: &str,
+) {
+    if update_zcode_subagents(state, parent_session_id, today_key) {
+        emit_subagent_snapshot(app, state);
+    }
+}
+
+fn update_zcode_subagents(
+    state: &AppState,
+    parent_session_id: &str,
+    today_key: &str,
+) -> bool {
+    let metas = collect_zcode_subagent_metas(parent_session_id);
+    if metas.is_empty() {
+        return false;
+    }
+
+    for meta in &metas {
+        add_zcode_subagent_usage(state, parent_session_id, &meta.child_session_id, today_key);
+    }
+
+    sync_zcode_subagent_chips(state, parent_session_id, &metas)
+}
+
+fn collect_zcode_subagent_metas(parent_session_id: &str) -> Vec<ZcodeSubagentMeta> {
+    let Some(agents_dir) = zcode_session_agents_dir(parent_session_id) else {
+        return Vec::new();
+    };
+    let entries = match std::fs::read_dir(&agents_dir) {
+        Ok(entries) => entries,
+        // No subagents for this session (or no ZCode data dir at all).
+        Err(_) => return Vec::new(),
+    };
+
+    let mut metas = Vec::new();
+    for entry in entries.flatten() {
+        let Ok(text) = std::fs::read_to_string(entry.path().join("metadata.json")) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(&text) else {
+            continue;
+        };
+        let Some(child_session_id) = value.get("childSessionId").and_then(Value::as_str) else {
+            continue;
+        };
+        if !is_safe_zcode_session_id(child_session_id) {
+            continue;
+        }
+
+        let status = value
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        // Anything final (completed, error, aborted, ...) closes the chip;
+        // only unknown or in-flight statuses count as running.
+        let is_active = status.is_empty()
+            || matches!(status.as_str(), "running" | "pending" | "in_progress" | "started");
+        let agent_type = value
+            .get("profileSnapshot")
+            .and_then(|profile| profile.get("name"))
+            .and_then(Value::as_str)
+            .unwrap_or("subagent")
+            .to_string();
+        let started_at = value
+            .get("createdAt")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let mut completed_at = value
+            .get("completedAt")
+            .and_then(Value::as_str)
+            .filter(|stamp| !stamp.is_empty())
+            .map(str::to_string);
+        if completed_at.is_none() && !is_active {
+            completed_at = Some(iso_timestamp_now());
+        }
+        let last_message = value
+            .get("prompt")
+            .and_then(Value::as_str)
+            .map(|prompt| prompt.chars().take(200).collect::<String>());
+
+        metas.push(ZcodeSubagentMeta {
+            child_session_id: child_session_id.to_string(),
+            is_active,
+            agent_type,
+            started_at,
+            completed_at,
+            last_message,
+        });
+    }
+    metas
+}
+
+/// Add a subagent's rollout usage to the parent session's totals.
+///
+/// Subagent usage is always merged additively (never via component_wise_max):
+/// byte offsets and session usage reset together in
+/// `roll_over_token_usage_if_needed`, and rollouts are append-only, so a
+/// rescan after an offset reset only re-counts the current day's lines onto
+/// an already-cleared day.
+fn add_zcode_subagent_usage(
+    state: &AppState,
+    parent_session_id: &str,
+    child_session_id: &str,
+    today_key: &str,
+) {
+    let Some(rollout) = zcode_rollout_path(child_session_id) else {
+        return;
+    };
+    let rollout_path = rollout.to_string_lossy().into_owned();
+
+    let last_offset = state
+        .token_usage_file_offsets
+        .lock()
+        .ok()
+        .and_then(|offsets| offsets.get(&rollout_path).copied())
+        .unwrap_or(0);
+    let Ok((usage, usage_by_model, next_offset, _)) =
+        parse_zcode_token_usage_from_transcript(&rollout_path, last_offset, today_key)
+    else {
+        return;
+    };
+    if let Ok(mut offsets) = state.token_usage_file_offsets.lock() {
+        offsets.insert(rollout_path, next_offset);
+    }
+    if usage.is_zero() && usage_by_model.is_empty() {
+        return;
+    }
+
+    if let Ok(mut usage_by_session) = state.session_token_usage.lock() {
+        usage_by_session
+            .entry(parent_session_id.to_string())
+            .or_default()
+            .add_assign(usage);
+    }
+    if !usage_by_model.is_empty() {
+        if let Ok(mut usage_by_model_state) = state.session_token_usage_by_model.lock() {
+            let model_entry = usage_by_model_state
+                .entry(parent_session_id.to_string())
+                .or_default();
+            merge_session_model_usage(model_entry, &usage_by_model, false);
+        }
+    }
+    state.token_history_dirty.store(true, Ordering::Release);
+}
+
+/// Keep the parent session's subagent chips in sync with on-disk metadata.
+///
+/// Only subagents discovered while still running become chips; ones that
+/// finished before Atoll saw them stay invisible to avoid a flood of stale
+/// chips after restart.
+fn sync_zcode_subagent_chips(
+    state: &AppState,
+    parent_session_id: &str,
+    metas: &[ZcodeSubagentMeta],
+) -> bool {
+    let mut changed = false;
+    let Ok(mut subagents) = state.active_subagents.lock() else {
+        return false;
+    };
+
+    for meta in metas {
+        if let Some(existing) = subagents
+            .iter_mut()
+            .find(|s| s.agent_id == meta.child_session_id)
+        {
+            if existing.completed_at.is_none() {
+                if let Some(completed_at) = meta.completed_at.clone() {
+                    existing.completed_at = Some(completed_at);
+                    changed = true;
+                }
+            }
+            continue;
+        }
+
+        if !meta.is_active || subagents.len() >= MAX_ACTIVE_SUBAGENTS {
+            continue;
+        }
+        subagents.push(ActiveSubagent {
+            agent_id: meta.child_session_id.clone(),
+            session_id: parent_session_id.to_string(),
+            agent_kind: AgentKind::Zcode,
+            agent_type: meta.agent_type.clone(),
+            started_at: if meta.started_at.is_empty() {
+                iso_timestamp_now()
+            } else {
+                meta.started_at.clone()
+            },
+            agent_transcript_path: zcode_db_session_path(&meta.child_session_id),
+            completed_at: None,
+            archived: false,
+            last_message: meta.last_message.clone(),
+            conversation_id: None,
+        });
+        changed = true;
+    }
+
+    changed
 }
 
 /// Ingest token usage from a Cursor hook payload (`stop`, `afterAgentResponse`, etc.).
@@ -4943,6 +5239,232 @@ fn cursor_hooks_path() -> Option<std::path::PathBuf> {
 fn zcode_config_path() -> Option<std::path::PathBuf> {
     dirs::home_dir()
         .map(|home| home.join(".zcode").join("cli").join("config.json"))
+}
+
+/// ZCode writes one model-I/O rollout JSONL per session, named after the full
+/// session id (`sess_...`). Session ids come from hook payloads and subagent
+/// metadata files, so restrict them to the shape ZCode actually emits before
+/// splicing one into a path.
+fn is_safe_zcode_session_id(session_id: &str) -> bool {
+    session_id.starts_with("sess_")
+        && session_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+fn zcode_rollout_path(session_id: &str) -> Option<std::path::PathBuf> {
+    if !is_safe_zcode_session_id(session_id) {
+        return None;
+    }
+    dirs::home_dir().map(|home| {
+        home.join(".zcode")
+            .join("cli")
+            .join("rollout")
+            .join(format!("model-io-{session_id}.jsonl"))
+    })
+}
+
+/// Directory ZCode uses to persist per-subagent metadata
+/// (`~/.zcode/cli/agents/<parent_session_id>/agent_*/metadata.json`).
+fn zcode_session_agents_dir(parent_session_id: &str) -> Option<std::path::PathBuf> {
+    if !is_safe_zcode_session_id(parent_session_id) {
+        return None;
+    }
+    dirs::home_dir().map(|home| home.join(".zcode").join("cli").join("agents").join(parent_session_id))
+}
+
+/// Virtual transcript path for ZCode sessions: their chat history lives in
+/// ZCode's sqlite store (`~/.zcode/cli/db/db.sqlite`), not in a per-session
+/// file, so the scheme encodes the session id for the chat reader.
+const ZCODE_DB_SCHEME: &str = "zcode-db://";
+
+fn zcode_db_session_path(session_id: &str) -> Option<String> {
+    if !is_safe_zcode_session_id(session_id) {
+        return None;
+    }
+    Some(format!("{ZCODE_DB_SCHEME}{session_id}"))
+}
+
+fn parse_zcode_db_session_path(path: &str) -> Option<&str> {
+    let session_id = path.strip_prefix(ZCODE_DB_SCHEME)?;
+    if !is_safe_zcode_session_id(session_id) {
+        return None;
+    }
+    Some(session_id)
+}
+
+fn zcode_db_path() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|home| home.join(".zcode").join("cli").join("db").join("db.sqlite"))
+}
+
+/// Read a ZCode session's chat history from its sqlite store. Each `message`
+/// row carries the role; its ordered `part` rows hold text, reasoning, and
+/// tool-call content. Only user-visible text and tool calls become chat
+/// bubbles — reasoning traces and synthetic system reminders are skipped,
+/// and only the newest TRANSCRIPT_MAX_MESSAGES bubbles are returned.
+fn read_zcode_chat_messages(session_id: &str) -> Result<Vec<ChatMessage>, String> {
+    if !is_safe_zcode_session_id(session_id) {
+        return Err("Invalid ZCode session id".to_string());
+    }
+    let Some(db_path) = zcode_db_path() else {
+        return Err("Cannot locate ZCode database".to_string());
+    };
+    if !db_path.is_file() {
+        return Err("ZCode database not found".to_string());
+    }
+
+    let connection = rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .map_err(|error| format!("Cannot open ZCode database: {error}"))?;
+    connection
+        .busy_timeout(std::time::Duration::from_millis(500))
+        .map_err(|error| format!("Cannot query ZCode database: {error}"))?;
+
+    let mut statement = connection
+        .prepare(
+            "SELECT m.id AS message_id, m.data AS message_data, p.data AS part_data
+             FROM message m
+             LEFT JOIN part p ON p.message_id = m.id
+             WHERE m.session_id = ?1
+             ORDER BY m.sequence ASC, p.sequence ASC",
+        )
+        .map_err(|error| format!("Cannot query ZCode database: {error}"))?;
+    let mut rows = statement
+        .query(rusqlite::params![session_id])
+        .map_err(|error| format!("Cannot query ZCode database: {error}"))?;
+
+    let mut messages: Vec<ChatMessage> = Vec::new();
+    let mut current_message_id: Option<String> = None;
+    let mut current_role = String::new();
+    let mut current_content = String::new();
+
+    while let Some(row) = rows
+        .next()
+        .map_err(|error| format!("Cannot read ZCode database: {error}"))?
+    {
+        let message_id: String = row
+            .get("message_id")
+            .map_err(|error| format!("Cannot read ZCode database: {error}"))?;
+        if current_message_id.as_deref() != Some(message_id.as_str()) {
+            flush_zcode_chat_message(&mut messages, &current_role, &current_content);
+            current_message_id = Some(message_id);
+            current_content.clear();
+            let message_data: String = row
+                .get("message_data")
+                .map_err(|error| format!("Cannot read ZCode database: {error}"))?;
+            let message: Value = serde_json::from_str(&message_data)
+                .map_err(|error| format!("Cannot parse ZCode message: {error}"))?;
+            current_role = message
+                .get("role")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+        }
+
+        let Some(part_data) = row
+            .get::<_, Option<String>>("part_data")
+            .map_err(|error| format!("Cannot read ZCode database: {error}"))?
+        else {
+            continue;
+        };
+        let part: Value = match serde_json::from_str(&part_data) {
+            Ok(part) => part,
+            Err(_) => continue,
+        };
+        match zcode_chat_part(&part) {
+            ZcodeChatPart::Text(text) => {
+                if !current_content.is_empty() {
+                    current_content.push('\n');
+                }
+                current_content.push_str(&text);
+            }
+            ZcodeChatPart::Tool { name, input } => {
+                flush_zcode_chat_message(&mut messages, &current_role, &current_content);
+                current_content.clear();
+                messages.push(ChatMessage {
+                    role: "assistant".to_string(),
+                    content: String::new(),
+                    tool_name: Some(name),
+                    tool_input: input,
+                });
+            }
+            ZcodeChatPart::Skip => {}
+        }
+    }
+    flush_zcode_chat_message(&mut messages, &current_role, &current_content);
+
+    if messages.len() > TRANSCRIPT_MAX_MESSAGES {
+        let keep = messages.len() - TRANSCRIPT_MAX_MESSAGES;
+        messages.drain(..keep);
+    }
+
+    Ok(messages)
+}
+
+enum ZcodeChatPart {
+    Text(String),
+    Tool {
+        name: String,
+        input: Option<Value>,
+    },
+    Skip,
+}
+
+fn zcode_chat_part(part: &Value) -> ZcodeChatPart {
+    let part_type = part.get("type").and_then(Value::as_str).unwrap_or("");
+    match part_type {
+        "text" => {
+            if part.get("synthetic").and_then(Value::as_bool).unwrap_or(false) {
+                return ZcodeChatPart::Skip;
+            }
+            let text = part
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if text.is_empty() {
+                ZcodeChatPart::Skip
+            } else {
+                ZcodeChatPart::Text(text)
+            }
+        }
+        "tool" => {
+            let Some(name) = part.get("tool").and_then(Value::as_str) else {
+                return ZcodeChatPart::Skip;
+            };
+            let input = part
+                .get("state")
+                .and_then(|state| state.get("input"))
+                .filter(|input| !input.is_null())
+                .cloned();
+            ZcodeChatPart::Tool {
+                name: name.to_string(),
+                input,
+            }
+        }
+        _ => ZcodeChatPart::Skip,
+    }
+}
+
+fn flush_zcode_chat_message(messages: &mut Vec<ChatMessage>, role: &str, content: &str) {
+    let mapped = match role {
+        "user" => "user",
+        "assistant" => "assistant",
+        "system" => "system",
+        _ => return,
+    };
+    if content.trim().is_empty() {
+        return;
+    }
+    messages.push(ChatMessage {
+        role: mapped.to_string(),
+        content: truncate_transcript_content(content.to_string()),
+        tool_name: None,
+        tool_input: None,
+    });
 }
 
 #[tauri::command]
@@ -8092,6 +8614,12 @@ fn start_token_refresh_timer(app: AppHandle) {
                 ) {
                     eprintln!("Atoll token usage refresh failed: {error}");
                 }
+                if matches!(agent, AgentKind::Zcode) {
+                    // ZCode has no subagent hooks: derive subagent chips and
+                    // their token attribution from on-disk metadata instead.
+                    let today_key = current_local_day_key();
+                    refresh_zcode_subagents(&app, &state, &session_id, &today_key);
+                }
             }
 
             let usage_after = state
@@ -8972,6 +9500,17 @@ fn snapshot_from(
                 .then(b.pending_count.cmp(&a.pending_count))
                 .then(b.last_activity.cmp(&a.last_activity))
         });
+    }
+
+    // ZCode chat history lives in its sqlite store, so every ZCode session row
+    // must expose the virtual transcript path the chat reader understands.
+    // Applied after all session sources are merged (live requests, archived
+    // retention, known sessions) because the hook payload paths they carry are
+    // ephemeral temp files deleted as soon as the hook returns.
+    for session in sessions.iter_mut() {
+        if matches!(session.agent, AgentKind::Zcode) {
+            session.transcript_path = zcode_db_session_path(&session.session_id);
+        }
     }
 
     let mut daily_tokens = TokenUsage::default();
@@ -10390,7 +10929,7 @@ mod core_tests {
         assert_eq!(snapshot.active_session_tokens.output_tokens, 0);
     }
 
-    fn test_app_state() -> AppState {
+    pub(crate) fn test_app_state() -> AppState {
         AppState {
             requests: Mutex::new(Vec::new()),
             session_request_totals: Mutex::new(HashMap::new()),
@@ -12719,6 +13258,332 @@ mod zcode_hooks_tests {
 }
 
 #[cfg(test)]
+mod zcode_token_tests {
+    use super::{
+        refresh_session_token_usage, update_zcode_subagents, zcode_rollout_path, AgentKind,
+        TOKEN_HISTORY_ENV_LOCK,
+    };
+    use crate::core_tests::test_app_state;
+    use serde_json::{json, Value};
+
+    const PARENT_SESSION: &str = "sess_11111111-2222-4333-8444-555555555555";
+    const CHILD_SESSION: &str = "sess_subagent_agent_66666666-7777-4888-9999-000000000000";
+    const TODAY_ISO: &str = "2026-08-29T10:00:00.000Z";
+
+    fn zcode_line(session: &str, iso: &str, model: &str, usage: Value) -> String {
+        json!({
+            "type": "model_io",
+            "sessionId": session,
+            "completedAt": iso,
+            "model": { "modelId": model },
+            "response": { "usage": usage }
+        })
+        .to_string()
+    }
+
+    fn today_key() -> String {
+        crate::local_time::local_day_key_from_iso(TODAY_ISO).expect("local day key")
+    }
+
+    /// Redirect HOME into a temp dir so `zcode_rollout_path` lands in fixtures.
+    /// Serialized by TOKEN_HISTORY_ENV_LOCK like the other env-mutating tests.
+    pub(crate) struct HomeGuard {
+        previous: Option<std::ffi::OsString>,
+        pub(crate) home: std::path::PathBuf,
+    }
+
+    impl HomeGuard {
+        pub(crate) fn new(tag: &str) -> Self {
+            let home = std::env::temp_dir().join(format!("atoll-zcode-token-{}-{}", tag, std::process::id()));
+            let _ = std::fs::remove_dir_all(&home);
+            std::fs::create_dir_all(&home).expect("create temp home");
+            let previous = std::env::var_os("HOME");
+            std::env::set_var("HOME", &home);
+            let history_path = home.join("token-history.json");
+            std::env::set_var(
+                "ATOLL_TOKEN_HISTORY_PATH",
+                history_path.to_string_lossy().as_ref(),
+            );
+            Self { previous, home }
+        }
+    }
+
+    impl Drop for HomeGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(previous) => std::env::set_var("HOME", previous),
+                None => std::env::remove_var("HOME"),
+            }
+            std::env::remove_var("ATOLL_TOKEN_HISTORY_PATH");
+            let _ = std::fs::remove_dir_all(&self.home);
+        }
+    }
+
+    fn write_parent_rollout(home: &std::path::Path) -> std::path::PathBuf {
+        let rollout = home
+            .join(".zcode")
+            .join("cli")
+            .join("rollout")
+            .join(format!("model-io-{PARENT_SESSION}.jsonl"));
+        std::fs::create_dir_all(rollout.parent().unwrap()).expect("create rollout dir");
+        std::fs::write(
+            &rollout,
+            format!(
+                "{}\n{}\n",
+                zcode_line(
+                    PARENT_SESSION,
+                    TODAY_ISO,
+                    "GLM-5.3",
+                    json!({ "inputTokens": 38758, "outputTokens": 147, "cacheReadTokens": 38400, "cacheWriteTokens": 12 })
+                ),
+                zcode_line(
+                    PARENT_SESSION,
+                    TODAY_ISO,
+                    "GLM-4.7",
+                    json!({ "inputTokens": 232, "outputTokens": 77, "cacheReadTokens": 0, "cacheWriteTokens": 0 })
+                ),
+            ),
+        )
+        .expect("write parent rollout");
+        rollout
+    }
+
+    fn write_subagent_metadata(home: &std::path::Path, status: &str, completed_at: Option<&str>) {
+        let mut metadata = json!({
+            "parentSessionId": PARENT_SESSION,
+            "childSessionId": CHILD_SESSION,
+            "profileSnapshot": { "name": "Explore" },
+            "prompt": "Search the codebase for usages",
+            "status": status,
+            "createdAt": TODAY_ISO,
+        });
+        if let Some(completed_at) = completed_at {
+            metadata["completedAt"] = json!(completed_at);
+        }
+        let metadata_path = home
+            .join(".zcode")
+            .join("cli")
+            .join("agents")
+            .join(PARENT_SESSION)
+            .join("agent_abc123")
+            .join("metadata.json");
+        std::fs::create_dir_all(metadata_path.parent().unwrap()).expect("create agents dir");
+        std::fs::write(&metadata_path, metadata.to_string()).expect("write metadata");
+    }
+
+    fn write_child_rollout(home: &std::path::Path) {
+        let rollout = home
+            .join(".zcode")
+            .join("cli")
+            .join("rollout")
+            .join(format!("model-io-{CHILD_SESSION}.jsonl"));
+        std::fs::create_dir_all(rollout.parent().unwrap()).expect("create rollout dir");
+        std::fs::write(
+            &rollout,
+            format!(
+                "{}\n",
+                zcode_line(
+                    CHILD_SESSION,
+                    TODAY_ISO,
+                    "GLM-5.3",
+                    json!({ "inputTokens": 34456, "outputTokens": 2992, "cacheReadTokens": 32320, "cacheWriteTokens": 0 })
+                ),
+            ),
+        )
+        .expect("write child rollout");
+    }
+
+    #[test]
+    fn zcode_rollout_path_rejects_unsafe_session_ids() {
+        let valid = zcode_rollout_path("sess_6ea9e07c-3ff6-4ca8-9e02-8b24a06b401b")
+            .expect("valid session id");
+        assert_eq!(
+            valid.file_name().unwrap().to_string_lossy(),
+            "model-io-sess_6ea9e07c-3ff6-4ca8-9e02-8b24a06b401b.jsonl"
+        );
+        assert!(
+            zcode_rollout_path("sess_subagent_agent_6ea9e07c-3ff6-4ca8-9e02-8b24a06b401b")
+                .is_some()
+        );
+        for bad in [
+            "../escape",
+            "sess_../../escape",
+            "/absolute/path",
+            "sess_ with space",
+            "claude",
+            "",
+        ] {
+            assert!(zcode_rollout_path(bad).is_none(), "expected rejection: {bad}");
+        }
+    }
+
+    #[test]
+    fn zcode_refresh_parses_rollout_from_session_id() {
+        let _env_lock = TOKEN_HISTORY_ENV_LOCK.lock().expect("env lock");
+        let home = HomeGuard::new("refresh");
+
+        let rollout = write_parent_rollout(&home.home);
+        let state = test_app_state();
+
+        // The hook payload's transcript path is an ephemeral temp file; the
+        // rollout path derived from the session id must be used instead.
+        refresh_session_token_usage(
+            &state,
+            PARENT_SESSION,
+            Some("/tmp/atoll-ephemeral-hook-transcript.jsonl"),
+            Some(&AgentKind::Zcode),
+        )
+        .expect("refresh");
+
+        let usage = state
+            .session_token_usage
+            .lock()
+            .expect("lock")
+            .get(PARENT_SESSION)
+            .copied()
+            .expect("usage");
+        assert_eq!(usage.input_tokens, 358 + 232);
+        assert_eq!(usage.output_tokens, 147 + 77);
+        assert_eq!(usage.cache_read_tokens, 38400);
+        assert_eq!(usage.cache_creation_tokens, 12);
+
+        let by_model = state
+            .session_token_usage_by_model
+            .lock()
+            .expect("lock")
+            .get(PARENT_SESSION)
+            .expect("by-model usage")
+            .clone();
+        assert_eq!(by_model.get("GLM-5.3").unwrap().input_tokens, 358);
+        assert_eq!(by_model.get("GLM-4.7").unwrap().output_tokens, 77);
+
+        let offsets = state.token_usage_file_offsets.lock().expect("lock");
+        let stored = offsets
+            .get(rollout.to_string_lossy().as_ref())
+            .copied()
+            .expect("rollout offset");
+        assert_eq!(stored, std::fs::metadata(&rollout).unwrap().len());
+        assert!(state
+            .session_agent_map
+            .lock()
+            .expect("lock")
+            .get(PARENT_SESSION)
+            .map(|agent| agent == "zcode")
+            .unwrap_or(false));
+    }
+
+    #[test]
+    fn zcode_refresh_tolerates_missing_rollout() {
+        let _env_lock = TOKEN_HISTORY_ENV_LOCK.lock().expect("env lock");
+        let _home = HomeGuard::new("missing-rollout");
+        let state = test_app_state();
+
+        refresh_session_token_usage(
+            &state,
+            PARENT_SESSION,
+            None,
+            Some(&AgentKind::Zcode),
+        )
+        .expect("refresh without rollout file");
+
+        // A zero entry may be registered, but nothing was counted.
+        let usage = state
+            .session_token_usage
+            .lock()
+            .expect("lock")
+            .get(PARENT_SESSION)
+            .copied()
+            .unwrap_or_default();
+        assert!(usage.is_zero());
+    }
+
+    #[test]
+    fn zcode_subagent_usage_and_chips_follow_metadata() {
+        let _env_lock = TOKEN_HISTORY_ENV_LOCK.lock().expect("env lock");
+        let home = HomeGuard::new("subagent");
+        let state = test_app_state();
+
+        write_child_rollout(&home.home);
+        write_subagent_metadata(&home.home, "running", None);
+
+        let changed = update_zcode_subagents(&state, PARENT_SESSION, &today_key());
+        assert!(changed, "running subagent should register a chip");
+
+        {
+            let usage = state
+                .session_token_usage
+                .lock()
+                .expect("lock")
+                .get(PARENT_SESSION)
+                .copied()
+                .expect("parent usage");
+            assert_eq!(usage.input_tokens, 34456 - 32320);
+            assert_eq!(usage.output_tokens, 2992);
+            assert_eq!(usage.cache_read_tokens, 32320);
+        }
+        {
+            let subagents = state.active_subagents.lock().expect("lock");
+            assert_eq!(subagents.len(), 1);
+            let chip = &subagents[0];
+            assert_eq!(chip.agent_id, CHILD_SESSION);
+            assert_eq!(chip.session_id, PARENT_SESSION);
+            assert_eq!(chip.agent_type, "Explore");
+            assert!(matches!(chip.agent_kind, AgentKind::Zcode));
+            assert!(chip.completed_at.is_none());
+            assert_eq!(
+                chip.last_message.as_deref(),
+                Some("Search the codebase for usages")
+            );
+        }
+
+        // Subagent completes: chip closes, tokens must not be counted twice.
+        write_subagent_metadata(&home.home, "completed", Some(TODAY_ISO));
+        let changed = update_zcode_subagents(&state, PARENT_SESSION, &today_key());
+        assert!(changed, "completion should close the chip");
+        {
+            let subagents = state.active_subagents.lock().expect("lock");
+            assert_eq!(subagents.len(), 1);
+            assert!(subagents[0].completed_at.is_some());
+        }
+        let usage = state
+            .session_token_usage
+            .lock()
+            .expect("lock")
+            .get(PARENT_SESSION)
+            .copied()
+            .expect("parent usage");
+        assert_eq!(usage.input_tokens, 34456 - 32320);
+
+        // Third pass: nothing new, nothing changed.
+        let changed = update_zcode_subagents(&state, PARENT_SESSION, &today_key());
+        assert!(!changed);
+    }
+
+    #[test]
+    fn zcode_historical_subagents_do_not_become_chips() {
+        let _env_lock = TOKEN_HISTORY_ENV_LOCK.lock().expect("env lock");
+        let home = HomeGuard::new("historical");
+        let state = test_app_state();
+
+        write_child_rollout(&home.home);
+        write_subagent_metadata(&home.home, "completed", Some(TODAY_ISO));
+
+        let changed = update_zcode_subagents(&state, PARENT_SESSION, &today_key());
+        assert!(!changed, "finished-before-seen subagents stay invisible");
+        assert!(state.active_subagents.lock().expect("lock").is_empty());
+        // But their token usage still lands on the parent session.
+        let usage = state
+            .session_token_usage
+            .lock()
+            .expect("lock")
+            .get(PARENT_SESSION)
+            .copied()
+            .expect("parent usage");
+        assert_eq!(usage.output_tokens, 2992);
+    }
+}
+
+#[cfg(test)]
 mod claude_hooks_tests {
     use super::{
         detect_competing_claude_hooks, format_hook_command, has_atoll_claude_hooks,
@@ -13229,3 +14094,260 @@ mod cursor_hooks_tests {
         ));
     }
 }
+
+#[cfg(test)]
+mod zcode_chat_tests {
+    use super::{
+        parse_zcode_db_session_path, read_zcode_chat_messages, truncate_transcript_content,
+        zcode_db_session_path, TRANSCRIPT_MAX_MESSAGES, TOKEN_HISTORY_ENV_LOCK,
+        TRANSCRIPT_MESSAGE_MAX_CHARS,
+    };
+    use crate::zcode_token_tests::HomeGuard;
+    use serde_json::{json, Value};
+    use std::path::Path;
+
+    const SESSION: &str = "sess_11111111-2222-4333-8444-555555555555";
+
+    fn write_zcode_db(home: &Path, session_id: &str, messages: &[Value]) {
+        let db_path = home.join(".zcode").join("cli").join("db").join("db.sqlite");
+        std::fs::create_dir_all(db_path.parent().unwrap()).expect("create db dir");
+        let connection = rusqlite::Connection::open(&db_path).expect("open fixture db");
+        connection
+            .execute_batch(
+                "CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, sequence INTEGER, data TEXT);
+                 CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, sequence INTEGER, data TEXT);",
+            )
+            .expect("create fixture tables");
+        for (index, message) in messages.iter().enumerate() {
+            let message_id = message["id"].as_str().expect("message id");
+            let parts = message["parts"].as_array().cloned().unwrap_or_default();
+            connection
+                .execute(
+                    "INSERT INTO message (id, session_id, sequence, data) VALUES (?1, ?2, ?3, ?4)",
+                    rusqlite::params![
+                        message_id,
+                        session_id,
+                        index as i64,
+                        json!({ "role": message["role"], "id": message_id }).to_string()
+                    ],
+                )
+                .expect("insert message");
+            for (part_index, part) in parts.iter().enumerate() {
+                connection
+                    .execute(
+                        "INSERT INTO part (id, message_id, session_id, sequence, data) VALUES (?1, ?2, ?3, ?4, ?5)",
+                        rusqlite::params![
+                            format!("{message_id}-part-{part_index}"),
+                            message_id,
+                            session_id,
+                            part_index as i64,
+                            part.to_string()
+                        ],
+                    )
+                    .expect("insert part");
+            }
+        }
+    }
+
+    #[test]
+    fn zcode_db_session_path_round_trips_and_rejects_unsafe_ids() {
+        let path = zcode_db_session_path("sess_abc-123").expect("valid");
+        assert_eq!(path, "zcode-db://sess_abc-123");
+        assert_eq!(parse_zcode_db_session_path(&path), Some("sess_abc-123"));
+        assert_eq!(parse_zcode_db_session_path("file:///tmp/x.jsonl"), None);
+        assert_eq!(parse_zcode_db_session_path("zcode-db://../escape"), None);
+        assert_eq!(parse_zcode_db_session_path("zcode-db://"), None);
+        assert!(zcode_db_session_path("/abs/path").is_none());
+    }
+
+    #[test]
+    fn reads_zcode_chat_from_sqlite() {
+        let _env_lock = TOKEN_HISTORY_ENV_LOCK.lock().expect("env lock");
+        let home = HomeGuard::new("chat");
+
+        write_zcode_db(
+            &home.home,
+            SESSION,
+            &[
+                json!({
+                    "id": "msg_u1", "role": "user",
+                    "parts": [
+                        { "type": "text", "text": "TodoWrite reminder noise", "synthetic": true },
+                        { "type": "text", "text": "帮我看看这个文件" }
+                    ]
+                }),
+                json!({
+                    "id": "msg_a1", "role": "assistant",
+                    "parts": [
+                        { "type": "step-start" },
+                        { "type": "reasoning", "text": "internal reasoning trace" },
+                        { "type": "text", "text": "我先查一下" },
+                        { "type": "tool", "tool": "Bash", "state": { "status": "completed", "input": { "command": "ls -la" }, "output": "total 0" } },
+                        { "type": "step-finish" }
+                    ]
+                }),
+                json!({ "id": "msg_u2", "role": "user", "parts": [{ "type": "text", "text": "   " }] }),
+            ],
+        );
+
+        let messages = read_zcode_chat_messages(SESSION).expect("read chat");
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0].role, "user");
+        assert_eq!(messages[0].content, "帮我看看这个文件");
+        assert_eq!(messages[1].role, "assistant");
+        assert_eq!(messages[1].content, "我先查一下");
+        assert_eq!(messages[2].role, "assistant");
+        assert_eq!(messages[2].content, "");
+        assert_eq!(messages[2].tool_name.as_deref(), Some("Bash"));
+        assert_eq!(
+            messages[2].tool_input,
+            Some(json!({ "command": "ls -la" }))
+        );
+
+        // Other sessions stay isolated; invalid ids are rejected before I/O.
+        assert!(read_zcode_chat_messages("sess_ffffffff-ffff-4fff-8fff-ffffffffffff")
+            .expect("unknown session reads empty")
+            .is_empty());
+        assert!(read_zcode_chat_messages("../escape").is_err());
+    }
+
+    #[test]
+    fn zcode_chat_keeps_only_the_newest_messages() {
+        let _env_lock = TOKEN_HISTORY_ENV_LOCK.lock().expect("env lock");
+        let home = HomeGuard::new("chat-limit");
+
+        let total = TRANSCRIPT_MAX_MESSAGES + 7;
+        let messages: Vec<Value> = (0..total)
+            .map(|i| {
+                json!({
+                    "id": format!("msg_{i:04}"), "role": "user",
+                    "parts": [{ "type": "text", "text": format!("message {i}") }]
+                })
+            })
+            .collect();
+        write_zcode_db(&home.home, SESSION, &messages);
+
+        let read = read_zcode_chat_messages(SESSION).expect("read chat");
+        assert_eq!(read.len(), TRANSCRIPT_MAX_MESSAGES);
+        assert_eq!(read[0].content, format!("message {}", total - TRANSCRIPT_MAX_MESSAGES));
+        assert_eq!(
+            read[read.len() - 1].content,
+            format!("message {}", total - 1)
+        );
+    }
+
+    #[test]
+    fn zcode_chat_errors_without_database() {
+        let _env_lock = TOKEN_HISTORY_ENV_LOCK.lock().expect("env lock");
+        let _home = HomeGuard::new("chat-missing-db");
+        let error = read_zcode_chat_messages(SESSION).expect_err("no db fixture");
+        assert!(error.contains("ZCode database"), "{error}");
+    }
+
+    #[test]
+    fn transcript_truncation_marker_is_applied() {
+        let long = "字".repeat(TRANSCRIPT_MESSAGE_MAX_CHARS + 1);
+        let truncated = truncate_transcript_content(long.clone());
+        assert_eq!(
+            truncated.chars().take(100).collect::<String>(),
+            long.chars().take(100).collect::<String>()
+        );
+        assert!(truncated.contains("[message truncated by Atoll]"));
+        let short = "short message";
+        assert_eq!(truncate_transcript_content(short.to_string()), short);
+    }
+
+    #[test]
+    fn snapshot_exposes_zcode_db_path_for_chat() {
+        use super::{
+            iso_timestamp_now, snapshot_from, KnownSession, PermissionRequest, PermissionStatus,
+        };
+        use super::{AgentKind, platform};
+        use std::collections::{HashMap, HashSet};
+
+        let ephemeral = "/tmp/atoll-ephemeral-hook-transcript.jsonl";
+        let virtual_path = "zcode-db://sess_11111111-2222-4333-8444-555555555555";
+        let known_sessions = HashMap::from([(
+            SESSION.to_string(),
+            KnownSession {
+                agent: AgentKind::Zcode,
+                cwd: "/tmp/project".into(),
+                transcript_path: Some(ephemeral.into()),
+                last_activity: iso_timestamp_now(),
+                host: platform::SessionHost::ZcodeCli,
+                conversation_id: None,
+            },
+        )]);
+        let make_request = |archived: bool| PermissionRequest {
+            id: "req-zcode-1".into(),
+            tool_use_id: None,
+            agent: AgentKind::Zcode,
+            session: SESSION.into(),
+            command: "Bash: ls".into(),
+            detail: "List files".into(),
+            cwd: "/tmp/project".into(),
+            requested_at: iso_timestamp_now(),
+            status: PermissionStatus::Approved,
+            archived,
+            supports_always: false,
+            transcript_path: Some(ephemeral.into()),
+            tool_input: None,
+        };
+
+        // Live request source.
+        let snapshot = snapshot_from(
+            &[make_request(false)],
+            &HashMap::new(),
+            900,
+            &HashMap::new(),
+            &known_sessions,
+            &HashSet::new(),
+            true,
+            &HashSet::new(),
+        );
+        let session = snapshot
+            .sessions
+            .iter()
+            .find(|s| s.session_id == SESSION)
+            .expect("zcode session in snapshot");
+        assert_eq!(session.transcript_path.as_deref(), Some(virtual_path));
+
+        // Archived-retention source: every request resolved, session rebuilt
+        // from history carrying the raw ephemeral hook path.
+        let snapshot = snapshot_from(
+            &[make_request(true)],
+            &HashMap::new(),
+            900,
+            &HashMap::new(),
+            &known_sessions,
+            &HashSet::new(),
+            true,
+            &HashSet::new(),
+        );
+        let session = snapshot
+            .sessions
+            .iter()
+            .find(|s| s.session_id == SESSION)
+            .expect("retained zcode session");
+        assert_eq!(session.transcript_path.as_deref(), Some(virtual_path));
+
+        // Known-session-only source (observer events, no requests at all).
+        let snapshot = snapshot_from(
+            &[],
+            &HashMap::new(),
+            900,
+            &HashMap::new(),
+            &known_sessions,
+            &HashSet::new(),
+            true,
+            &HashSet::new(),
+        );
+        let session = snapshot
+            .sessions
+            .iter()
+            .find(|s| s.session_id == SESSION)
+            .expect("known zcode session");
+        assert_eq!(session.transcript_path.as_deref(), Some(virtual_path));
+    }
+}
+

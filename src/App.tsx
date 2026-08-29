@@ -5399,7 +5399,7 @@ function SessionChatView({ sessionId, transcriptPath, requests, agent }: Session
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loadFailed, setLoadFailed] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const pollWhileActive = agent === "cursor";
+  const pollWhileActive = agent === "cursor" || agent === "zcode";
 
   useEffect(() => {
     let active = true;

@@ -11,6 +11,9 @@ pub enum TranscriptFormat {
     /// Cursor transcripts use `{"role": ..., "message": {...}}` without a
     /// top-level `"type"` field and currently carry no token-usage data.
     Cursor,
+    /// ZCode model-I/O rollouts (`~/.zcode/cli/rollout/model-io-sess_*.jsonl`)
+    /// use one `{"type": "model_io"}` line per request+response round trip.
+    Zcode,
 }
 
 pub struct CodexTokenParseResult {
@@ -62,6 +65,13 @@ pub fn detect_transcript_format_from_line(line: &str) -> Option<TranscriptFormat
             "turn_ended" => {
                 if entry.get("status").is_some() && entry.get("message").is_none() {
                     Some(TranscriptFormat::Cursor)
+                } else {
+                    None
+                }
+            }
+            "model_io" => {
+                if entry.get("sessionId").is_some() {
+                    Some(TranscriptFormat::Zcode)
                 } else {
                     None
                 }
@@ -452,6 +462,142 @@ fn token_usage_from_codex_usage(usage: Option<&Value>) -> Option<TokenUsageDelta
     })
 }
 
+pub struct ZcodeTokenParseResult {
+    pub daily_delta: TokenUsageDelta,
+    pub daily_delta_by_model: HashMap<String, TokenUsageDelta>,
+    pub next_offset: u64,
+}
+
+/// Parse token usage out of a ZCode model-I/O rollout JSONL.
+///
+/// Every line is one request+response round trip (`type: "model_io"`) with a
+/// per-line `completedAt` timestamp, so only lines finished today contribute to
+/// the daily delta. Usage prefers the provider-agnostic `response.usage`
+/// object, where `inputTokens` *includes* cached reads and has to be reduced
+/// by `cacheReadTokens` to match the Anthropic-style accounting used
+/// everywhere else in Atoll; the provider-native Anthropic usage object is the
+/// fallback. Error and retried-attempt lines still carry usage and are counted,
+/// matching what the provider actually bills.
+pub fn parse_zcode_tokens_from_reader<R: std::io::BufRead + std::io::Seek>(
+    reader: &mut R,
+    offset: u64,
+    today_key: &str,
+) -> Result<ZcodeTokenParseResult, String> {
+    use std::io::SeekFrom;
+
+    let mut daily_delta = TokenUsageDelta::default();
+    let mut daily_delta_by_model: HashMap<String, TokenUsageDelta> = HashMap::new();
+    let mut next_offset = offset;
+
+    if offset > 0 {
+        reader
+            .seek(SeekFrom::Start(offset))
+            .map_err(|error| format!("Cannot seek transcript: {error}"))?;
+    }
+
+    let mut line_buf = String::new();
+    loop {
+        line_buf.clear();
+        let bytes = reader
+            .read_line(&mut line_buf)
+            .map_err(|error| format!("Cannot read transcript: {error}"))?;
+        if bytes == 0 {
+            break;
+        }
+        next_offset += bytes as u64;
+
+        let trimmed = line_buf.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let entry: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        if entry.get("type").and_then(Value::as_str) != Some("model_io") {
+            continue;
+        }
+
+        let timestamp = entry.get("completedAt").and_then(Value::as_str).unwrap_or("");
+        if !crate::local_time::is_local_today(timestamp, today_key) {
+            continue;
+        }
+
+        let Some(usage) = zcode_usage_from_line(&entry) else {
+            continue;
+        };
+
+        let model = entry
+            .get("model")
+            .and_then(|model| model.get("modelId"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| UNKNOWN_MODEL.to_string());
+
+        daily_delta.add_assign(usage);
+        daily_delta_by_model
+            .entry(model)
+            .or_default()
+            .add_assign(usage);
+    }
+
+    Ok(ZcodeTokenParseResult {
+        daily_delta,
+        daily_delta_by_model,
+        next_offset,
+    })
+}
+
+fn zcode_usage_from_line(entry: &Value) -> Option<TokenUsageDelta> {
+    let response = entry.get("response")?;
+
+    if let Some(usage) = response.get("usage") {
+        let input_total = usage.get("inputTokens").and_then(Value::as_u64);
+        let output_tokens = usage.get("outputTokens").and_then(Value::as_u64);
+        if input_total.is_some() || output_tokens.is_some() {
+            let cache_read_tokens = usage
+                .get("cacheReadTokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            return Some(TokenUsageDelta {
+                input_tokens: input_total.unwrap_or(0).saturating_sub(cache_read_tokens),
+                output_tokens: output_tokens.unwrap_or(0),
+                cache_read_tokens,
+                cache_creation_tokens: usage
+                    .get("cacheWriteTokens")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0),
+            });
+        }
+    }
+
+    // Fallback: provider-native Anthropic usage already excludes cache reads.
+    let usage = response
+        .get("providerMetadata")?
+        .get("anthropic")?
+        .get("usage")?;
+    Some(TokenUsageDelta {
+        input_tokens: usage
+            .get("input_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        output_tokens: usage
+            .get("output_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        cache_read_tokens: usage
+            .get("cache_read_input_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        cache_creation_tokens: usage
+            .get("cache_creation_input_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -561,5 +707,71 @@ mod tests {
         )
         .expect("parse");
         assert_eq!(result.daily_delta_by_model.get("gpt-4o").unwrap().input_tokens, 10);
+    }
+
+    #[test]
+    fn detects_zcode_format_from_model_io_line() {
+        let line = r#"{"type":"model_io","sessionId":"sess_6ea9e07c-3ff6-4ca8-9e02-8b24a06b401b","model":{"modelId":"GLM-5.3"}}"#;
+        assert_eq!(
+            detect_transcript_format_from_line(line),
+            Some(TranscriptFormat::Zcode)
+        );
+        assert_eq!(
+            detect_transcript_format_from_line(r#"{"type":"model_io"}"#),
+            None
+        );
+    }
+
+    #[test]
+    fn parses_zcode_model_io_usage() {
+        let jsonl = concat!(
+            r#"{"type":"model_io","sessionId":"sess_6ea9e07c-3ff6-4ca8-9e02-8b24a06b401b","completedAt":"2026-08-29T10:00:00.000Z","model":{"modelId":"GLM-5.3"},"response":{"usage":{"inputTokens":38758,"outputTokens":147,"totalTokens":38905,"cacheReadTokens":38400,"cacheWriteTokens":12}}}"#,
+            "\n",
+            r#"{"type":"model_io","sessionId":"sess_6ea9e07c-3ff6-4ca8-9e02-8b24a06b401b","completedAt":"2026-08-29T10:01:00.000Z","model":{"modelId":"GLM-4.7"},"response":{"providerMetadata":{"anthropic":{"usage":{"input_tokens":2490,"output_tokens":30,"cache_read_input_tokens":25920}}}}}"#,
+            "\n",
+            // Yesterday's line must not count toward today's delta.
+            r#"{"type":"model_io","sessionId":"sess_6ea9e07c-3ff6-4ca8-9e02-8b24a06b401b","completedAt":"2026-08-28T10:00:00.000Z","model":{"modelId":"GLM-5.3"},"response":{"usage":{"inputTokens":1000,"outputTokens":50,"cacheReadTokens":0,"cacheWriteTokens":0}}}"#,
+            "\n",
+        );
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(jsonl.as_bytes()));
+        let result = parse_zcode_tokens_from_reader(
+            &mut reader,
+            0,
+            &crate::local_time::local_day_key_from_iso("2026-08-29T10:00:00.000Z")
+                .expect("local day key"),
+        )
+        .expect("parse");
+
+        // inputTokens includes cache reads: 38758 - 38400 = 358.
+        assert_eq!(result.daily_delta.input_tokens, 358 + 2490);
+        assert_eq!(result.daily_delta.output_tokens, 147 + 30);
+        assert_eq!(result.daily_delta.cache_read_tokens, 38400 + 25920);
+        assert_eq!(result.daily_delta.cache_creation_tokens, 12);
+        assert_eq!(result.daily_delta_by_model.get("GLM-5.3").unwrap().input_tokens, 358);
+        assert_eq!(result.daily_delta_by_model.get("GLM-4.7").unwrap().output_tokens, 30);
+    }
+
+    #[test]
+    fn zcode_parse_tracks_next_offset_incrementally() {
+        let first = r#"{"type":"model_io","sessionId":"sess_6ea9e07c-3ff6-4ca8-9e02-8b24a06b401b","completedAt":"2026-08-29T10:00:00.000Z","model":{"modelId":"GLM-5.3"},"response":{"usage":{"inputTokens":300,"outputTokens":40,"cacheReadTokens":200,"cacheWriteTokens":0}}}
+"#;
+        let second = r#"{"type":"model_io","sessionId":"sess_6ea9e07c-3ff6-4ca8-9e02-8b24a06b401b","completedAt":"2026-08-29T10:05:00.000Z","model":{"modelId":"GLM-5.3"},"response":{"usage":{"inputTokens":500,"outputTokens":60,"cacheReadTokens":300,"cacheWriteTokens":0}}}
+"#;
+        let today = &crate::local_time::local_day_key_from_iso("2026-08-29T10:00:00.000Z")
+            .expect("local day key");
+
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(first.as_bytes()));
+        let first_result = parse_zcode_tokens_from_reader(&mut reader, 0, today).expect("parse");
+        assert_eq!(first_result.next_offset, first.len() as u64);
+        assert_eq!(first_result.daily_delta.input_tokens, 100);
+
+        let mut full = first.to_string();
+        full.push_str(second);
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(full.as_bytes()));
+        let second_result =
+            parse_zcode_tokens_from_reader(&mut reader, first_result.next_offset, today)
+                .expect("parse");
+        assert_eq!(second_result.next_offset, full.len() as u64);
+        assert_eq!(second_result.daily_delta.input_tokens, 200);
     }
 }
