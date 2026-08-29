@@ -95,7 +95,8 @@
   "time": {
     "agoSeconds": "{{seconds}}s ago",
     "agoMinutes": "{{minutes}}m ago",
-    "agoHours": "{{hours}}h ago"
+    "agoHours": "{{hours}}h ago",
+    "agoDays": "{{days}}d ago"
   },
   "chat": {
     "loading": "Loading conversation...",
@@ -157,5 +158,43 @@
     "tabFavorites": "Favorites",
     "favorite": "Favorite",
     "unfavorite": "Unfavorite"
+  },
+  "history": {
+    "title": "Approval history",
+    "searchPlaceholder": "Search commands, projects…",
+    "filterAll": "All",
+    "agentFilter": "Filter by agent",
+    "outcomeFilter": "Filter by outcome",
+    "agentClaude": "Claude",
+    "agentCodex": "Codex",
+    "agentCursor": "Cursor",
+    "agentZcode": "ZCode",
+    "agentGemini": "Gemini",
+    "agentOther": "Agent",
+    "outcomePending": "Pending",
+    "outcomeApproved": "Approved",
+    "outcomeDenied": "Denied",
+    "outcomeExpired": "Expired",
+    "outcomeAnsweredElsewhere": "Resolved elsewhere",
+    "empty": "Approval requests will be recorded here",
+    "emptySearch": "No matching approval history",
+    "detailCommand": "Command",
+    "detailProject": "Project",
+    "detailOutcome": "Outcome",
+    "detailSession": "Session",
+    "detailHost": "Host",
+    "sessionFilterTitle": "Search this session only",
+    "sessionFilterLabel": "Session: {{session}}",
+    "sessionFilterClear": "Clear session filter",
+    "loadMore": "Load more",
+    "exportJson": "Export JSON",
+    "exportCsv": "Export CSV",
+    "exported": "Exported to {{path}}",
+    "exportFailed": "Export failed",
+    "exportUnavailable": "Export is only available in the app",
+    "clear": "Clear history",
+    "cleared": "Approval history cleared",
+    "revealInFolder": "Show in folder",
+    "dismiss": "Dismiss"
   }
 }

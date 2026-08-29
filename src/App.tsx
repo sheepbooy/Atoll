@@ -48,6 +48,7 @@ import {
   Hammer,
   HelpCircle,
   Bell,
+  History,
   Layers,
   Music,
   Pin,
@@ -109,6 +110,7 @@ import {
 import { AgentMascot, AGENT_ACCENT } from "./AgentMascot";
 import { NowPlayingCard } from "./NowPlayingCard";
 import { ClipboardHistoryView } from "./ClipboardHistoryView";
+import { ApprovalHistoryView } from "./ApprovalHistoryView";
 import { LyricsMarquee, lyricsMatchTrack } from "./LyricsMarquee";
 import {
   ClipboardSettingsView,
@@ -268,7 +270,8 @@ type PanelView =
   | { kind: "subagent"; sessionId: string; agentId: string }
   | { kind: "subagentList"; sessionId: string }
   | { kind: "settings"; page: SettingsPage }
-  | { kind: "clipboard" };
+  | { kind: "clipboard" }
+  | { kind: "history" };
 type SettingsPage =
   | "main"
   | "hooks"
@@ -1510,7 +1513,8 @@ export function App() {
           const planExpanded = snapshotHasPlanPending(snapshotRef.current);
           const settingsExpanded =
             panelViewRef.current.kind === "settings" ||
-            panelViewRef.current.kind === "clipboard";
+            panelViewRef.current.kind === "clipboard" ||
+            panelViewRef.current.kind === "history";
           await setIslandPresentation(
             "expanded",
             collapsedWindowWidthRef.current,
@@ -2249,7 +2253,8 @@ export function App() {
     const planExpanded = snapshotHasPlanPending(snapshotRef.current);
     const settingsExpanded =
       panelViewRef.current.kind === "settings" ||
-      panelViewRef.current.kind === "clipboard";
+      panelViewRef.current.kind === "clipboard" ||
+      panelViewRef.current.kind === "history";
     lastNativePresentationKeyRef.current = expandedPresentationKey(
       idleExpanded,
       planExpanded && !settingsExpanded,
@@ -3302,6 +3307,17 @@ export function App() {
     openClipboardPage();
   }
 
+  function openHistoryPage() {
+    setMenuOpen(false);
+    setNavDirection("forward");
+    setPanelAnimKey((key) => key + 1);
+    setPanelView({ kind: "history" });
+  }
+
+  function handleOpenHistory() {
+    openHistoryPage();
+  }
+
   function handleOpenUsageFromSettings() {
     openUsagePage("settings-main");
   }
@@ -3455,7 +3471,9 @@ export function App() {
     snapshot.pendingCount === 0;
   const isSettingsExpanded =
     isExpandedChrome &&
-    (panelView.kind === "settings" || panelView.kind === "clipboard");
+    (panelView.kind === "settings" ||
+      panelView.kind === "clipboard" ||
+      panelView.kind === "history");
   const nativeExpandedPlan = isPlanExpanded && !isSettingsExpanded;
   const nativeExpandedSettings = isSettingsExpanded;
   const isSubview = isExpandedChrome && panelView.kind !== "home";
@@ -3652,6 +3670,10 @@ export function App() {
           }}
         />
       );
+    }
+
+    if (panelView.kind === "history") {
+      return <ApprovalHistoryView />;
     }
 
     if (panelView.kind === "settings") {
@@ -4054,6 +4076,13 @@ export function App() {
                 icon={<ClipboardList size={14} />}
                 title={t("clipboard.title")}
               />
+            ) : panelView.kind === "history" ? (
+              <SettingsPageNav
+                onBack={navigateBack}
+                backLabel={t("nav.back")}
+                icon={<History size={14} />}
+                title={t("history.title")}
+              />
             ) : panelView.kind === "settings" && panelView.page === "hooks" ? (
               <SettingsPageNav
                 onBack={navigateBackFromHooks}
@@ -4235,6 +4264,15 @@ export function App() {
               tabIndex={isExpandedChrome ? 0 : -1}
             >
               <ClipboardList size={16} />
+            </button>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={handleOpenHistory}
+              aria-label={t("history.title")}
+              tabIndex={isExpandedChrome ? 0 : -1}
+            >
+              <History size={16} />
             </button>
             <button
               className="icon-button"

@@ -95,7 +95,8 @@
   "time": {
     "agoSeconds": "{{seconds}} 秒前",
     "agoMinutes": "{{minutes}} 分钟前",
-    "agoHours": "{{hours}} 小时前"
+    "agoHours": "{{hours}} 小时前",
+    "agoDays": "{{days}} 天前"
   },
   "chat": {
     "loading": "加载对话中...",
@@ -157,5 +158,43 @@
     "tabFavorites": "收藏",
     "favorite": "收藏",
     "unfavorite": "取消收藏"
+  },
+  "history": {
+    "title": "审批历史",
+    "searchPlaceholder": "搜索命令、项目…",
+    "filterAll": "全部",
+    "agentFilter": "按 Agent 筛选",
+    "outcomeFilter": "按结果筛选",
+    "agentClaude": "Claude",
+    "agentCodex": "Codex",
+    "agentCursor": "Cursor",
+    "agentZcode": "ZCode",
+    "agentGemini": "Gemini",
+    "agentOther": "Agent",
+    "outcomePending": "待处理",
+    "outcomeApproved": "已批准",
+    "outcomeDenied": "已拒绝",
+    "outcomeExpired": "已超时",
+    "outcomeAnsweredElsewhere": "在别处处理",
+    "empty": "审批请求会记录到这里",
+    "emptySearch": "没有匹配的审批记录",
+    "detailCommand": "命令",
+    "detailProject": "项目",
+    "detailOutcome": "结果",
+    "detailSession": "会话",
+    "detailHost": "宿主",
+    "sessionFilterTitle": "仅查看该会话",
+    "sessionFilterLabel": "会话：{{session}}",
+    "sessionFilterClear": "清除会话筛选",
+    "loadMore": "加载更多",
+    "exportJson": "导出 JSON",
+    "exportCsv": "导出 CSV",
+    "exported": "已导出到 {{path}}",
+    "exportFailed": "导出失败",
+    "exportUnavailable": "导出仅可在应用内使用",
+    "clear": "清空历史",
+    "cleared": "审批历史已清空",
+    "revealInFolder": "在文件夹中显示",
+    "dismiss": "关闭"
   }
 }

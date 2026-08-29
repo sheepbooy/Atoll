@@ -930,6 +930,77 @@ export async function onClipboardHistoryChanged(
   );
 }
 
+export type ApprovalHistoryStatus =
+  | "pending"
+  | "approved"
+  | "denied"
+  | "expired"
+  | "answered_elsewhere";
+
+export interface ApprovalHistoryEntry {
+  id: string;
+  agent: string;
+  sessionId: string;
+  command: string;
+  detail: string;
+  cwd: string;
+  toolInput?: unknown;
+  transcriptPath?: string;
+  requestedAt: number;
+  decidedAt?: number;
+  status: ApprovalHistoryStatus;
+  host: string;
+}
+
+export interface ApprovalHistoryQuery {
+  search?: string;
+  agent?: string;
+  status?: string;
+  sessionId?: string;
+  fromSecs?: number;
+  toSecs?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ApprovalHistoryPage {
+  items: ApprovalHistoryEntry[];
+  total: number;
+}
+
+export async function getApprovalHistory(
+  query: ApprovalHistoryQuery = {},
+): Promise<ApprovalHistoryPage> {
+  if (!isTauriRuntime()) {
+    return { items: [], total: 0 };
+  }
+  return invoke<ApprovalHistoryPage>("get_approval_history", { query });
+}
+
+export async function exportApprovalHistory(
+  query: ApprovalHistoryQuery = {},
+  format: "json" | "csv",
+): Promise<string | null> {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+  return invoke<string | null>("export_approval_history", { query, format });
+}
+
+export async function clearApprovalHistory(): Promise<void> {
+  if (!isTauriRuntime()) {
+    return;
+  }
+  return invoke<void>("clear_approval_history");
+}
+
+export async function revealPath(path: string): Promise<void> {
+  if (!isTauriRuntime()) {
+    return;
+  }
+  return invoke<void>("reveal_path", { path });
+}
+
 export async function onNowPlayingChanged(
   callback: (track: NowPlayingTrack | null) => void,
 ) {
