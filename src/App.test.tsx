@@ -155,6 +155,25 @@ const planQuestionRequest = {
   },
 };
 
+const planSingleQuestionRequest = {
+  ...request,
+  id: "plan-question-2",
+  command: "AskUserQuestion",
+  detail: "Agent needs your input to continue planning.",
+  toolInput: {
+    questions: [
+      {
+        header: "Approach",
+        question: "Which library should we use?",
+        options: [
+          { label: "rusqlite", description: "Bundled SQLite bindings" },
+          { label: "sqlx", description: "Async queries with compile-time checks" },
+        ],
+      },
+    ],
+  },
+};
+
 function makeSubagent(
   index: number,
   overrides: Partial<SubagentSummary> = {},
@@ -208,6 +227,7 @@ const bridge = vi.hoisted(() => ({
   quitAtoll: vi.fn(),
   deactivateAtoll: vi.fn(),
   resolvePermissionRequest: vi.fn(),
+  resolvePermissionWithInput: vi.fn(),
   setIslandPresentation: vi.fn(),
   setImeActive: vi.fn(),
   setCompactLayout: vi.fn(),
@@ -312,6 +332,14 @@ describe("App", () => {
     bridge.quitAtoll.mockResolvedValue(undefined);
     bridge.deactivateAtoll.mockResolvedValue(undefined);
     bridge.resolvePermissionRequest.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [{ ...request, status: "approved" }],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    bridge.resolvePermissionWithInput.mockResolvedValue({
       online: true,
       pendingCount: 0,
       activeRequest: null,
@@ -455,6 +483,96 @@ describe("App", () => {
 
     fireEvent.focusOut(input!);
     expect(bridge.setImeActive).toHaveBeenCalledWith(false);
+  });
+
+  it("submits multi-select answers joined into a single string", async () => {
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 1,
+      activeRequest: planQuestionRequest,
+      recent: [planQuestionRequest],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    const { container } = render(<App />);
+    await waitForExpandedPanel(container);
+
+    fireEvent.click(screen.getByText("Hook bridge"));
+    fireEvent.click(screen.getByText("Plan mode UI"));
+    fireEvent.click(screen.getByText("Other..."));
+    const otherInput = container.querySelector(".plan-other-input");
+    expect(otherInput).not.toBeNull();
+    fireEvent.change(otherInput!, { target: { value: "Something else entirely" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    await waitFor(() => expect(bridge.resolvePermissionWithInput).toHaveBeenCalled());
+    const updatedInput = bridge.resolvePermissionWithInput.mock.calls[0][3];
+    expect(updatedInput).toEqual({
+      questions: planQuestionRequest.toolInput.questions,
+      answers: {
+        "Which areas should we focus on first?":
+          "Hook bridge, Plan mode UI, Something else entirely",
+      },
+    });
+  });
+
+  it("maps a free-form reply onto each question's answer", async () => {
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 1,
+      activeRequest: planQuestionRequest,
+      recent: [planQuestionRequest],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    const { container } = render(<App />);
+    await waitForExpandedPanel(container);
+
+    fireEvent.click(screen.getByText("Reply freely instead"));
+    const textarea = container.querySelector(".plan-free-response");
+    expect(textarea).not.toBeNull();
+    fireEvent.change(textarea!, {
+      target: { value: "Do the hook bridge first, skip the rest" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    await waitFor(() => expect(bridge.resolvePermissionWithInput).toHaveBeenCalled());
+    const updatedInput = bridge.resolvePermissionWithInput.mock.calls[0][3];
+    expect(updatedInput).toEqual({
+      questions: planQuestionRequest.toolInput.questions,
+      answers: {
+        "Which areas should we focus on first?": "Do the hook bridge first, skip the rest",
+      },
+    });
+  });
+
+  it("keeps single-select Other answers as plain strings", async () => {
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 1,
+      activeRequest: planSingleQuestionRequest,
+      recent: [planSingleQuestionRequest],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    const { container } = render(<App />);
+    await waitForExpandedPanel(container);
+
+    fireEvent.click(screen.getByText("Other..."));
+    const otherInput = container.querySelector(".plan-other-input");
+    expect(otherInput).not.toBeNull();
+    fireEvent.change(otherInput!, { target: { value: "Neither, roll our own" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    await waitFor(() => expect(bridge.resolvePermissionWithInput).toHaveBeenCalled());
+    const updatedInput = bridge.resolvePermissionWithInput.mock.calls[0][3];
+    expect(updatedInput).toEqual({
+      questions: planSingleQuestionRequest.toolInput.questions,
+      answers: { "Which library should we use?": "Neither, roll our own" },
+    });
   });
 
   it("collapses to a persistent capsule that can be reopened", async () => {

@@ -1584,6 +1584,8 @@ struct ChatMessage {
     tool_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     tool_input: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tool_output: Option<String>,
 }
 
 const TRANSCRIPT_MAX_MESSAGES: usize = 50;
@@ -1724,6 +1726,7 @@ fn parse_transcript_line(
             content: truncate_transcript_content(parsed.content),
             tool_name: parsed.tool_name,
             tool_input: None,
+            tool_output: None,
         });
     }
 
@@ -1758,6 +1761,7 @@ fn parse_transcript_line(
         content,
         tool_name,
         tool_input,
+        tool_output: None,
     })
 }
 
@@ -5493,7 +5497,7 @@ fn read_zcode_chat_messages(session_id: &str) -> Result<Vec<ChatMessage>, String
                 }
                 current_content.push_str(&text);
             }
-            ZcodeChatPart::Tool { name, input } => {
+            ZcodeChatPart::Tool { name, input, output } => {
                 flush_zcode_chat_message(&mut messages, &current_role, &current_content);
                 current_content.clear();
                 messages.push(ChatMessage {
@@ -5501,6 +5505,7 @@ fn read_zcode_chat_messages(session_id: &str) -> Result<Vec<ChatMessage>, String
                     content: String::new(),
                     tool_name: Some(name),
                     tool_input: input,
+                    tool_output: output,
                 });
             }
             ZcodeChatPart::Skip => {}
@@ -5521,6 +5526,7 @@ enum ZcodeChatPart {
     Tool {
         name: String,
         input: Option<Value>,
+        output: Option<String>,
     },
     Skip,
 }
@@ -5548,14 +5554,26 @@ fn zcode_chat_part(part: &Value) -> ZcodeChatPart {
             let Some(name) = part.get("tool").and_then(Value::as_str) else {
                 return ZcodeChatPart::Skip;
             };
-            let input = part
-                .get("state")
+            let state = part.get("state");
+            let input = state
                 .and_then(|state| state.get("input"))
                 .filter(|input| !input.is_null())
                 .cloned();
+            // The user's answers to an AskUserQuestion only exist in the tool
+            // result text; other tool outputs stay out of the transcript.
+            let output = if name == "AskUserQuestion" {
+                state
+                    .and_then(|state| state.get("output"))
+                    .and_then(Value::as_str)
+                    .map(|text| truncate_transcript_content(text.trim().to_string()))
+                    .filter(|text| !text.is_empty())
+            } else {
+                None
+            };
             ZcodeChatPart::Tool {
                 name: name.to_string(),
                 input,
+                output,
             }
         }
         _ => ZcodeChatPart::Skip,
@@ -5577,6 +5595,7 @@ fn flush_zcode_chat_message(messages: &mut Vec<ChatMessage>, role: &str, content
         content: truncate_transcript_content(content.to_string()),
         tool_name: None,
         tool_input: None,
+        tool_output: None,
     });
 }
 
@@ -14449,6 +14468,7 @@ mod zcode_chat_tests {
                         { "type": "reasoning", "text": "internal reasoning trace" },
                         { "type": "text", "text": "我先查一下" },
                         { "type": "tool", "tool": "Bash", "state": { "status": "completed", "input": { "command": "ls -la" }, "output": "total 0" } },
+                        { "type": "tool", "tool": "AskUserQuestion", "state": { "status": "completed", "input": { "questions": [{ "question": "先做哪个?", "options": [] }] }, "output": "User has answered your questions: \"先做哪个?\"=\"Hook bridge, Plan mode UI\"" } },
                         { "type": "step-finish" }
                     ]
                 }),
@@ -14457,7 +14477,7 @@ mod zcode_chat_tests {
         );
 
         let messages = read_zcode_chat_messages(SESSION).expect("read chat");
-        assert_eq!(messages.len(), 3);
+        assert_eq!(messages.len(), 4);
         assert_eq!(messages[0].role, "user");
         assert_eq!(messages[0].content, "帮我看看这个文件");
         assert_eq!(messages[1].role, "assistant");
@@ -14468,6 +14488,13 @@ mod zcode_chat_tests {
         assert_eq!(
             messages[2].tool_input,
             Some(json!({ "command": "ls -la" }))
+        );
+        // Non-question tool outputs stay out of the transcript.
+        assert_eq!(messages[2].tool_output, None);
+        assert_eq!(messages[3].tool_name.as_deref(), Some("AskUserQuestion"));
+        assert_eq!(
+            messages[3].tool_output.as_deref(),
+            Some("User has answered your questions: \"先做哪个?\"=\"Hook bridge, Plan mode UI\"")
         );
 
         // Other sessions stay isolated; invalid ids are rejected before I/O.

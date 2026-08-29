@@ -4943,33 +4943,41 @@ function PlanQuestionCard({ request, onResolve }: PlanQuestionCardProps) {
   }
 
   function buildUpdatedInput(): Record<string, unknown> {
+    const originalQuestions = getOriginalQuestions(request.toolInput);
     if (useFreeResponse && freeResponse.trim()) {
-      return {
-        questions: getOriginalQuestions(request.toolInput),
-        response: freeResponse.trim(),
-      };
+      const text = freeResponse.trim();
+      const finalAnswers: Record<string, string> = {};
+      for (const entry of originalQuestions) {
+        const questionText = (entry as { question?: unknown })?.question;
+        if (typeof questionText === "string" && questionText) {
+          finalAnswers[questionText] = text;
+        }
+      }
+      return { questions: originalQuestions, answers: finalAnswers };
     }
-    const finalAnswers: Record<string, string | string[]> = {};
+    // Agents require every answer to be a plain string; multi-select choices
+    // (plus "Other" text) are joined the same way the official clients do.
+    const finalAnswers: Record<string, string> = {};
     for (const q of questions) {
       const key = q.question;
       if (otherActive[key] && otherText[key]?.trim()) {
         if (q.multiSelect) {
           const existing = answers[key];
           const selected = Array.isArray(existing) ? existing : existing ? [existing] : [];
-          const filtered = selected.filter((s) => s !== OTHER_SENTINEL);
-          finalAnswers[key] = [...filtered, otherText[key].trim()];
+          const parts = selected.filter((s) => s !== OTHER_SENTINEL);
+          finalAnswers[key] = [...parts, otherText[key].trim()].join(", ");
         } else {
           finalAnswers[key] = otherText[key].trim();
         }
       } else {
         const val = answers[key];
         if (val !== undefined) {
-          finalAnswers[key] = val;
+          finalAnswers[key] = Array.isArray(val) ? val.join(", ") : val;
         }
       }
     }
     return {
-      questions: getOriginalQuestions(request.toolInput),
+      questions: originalQuestions,
       answers: finalAnswers,
     };
   }
@@ -6341,10 +6349,18 @@ function sessionDisplayName(cwd: string) {
   return parts[parts.length - 1] || cwd;
 }
 
-function ChatBubbleQuestionReadonly({ toolInput }: { toolInput: unknown }) {
+function ChatBubbleQuestionReadonly({
+  toolInput,
+  toolOutput,
+}: {
+  toolInput: unknown;
+  toolOutput?: string | null;
+}) {
+  const { t } = useTranslation();
   const input = toolInput as { questions?: Array<{ question: string; header?: string; options?: Array<{ label: string; description?: string }>; multiSelect?: boolean }> } | null;
   const questions = input?.questions;
   if (!questions?.length) return null;
+  const answer = toolOutput?.trim();
 
   return (
     <div className="chat-question-readonly">
@@ -6361,6 +6377,12 @@ function ChatBubbleQuestionReadonly({ toolInput }: { toolInput: unknown }) {
           )}
         </div>
       ))}
+      {answer && (
+        <div className="chat-question-answer">
+          <span className="chat-question-answer-label">{t("chat.yourAnswer")}</span>
+          <span className="chat-question-answer-text">{answer}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -6389,7 +6411,7 @@ function ChatBubble({ message }: { message: ChatMessage }) {
         <span className="chat-tool-badge">{message.toolName}</span>
       ) : null}
       {isQuestion ? (
-        <ChatBubbleQuestionReadonly toolInput={message.toolInput} />
+        <ChatBubbleQuestionReadonly toolInput={message.toolInput} toolOutput={message.toolOutput} />
       ) : hasMarkdown ? (
         <div className="chat-bubble-md">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>

@@ -92,6 +92,7 @@ export interface ChatMessage {
   content: string;
   toolName?: string | null;
   toolInput?: unknown;
+  toolOutput?: string | null;
 }
 
 export interface IslandHoverChanged {

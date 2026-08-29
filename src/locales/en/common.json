@@ -101,7 +101,8 @@
     "loading": "Loading conversation...",
     "noHistory": "No conversation history.",
     "transcriptUnavailable": "Transcript unavailable.",
-    "usingTool": "Using {{toolName}}..."
+    "usingTool": "Using {{toolName}}...",
+    "yourAnswer": "Your answer"
   },
   "subagent": {
     "listTitle": "Subagents ({{count}})",

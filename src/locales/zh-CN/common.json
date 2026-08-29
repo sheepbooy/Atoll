@@ -101,7 +101,8 @@
     "loading": "加载对话中...",
     "noHistory": "暂无对话记录。",
     "transcriptUnavailable": "转录不可用。",
-    "usingTool": "正在使用 {{toolName}}..."
+    "usingTool": "正在使用 {{toolName}}...",
+    "yourAnswer": "你的回答"
   },
   "subagent": {
     "listTitle": "子 Agent（{{count}}）",
