@@ -25,6 +25,7 @@ mod lyrics;
 mod media;
 mod platform;
 mod pricing;
+mod shortcuts;
 mod token_history;
 mod transcript;
 
@@ -498,6 +499,9 @@ pub(crate) struct AppState {
     approval_notice_mode: Mutex<String>,
     /// UI language used for notification copy ("en" or "zh-CN").
     notification_language: Mutex<String>,
+    /// Global shortcut config plus the errors from the last registration
+    /// attempt (startup or settings change).
+    global_shortcuts: Mutex<shortcuts::GlobalShortcutsState>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -3467,6 +3471,43 @@ fn set_notification_language(state: State<'_, AppState>, language: String) -> St
     *lock_state(&state.notification_language) = language.to_string();
     persist_notification_language(language);
     language.to_string()
+}
+
+#[tauri::command]
+fn get_global_shortcut_config(state: State<'_, AppState>) -> shortcuts::GlobalShortcutView {
+    let shortcuts = lock_state(&state.global_shortcuts);
+    shortcuts::GlobalShortcutView {
+        config: shortcuts.config.clone(),
+        errors: shortcuts.errors.clone(),
+    }
+}
+
+/// Persist + re-register the shortcut config. Always succeeds: accelerator
+/// validation failures and registration failures (hotkey taken by another app)
+/// are reported per action in `errors` so the Settings UI can render a clear
+/// per-row error state instead of the change being silently swallowed.
+#[tauri::command]
+fn set_global_shortcut_config(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    config: shortcuts::GlobalShortcutConfig,
+) -> shortcuts::GlobalShortcutView {
+    let (config, errors) = shortcuts::canonicalize_config(config);
+    // Validation failures skip re-registration so the last working bindings
+    // stay live.
+    let errors = if errors.has_errors() {
+        errors
+    } else {
+        let registration = shortcuts::apply_config(&app, &config);
+        shortcuts::persist_global_shortcut_config(&config);
+        registration
+    };
+    {
+        let mut shortcuts = lock_state(&state.global_shortcuts);
+        shortcuts.config = config.clone();
+        shortcuts.errors = errors.clone();
+    }
+    shortcuts::GlobalShortcutView { config, errors }
 }
 
 #[tauri::command]
@@ -8082,6 +8123,7 @@ pub fn run() {
             lyrics_track_key: Mutex::new(String::new()),
             approval_notice_mode: Mutex::new(load_approval_notice_mode()),
             notification_language: Mutex::new(load_notification_language()),
+            global_shortcuts: Mutex::new(shortcuts::GlobalShortcutsState::default()),
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -8123,6 +8165,8 @@ pub fn run() {
             get_approval_notice_mode,
             set_approval_notice_mode,
             set_notification_language,
+            get_global_shortcut_config,
+            set_global_shortcut_config,
             get_artwork_backdrop_enabled,
             set_artwork_backdrop_enabled,
             get_lyrics_enabled,
@@ -8167,6 +8211,8 @@ pub fn run() {
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
                 app.handle().plugin(tauri_plugin_process::init())?;
                 app.handle().plugin(tauri_plugin_notification::init())?;
+                app.handle()
+                    .plugin(tauri_plugin_global_shortcut::Builder::new().build())?;
             }
 
             if !platform::setup_app(app) {
@@ -8175,6 +8221,8 @@ pub fn run() {
 
             build_tray(app.handle())?;
             hook_bridge::start_server(app.handle().clone());
+            #[cfg(desktop)]
+            shortcuts::startup(app.handle());
             start_island_hover_monitor(app.handle().clone());
             platform::start_activation_observer(app.handle().clone());
             if let Some(window) = app.get_webview_window("main") {
@@ -11326,6 +11374,7 @@ mod core_tests {
             lyrics_track_key: Mutex::new(String::new()),
             approval_notice_mode: Mutex::new(APPROVAL_NOTICE_INTERRUPT.to_string()),
             notification_language: Mutex::new("en".to_string()),
+            global_shortcuts: Mutex::new(shortcuts::GlobalShortcutsState::default()),
         }
     }
 
@@ -12122,6 +12171,7 @@ mod cursor_subagent_tests {
             lyrics_track_key: Mutex::new(String::new()),
             approval_notice_mode: Mutex::new(APPROVAL_NOTICE_INTERRUPT.to_string()),
             notification_language: Mutex::new("en".to_string()),
+            global_shortcuts: Mutex::new(shortcuts::GlobalShortcutsState::default()),
         }
     }
 
