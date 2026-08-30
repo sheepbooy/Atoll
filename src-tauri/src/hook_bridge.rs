@@ -61,6 +61,7 @@ enum ObserverKind {
     Codex,
     Cursor,
     Zcode,
+    Gemini,
 }
 
 struct ObserverJob {
@@ -96,6 +97,9 @@ fn start_observer_worker() {
                     }
                     ObserverKind::Zcode => {
                         process_zcode_observer_event(job.app, job.hook_event_name, job.payload)
+                    }
+                    ObserverKind::Gemini => {
+                        process_gemini_observer_event(job.app, job.hook_event_name, job.payload)
                     }
                 };
                 if let Err(error) = result {
@@ -170,6 +174,7 @@ pub(crate) fn write_bridge_config(port: u16, token: &str) -> std::io::Result<()>
         "codexUrl": format!("http://{HOOK_BIND_HOST}:{port}/codex/hook"),
         "cursorUrl": format!("http://{HOOK_BIND_HOST}:{port}/cursor/hook"),
         "zcodeUrl": format!("http://{HOOK_BIND_HOST}:{port}/zcode/hook"),
+        "geminiUrl": format!("http://{HOOK_BIND_HOST}:{port}/gemini/hook"),
         "token": token,
     });
     std::fs::write(path, serde_json::to_string_pretty(&config)?)
@@ -449,6 +454,22 @@ pub(crate) fn permission_request_from_zcode_payload(
     permission_request_from_tool_payload(id, payload, requested_at, AgentKind::Zcode, true)
 }
 
+/// Gemini CLI fires `BeforeTool` for every tool call; only payloads forwarded by
+/// the Atoll hook script (side-effect tools, see `atoll-gemini-hook.mjs`) reach
+/// this bridge as blocking approval requests.
+pub(crate) fn permission_request_from_gemini_payload(
+    id: String,
+    payload: Value,
+    requested_at: String,
+) -> Option<PermissionRequest> {
+    let event_name = payload.get("hook_event_name")?.as_str()?;
+    if event_name != "BeforeTool" {
+        return None;
+    }
+
+    permission_request_from_tool_payload(id, payload, requested_at, AgentKind::Gemini, false)
+}
+
 pub(crate) fn permission_request_from_cursor_payload(
     id: String,
     payload: Value,
@@ -504,6 +525,7 @@ fn permission_request_from_tool_payload(
         AgentKind::Codex => "codex",
         AgentKind::Cursor => "cursor",
         AgentKind::Zcode => "zcode",
+        AgentKind::Gemini => "gemini",
         _ => "claude-code",
     };
 
@@ -617,6 +639,7 @@ enum PermissionResponseStyle {
     ClaudeCodex,
     #[allow(dead_code)]
     Cursor,
+    Gemini,
 }
 
 pub(crate) fn cursor_permission_hook_response(
@@ -662,6 +685,49 @@ fn cursor_hook_defer_response(hook_event_name: &str, reason: &str) -> Value {
     })
 }
 
+/// Gemini CLI hook output schema (docs/hooks/reference): a top-level
+/// `decision` of `deny`/`block` prevents tool execution and feeds `reason`
+/// back to the model; `allow` continues into Gemini's own policy flow.
+/// `hookSpecificOutput.tool_input` optionally rewrites the tool arguments.
+pub(crate) fn gemini_permission_hook_response(
+    decision: Decision,
+    note: &str,
+    updated_input: Option<Value>,
+) -> Value {
+    match decision {
+        Decision::Approved => {
+            let mut response = json!({ "decision": "allow" });
+            if let Some(input) = updated_input {
+                response.as_object_mut().unwrap().insert(
+                    "hookSpecificOutput".to_string(),
+                    json!({
+                        "hookEventName": "BeforeTool",
+                        "tool_input": input
+                    }),
+                );
+            }
+            response
+        }
+        Decision::Denied => {
+            let reason = if note.is_empty() {
+                "Denied from Atoll".to_string()
+            } else {
+                format!("Denied from Atoll: {note}")
+            };
+            json!({
+                "decision": "deny",
+                "reason": reason
+            })
+        }
+    }
+}
+
+/// Atoll failures must never brick a Gemini session: Gemini defaults to
+/// "Allow" when a hook prints nothing, so the defer response is empty output.
+fn gemini_hook_defer_response() -> Value {
+    json!({})
+}
+
 fn build_permission_response(
     style: PermissionResponseStyle,
     hook_event_name: &str,
@@ -676,6 +742,9 @@ fn build_permission_response(
         PermissionResponseStyle::Cursor => {
             cursor_permission_hook_response(decision, note, updated_input)
         }
+        PermissionResponseStyle::Gemini => {
+            gemini_permission_hook_response(decision, note, updated_input)
+        }
     }
 }
 
@@ -687,6 +756,7 @@ fn build_hook_defer_response(
     match style {
         PermissionResponseStyle::ClaudeCodex => hook_defer_response(hook_event_name, reason),
         PermissionResponseStyle::Cursor => cursor_hook_defer_response(hook_event_name, reason),
+        PermissionResponseStyle::Gemini => gemini_hook_defer_response(),
     }
 }
 
@@ -750,6 +820,10 @@ fn route_request(
         "/zcode/hook" => {
             require_hook_auth(&app, &request)?;
             route_zcode_request(app, request, stream)
+        }
+        "/gemini/hook" => {
+            require_hook_auth(&app, &request)?;
+            route_gemini_request(app, request, stream)
         }
         "/cursor/hook" => {
             require_hook_auth(&app, &request)?;
@@ -1044,6 +1118,93 @@ fn process_zcode_observer_event(
                 &state,
                 session_id,
                 AgentKind::Zcode,
+                cwd,
+                payload_transcript_path(&payload).as_deref(),
+            );
+            touch_session_activity(&state, session_id);
+            schedule_observer_snapshot_emit(&app);
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn route_gemini_request(
+    app: AppHandle,
+    request: HttpRequest,
+    stream: &TcpStream,
+) -> Result<Value, String> {
+    let payload: Value = serde_json::from_slice(strip_utf8_bom(&request.body))
+        .map_err(|error| format!("Invalid Gemini hook payload: {error}"))?;
+
+    let hook_event_name = payload
+        .get("hook_event_name")
+        .and_then(Value::as_str)
+        .unwrap_or("BeforeTool")
+        .to_string();
+
+    crate::debug_agent::log(
+        "H-C",
+        "hook_bridge.rs:route_gemini_request",
+        "gemini hook received",
+        json!({
+            "event": hook_event_name,
+            "toolName": payload.get("tool_name"),
+            "sessionId": payload.get("session_id"),
+            "cwd": payload.get("cwd"),
+        }),
+    );
+
+    match hook_event_name.as_str() {
+        // Gemini CLI gates tool execution on the BeforeTool hook response, so
+        // this is the blocking approval path (see atoll-gemini-hook.mjs for why
+        // read-only tools never reach the bridge).
+        "BeforeTool" => submit_blocking_permission_request(
+            app,
+            payload,
+            stream,
+            |id, payload, at| permission_request_from_gemini_payload(id, payload, at),
+            &hook_event_name,
+            PermissionResponseStyle::Gemini,
+        )
+        .or_else(|error| {
+            Ok(build_hook_defer_response(
+                PermissionResponseStyle::Gemini,
+                &hook_event_name,
+                &error,
+            ))
+        }),
+        _ => {
+            enqueue_observer(ObserverJob {
+                app,
+                hook_event_name,
+                payload,
+                kind: ObserverKind::Gemini,
+            })?;
+            Ok(json!({}))
+        }
+    }
+}
+
+fn process_gemini_observer_event(
+    app: AppHandle,
+    hook_event_name: String,
+    payload: Value,
+) -> Result<(), String> {
+    match hook_event_name.as_str() {
+        "AfterTool" => sync_tool_completion(app, payload, AgentKind::Gemini, None),
+        "AfterAgent" => sync_turn_completion(app, payload, AgentKind::Gemini, true, None),
+        "SessionStart" | "SessionEnd" | "Notification" => {
+            let state = app.state::<AppState>();
+            let session_id = payload
+                .get("session_id")
+                .and_then(Value::as_str)
+                .unwrap_or("gemini");
+            let cwd = payload.get("cwd").and_then(Value::as_str).unwrap_or(".");
+            register_known_session(
+                &state,
+                session_id,
+                AgentKind::Gemini,
                 cwd,
                 payload_transcript_path(&payload).as_deref(),
             );
@@ -1562,6 +1723,7 @@ fn agent_resolved_label(agent: &AgentKind) -> &'static str {
         AgentKind::Claude => "Claude",
         AgentKind::Cursor => "Cursor",
         AgentKind::Zcode => "ZCode",
+        AgentKind::Gemini => "Gemini",
         _ => "Agent",
     }
 }
@@ -2727,6 +2889,8 @@ mod bridge_bind_tests {
             "claudeUrl": format!("http://{HOOK_BIND_HOST}:{port}/claude/pre-tool-use"),
             "codexUrl": format!("http://{HOOK_BIND_HOST}:{port}/codex/hook"),
             "cursorUrl": format!("http://{HOOK_BIND_HOST}:{port}/cursor/hook"),
+            "zcodeUrl": format!("http://{HOOK_BIND_HOST}:{port}/zcode/hook"),
+            "geminiUrl": format!("http://{HOOK_BIND_HOST}:{port}/gemini/hook"),
             "token": token,
         });
         std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())
@@ -2842,5 +3006,125 @@ mod payload_tests {
         .expect("cursor request");
         assert_eq!(request.session, "conv-123");
         assert!(matches!(request.agent, AgentKind::Cursor));
+    }
+
+    #[test]
+    fn gemini_before_tool_payload_builds_permission_request() {
+        let payload = json!({
+            "session_id": "session-gemini-1",
+            "transcript_path": "/tmp/gemini/transcript.json",
+            "cwd": "/tmp/project",
+            "hook_event_name": "BeforeTool",
+            "timestamp": "2026-08-30T00:00:00Z",
+            "tool_name": "run_shell_command",
+            "tool_input": { "command": "echo hi", "description": "Echo hi" }
+        });
+        let request = permission_request_from_gemini_payload(
+            "req-1".into(),
+            payload,
+            "2026-08-30T00:00:00Z".into(),
+        )
+        .expect("gemini request");
+        assert!(matches!(request.agent, AgentKind::Gemini));
+        assert_eq!(request.session, "session-gemini-1");
+        assert_eq!(request.command, "Bash: echo hi");
+        assert_eq!(request.detail, "Echo hi");
+        assert_eq!(request.cwd, "/tmp/project");
+        assert!(!request.supports_always);
+    }
+
+    #[test]
+    fn gemini_non_before_tool_payload_is_ignored() {
+        let payload = json!({
+            "session_id": "session-gemini-1",
+            "cwd": "/tmp/project",
+            "hook_event_name": "SessionStart",
+            "source": "startup"
+        });
+        assert!(
+            permission_request_from_gemini_payload(
+                "req-1".into(),
+                payload,
+                "2026-08-30T00:00:00Z".into(),
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn gemini_payload_without_session_id_falls_back_to_default_session() {
+        let payload = json!({
+            "hook_event_name": "BeforeTool",
+            "cwd": "/tmp/project",
+            "tool_name": "write_file",
+            "tool_input": { "file_path": "/tmp/a.txt", "content": "hi" }
+        });
+        let request = permission_request_from_gemini_payload(
+            "req-1".into(),
+            payload,
+            "2026-08-30T00:00:00Z".into(),
+        )
+        .expect("gemini request");
+        assert_eq!(request.session, "gemini");
+    }
+
+    #[test]
+    fn gemini_permission_response_allow() {
+        let response = gemini_permission_hook_response(Decision::Approved, "", None);
+        assert_eq!(
+            response.get("decision").and_then(Value::as_str),
+            Some("allow")
+        );
+        assert!(response.get("reason").is_none());
+    }
+
+    #[test]
+    fn gemini_permission_response_allow_with_updated_input() {
+        let response = gemini_permission_hook_response(
+            Decision::Approved,
+            "",
+            Some(json!({ "command": "echo safe" })),
+        );
+        assert_eq!(
+            response.get("decision").and_then(Value::as_str),
+            Some("allow")
+        );
+        let specific = response
+            .get("hookSpecificOutput")
+            .expect("hookSpecificOutput");
+        assert_eq!(
+            specific.get("hookEventName").and_then(Value::as_str),
+            Some("BeforeTool")
+        );
+        assert_eq!(
+            specific
+                .get("tool_input")
+                .and_then(|input| input.get("command"))
+                .and_then(Value::as_str),
+            Some("echo safe")
+        );
+    }
+
+    #[test]
+    fn gemini_permission_response_deny_with_note() {
+        let response = gemini_permission_hook_response(Decision::Denied, "not today", None);
+        assert_eq!(
+            response.get("decision").and_then(Value::as_str),
+            Some("deny")
+        );
+        assert_eq!(
+            response.get("reason").and_then(Value::as_str),
+            Some("Denied from Atoll: not today")
+        );
+    }
+
+    #[test]
+    fn gemini_defer_response_is_empty_allow() {
+        let response = build_hook_defer_response(
+            PermissionResponseStyle::Gemini,
+            "BeforeTool",
+            "Atoll approval timed out",
+        );
+        assert_eq!(response, json!({}));
     }
 }
