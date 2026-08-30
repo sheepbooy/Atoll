@@ -248,3 +248,32 @@
     animation: none !important;
   }
 }
+
+/* ZCode terminal-block mascot */
+.agent-mascot-slot .zcode,
+.mascot-slot .zcode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 88px;
+  height: 79px;
+  line-height: 0;
+  will-change: transform;
+}
+
+.agent-mascot-slot .zcode-svg,
+.mascot-slot .zcode-svg {
+  overflow: visible;
+  width: 100%;
+  height: 100%;
+}
+
+.agent-mascot-slot .zcode-body {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}
+
+.agent-mascot-slot .zcode-leg {
+  transform-box: fill-box;
+  transform-origin: center;
+}

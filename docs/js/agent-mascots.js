@@ -21,6 +21,10 @@
       type: "cursor",
       mood: "calm",
     },
+    zcode: {
+      type: "zcode",
+      mood: "calm",
+    },
   };
 
   function slotMascotSize(slot) {
@@ -114,6 +118,30 @@
     </span>`;
   }
 
+  const ZCODE_TILE_PATH =
+    "M5.3 .6h13.4a5.3 5.3 0 015.3 5.3v12.2a5.3 5.3 0 01-5.3 5.3H5.3A5.3 5.3 0 010 18.1V5.9A5.3 5.3 0 015.3 .6Z";
+  const ZCODE_Z_PATH = "M5.2 5.8H18.8V8L9.2 16H18.8V18.2H5.2V16L14.8 8H5.2Z";
+
+  function renderZcode(mood) {
+    return `<span class="zcode is-${mood}" aria-hidden="true">
+      <svg class="zcode-svg" viewBox="${VIEWBOX}" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <linearGradient id="zcode-tile-gradient" x1="0" y1="0" x2="0.35" y2="1">
+            <stop offset="0" stop-color="#58c7f5"/>
+            <stop offset="1" stop-color="#1f8fd0"/>
+          </linearGradient>
+        </defs>
+        <ellipse class="zcode-shadow" cx="68" cy="92" rx="32" ry="4" fill="rgba(0,0,0,0.18)"/>
+        <g class="zcode-body">
+          <g transform="translate(56 39) scale(3.15) translate(-12 -12)">
+            <path fill="url(#zcode-tile-gradient)" d="${ZCODE_TILE_PATH}"/>
+            <path fill="#ffffff" transform="translate(2 0) skewX(-9.5)" d="${ZCODE_Z_PATH}"/>
+          </g>
+        </g>
+      </svg>
+    </span>`;
+  }
+
   function renderAgent(agentId, moodOverride, size) {
     const config = AGENTS[agentId];
     if (!config) return "";
@@ -125,6 +153,10 @@
 
     if (config.type === "codex") {
       return renderCodex(mood);
+    }
+
+    if (config.type === "zcode") {
+      return renderZcode(mood);
     }
 
     return renderClawd(clawdPalette(config.accent, config.accentDark), mood);

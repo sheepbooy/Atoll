@@ -4,13 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Atoll — 菜单栏 AI 工作流浮岛</title>
-  <meta name="description" content="Atoll 住在 macOS 菜单栏 / Windows 顶栏，为 Claude Code、Codex 与 Cursor 提供权限审批、Plan 模式交互、Subagent 追踪与 Token 用量统计。100% 本地，数据不出本机。" />
+  <meta name="description" content="Atoll 住在 macOS 菜单栏 / Windows 顶栏，为 Claude Code、Codex、Cursor 与 ZCode 提供权限审批、通知提醒、Plan 模式交互、Subagent 追踪与 Token 用量统计。100% 本地，数据不出本机。" />
   <meta name="theme-color" content="#0a0b0d" />
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Atoll — 菜单栏 AI 工作流浮岛" />
-  <meta property="og:description" content="本地 Coding Agent 工作流浮岛：权限审批、Plan 模式问答与构建确认、Subagent 追踪、Token 统计。支持 Claude Code / Codex / Cursor。" />
+  <meta property="og:description" content="本地 Coding Agent 工作流浮岛：权限审批、通知提醒、Plan 模式问答与构建确认、Subagent 追踪、Token 统计。支持 Claude Code / Codex / Cursor / ZCode。" />
   <meta property="og:image" content="https://sheepbooy.github.io/Atoll/assets/hero.png" />
   <meta property="og:url" content="https://sheepbooy.github.io/Atoll/" />
 
@@ -67,7 +67,7 @@
           <img src="assets/logo.svg" alt="Atoll mascot" class="hero-logo" width="64" height="72" />
           <div class="hero-badge">
             <span class="dot"></span>
-            v0.1.53 · macOS &amp; Windows
+            v0.1.56 · macOS &amp; Windows
           </div>
           <h1>
             <span class="gradient">AI 工作流浮岛</span>
@@ -89,8 +89,8 @@
           <div class="hero-meta">
             <span class="pill">100% 本地</span>
             <span class="pill">MIT 开源</span>
-            <span class="pill pill-agents">Claude Code · Codex · Cursor</span>
-            <span class="pill pill-agents">Plan 模式 · Subagent · Token</span>
+            <span class="pill pill-agents">Claude Code · Codex · Cursor · ZCode</span>
+            <span class="pill pill-agents">通知提醒 · Plan 模式 · Subagent · Token</span>
           </div>
           <div class="hero-capabilities" aria-label="Atoll 核心能力">
             <article class="hero-capability">
@@ -154,6 +154,9 @@
               </span>
               <span class="compact-session-dot violet">
                 <span class="mascot-slot" data-agent="cursor"></span>
+              </span>
+              <span class="compact-session-dot azure">
+                <span class="mascot-slot" data-agent="zcode"></span>
               </span>
               <span class="compact-bar-spacer" aria-hidden="true"></span>
               <span class="compact-bar-metrics" aria-hidden="true">
@@ -233,6 +236,28 @@
 
         <article class="feature-card">
           <div class="feature-card-body">
+            <div class="feature-icon cyan">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg>
+            </div>
+            <h3>通知中心提醒，双模式</h3>
+            <p>默认<strong>强制打断</strong>：请求到达时浮岛自动展开并置前。切换 <strong>仅通知</strong> 模式则不打断当前工作——发送系统通知，点通知或浮岛再展开审批，深度工作零打扰。</p>
+          </div>
+          <div class="feature-preview notify-preview" role="img" aria-label="系统通知：Claude 请求权限，点击展开审批">
+            <div class="notify-toast">
+              <span class="notify-toast-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg>
+              </span>
+              <span class="notify-toast-text">
+                <strong>Claude 请求权限</strong>
+                <span>$ npm test --run</span>
+              </span>
+              <span class="notify-toast-hint">点击展开审批</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-card-body">
             <div class="feature-icon violet">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
             </div>
@@ -293,6 +318,34 @@
           </div>
           <div class="feature-preview">
             <img src="assets/clipboard-history-preview.svg" alt="剪贴板历史：搜索框 + 复制条目列表，支持已复制状态高亮" width="420" loading="lazy" />
+          </div>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-card-body">
+            <div class="feature-icon coral">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            </div>
+            <h3>审批历史</h3>
+            <p>每次审批请求持久化到本地 SQLite，重启不丢。关键词、会话、Agent 与结果多维搜索筛选，一键导出 JSON / CSV，事后排查有据可查。</p>
+          </div>
+          <div class="feature-preview history-preview" role="img" aria-label="审批历史：搜索框 + 结果列表与状态徽标">
+            <div class="history-search" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+              <span>搜索命令、项目或会话…</span>
+            </div>
+            <div class="history-row">
+              <code>$ rm -rf dist && npm run build</code>
+              <span class="history-badge approved">已批准</span>
+            </div>
+            <div class="history-row">
+              <code>$ git push --force origin main</code>
+              <span class="history-badge denied">已拒绝</span>
+            </div>
+            <div class="history-row">
+              <code>$ curl -fsSL https://… | bash</code>
+              <span class="history-badge elsewhere">别处处理</span>
+            </div>
           </div>
         </article>
 
@@ -446,7 +499,7 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
           </div>
           <h3>Agent 发起事件</h3>
-          <p>Claude Code / Codex / Cursor 触发 <code>PermissionRequest</code>、Plan 模式的 <code>AskUserQuestion</code> / <code>ExitPlanMode</code>、subagent 生命周期，以及 <code>PostToolUse</code>、<code>Stop</code> 等 Hook 事件。</p>
+          <p>Claude Code / Codex / Cursor / ZCode 触发 <code>PermissionRequest</code>、Plan 模式的 <code>AskUserQuestion</code> / <code>ExitPlanMode</code>、subagent 生命周期，以及 <code>PostToolUse</code>、<code>Stop</code> 等 Hook 事件。</p>
         </article>
         <article class="arch-card">
           <div class="arch-card-icon cyan">
@@ -514,7 +567,7 @@
     <!-- Agents -->
     <section id="agents" class="container reveal">
       <span class="section-label">接入 Agent</span>
-      <h2 class="section-title">现已支持 Claude Code、Codex &amp; Cursor</h2>
+      <h2 class="section-title">现已支持 Claude Code、Codex、Cursor &amp; ZCode</h2>
       <p class="section-desc">面向本地 Coding Agent 的工作流浮岛，更多 Agent 持续接入中。Hook 注册权限、Plan、subagent 与 lifecycle 事件，写入本地配置文件。</p>
 
       <div class="agents-layout">
@@ -548,6 +601,15 @@
             </div>
           </article>
           <article class="agent-card">
+            <div class="agent-card-mascot" aria-hidden="true">
+              <span class="mascot-slot" data-agent="zcode"></span>
+            </div>
+            <div>
+              <h3>ZCode（CLI + Desktop）</h3>
+              <p>Settings → Agent hooks → Install ZCode。支持权限审批、会话与 Token 用量统计（读取 rollout JSONL，含子代理归集）。</p>
+            </div>
+          </article>
+          <article class="agent-card">
             <div class="agent-icon agent-icon--unknown" aria-hidden="true">?</div>
             <div>
               <h3>Gemini（即将支持）</h3>
@@ -571,7 +633,7 @@
     <section id="visual" class="container reveal">
       <span class="section-label">视觉</span>
       <h2 class="section-title">Agent 形象，状态一目了然</h2>
-      <p class="section-desc">菜单栏 Logo 反映 App 全局状态；Claude 仍是像素风 Clawd，Codex 与 Cursor 使用官方图标。</p>
+      <p class="section-desc">菜单栏 Logo 反映 App 全局状态；Claude 仍是像素风 Clawd，Codex 与 Cursor 使用官方图标，ZCode 是天蓝渐变、白色斜体 Z 的官方方块形象，Gemini 复用 Clawd 造型并着色为绿色。</p>
 
       <div class="visual-showcase">
         <div class="state-grid">
@@ -619,10 +681,12 @@
               <div class="agent-mascot-slot" data-agent="cursor"></div>
               <figcaption>Cursor</figcaption>
             </figure>
+            <figure class="agent-mascot-card" data-agent="zcode">
+              <div class="agent-mascot-slot" data-agent="zcode"></div>
+              <figcaption>ZCode</figcaption>
+            </figure>
             <figure class="agent-mascot-card" data-agent="gemini">
-              <div class="agent-mascot-slot">
-                <span class="mascot-unknown" aria-hidden="true">?</span>
-              </div>
+              <div class="agent-mascot-slot" data-agent="gemini"></div>
               <figcaption>Gemini</figcaption>
             </figure>
           </div>
@@ -634,7 +698,7 @@
     <section id="updates" class="container reveal">
       <span class="section-label">更新</span>
       <h2 class="section-title">自动检查更新，持续演进</h2>
-      <p class="section-desc">Atoll 还在快速迭代。v0.1.53 起加入 Now Playing 音乐卡片、滚动歌词、剪贴板历史与 hook 健康检测；应用启动时会自动检测 GitHub 新版本，有新版本时在三点菜单显示更新入口，可一键下载安装并重启。</p>
+      <p class="section-desc">Atoll 还在快速迭代。近期加入通知中心双模式提醒与审批历史（本地持久化、搜索与导出）；v0.1.53 起有 Now Playing 音乐卡片、滚动歌词、剪贴板历史与 hook 健康检测。应用启动时会自动检测 GitHub 新版本，有新版本时在三点菜单显示更新入口，可一键下载安装并重启。</p>
 
       <div class="update-grid">
         <article class="update-card">

@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>菜单栏 / 顶栏里的 AI 权限审批浮岛</strong><br/>
-  <sub>Claude Code / Codex / Cursor 发起权限请求时，不用切窗口，一眼批准或拒绝</sub>
+  <sub>Claude Code / Codex / Cursor / ZCode 发起权限请求时，不用切窗口，一眼批准或拒绝</sub>
 </p>
 
 <p align="center">
@@ -58,7 +58,7 @@
 - **Cursor IDE** — Hook 集成、会话与 subagent 追踪、Token 统计；Shell 权限由 Cursor 自带 UI 处理，Atoll 以 observer hooks 异步监听，不阻塞 IDE；顶栏 **Open Cursor** 一键跳回 IDE
 - **全程本地** — Hook 桥接 `127.0.0.1:47777`，数据不出本机
 
-目前支持 **Claude Code**（CLI 与 Desktop）、**Codex**（CLI 与 Desktop）和 **Cursor IDE**（macOS Apple Silicon 与 Windows x64）。
+目前支持 **Claude Code**（CLI 与 Desktop）、**Codex**（CLI 与 Desktop）、**Cursor IDE**（macOS Apple Silicon 与 Windows x64）和 **ZCode**（CLI 与 Desktop）。
 
 ---
 
@@ -140,8 +140,9 @@ Atoll 通过应用内 **一键安装 Hook**，无需手动编辑配置文件。
 | **Claude Code**（CLI + Desktop） | 菜单 → Settings → Agent hooks → Install | Desktop：权限选 **Ask permissions**，安装后完全退出并重启 Claude Desktop，再在 Code 标签触发一次 Bash 权限验证 |
 | **Codex**（CLI + Desktop） | 同上 → Install Codex | Desktop/CLI：安装后在 Codex 中打开 `/hooks` 并信任 Atoll hook，完全退出并重启 Codex Desktop，再触发一次 shell 权限验证 |
 | **Cursor**（IDE Agent） | 同上 → Install Cursor | 安装后在 Cursor Settings → Hooks 确认 hook 已加载，重启 Cursor，再在 Agent 模式触发一次 Shell 工具以验证 observer hooks；Shell 权限仍由 Cursor 自身 UI 处理 |
+| **ZCode**（CLI + Desktop） | 同上 → Install ZCode | 安装后在 ZCode 中触发一次权限请求验证；Token 统计读取 `~/.zcode/cli/rollout`（含子代理归集） |
 
-Hook 注册 `PermissionRequest`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）、`~/.codex/hooks.json` 或 Cursor hooks 配置。安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`。
+Hook 注册 `PermissionRequest`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）、`~/.codex/hooks.json`、`~/.zcode/cli/config.json` 或 Cursor hooks 配置。安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`。
 
 卸载：Settings → Agent hooks → Uninstall（仅移除 Atoll 条目，保留你的其他 hooks）。
 
@@ -176,7 +177,7 @@ Hook 注册 `PermissionRequest`、`PostToolUse`、`Stop` 等事件，写入 `~/.
 
 ### Agent 形象
 
-每个 Agent 有独立形象：Claude 是像素风 Clawd，Codex / Cursor 使用官方图标，ZCode 是带 "Z" 终端块的专属形象，Gemini 复用 Clawd 造型并着色为绿色：
+每个 Agent 有独立形象：Claude 是像素风 Clawd，Codex / Cursor 使用官方图标，ZCode 是天蓝渐变、白色斜体 Z 的官方方块形象，Gemini 复用 Clawd 造型并着色为绿色：
 
 <p align="center">
   <img src="docs/assets/agent-mascots.png" alt="Claude / Codex / Cursor / Gemini mascots" width="420" />
@@ -259,7 +260,7 @@ npm run export:brand     # Logo 状态 + Agent 形象
 - [ ] Gemini 等更多 Agent 适配
 - [x] Cursor hook 适配
 - [x] 新请求自动展开、通知中心提醒（强制打断 / 仅通知两种模式，Settings → Notifications）
-- [ ] 审批历史导出、会话搜索
+- [x] 审批历史持久化、导出、会话搜索
 - [x] Codex hook 适配
 
 ---

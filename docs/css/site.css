@@ -1435,3 +1435,140 @@ kbd {
     padding: 20px;
   }
 }
+
+/* ─── 通知双模式 preview ─── */
+
+.notify-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+}
+
+.notify-toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 380px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.notify-toast-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 10px;
+  background: rgba(111, 220, 255, 0.12);
+  color: var(--accent-cyan);
+}
+
+.notify-toast-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.notify-toast-text strong {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.notify-toast-text span {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notify-toast-hint {
+  flex: none;
+  font-size: 0.6875rem;
+  color: var(--accent-cyan-dim);
+  border: 1px solid rgba(56, 189, 216, 0.35);
+  border-radius: var(--radius-pill);
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+/* ─── 审批历史 preview ─── */
+
+.history-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px;
+}
+
+.history-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+}
+
+.history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+}
+
+.history-row code {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-badge {
+  flex: none;
+  font-size: 0.6875rem;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: var(--radius-pill);
+}
+
+.history-badge.approved {
+  color: var(--color-approve);
+  background: rgba(158, 233, 184, 0.12);
+}
+
+.history-badge.denied {
+  color: var(--accent-coral);
+  background: rgba(255, 129, 117, 0.12);
+}
+
+.history-badge.elsewhere {
+  color: var(--accent-violet);
+  background: rgba(205, 193, 255, 0.12);
+}
+
+/* ─── agent 卡片里的 ZCode 吉祥物 ─── */
+
+.agent-card-mascot .mascot-slot .zcode {
+  width: 48px;
+  height: 48px;
+}
