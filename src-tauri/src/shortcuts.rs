@@ -432,7 +432,9 @@ fn record_state(app: &AppHandle, config: GlobalShortcutConfig, errors: GlobalSho
 #[cfg(desktop)]
 fn dispatch(app: &AppHandle, action: ShortcutAction) {
     match action {
-        ShortcutAction::Summon => crate::show_main_window_with_focus(app, true),
+        ShortcutAction::Summon => {
+            crate::show_main_window_with_focus(app, true, crate::IslandOpenSource::Summon)
+        }
         ShortcutAction::Approve => resolve_pending(app, crate::Decision::Approved),
         ShortcutAction::Deny => resolve_pending(app, crate::Decision::Denied),
     }

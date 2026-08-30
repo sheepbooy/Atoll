@@ -805,6 +805,9 @@ export function App() {
   const initialNativePresentationSyncedRef = useRef(false);
   const hoveringRef = useRef(false);
   const cursorOverIslandRef = useRef(false);
+  // A hotkey summon holds the island open: until it collapses again, later
+  // snapshot refreshes / blur events must not schedule the idle collapse.
+  const summonHoldRef = useRef(false);
   const shrinkInFlightRef = useRef(false);
   const focusedRef = useRef(false);
   const suppressHoverExpandRef = useRef(false);
@@ -1464,8 +1467,23 @@ export function App() {
       }),
     );
     const unsubscribeOpen = manageAsyncUnlisten(
-      onIslandOpenRequested(() => {
+      onIslandOpenRequested((source) => {
         suppressHoverExpandRef.current = false;
+        if (source === "summon") {
+          // Toggle semantics: a hotkey summon holds the island open (no idle
+          // auto-collapse); pressing it again puts it away.
+          if (
+            phaseRef.current === "expanded" ||
+            phaseRef.current === "opening"
+          ) {
+            summonHoldRef.current = false;
+            collapseIsland(true);
+          } else {
+            summonHoldRef.current = true;
+            expandIsland();
+          }
+          return;
+        }
         expandIsland();
         scheduleIdleCollapse();
       }),
@@ -2377,6 +2395,7 @@ export function App() {
   }
 
   function collapseIslandNow(releaseFocus = false) {
+    summonHoldRef.current = false;
     const next = beginCollapse(phaseRef.current);
     if (next === phaseRef.current) {
       if (releaseFocus) {
@@ -2515,6 +2534,10 @@ export function App() {
   }
 
   function scheduleIdleCollapse() {
+    if (summonHoldRef.current) {
+      // A hotkey summon is holding the island open.
+      return;
+    }
     clearIdleTimer();
     // Only an active text field (e.g. the reply input) should hold the island
     // open once the pointer leaves. A lingering button focus — e.g. after

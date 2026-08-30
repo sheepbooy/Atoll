@@ -8,6 +8,7 @@ import {
   markHookAgentConfigured,
 } from "./hookAgentsConfigured";
 import {
+  IDLE_COLLAPSE_DELAY_MS,
   PANEL_EXIT_MS,
   PRESENTATION_SETTLE_FALLBACK_MS,
   RESOLVE_FEEDBACK_MS,
@@ -278,6 +279,7 @@ vi.mock("./appUpdate", () => ({
 }));
 
 let emitIslandHover: ((state: { hovering: boolean; cursorOverWindow: boolean }) => void) | null = null;
+let emitIslandOpen: ((source: "summon" | "focus") => void) | null = null;
 let emitSnapshot: ((snapshot: import("./tauri").IslandSnapshot) => void) | null =
   null;
 let emitPresentationSettled: ((mode: string) => void) | null = null;
@@ -299,6 +301,7 @@ describe("App", () => {
     window.localStorage.clear();
     clearConfiguredHookAgentsForTests();
     emitIslandHover = null;
+    emitIslandOpen = null;
     emitSnapshot = null;
     emitPresentationSettled = null;
     bridge.getSnapshot.mockResolvedValue({
@@ -317,7 +320,10 @@ describe("App", () => {
       emitIslandHover = callback;
       return () => undefined;
     });
-    bridge.onIslandOpenRequested.mockResolvedValue(() => undefined);
+    bridge.onIslandOpenRequested.mockImplementation(async (callback) => {
+      emitIslandOpen = callback;
+      return () => undefined;
+    });
     bridge.onIslandPresentationSettled.mockImplementation(async (callback) => {
       emitPresentationSettled = callback;
       return () => undefined;
@@ -1134,6 +1140,85 @@ describe("App", () => {
       false,
       false,
     );
+    vi.useRealTimers();
+  });
+
+  it("summon hotkey toggles: holds the island open, then collapses on the second press", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    const { container } = render(<App />);
+
+    await waitFor(() => expect(emitIslandOpen).not.toBeNull());
+    await waitFor(() =>
+      expect(container.querySelector(".is-compact")).not.toBeNull(),
+    );
+
+    // First press → expand and HOLD: past the idle delay it must stay open.
+    act(() => {
+      emitIslandOpen?.("summon");
+    });
+    await emitSettledPhase("expanded");
+    await waitFor(() =>
+      expect(container.querySelector(".is-expanded")).not.toBeNull(),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(IDLE_COLLAPSE_DELAY_MS * 4);
+    });
+    expect(container.querySelector(".is-expanded")).not.toBeNull();
+
+    // Second press while expanded → collapse.
+    act(() => {
+      emitIslandOpen?.("summon");
+    });
+    await flushPanelExit();
+    expect(container.querySelector(".is-closing")).not.toBeNull();
+    await emitSettledPhase("compact");
+    expect(container.querySelector(".is-compact")).not.toBeNull();
+
+    vi.useRealTimers();
+  });
+
+  it("non-summon open requests still expand then idle-collapse", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    bridge.getSnapshot.mockResolvedValue({
+      online: true,
+      pendingCount: 0,
+      activeRequest: null,
+      recent: [],
+      sessions: [],
+      hookHealth: connectedHookHealth,
+    });
+    const { container } = render(<App />);
+
+    await waitFor(() => expect(emitIslandOpen).not.toBeNull());
+    await waitFor(() =>
+      expect(container.querySelector(".is-compact")).not.toBeNull(),
+    );
+
+    act(() => {
+      emitIslandOpen?.("focus");
+    });
+    await emitSettledPhase("expanded");
+    await waitFor(() =>
+      expect(container.querySelector(".is-expanded")).not.toBeNull(),
+    );
+
+    // The idle collapse scheduled by a focus open pulls the island back in.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(IDLE_COLLAPSE_DELAY_MS * 4);
+    });
+    await flushPanelExit();
+    expect(container.querySelector(".is-closing")).not.toBeNull();
+    await emitSettledPhase("compact");
+    expect(container.querySelector(".is-compact")).not.toBeNull();
+
     vi.useRealTimers();
   });
 

@@ -1157,12 +1157,21 @@ export async function onIslandHoverChanged(callback: (state: IslandHoverChanged)
   return listen<IslandHoverChanged>("island-hover-changed", (event) => callback(event.payload));
 }
 
-export async function onIslandOpenRequested(callback: () => void) {
+/** Why the island was opened. "summon" comes from the global hotkey and
+ * toggles (press again to collapse, no idle auto-collapse); every other
+ * opener keeps the expand-then-idle-collapse behavior. */
+export type IslandOpenSource = "summon" | "focus";
+
+export async function onIslandOpenRequested(
+  callback: (source: IslandOpenSource) => void,
+) {
   if (!isTauriRuntime()) {
     return () => undefined;
   }
 
-  return listen<void>("island-open-requested", () => callback());
+  return listen<string | null>("island-open-requested", (event) =>
+    callback(event.payload === "summon" ? "summon" : "focus"),
+  );
 }
 
 /** Fires when the native window animation finishes or snaps to its target. */

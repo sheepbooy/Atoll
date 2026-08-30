@@ -8948,19 +8948,33 @@ fn exit_atoll(app: &AppHandle) {
     std::process::exit(0);
 }
 
-fn show_main_window_with_focus(app: &AppHandle, request_focus: bool) {
+/// Why the island window was opened. A global-hotkey summon toggles in the
+/// frontend (press again to collapse, no idle auto-collapse); every other
+/// opener keeps the expand-then-idle-collapse behavior.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum IslandOpenSource {
+    Summon,
+    Focus,
+}
+
+fn show_main_window_with_focus(
+    app: &AppHandle,
+    request_focus: bool,
+    open_source: IslandOpenSource,
+) {
     if let Some(window) = app.get_webview_window("main") {
         platform::finish_show_for_approval(&window, app, request_focus);
-        let _ = app.emit("island-open-requested", ());
+        let _ = app.emit("island-open-requested", open_source);
     }
 }
 
 fn show_main_window(app: &AppHandle) {
-    show_main_window_with_focus(app, false);
+    show_main_window_with_focus(app, false, IslandOpenSource::Focus);
 }
 
 pub(crate) fn show_main_window_for_approval(app: &AppHandle) {
-    show_main_window_with_focus(app, true);
+    show_main_window_with_focus(app, true, IslandOpenSource::Focus);
 }
 
 /// Surface the island window without expanding it or taking focus — used when
