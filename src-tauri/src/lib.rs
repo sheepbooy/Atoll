@@ -919,6 +919,8 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
             resolve_hook_script_path(app, "atoll-cursor-hook.mjs").unwrap_or_default();
         let zcode_script_path =
             resolve_hook_script_path(app, "atoll-zcode-hook.mjs").unwrap_or_default();
+        let gemini_script_path =
+            resolve_hook_script_path(app, "atoll-gemini-hook.mjs").unwrap_or_default();
         return HookHealthSnapshot {
             claude: HookStatus {
                 installed: false,
@@ -972,6 +974,19 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
                 needs_retrust: false,
                 competing_hooks: Vec::new(),
             },
+            gemini: HookStatus {
+                installed: false,
+                script_found: !gemini_script_path.is_empty()
+                    && std::path::Path::new(&gemini_script_path).exists(),
+                settings_path: gemini_settings_path()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                script_path: gemini_script_path,
+                node_path: String::new(),
+                node_found: resolve_node_executable().is_ok(),
+                needs_retrust: false,
+                competing_hooks: Vec::new(),
+            },
         };
     }
 
@@ -979,6 +994,7 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
     let codex_status = codex_hook_status(app);
     let cursor_status = cursor_hook_status(app);
     let zcode_status = zcode_hook_status(app);
+    let gemini_status = gemini_hook_status(app);
 
     // #region agent log (diagA)
     crate::debug_agent::log(
@@ -1016,6 +1032,13 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
                 "nodeFound": zcode_status.node_found,
                 "nodePath": zcode_status.node_path,
             },
+            "gemini": {
+                "installed": gemini_status.installed,
+                "scriptFound": gemini_status.script_found,
+                "scriptPath": gemini_status.script_path,
+                "nodeFound": gemini_status.node_found,
+                "nodePath": gemini_status.node_path,
+            },
         }),
     );
     // #endregion
@@ -1025,6 +1048,7 @@ fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
         codex: codex_status,
         cursor: cursor_status,
         zcode: zcode_status,
+        gemini: gemini_status,
     }
 }
 
@@ -1157,6 +1181,55 @@ fn zcode_hook_status(app: &AppHandle) -> HookStatus {
         config.as_ref(),
         "atoll-zcode-hook",
         "zcode",
+    )
+}
+
+fn gemini_hook_status(app: &AppHandle) -> HookStatus {
+    let settings_path = gemini_settings_path()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let settings = read_json_file(&settings_path);
+    let installed = settings
+        .as_ref()
+        .map(|config| has_atoll_gemini_hooks(config))
+        .unwrap_or(false);
+    if installed {
+        refresh_deployed_hook_assets_if_needed(app, "atoll-gemini-hook.mjs");
+    }
+    let (mut script_path, mut script_found) =
+        resolve_hook_script_readiness(app, "atoll-gemini-hook.mjs", settings.as_ref());
+    if installed {
+        if let (Some(cfg), Ok(preferred)) = (
+            settings.as_ref(),
+            resolve_install_hook_script_path(app, "atoll-gemini-hook.mjs"),
+        ) {
+            if let Some(configured) = configured_atoll_hook_script_path(cfg, "atoll-gemini-hook") {
+                if should_flag_dev_hook_drift(&configured, &preferred)
+                    && deployed_hook_script_path("atoll-gemini-hook.mjs").is_none()
+                {
+                    script_found = false;
+                }
+            }
+        }
+    }
+    script_path = canonical_hook_script_path(
+        app,
+        "atoll-gemini-hook.mjs",
+        settings.as_ref(),
+        "atoll-gemini-hook",
+        &script_path,
+    );
+    if !script_path.is_empty() && std::path::Path::new(&script_path).is_file() {
+        script_found = true;
+    }
+    build_hook_status(
+        installed,
+        script_found,
+        settings_path,
+        script_path,
+        settings.as_ref(),
+        "atoll-gemini-hook",
+        "gemini",
     )
 }
 
@@ -5182,6 +5255,7 @@ struct HookHealthSnapshot {
     codex: HookStatus,
     cursor: HookStatus,
     zcode: HookStatus,
+    gemini: HookStatus,
 }
 
 impl Default for HookStatus {
@@ -5478,6 +5552,10 @@ fn cursor_hooks_path() -> Option<std::path::PathBuf> {
 fn zcode_config_path() -> Option<std::path::PathBuf> {
     dirs::home_dir()
         .map(|home| home.join(".zcode").join("cli").join("config.json"))
+}
+
+fn gemini_settings_path() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|home| home.join(".gemini").join("settings.json"))
 }
 
 /// ZCode writes one model-I/O rollout JSONL per session, named after the full
@@ -6378,6 +6456,187 @@ fn uninstall_zcode_hooks(app: AppHandle) -> Result<HookStatus, String> {
         .map_err(|error| error.to_string())?;
 
     Ok(zcode_hook_status(&app))
+}
+
+#[tauri::command]
+fn get_gemini_hook_status(app: AppHandle) -> Result<HookStatus, String> {
+    if capture::force_hook_uninstalled() {
+        let script_path =
+            resolve_hook_script_path(&app, "atoll-gemini-hook.mjs").unwrap_or_default();
+        return Ok(HookStatus {
+            installed: false,
+            script_found: !script_path.is_empty() && std::path::Path::new(&script_path).exists(),
+            settings_path: gemini_settings_path()
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            script_path,
+            node_path: String::new(),
+            node_found: resolve_node_executable().is_ok(),
+            needs_retrust: false,
+            competing_hooks: Vec::new(),
+        });
+    }
+    Ok(gemini_hook_status(&app))
+}
+
+#[tauri::command]
+fn install_gemini_hooks(app: AppHandle) -> Result<HookStatus, String> {
+    let source_script_path = resolve_install_hook_script_path(&app, "atoll-gemini-hook.mjs")?;
+    let script_path =
+        materialize_hook_deployment(&app, "atoll-gemini-hook.mjs", &source_script_path)?;
+
+    if !std::path::Path::new(&script_path).exists() {
+        return Err(format!("Hook script not found at: {script_path}"));
+    }
+
+    let node_path = resolve_node_executable()?;
+
+    let settings_path =
+        gemini_settings_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
+
+    if let Some(parent) = settings_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Cannot create ~/.gemini directory: {e}"))?;
+    }
+
+    let mut settings: Value = if settings_path.exists() {
+        let content = std::fs::read_to_string(&settings_path)
+            .map_err(|e| format!("Cannot read settings: {e}"))?;
+        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()))
+    } else {
+        Value::Object(Default::default())
+    };
+
+    let hook_command = format_hook_command(
+        hook_runner_for_command(&app).as_deref(),
+        &node_path,
+        &script_path,
+    );
+
+    // Gemini CLI hook timeouts are in MILLISECONDS (CommandHookConfig.timeout,
+    // default 60000). BeforeTool blocks until the Atoll user decides; observer
+    // events only register sessions and must never stall a turn.
+    // The BeforeTool matcher mirrors the gate list in atoll-gemini-hook.mjs so
+    // read-only tools never spawn the hook process.
+    let gemini_hook = |timeout: i64| {
+        json!({
+            "type": "command",
+            "command": hook_command,
+            "timeout": timeout
+        })
+    };
+    let atoll_hooks = serde_json::json!({
+        "BeforeTool": [
+            {
+                "matcher": "run_shell_command|write_file|replace|web_fetch|save_memory|invoke_agent|mcp_",
+                "hooks": [gemini_hook(1_800_000)]
+            }
+        ],
+        "SessionStart": [
+            { "hooks": [gemini_hook(30_000)] }
+        ],
+        "SessionEnd": [
+            { "hooks": [gemini_hook(30_000)] }
+        ],
+        "AfterTool": [
+            { "hooks": [gemini_hook(30_000)] }
+        ],
+        "AfterAgent": [
+            { "hooks": [gemini_hook(30_000)] }
+        ],
+        "Notification": [
+            { "hooks": [gemini_hook(30_000)] }
+        ]
+    });
+
+    let settings_obj = settings
+        .as_object_mut()
+        .ok_or_else(|| "settings.json is not a JSON object".to_string())?;
+    let hooks_obj = settings_obj
+        .entry("hooks")
+        .or_insert_with(|| Value::Object(Default::default()));
+    if !hooks_obj.is_object() {
+        *hooks_obj = Value::Object(Default::default());
+    }
+    upsert_gemini_hook_entries(hooks_obj, &atoll_hooks);
+
+    let formatted = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Cannot serialize settings: {e}"))?;
+    std::fs::write(&settings_path, formatted)
+        .map_err(|e| format!("Cannot write settings: {e}"))?;
+
+    let written = std::fs::read_to_string(&settings_path)
+        .map_err(|e| format!("Cannot verify settings: {e}"))?;
+    let verify: Value = serde_json::from_str(&written)
+        .map_err(|e| format!("Cannot parse settings after write: {e}"))?;
+    if !has_atoll_gemini_hooks(&verify) {
+        return Err(
+            "Gemini hooks were not saved correctly. Check permissions on ~/.gemini/settings.json."
+                .into(),
+        );
+    }
+
+    if let Err(error) = hook_bridge::refresh_bridge_config_file(&app) {
+        eprintln!("Atoll failed to refresh bridge.json after Gemini hook install: {error}");
+    }
+    hook_trust::record_hook_installed("gemini", &script_path);
+
+    let state = app.state::<AppState>();
+    let snapshot = build_snapshot(&app, &state);
+    if let Ok(mut last) = state.last_listening_online.lock() {
+        *last = Some(snapshot.online);
+    }
+    remember_hook_health(&state, &snapshot.hook_health);
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+
+    Ok(gemini_hook_status(&app))
+}
+
+#[tauri::command]
+fn uninstall_gemini_hooks(app: AppHandle) -> Result<HookStatus, String> {
+    let settings_path =
+        gemini_settings_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
+
+    if !settings_path.exists() {
+        hook_trust::clear_hook_installed("gemini");
+        return Ok(HookStatus {
+            installed: false,
+            script_found: false,
+            settings_path: settings_path.to_string_lossy().into(),
+            script_path: String::new(),
+            node_path: String::new(),
+            node_found: resolve_node_executable().is_ok(),
+            needs_retrust: false,
+            competing_hooks: Vec::new(),
+        });
+    }
+
+    let content = std::fs::read_to_string(&settings_path)
+        .map_err(|e| format!("Cannot read settings: {e}"))?;
+    let mut settings: Value =
+        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()));
+
+    if let Some(hooks) = settings.get_mut("hooks") {
+        remove_atoll_gemini_hooks(hooks);
+    }
+
+    let formatted = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Cannot serialize settings: {e}"))?;
+    std::fs::write(&settings_path, formatted)
+        .map_err(|e| format!("Cannot write settings: {e}"))?;
+    hook_trust::clear_hook_installed("gemini");
+
+    let state = app.state::<AppState>();
+    let snapshot = build_snapshot(&app, &state);
+    if let Ok(mut last) = state.last_listening_online.lock() {
+        *last = Some(snapshot.online);
+    }
+    remember_hook_health(&state, &snapshot.hook_health);
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())?;
+
+    Ok(gemini_hook_status(&app))
 }
 
 #[tauri::command]
@@ -7304,6 +7563,113 @@ fn remove_atoll_zcode_hooks(events: &mut Value) {
     });
 }
 
+fn upsert_gemini_hook_entries(existing_hooks: &mut Value, atoll_hooks: &Value) {
+    let Some(atoll_map) = atoll_hooks.as_object() else {
+        return;
+    };
+    let hooks_obj = existing_hooks
+        .as_object_mut()
+        .expect("gemini hooks value should be object");
+
+    for (event, atoll_matchers) in atoll_map {
+        let Some(atoll_array) = atoll_matchers.as_array() else {
+            continue;
+        };
+
+        let mut merged: Vec<Value> = hooks_obj
+            .get(event)
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter(|matcher| !matcher_group_has_atoll_gemini(matcher))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        for matcher in atoll_array {
+            merged.push(matcher.clone());
+        }
+
+        hooks_obj.insert(event.clone(), Value::Array(merged));
+    }
+}
+
+fn remove_atoll_gemini_hooks(hooks: &mut Value) {
+    let Some(hooks_obj) = hooks.as_object_mut() else {
+        return;
+    };
+
+    for matchers in hooks_obj.values_mut() {
+        if let Some(arr) = matchers.as_array_mut() {
+            for matcher in arr.iter_mut() {
+                if let Some(hook_arr) = matcher.get_mut("hooks").and_then(Value::as_array_mut) {
+                    hook_arr.retain(|hook| {
+                        !hook
+                            .get("command")
+                            .and_then(Value::as_str)
+                            .map(|cmd| cmd.contains("atoll-gemini-hook"))
+                            .unwrap_or(false)
+                    });
+                }
+            }
+            arr.retain(|matcher| {
+                matcher
+                    .get("hooks")
+                    .and_then(Value::as_array)
+                    .map(|hooks| !hooks.is_empty())
+                    .unwrap_or(false)
+            });
+        }
+    }
+
+    // Preserve non-array config keys (`enabled`/`disabled`/`notifications`)
+    // that Gemini keeps alongside the event entries.
+    hooks_obj.retain(|_, matchers| {
+        matchers
+            .as_array()
+            .map(|arr| !arr.is_empty())
+            .unwrap_or(true)
+    });
+}
+
+/// Gemini stores hook event entries directly under `hooks` in settings.json
+/// (alongside optional `enabled`/`disabled`/`notifications` config keys).
+fn has_atoll_gemini_hooks(settings: &Value) -> bool {
+    let Some(hooks) = settings.get("hooks").and_then(Value::as_object) else {
+        return false;
+    };
+
+    ["BeforeTool", "SessionStart", "AfterTool"]
+        .iter()
+        .all(|event| {
+            hooks
+                .get(*event)
+                .map(|matchers| {
+                    matchers
+                        .as_array()
+                        .map(|arr| arr.iter().any(matcher_group_has_atoll_gemini))
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false)
+        })
+}
+
+fn matcher_group_has_atoll_gemini(matcher: &Value) -> bool {
+    matcher
+        .get("hooks")
+        .and_then(Value::as_array)
+        .map(|hook_arr| {
+            hook_arr.iter().any(|hook| {
+                hook.get("command")
+                    .and_then(Value::as_str)
+                    .map(|cmd| cmd.contains("atoll-gemini-hook"))
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
+
 fn read_json_file(path: &str) -> Option<Value> {
     if path.is_empty() || !std::path::Path::new(path).exists() {
         return None;
@@ -8175,6 +8541,9 @@ pub fn run() {
             get_zcode_hook_status,
             install_zcode_hooks,
             uninstall_zcode_hooks,
+            get_gemini_hook_status,
+            install_gemini_hooks,
+            uninstall_gemini_hooks,
             get_cursor_hook_status,
             install_cursor_hooks,
             uninstall_cursor_hooks,
@@ -13691,6 +14060,129 @@ mod zcode_hooks_tests {
             command.as_deref(),
             Some("node /opt/Atoll/hooks/atoll-zcode-hook.mjs")
         );
+    }
+}
+
+#[cfg(test)]
+mod gemini_hooks_tests {
+    use super::{has_atoll_gemini_hooks, remove_atoll_gemini_hooks, upsert_gemini_hook_entries};
+    use serde_json::{json, Value};
+
+    fn sample_atoll_gemini_hooks() -> Value {
+        json!({
+            "BeforeTool": [
+                {
+                    "matcher": "run_shell_command|write_file|replace|web_fetch|save_memory|invoke_agent|mcp_",
+                    "hooks": [{ "type": "command", "command": "node /opt/Atoll/hooks/atoll-gemini-hook.mjs", "timeout": 1800000 }]
+                }
+            ],
+            "SessionStart": [
+                { "hooks": [{ "type": "command", "command": "node /opt/Atoll/hooks/atoll-gemini-hook.mjs", "timeout": 30000 }] }
+            ],
+            "AfterTool": [
+                { "hooks": [{ "type": "command", "command": "node /opt/Atoll/hooks/atoll-gemini-hook.mjs", "timeout": 30000 }] }
+            ]
+        })
+    }
+
+    #[test]
+    fn has_atoll_gemini_hooks_reads_flat_hooks_object() {
+        let config = json!({ "hooks": sample_atoll_gemini_hooks() });
+        assert!(has_atoll_gemini_hooks(&config));
+
+        // Gemini keeps optional config keys (enabled/disabled/notifications)
+        // alongside the event entries; they must not break detection.
+        let with_extra_keys = json!({
+            "hooks": {
+                "notifications": true,
+                "SessionStart": [{ "hooks": [{ "type": "command", "command": "other" }] }]
+            }
+        });
+        assert!(!has_atoll_gemini_hooks(&with_extra_keys));
+    }
+
+    #[test]
+    fn has_atoll_gemini_hooks_requires_all_core_events() {
+        let mut hooks = sample_atoll_gemini_hooks();
+        hooks
+            .as_object_mut()
+            .unwrap()
+            .remove("AfterTool")
+            .expect("AfterTool entry");
+        let config = json!({ "hooks": hooks });
+        assert!(!has_atoll_gemini_hooks(&config));
+    }
+
+    #[test]
+    fn upsert_gemini_hook_entries_is_idempotent_and_keeps_foreign_hooks() {
+        let mut hooks = json!({
+            "BeforeTool": [
+                {
+                    "matcher": "run_shell_command",
+                    "hooks": [{ "type": "command", "command": "node /other/island-hook.mjs" }]
+                }
+            ],
+            "notifications": true
+        });
+        let atoll = sample_atoll_gemini_hooks();
+
+        upsert_gemini_hook_entries(&mut hooks, &atoll);
+        upsert_gemini_hook_entries(&mut hooks, &atoll);
+
+        let hooks_obj = hooks.as_object().unwrap();
+        // notifications is not an event array and must be preserved untouched.
+        assert_eq!(hooks_obj.get("notifications"), Some(&json!(true)));
+
+        let before_tool = hooks_obj
+            .get("BeforeTool")
+            .and_then(Value::as_array)
+            .unwrap();
+        assert_eq!(before_tool.len(), 2);
+        assert!(before_tool[0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap()
+            .contains("island-hook.mjs"));
+        assert!(before_tool[1]["hooks"][0]["command"]
+            .as_str()
+            .unwrap()
+            .contains("atoll-gemini-hook"));
+
+        assert!(has_atoll_gemini_hooks(&json!({ "hooks": hooks })));
+    }
+
+    #[test]
+    fn remove_atoll_gemini_hooks_keeps_foreign_hooks_and_config_keys() {
+        let mut hooks = json!({
+            "notifications": true,
+            "BeforeTool": [
+                {
+                    "matcher": "run_shell_command",
+                    "hooks": [{ "type": "command", "command": "node /other/island-hook.mjs" }]
+                },
+                {
+                    "matcher": "run_shell_command",
+                    "hooks": [{ "type": "command", "command": "node /opt/Atoll/hooks/atoll-gemini-hook.mjs" }]
+                }
+            ],
+            "SessionStart": [
+                { "hooks": [{ "type": "command", "command": "node /opt/Atoll/hooks/atoll-gemini-hook.mjs" }] }
+            ]
+        });
+
+        remove_atoll_gemini_hooks(&mut hooks);
+
+        let hooks_obj = hooks.as_object().unwrap();
+        assert_eq!(hooks_obj.get("notifications"), Some(&json!(true)));
+        assert_eq!(hooks_obj.len(), 2);
+        let before_tool = hooks_obj
+            .get("BeforeTool")
+            .and_then(Value::as_array)
+            .unwrap();
+        assert_eq!(before_tool.len(), 1);
+        assert!(before_tool[0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap()
+            .contains("island-hook.mjs"));
     }
 }
 
