@@ -162,11 +162,16 @@
   animation: official-mark-pulse 0.85s ease-in-out infinite;
 }
 
+.compact-bar-preview .compact-session-dot .zcode.is-alert .zcode-mark {
+  animation: official-mark-pulse 0.85s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .compact-bar-preview .clawd,
   .compact-bar-preview .clawd-claw,
   .compact-bar-preview .clawd-bang,
-  .compact-bar-preview .codex-mark {
+  .compact-bar-preview .codex-mark,
+  .compact-bar-preview .zcode-mark {
     animation: none !important;
   }
 }

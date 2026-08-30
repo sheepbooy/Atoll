@@ -146,7 +146,9 @@
 
 .agent-mascot-slot .clawd.is-calm .clawd-body,
 .agent-mascot-slot .codex.is-calm .codex-body,
-.agent-mascot-slot .cursor-mascot.is-calm .cursor-mascot-body {
+.agent-mascot-slot .cursor-mascot.is-calm .cursor-mascot-body,
+.agent-mascot-slot .zcode.is-calm .zcode-body,
+.agent-mascot-slot .gemini.is-calm .gemini-body {
   animation: clawd-float 2.8s ease-in-out infinite;
 }
 
@@ -180,6 +182,11 @@
 }
 
 .agent-mascot-slot .codex.is-alert .codex-mark {
+  animation: official-mark-pulse 0.85s ease-in-out infinite;
+}
+
+.agent-mascot-slot .zcode.is-alert .zcode-mark,
+.agent-mascot-slot .gemini.is-alert .gemini-mark {
   animation: official-mark-pulse 0.85s ease-in-out infinite;
 }
 
