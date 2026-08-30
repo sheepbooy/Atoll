@@ -73,6 +73,48 @@ describe("AgentMascot", () => {
     expect(codex.container.querySelector(".codex-mark path")?.getAttribute("fill")).toBe("#f4f4f4");
   });
 
+  it("renders the official Gemini spark instead of a reused Clawd", () => {
+    const gemini = render(<AgentMascot agent="gemini" mood="calm" animated={false} />);
+    expect(gemini.container.querySelector(".gemini-mark path")).not.toBeNull();
+    // The spark carries its own brand gradient — no Clawd body parts.
+    expect(gemini.container.querySelector(".gemini-mark path")?.getAttribute("fill")?.startsWith("url(#gemini-spark-")).toBe(true);
+    expect(gemini.container.querySelector(".clawd")).toBeNull();
+    expect(gemini.container.querySelector(".gemini-leg")).toBeNull();
+
+    const sleeping = render(<AgentMascot agent="gemini" mood="sleeping" animated={false} />);
+    const sleepingFill = sleeping.container
+      .querySelector(".gemini-mark path")
+      ?.getAttribute("fill");
+    expect(sleepingFill).not.toBe(gemini.container.querySelector(".gemini-mark path")?.getAttribute("fill"));
+  });
+
+  it("recolors the Gemini spark with the session accent", () => {
+    const tinted = render(
+      <AgentMascot agent="gemini" mood="calm" accent="#ff8175" accentDark="#c05a54" animated={false} />,
+    );
+    const gradient = tinted.container.querySelector(".gemini-mark linearGradient");
+    expect(gradient?.querySelectorAll("stop")).toHaveLength(2);
+    expect(gradient?.querySelector("stop")?.getAttribute("stop-color")).toBe("#ff8175");
+    expect(gradient?.querySelectorAll("stop")[1]?.getAttribute("stop-color")).toBe("#c05a54");
+
+    const dead = render(
+      <AgentMascot agent="gemini" mood="dead" accent="#ff8175" animated={false} />,
+    );
+    const deadStops = dead.container.querySelectorAll(".gemini-mark linearGradient stop");
+    expect(deadStops[0]?.getAttribute("stop-color")).toBe("#8a8a8a");
+  });
+
+  it("marks gemini mascots static when animation is disabled", () => {
+    vi.useFakeTimers();
+    const setTimeoutSpy = vi.spyOn(window, "setTimeout");
+    const { container } = render(
+      <AgentMascot agent="gemini" mood="alert" animated={false} />,
+    );
+
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
+    expect(container.querySelector(".gemini.is-static")).not.toBeNull();
+  });
+
   it("recolors official marks for offline and error moods", () => {
     const deadCodex = render(<AgentMascot agent="codex" mood="dead" animated={false} />);
     expect(deadCodex.container.querySelector(".codex-mark path")?.getAttribute("fill")).toBe("#8a8a8a");

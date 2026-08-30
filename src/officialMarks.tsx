@@ -135,6 +135,61 @@ export function ZcodeOfficialMark({
   );
 }
 
+/** Official Gemini spark: the four-point star from Google's Gemini brand,
+ * filled with the documented three-stop gradient (blue → purple → rose).
+ * Path data from the official mark (24×24, tips on the axes). */
+export const GEMINI_SPARK_PATH =
+  "M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81";
+
+export const GEMINI_BRAND_GRADIENT = { from: "#4796E3", mid: "#9177C7", to: "#CA6673" };
+
+export function geminiSparkGradientStops(
+  mood: ClawdMood,
+  accent?: string,
+  accentDark?: string,
+): { from: string; mid?: string; to: string } {
+  if (mood === "dead") return { from: "#8a8a8a", to: "#666666" };
+  if (mood === "worried") return { from: "#7cb97c", to: "#5a8b5a" };
+  if (mood === "sleeping") return { from: "#6f7f95", to: "#495a72" };
+  // Session rows tint the spark with the per-session palette color; agent
+  // tabs keep the brand gradient by not passing an accent.
+  if (accent) return { from: accent, to: accentDark || accent };
+  return GEMINI_BRAND_GRADIENT;
+}
+
+export function GeminiOfficialMark({
+  mood,
+  accent,
+  accentDark,
+  className,
+}: {
+  mood: ClawdMood;
+  accent?: string;
+  accentDark?: string;
+  className?: string;
+}) {
+  // Per-instance gradient id: several mascots with different moods (e.g. a dead
+  // header logo next to a live agent tab) must not share one gradient def.
+  const gradientId = `gemini-spark-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
+  const { from, mid, to } = geminiSparkGradientStops(mood, accent, accentDark);
+
+  return (
+    <g className={className}>
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0.9" y2="1">
+          <stop offset="0" stopColor={from} />
+          {mid !== undefined && <stop offset="0.5" stopColor={mid} />}
+          <stop offset="1" stopColor={to} />
+        </linearGradient>
+      </defs>
+      {/* Same visual band as the Codex blossom / Cursor cube / ZCode tile. */}
+      <g transform="translate(56 39) scale(3.15) translate(-12 -12)">
+        <path fill={`url(#${gradientId})`} d={GEMINI_SPARK_PATH} />
+      </g>
+    </g>
+  );
+}
+
 const CURSOR_CUBE_PATH_KEYS = Object.keys(
   CURSOR_CUBE_PATHS,
 ) as Array<keyof typeof CURSOR_CUBE_PATHS>;

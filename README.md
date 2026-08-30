@@ -182,7 +182,7 @@ Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事�
 
 ### Agent 形象
 
-每个 Agent 有独立形象：Claude 是像素风 Clawd，Codex / Cursor 使用官方图标，ZCode 是天蓝渐变、白色斜体 Z 的官方方块形象，Gemini 复用 Clawd 造型并着色为绿色：
+每个 Agent 有独立形象：Claude 是像素风 Clawd，Codex / Cursor 使用官方图标，ZCode 是天蓝渐变、白色斜体 Z 的官方方块形象，Gemini 是官方四角星 spark 渐变形象：
 
 <p align="center">
   <img src="docs/assets/agent-mascots.png" alt="Claude / Codex / Cursor / Gemini mascots" width="420" />

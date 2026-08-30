@@ -41,7 +41,7 @@ const AGENT_COLOR: Record<string, string> = {
   claude: "#ff8b78",
   codex: "#61d8f7",
   cursor: "#a78bfa",
-  gemini: "#b2e578",
+  gemini: "#9177c7",
   zcode: "#4d9df8",
   other: "#c9bcff",
 };

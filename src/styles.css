@@ -2256,7 +2256,8 @@ kbd {
 .clawd,
 .codex,
 .cursor-mascot,
-.zcode {
+.zcode,
+.gemini {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2267,14 +2268,16 @@ kbd {
 .clawd-svg,
 .codex-svg,
 .cursor-mascot-svg,
-.zcode-svg {
+.zcode-svg,
+.gemini-svg {
   overflow: visible;
 }
 
 .clawd-body,
 .codex-body,
 .cursor-mascot-body,
-.zcode-body {
+.zcode-body,
+.gemini-body {
   transform-box: fill-box;
   transform-origin: center bottom;
 }
@@ -2298,6 +2301,12 @@ kbd {
 .zcode-sweat,
 .zcode-bang,
 .zcode-mark,
+.gemini-star,
+.gemini-heart,
+.gemini-z,
+.gemini-sweat,
+.gemini-bang,
+.gemini-mark,
 .cursor-mascot-star,
 .cursor-mascot-heart,
 .cursor-mascot-z,
@@ -2312,19 +2321,22 @@ kbd {
 .clawd.is-calm .clawd-body,
 .codex.is-calm .codex-body,
 .cursor-mascot.is-calm .cursor-mascot-body,
-.zcode.is-calm .zcode-body {
+.zcode.is-calm .zcode-body,
+.gemini.is-calm .gemini-body {
   animation: clawd-float 2.8s ease-in-out infinite;
 }
 .clawd.is-sleeping .clawd-body,
 .codex.is-sleeping .codex-body,
 .cursor-mascot.is-sleeping .cursor-mascot-body,
-.zcode.is-sleeping .zcode-body {
+.zcode.is-sleeping .zcode-body,
+.gemini.is-sleeping .gemini-body {
   animation: clawd-float-slow 3.6s ease-in-out infinite;
 }
 .clawd.is-alert .clawd-body,
 .codex.is-alert .codex-body,
 .cursor-mascot.is-alert .cursor-mascot-body,
-.zcode.is-alert .zcode-body {
+.zcode.is-alert .zcode-body,
+.gemini.is-alert .gemini-body {
   animation: clawd-alert-hop 0.85s ease-in-out infinite;
 }
 .clawd.is-happy .clawd-body,
@@ -2465,6 +2477,8 @@ kbd {
 .clawd.is-static *,
 .codex.is-static,
 .codex.is-static *,
+.gemini.is-static,
+.gemini.is-static *,
 .cursor-mascot.is-static,
 .cursor-mascot.is-static *,
 .zcode.is-static,
@@ -7517,7 +7531,7 @@ kbd {
 }
 
 .token-heatmap-agent-dot.is-gemini {
-  background: #b2e578;
+  background: #9177c7;
 }
 
 .token-heatmap-agent-dot.is-zcode {

@@ -277,3 +277,27 @@
   transform-box: fill-box;
   transform-origin: center;
 }
+
+/* Gemini spark mascot */
+.agent-mascot-slot .gemini,
+.mascot-slot .gemini {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 88px;
+  height: 79px;
+  line-height: 0;
+  will-change: transform;
+}
+
+.agent-mascot-slot .gemini-svg,
+.mascot-slot .gemini-svg {
+  overflow: visible;
+  width: 100%;
+  height: 100%;
+}
+
+.agent-mascot-slot .gemini-body {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}

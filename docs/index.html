@@ -567,7 +567,7 @@
     <!-- Agents -->
     <section id="agents" class="container reveal">
       <span class="section-label">接入 Agent</span>
-      <h2 class="section-title">现已支持 Claude Code、Codex、Cursor &amp; ZCode</h2>
+      <h2 class="section-title">现已支持 Claude Code、Codex、Cursor、ZCode &amp; Gemini CLI</h2>
       <p class="section-desc">面向本地 Coding Agent 的工作流浮岛，更多 Agent 持续接入中。Hook 注册权限、Plan、subagent 与 lifecycle 事件，写入本地配置文件。</p>
 
       <div class="agents-layout">
@@ -610,10 +610,12 @@
             </div>
           </article>
           <article class="agent-card">
-            <div class="agent-icon agent-icon--unknown" aria-hidden="true">?</div>
+            <div class="agent-card-mascot" aria-hidden="true">
+              <span class="mascot-slot" data-agent="gemini"></span>
+            </div>
             <div>
-              <h3>Gemini（即将支持）</h3>
-              <p>Mascot 形象待定，更多 Agent 持续接入中。</p>
+              <h3>Gemini CLI（API key 用户）</h3>
+              <p>Settings → Agent hooks → Install Gemini。BeforeTool 阻断式审批，仅拦有副作用的工具；安装后在 Gemini 中 /hooks 信任 Atoll hook。</p>
             </div>
           </article>
         </div>
@@ -633,7 +635,7 @@
     <section id="visual" class="container reveal">
       <span class="section-label">视觉</span>
       <h2 class="section-title">Agent 形象，状态一目了然</h2>
-      <p class="section-desc">菜单栏 Logo 反映 App 全局状态；Claude 仍是像素风 Clawd，Codex 与 Cursor 使用官方图标，ZCode 是天蓝渐变、白色斜体 Z 的官方方块形象，Gemini 复用 Clawd 造型并着色为绿色。</p>
+      <p class="section-desc">菜单栏 Logo 反映 App 全局状态；Claude 仍是像素风 Clawd，Codex 与 Cursor 使用官方图标，ZCode 是天蓝渐变、白色斜体 Z 的官方方块形象，Gemini 是官方四角星 spark 渐变形象。</p>
 
       <div class="visual-showcase">
         <div class="state-grid">

@@ -12,10 +12,8 @@
       mood: "calm",
     },
     gemini: {
-      type: "clawd",
+      type: "gemini",
       mood: "calm",
-      accent: "#b2e578",
-      accentDark: "#7aa44d",
     },
     cursor: {
       type: "cursor",
@@ -121,6 +119,28 @@
   const ZCODE_TILE_PATH =
     "M5.3 .6h13.4a5.3 5.3 0 015.3 5.3v12.2a5.3 5.3 0 01-5.3 5.3H5.3A5.3 5.3 0 010 18.1V5.9A5.3 5.3 0 015.3 .6Z";
   const ZCODE_Z_PATH = "M5.2 5.8H18.8V8L9.2 16H18.8V18.2H5.2V16L14.8 8H5.2Z";
+  const GEMINI_SPARK_PATH =
+    "M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81";
+
+  function renderGemini(mood) {
+    return `<span class="gemini is-${mood}" aria-hidden="true">
+      <svg class="gemini-svg" viewBox="${VIEWBOX}" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <linearGradient id="gemini-spark-gradient" x1="0" y1="0" x2="0.9" y2="1">
+            <stop offset="0" stop-color="#4796E3"/>
+            <stop offset="0.5" stop-color="#9177C7"/>
+            <stop offset="1" stop-color="#CA6673"/>
+          </linearGradient>
+        </defs>
+        <ellipse class="gemini-shadow" cx="68" cy="92" rx="32" ry="4" fill="rgba(0,0,0,0.18)"/>
+        <g class="gemini-body">
+          <g transform="translate(56 39) scale(3.15) translate(-12 -12)">
+            <path fill="url(#gemini-spark-gradient)" d="${GEMINI_SPARK_PATH}"/>
+          </g>
+        </g>
+      </svg>
+    </span>`;
+  }
 
   function renderZcode(mood) {
     return `<span class="zcode is-${mood}" aria-hidden="true">
@@ -157,6 +177,10 @@
 
     if (config.type === "zcode") {
       return renderZcode(mood);
+    }
+
+    if (config.type === "gemini") {
+      return renderGemini(mood);
     }
 
     return renderClawd(clawdPalette(config.accent, config.accentDark), mood);
