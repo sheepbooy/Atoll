@@ -64,8 +64,14 @@ describe("hookAgentsConfigured", () => {
         settingsPath: "/tmp/zcode.json",
         scriptPath: "",
       },
+      gemini: {
+        installed: true,
+        scriptFound: true,
+        settingsPath: "/tmp/gemini.json",
+        scriptPath: "/tmp/gemini.mjs",
+      },
     });
 
-    expect([...configured].sort()).toEqual(["claude", "cursor"]);
+    expect([...configured].sort()).toEqual(["claude", "cursor", "gemini"]);
   });
 });

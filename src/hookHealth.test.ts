@@ -40,8 +40,9 @@ function hookHealth(
   codex: typeof ready,
   cursor: typeof ready = ready,
   zcode: typeof ready = cursor,
+  gemini: typeof ready = zcode,
 ): HookHealthSnapshot {
-  return { claude, codex, cursor, zcode };
+  return { claude, codex, cursor, zcode, gemini };
 }
 
 describe("hookHealth", () => {
@@ -59,7 +60,7 @@ describe("hookHealth", () => {
 
     expect(analysis.needsFirstTimeSetup).toBe(false);
     expect(analysis.needsReconnect).toBe(false);
-    expect(analysis.connectedCount).toBe(3);
+    expect(analysis.connectedCount).toBe(4);
     expect(analysis.disconnectedAgents).toEqual([]);
     expect(analysis.summary).toBe("All agents connected");
   });
@@ -69,7 +70,7 @@ describe("hookHealth", () => {
 
     expect(analysis.needsFirstTimeSetup).toBe(false);
     expect(analysis.needsReconnect).toBe(true);
-    expect(analysis.connectedCount).toBe(3);
+    expect(analysis.connectedCount).toBe(4);
     expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["claude"]);
     expect(hookAttentionTitle(analysis)).toContain("Claude Code");
   });
@@ -158,7 +159,7 @@ describe("hookHealth", () => {
     );
     expect(merged).toEqual(hookHealth(ready, ready, ready));
     const analysis = analyzeHookHealth(merged);
-    expect(analysis.connectedCount).toBe(4);
+    expect(analysis.connectedCount).toBe(5);
     expect(analysis.disconnectedAgents).toEqual([]);
     expect(analysis.allConnected).toBe(true);
   });
@@ -206,6 +207,7 @@ describe("hookHealth", () => {
       codex: ready,
       cursor: cursorDrifted,
       zcode: ready,
+      gemini: ready,
     });
     expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["cursor"]);
     expect(deriveHeaderLogoDisplay(analysis, "idle")).toEqual({
@@ -223,6 +225,7 @@ describe("hookHealth", () => {
         codex: ready,
         cursor: missing,
         zcode: ready,
+        gemini: ready,
       },
       { configuredAgents: configuredCursor },
     );
@@ -240,6 +243,7 @@ describe("hookHealth", () => {
       codex: ready,
       cursor: missing,
       zcode: ready,
+      gemini: ready,
     });
     expect(analysis.disconnectedAgents).toEqual([]);
     expect(analysis.needsReconnect).toBe(false);
@@ -262,7 +266,7 @@ describe("hookHealth", () => {
     const codexNeedsRetrust = { ...ready, needsRetrust: true };
     const analysis = analyzeHookHealth(hookHealth(ready, codexNeedsRetrust, ready));
 
-    expect(analysis.connectedCount).toBe(4);
+    expect(analysis.connectedCount).toBe(5);
     expect(analysis.disconnectedAgents).toEqual([]);
     expect(analysis.retrustAgents.map((agent) => agent.key)).toEqual(["codex"]);
     expect(analysis.needsReconnect).toBe(true);
@@ -298,6 +302,27 @@ describe("hookHealth", () => {
     expect(hookRetrustNote("codex")).toContain("cached");
     expect(hookRetrustNote("claude")).toContain("Claude");
     expect(hookRetrustNote("cursor")).toContain("Cursor");
+    expect(hookRetrustNote("gemini")).toContain("Gemini");
+  });
+
+  it("flags configured but uninstalled gemini as disconnected when others stay connected", () => {
+    const configuredGemini = new Set<HookAgentKey>(["gemini"]);
+    const analysis = analyzeHookHealth(
+      {
+        claude: ready,
+        codex: ready,
+        cursor: ready,
+        zcode: ready,
+        gemini: missing,
+      },
+      { configuredAgents: configuredGemini },
+    );
+    expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["gemini"]);
+    expect(deriveHeaderLogoDisplay(analysis, "idle")).toEqual({
+      kind: "agent",
+      agent: "gemini",
+      mood: "dead",
+    });
   });
 
   it("derives idle atoll logo before hook health is known", () => {

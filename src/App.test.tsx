@@ -64,6 +64,12 @@ const connectedHookHealth = {
     settingsPath: "",
     scriptPath: "",
   },
+  gemini: {
+    installed: true,
+    scriptFound: true,
+    settingsPath: "",
+    scriptPath: "",
+  },
 };
 
 const emptyHookHealth = {
@@ -86,6 +92,12 @@ const emptyHookHealth = {
     scriptPath: "",
   },
   zcode: {
+    installed: false,
+    scriptFound: false,
+    settingsPath: "",
+    scriptPath: "",
+  },
+  gemini: {
     installed: false,
     scriptFound: false,
     settingsPath: "",

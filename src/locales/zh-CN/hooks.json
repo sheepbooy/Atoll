@@ -38,14 +38,16 @@
     "claude": "适用于 Claude Code CLI 与 Desktop。安装后：在 Claude Desktop 中使用 Ask 权限，重启 Claude，然后触发一次 Bash 权限。",
     "codex": "适用于 Codex CLI 与 Desktop。安装后：在 Codex Desktop 或通过 /hooks 信任 Atoll 钩子，重启 Codex，然后触发一次 shell 权限。",
     "cursor": "适用于 Cursor IDE Agent 与 Ask 模式。安装后：在 Cursor 设置中确认钩子，重启 Cursor，然后在 Agent 或 Ask 模式中发送消息验证。",
-    "zcode": "适用于 ZCode 桌面端与 CLI。安装后：重启 ZCode 以加载新的钩子配置，然后触发一次 shell 权限验证。"
+    "zcode": "适用于 ZCode 桌面端与 CLI。安装后：重启 ZCode 以加载新的钩子配置，然后触发一次 shell 权限验证。",
+    "gemini": "适用于 Gemini CLI。安装后：在 Gemini 中打开 /hooks 并信任 Atoll 钩子，重启 Gemini，然后触发一次 shell 命令验证。"
   },
   "register": {
     "withPath": "在 {{path}} 中注册钩子。{{note}}",
     "claude": "注册 Claude Code 权限审批钩子。{{note}}",
     "codex": "注册 Codex 权限审批钩子。{{note}}",
     "cursor": "注册 Cursor 权限审批钩子。{{note}}",
-    "zcode": "注册 ZCode 权限审批钩子。{{note}}"
+    "zcode": "注册 ZCode 权限审批钩子。{{note}}",
+    "gemini": "注册 Gemini CLI 权限审批钩子。{{note}}"
   },
   "checklist": {
     "claudeTitle": "Claude Desktop 检查清单",
@@ -67,7 +69,12 @@
     "zcodeNode": "安装钩子前请在本机安装 Node.js。",
     "zcodeEnable": "启用 Atoll 钩子会同时启用 ZCode 的配置文件钩子开关（hooks.enabled）。",
     "zcodeRestart": "安装钩子后退出并重新打开 ZCode。",
-    "zcodeVerify": "在本地会话中触发一次 shell 权限以验证。"
+    "zcodeVerify": "在本地会话中触发一次 shell 权限以验证。",
+    "geminiTitle": "Gemini CLI 检查清单",
+    "geminiNode": "安装钩子前请在本机安装 Node.js。",
+    "geminiTrust": "在 Gemini CLI 中打开 /hooks 并为你的项目信任 Atoll 钩子。",
+    "geminiRestart": "安装钩子后重启 Gemini CLI。",
+    "geminiVerify": "在本地会话中触发一次 shell 命令以验证；在 Atoll 中各执行一次批准与拒绝。"
   },
   "warning": {
     "scriptMissing": "应用包中缺少钩子脚本。若安装失败请重新安装 Atoll。",
@@ -86,6 +93,7 @@
     "claude": "Atoll 自上次批准后已更新 Claude 钩子脚本。请重新打开 Claude Code / Claude Desktop 权限并重新允许 Atoll 钩子，然后重启 Claude。",
     "cursor": "Atoll 自上次加载后已更新 Cursor 钩子脚本。请重新打开 Cursor 设置 → Hooks 以重新加载，然后重启 Cursor。",
     "zcode": "Atoll 自上次信任后已更新 ZCode 钩子脚本。请在 Atoll 中点击重新安装钩子，然后重启 ZCode。",
+    "gemini": "Atoll 自上次信任后已更新 Gemini 钩子脚本。请在 Atoll 中点击重新安装钩子，在 Gemini 中通过 /hooks 重新信任，然后重启 Gemini。",
     "default": "Atoll 自上次信任后已更新此钩子脚本。请在 Agent 应用中重新确认，然后重启。"
   },
   "error": {

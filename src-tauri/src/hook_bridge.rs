@@ -2789,7 +2789,11 @@ fn write_json_response(stream: &mut TcpStream, body: Value) -> std::io::Result<(
 }
 
 fn command_label(tool_name: &str, tool_input: &Value) -> String {
-    if tool_name == "Bash" || tool_name == "Shell" || tool_name == "exec_command" {
+    if tool_name == "Bash"
+        || tool_name == "Shell"
+        || tool_name == "exec_command"
+        || tool_name == "run_shell_command"
+    {
         if let Some(command) = tool_input.get("command").and_then(Value::as_str) {
             return format!("Bash: {command}");
         }

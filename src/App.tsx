@@ -246,6 +246,8 @@ import {
   uninstallCursorHooks,
   installZcodeHooks,
   uninstallZcodeHooks,
+  installGeminiHooks,
+  uninstallGeminiHooks,
   getSessionRetention,
   setSessionRetention,
   setSubagentRetention,
@@ -973,6 +975,7 @@ export function App() {
   const codexHookStatus = snapshot.hookHealth?.codex ?? null;
   const cursorHookStatus = snapshot.hookHealth?.cursor ?? null;
   const zcodeHookStatus = snapshot.hookHealth?.zcode ?? null;
+  const geminiHookStatus = snapshot.hookHealth?.gemini ?? null;
   const hookAttention = hookAttentionTitle(
     hookHealthAnalysis,
     hookHealthHydrated,
@@ -2638,7 +2641,9 @@ export function App() {
   }
 
   function applyHookInstallSnapshot(
-    statuses: Partial<Record<"claude" | "codex" | "cursor" | "zcode", HookStatus>>,
+    statuses: Partial<
+      Record<"claude" | "codex" | "cursor" | "zcode" | "gemini", HookStatus>
+    >,
   ) {
     invalidatePendingSnapshotLoads();
     const installedHealth: HookHealthSnapshot = {
@@ -2646,6 +2651,7 @@ export function App() {
       codex: statuses.codex ?? snapshotRef.current.hookHealth.codex,
       cursor: statuses.cursor ?? snapshotRef.current.hookHealth.cursor,
       zcode: statuses.zcode ?? snapshotRef.current.hookHealth.zcode,
+      gemini: statuses.gemini ?? snapshotRef.current.hookHealth.gemini,
     };
     const optimisticHookHealth = mergeHookHealthPreferReady(
       snapshotRef.current.hookHealth,
@@ -2751,28 +2757,57 @@ export function App() {
     }
   }
 
+  async function handleInstallGeminiHooks() {
+    setHookBusy(true);
+    setHookInstallError(null);
+    try {
+      const status = await installGeminiHooks();
+      if (status.installed) {
+        setConfiguredHookAgents(markHookAgentConfigured("gemini"));
+      }
+      await applyHookInstallSnapshot({ gemini: status });
+      if (status.installed) {
+        collapseIsland(true);
+      }
+    } catch (error) {
+      setHookInstallError(
+        i18n.t("error.installFailed", {
+          ns: "hooks",
+          agentLabel: "Gemini CLI",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
   async function handleInstallAllHooks() {
     setHookBusy(true);
     setHookInstallError(null);
     try {
       setConfiguredHookAgents(markAllHookAgentsConfigured());
-      const [claudeStatus, codexStatus, cursorStatus, zcodeStatus] = await Promise.all([
-        installClaudeHooks(),
-        installCodexHooks(),
-        installCursorHooks(),
-        installZcodeHooks(),
-      ]);
+      const [claudeStatus, codexStatus, cursorStatus, zcodeStatus, geminiStatus] =
+        await Promise.all([
+          installClaudeHooks(),
+          installCodexHooks(),
+          installCursorHooks(),
+          installZcodeHooks(),
+          installGeminiHooks(),
+        ]);
       await applyHookInstallSnapshot({
         claude: claudeStatus,
         codex: codexStatus,
         cursor: cursorStatus,
         zcode: zcodeStatus,
+        gemini: geminiStatus,
       });
       if (
         claudeStatus.installed ||
         codexStatus.installed ||
         cursorStatus.installed ||
-        zcodeStatus.installed
+        zcodeStatus.installed ||
+        geminiStatus.installed
       ) {
         collapseIsland(true);
       }
@@ -2781,6 +2816,7 @@ export function App() {
         !codexStatus.installed ? "Codex" : null,
         !cursorStatus.installed ? "Cursor" : null,
         !zcodeStatus.installed ? "ZCode" : null,
+        !geminiStatus.installed ? "Gemini CLI" : null,
       ].filter(Boolean);
       if (failures.length > 0) {
         setHookInstallError(
@@ -2924,17 +2960,49 @@ export function App() {
     }
   }
 
+  async function handleUninstallGeminiHooks() {
+    setMenuOpen(false);
+    setHookBusy(true);
+    try {
+      const status = await uninstallGeminiHooks();
+      const nextSnapshot = await getSnapshot().catch(() => null);
+      if (nextSnapshot) {
+        applySnapshot(nextSnapshot);
+      } else {
+        applySnapshot({
+          ...snapshotRef.current,
+          hookHealth: {
+            ...snapshotRef.current.hookHealth,
+            gemini: status,
+          },
+        });
+      }
+    } catch (error) {
+      setHookInstallError(
+        i18n.t("error.uninstallFailed", {
+          ns: "hooks",
+          agentLabel: "Gemini CLI",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
   async function handleUninstallHooks() {
     setMenuOpen(false);
     setHookBusy(true);
     setHookInstallError(null);
     try {
-      const [claudeStatus, codexStatus, cursorStatus, zcodeStatus] = await Promise.all([
-        uninstallClaudeHooks(),
-        uninstallCodexHooks(),
-        uninstallCursorHooks(),
-        uninstallZcodeHooks(),
-      ]);
+      const [claudeStatus, codexStatus, cursorStatus, zcodeStatus, geminiStatus] =
+        await Promise.all([
+          uninstallClaudeHooks(),
+          uninstallCodexHooks(),
+          uninstallCursorHooks(),
+          uninstallZcodeHooks(),
+          uninstallGeminiHooks(),
+        ]);
       const nextSnapshot = await getSnapshot().catch(() => null);
       if (nextSnapshot) {
         applySnapshot(nextSnapshot);
@@ -2947,6 +3015,7 @@ export function App() {
             codex: codexStatus,
             cursor: cursorStatus,
             zcode: zcodeStatus,
+            gemini: geminiStatus,
           },
         });
       }
@@ -3152,6 +3221,23 @@ export function App() {
           }),
       onInstall: handleInstallZcodeHooks,
       onUninstall: handleUninstallZcodeHooks,
+    },
+    {
+      key: "gemini",
+      label: "Gemini CLI",
+      status: geminiHookStatus,
+      note: geminiHookStatus.settingsPath
+        ? i18n.t("register.withPath", {
+            ns: "hooks",
+            path: geminiHookStatus.settingsPath,
+            note: hookAgentNote("gemini"),
+          })
+        : i18n.t("register.gemini", {
+            ns: "hooks",
+            note: hookAgentNote("gemini"),
+          }),
+      onInstall: handleInstallGeminiHooks,
+      onUninstall: handleUninstallGeminiHooks,
     },
   ];
 
@@ -6164,7 +6250,7 @@ function HooksView({
                     {agent.status.settingsPath}
                   </span>
                 ) : null}
-                {agent.note && (!installed || agent.key === "codex" || agent.key === "claude" || agent.key === "cursor" || agent.key === "zcode") ? (
+                {agent.note && (!installed || agent.key === "codex" || agent.key === "claude" || agent.key === "cursor" || agent.key === "zcode" || agent.key === "gemini") ? (
                   <span className="settings-card-desc">{agent.note}</span>
                 ) : null}
                 {agent.key === "claude" ? (
@@ -6197,6 +6283,17 @@ function HooksView({
                       <li>{t("checklist.zcodeEnable")}</li>
                       <li>{t("checklist.zcodeRestart")}</li>
                       <li>{t("checklist.zcodeVerify")}</li>
+                    </ul>
+                  </details>
+                ) : null}
+                {agent.key === "gemini" ? (
+                  <details className="settings-hook-desktop-note">
+                    <summary>{t("checklist.geminiTitle")}</summary>
+                    <ul>
+                      <li>{t("checklist.geminiNode")}</li>
+                      <li>{t("checklist.geminiTrust")}</li>
+                      <li>{t("checklist.geminiRestart")}</li>
+                      <li>{t("checklist.geminiVerify")}</li>
                     </ul>
                   </details>
                 ) : null}

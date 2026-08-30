@@ -3,7 +3,7 @@ import type { HookHealthSnapshot } from "./tauri";
 
 const STORAGE_KEY = "atoll-hook-agents-configured";
 
-const ALL_HOOK_AGENTS: HookAgentKey[] = ["claude", "codex", "cursor", "zcode"];
+const ALL_HOOK_AGENTS: HookAgentKey[] = ["claude", "codex", "cursor", "zcode", "gemini"];
 
 function parseConfigured(raw: string | null): Set<HookAgentKey> {
   if (!raw) return new Set();
@@ -13,7 +13,11 @@ function parseConfigured(raw: string | null): Set<HookAgentKey> {
     return new Set(
       parsed.filter(
         (entry): entry is HookAgentKey =>
-          entry === "claude" || entry === "codex" || entry === "cursor" || entry === "zcode",
+          entry === "claude" ||
+          entry === "codex" ||
+          entry === "cursor" ||
+          entry === "zcode" ||
+          entry === "gemini",
       ),
     );
   } catch {

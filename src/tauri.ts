@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import {
   getDemoCodexHookStatus,
   getDemoCursorHookStatus,
+  getDemoGeminiHookStatus,
   getDemoHookStatus,
   getDemoMode,
   getDemoSnapshot,
@@ -359,6 +360,7 @@ export interface HookHealthSnapshot {
   codex: HookStatus;
   cursor: HookStatus;
   zcode: HookStatus;
+  gemini: HookStatus;
 }
 
 export const EMPTY_HOOK_HEALTH: HookHealthSnapshot = {
@@ -390,6 +392,15 @@ export const EMPTY_HOOK_HEALTH: HookHealthSnapshot = {
     needsRetrust: false,
   },
   zcode: {
+    installed: false,
+    scriptFound: false,
+    settingsPath: "",
+    scriptPath: "",
+    nodePath: "",
+    nodeFound: true,
+    needsRetrust: false,
+  },
+  gemini: {
     installed: false,
     scriptFound: false,
     settingsPath: "",
@@ -455,6 +466,7 @@ export function normalizeHookHealth(raw: unknown): HookHealthSnapshot {
     codex: normalizeHookStatus(record.codex),
     cursor: normalizeHookStatus(record.cursor ?? EMPTY_HOOK_HEALTH.cursor),
     zcode: normalizeHookStatus(record.zcode ?? EMPTY_HOOK_HEALTH.zcode),
+    gemini: normalizeHookStatus(record.gemini ?? EMPTY_HOOK_HEALTH.gemini),
   };
 }
 
@@ -591,6 +603,35 @@ export async function installZcodeHooks(): Promise<HookStatus> {
 export async function uninstallZcodeHooks(): Promise<HookStatus> {
   if (isTauriRuntime()) {
     return normalizeHookStatus(await invoke<HookStatus>("uninstall_zcode_hooks"));
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
+export async function getGeminiHookStatus(): Promise<HookStatus> {
+  if (isTauriRuntime()) {
+    return normalizeHookStatus(await invoke<HookStatus>("get_gemini_hook_status"));
+  }
+
+  const demoMode = getDemoMode();
+  if (demoMode) {
+    return getDemoGeminiHookStatus(demoMode);
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
+export async function installGeminiHooks(): Promise<HookStatus> {
+  if (isTauriRuntime()) {
+    return normalizeHookStatus(await invoke<HookStatus>("install_gemini_hooks"));
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
+export async function uninstallGeminiHooks(): Promise<HookStatus> {
+  if (isTauriRuntime()) {
+    return normalizeHookStatus(await invoke<HookStatus>("uninstall_gemini_hooks"));
   }
 
   return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };

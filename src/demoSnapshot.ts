@@ -220,6 +220,24 @@ const demoZcodeHookMissing: HookStatus = {
   nodeFound: true,
 };
 
+const demoGeminiHookInstalled: HookStatus = {
+  installed: true,
+  scriptFound: true,
+  settingsPath: "~/.gemini/settings.json",
+  scriptPath: "/Applications/Atoll.app/.../atoll-gemini-hook.mjs",
+  nodePath: "/opt/homebrew/bin/node",
+  nodeFound: true,
+};
+
+const demoGeminiHookMissing: HookStatus = {
+  installed: false,
+  scriptFound: true,
+  settingsPath: "~/.gemini/settings.json",
+  scriptPath: "/Applications/Atoll.app/.../atoll-gemini-hook.mjs",
+  nodePath: "/opt/homebrew/bin/node",
+  nodeFound: true,
+};
+
 function refreshRequestTimestamp(request: PermissionRequest): PermissionRequest {
   return { ...request, requestedAt: new Date().toISOString() };
 }
@@ -274,6 +292,7 @@ export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {
       codex: demoCodexHookInstalled,
       cursor: demoCursorHookInstalled,
       zcode: demoZcodeHookInstalled,
+      gemini: demoGeminiHookInstalled,
     },
   };
 
@@ -332,6 +351,10 @@ export function getDemoCursorHookStatus(mode: DemoMode): HookStatus {
 
 export function getDemoZcodeHookStatus(mode: DemoMode): HookStatus {
   return mode === "idle" ? demoZcodeHookMissing : demoZcodeHookInstalled;
+}
+
+export function getDemoGeminiHookStatus(mode: DemoMode): HookStatus {
+  return mode === "idle" ? demoGeminiHookMissing : demoGeminiHookInstalled;
 }
 
 export function shouldAutoExpandDemo(mode: DemoMode): boolean {

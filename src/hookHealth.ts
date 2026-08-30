@@ -8,6 +8,7 @@ export const HOOK_AGENT_LABELS = {
   codex: "Codex",
   cursor: "Cursor",
   zcode: "ZCode",
+  gemini: "Gemini CLI",
 } as const;
 
 export type HookAgentKey = keyof typeof HOOK_AGENT_LABELS;
@@ -85,11 +86,14 @@ export function mergeHookHealthPreferReady(
   const upgradeCursor = upgrade.cursor ?? baseCursor;
   const baseZcode = base.zcode ?? EMPTY_HOOK_HEALTH.zcode;
   const upgradeZcode = upgrade.zcode ?? baseZcode;
+  const baseGemini = base.gemini ?? EMPTY_HOOK_HEALTH.gemini;
+  const upgradeGemini = upgrade.gemini ?? baseGemini;
   return {
     claude: preferHookStatus(base.claude, upgrade.claude),
     codex: preferHookStatus(base.codex, upgrade.codex),
     cursor: preferHookStatus(baseCursor, upgradeCursor),
     zcode: preferHookStatus(baseZcode, upgradeZcode),
+    gemini: preferHookStatus(baseGemini, upgradeGemini),
   };
 }
 
@@ -139,6 +143,7 @@ export function analyzeHookHealth(
     { key: "codex", label: HOOK_AGENT_LABELS.codex, status: health?.codex },
     { key: "cursor", label: HOOK_AGENT_LABELS.cursor, status: health?.cursor },
     { key: "zcode", label: HOOK_AGENT_LABELS.zcode, status: health?.zcode },
+    { key: "gemini", label: HOOK_AGENT_LABELS.gemini, status: health?.gemini },
   ];
   const agents = agentEntries.filter(
     (agent): agent is { key: HookAgentKey; label: string; status: HookStatus } =>
@@ -241,6 +246,8 @@ export function hookRetrustNote(agentKey: HookAgentKey): string {
       return i18n.t("retrust.cursor", { ns: "hooks" });
     case "zcode":
       return i18n.t("retrust.zcode", { ns: "hooks" });
+    case "gemini":
+      return i18n.t("retrust.gemini", { ns: "hooks" });
     default:
       return i18n.t("retrust.default", { ns: "hooks" });
   }
