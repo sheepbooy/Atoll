@@ -6,6 +6,7 @@
     "media": "Media",
     "clipboard": "Clipboard",
     "notifications": "Notifications",
+    "shortcuts": "Shortcuts",
     "sessions": "Sessions",
     "usage": "Usage",
     "integrations": "Integrations",
@@ -28,6 +29,8 @@
     "clipboardDesc": "History recording and how many entries to keep.",
     "notificationsTitle": "Notifications",
     "notificationsDesc": "How new requests get your attention.",
+    "shortcutsTitle": "Global shortcuts",
+    "shortcutsDesc": "Summon the island and approve or deny requests from anywhere.",
     "sessionsTitle": "Sessions",
     "sessionsDesc": "Auto-archive idle sessions and completed subagents."
   },
@@ -95,6 +98,20 @@
     "modeNotify": "Notify only",
     "modeInterruptDesc": "New requests expand and focus the island right away for immediate handling. Default.",
     "modeNotifyDesc": "Keep working undisturbed: a system notification arrives; click it or the island to open the approval."
+  },
+  "shortcuts": {
+    "enableLabel": "Global shortcuts",
+    "enableDesc": "Trigger island actions from any app. Approve and deny only fire while a request is pending.",
+    "summonLabel": "Summon island",
+    "summonDesc": "Show and focus the island.",
+    "approveLabel": "Approve request",
+    "approveDesc": "Approve the current pending request.",
+    "denyLabel": "Deny request",
+    "denyDesc": "Deny the current pending request.",
+    "notSet": "Not set",
+    "pressHint": "Press a key combination",
+    "needsModifierHint": "Add a modifier such as Cmd, Ctrl, Alt, or Shift",
+    "clearLabel": "Clear"
   },
   "usagePage": {
     "foldedCounterLabel": "Folded counter",

@@ -1,10 +1,23 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ABSOLUTE_MAX_COMPACT_ICONS,
   MIN_MAX_COMPACT_ICONS,
 } from "./compactLayout";
 import type { CompactIndicatorMode } from "./displayPrefs";
-import type { ApprovalNoticeMode } from "./tauri";
+import type {
+  ApprovalNoticeMode,
+  GlobalShortcutConfig,
+  GlobalShortcutErrors,
+  ShortcutAction,
+} from "./tauri";
+import {
+  SHORTCUT_ACTIONS,
+  acceleratorFromKeyboardEvent,
+  formatAccelerator,
+  shortcutPlatform,
+  type ShortcutPlatform,
+} from "./shortcuts";
 import { SettingsSlider, SettingsToggle } from "./SettingsControls";
 import type { FoldedIslandSize } from "./SettingsView";
 
@@ -318,6 +331,111 @@ export function NotificationSettingsView({
             </div>
             <span className="settings-card-desc">{t(activeMode.descKey)}</span>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ShortcutSettingsView({
+  config,
+  errors = {},
+  platform = shortcutPlatform(),
+  onChangeEnabled,
+  onChangeAccelerator,
+}: {
+  config: GlobalShortcutConfig;
+  errors?: GlobalShortcutErrors;
+  platform?: ShortcutPlatform;
+  onChangeEnabled: (enabled: boolean) => void;
+  onChangeAccelerator: (action: ShortcutAction, value: string) => void;
+}) {
+  const { t } = useTranslation("settings");
+  const [recording, setRecording] = useState<ShortcutAction | null>(null);
+  const [needsModifier, setNeedsModifier] = useState(false);
+
+  return (
+    <div className="settings-view" data-no-drag>
+      <div className="settings-body">
+        <div className="settings-section">
+          <span className="settings-section-label">{t("section.shortcuts")}</span>
+          <SettingsToggle
+            label={t("shortcuts.enableLabel")}
+            desc={t("shortcuts.enableDesc")}
+            checked={config.enabled}
+            onChange={onChangeEnabled}
+          />
+          {SHORTCUT_ACTIONS.map((action) => {
+            const value = config[action];
+            const error = errors[action];
+            const isRecording = recording === action;
+            return (
+              <div className="settings-card" key={action}>
+                <div className="settings-card-head">
+                  <span className="settings-card-title">
+                    {t(`shortcuts.${action}Label`)}
+                  </span>
+                  <div className="settings-shortcut-field">
+                    <input
+                      type="text"
+                      className={`settings-shortcut-input${isRecording ? " is-recording" : ""}`}
+                      value={formatAccelerator(value, platform)}
+                      placeholder={t("shortcuts.notSet")}
+                      readOnly
+                      disabled={!config.enabled}
+                      aria-label={t(`shortcuts.${action}Label`)}
+                      onFocus={() => {
+                        setRecording(action);
+                        setNeedsModifier(false);
+                      }}
+                      onBlur={() => {
+                        if (isRecording) {
+                          setRecording(null);
+                          setNeedsModifier(false);
+                        }
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.currentTarget.blur();
+                          return;
+                        }
+                        const accelerator = acceleratorFromKeyboardEvent(
+                          event.nativeEvent,
+                          platform,
+                        );
+                        if (accelerator) {
+                          event.preventDefault();
+                          setNeedsModifier(false);
+                          onChangeAccelerator(action, accelerator);
+                        } else {
+                          setNeedsModifier(true);
+                        }
+                      }}
+                      data-no-drag
+                    />
+                    {value ? (
+                      <button
+                        type="button"
+                        className="settings-shortcut-clear"
+                        disabled={!config.enabled}
+                        onClick={() => onChangeAccelerator(action, "")}
+                        data-no-drag
+                      >
+                        {t("shortcuts.clearLabel")}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                <span className="settings-card-desc">{t(`shortcuts.${action}Desc`)}</span>
+                {isRecording ? (
+                  <span className="settings-card-desc settings-shortcut-hint">
+                    {t(needsModifier ? "shortcuts.needsModifierHint" : "shortcuts.pressHint")}
+                  </span>
+                ) : null}
+                {error ? <span className="settings-shortcut-error">{error}</span> : null}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

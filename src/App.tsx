@@ -117,6 +117,7 @@ import {
   IslandSettingsView,
   MascotSettingsView,
   NotificationSettingsView,
+  ShortcutSettingsView,
   MAX_CLIPBOARD_LIMIT,
   MAX_IDLE_DURATION_MIN,
   MAX_IDLE_INTERVAL_MIN,
@@ -260,7 +261,16 @@ import {
   onLyricsPosition,
   getCurrentLyrics,
   type LyricPayload,
+  getGlobalShortcutConfig,
+  setGlobalShortcutConfig,
+  type GlobalShortcutConfig,
+  type GlobalShortcutView,
+  type ShortcutAction,
 } from "./tauri";
+import {
+  DEFAULT_GLOBAL_SHORTCUTS,
+  withShortcutAction,
+} from "./shortcuts";
 
 type Decision = "approved" | "denied";
 type AgentKind = PermissionRequest["agent"];
@@ -282,7 +292,8 @@ type SettingsPage =
   | "clipboard"
   | "sessions"
   | "mascot"
-  | "notifications";
+  | "notifications"
+  | "shortcuts";
 type FoldedIslandSize = "small" | "regular";
 // Window-space rect of the compact media thumb plus the window size it was
 // measured against; scales the expanded artwork backdrop back onto the thumb.
@@ -873,6 +884,7 @@ export function App() {
   const [mediaCardEnabled, setMediaCardEnabledState] = useState(true);
   const [approvalNoticeMode, setApprovalNoticeModeState] =
     useState<ApprovalNoticeMode>("interrupt");
+  const [globalShortcutView, setGlobalShortcutView] = useState<GlobalShortcutView | null>(null);
   const [artworkBackdropEnabled, setArtworkBackdropEnabledState] = useState(false);
   // Rect of the compact media thumb (window coords) captured right before the
   // expand animation starts; drives the artwork backdrop grow-from-thumb origin.
@@ -1365,6 +1377,9 @@ export function App() {
       .catch(() => undefined);
     getApprovalNoticeMode()
       .then(setApprovalNoticeModeState)
+      .catch(() => undefined);
+    getGlobalShortcutConfig()
+      .then(setGlobalShortcutView)
       .catch(() => undefined);
     setNotificationLanguage(readLanguage()).catch(() => undefined);
     getArtworkBackdropEnabled()
@@ -2995,6 +3010,19 @@ export function App() {
     setApprovalNoticeMode(mode).catch(() => undefined);
   }, []);
 
+  // Optimistically apply the edit, then adopt the backend view: it carries the
+  // per-action registration errors (hotkey taken, invalid accelerator) that the
+  // settings rows render.
+  const handleChangeGlobalShortcutConfig = useCallback(
+    (next: GlobalShortcutConfig) => {
+      setGlobalShortcutView((prev) => (prev ? { ...prev, config: next, errors: {} } : prev));
+      setGlobalShortcutConfig(next)
+        .then(setGlobalShortcutView)
+        .catch(() => undefined);
+    },
+    [],
+  );
+
   const handleChangeMediaCardEnabled = useCallback((enabled: boolean) => {
     setMediaCardEnabledState(enabled);
     setMediaCardEnabled(enabled).catch(() => undefined);
@@ -3798,6 +3826,30 @@ export function App() {
         );
       }
 
+      if (panelView.page === "shortcuts") {
+        return (
+          <ShortcutSettingsView
+            config={globalShortcutView?.config ?? DEFAULT_GLOBAL_SHORTCUTS}
+            errors={globalShortcutView?.errors}
+            onChangeEnabled={(enabled) =>
+              handleChangeGlobalShortcutConfig({
+                ...(globalShortcutView?.config ?? DEFAULT_GLOBAL_SHORTCUTS),
+                enabled,
+              })
+            }
+            onChangeAccelerator={(action: ShortcutAction, value: string) =>
+              handleChangeGlobalShortcutConfig(
+                withShortcutAction(
+                  globalShortcutView?.config ?? DEFAULT_GLOBAL_SHORTCUTS,
+                  action,
+                  value,
+                ),
+              )
+            }
+          />
+        );
+      }
+
       return (
         <SettingsView
           launchAtLogin={launchAtLogin}
@@ -3814,6 +3866,7 @@ export function App() {
           onOpenSessions={() => openSettingsSubpage("sessions")}
           onOpenMascot={() => openSettingsSubpage("mascot")}
           onOpenNotifications={() => openSettingsSubpage("notifications")}
+          onOpenShortcuts={() => openSettingsSubpage("shortcuts")}
           noticeModeLabel={tSettings(
             approvalNoticeMode === "notify"
               ? "notice.modeNotify"
@@ -3827,6 +3880,7 @@ export function App() {
           showMediaSettings={IS_MACOS}
           mediaCardEnabled={mediaCardEnabled}
           clipboardHistoryEnabled={clipboardEnabled}
+          shortcutsEnabled={globalShortcutView?.config.enabled ?? true}
         />
       );
     }

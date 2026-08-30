@@ -8,6 +8,7 @@ import {
   getDemoSnapshot,
   getDemoZcodeHookStatus,
 } from "./demoSnapshot";
+import { DEFAULT_GLOBAL_SHORTCUTS } from "./shortcuts";
 
 export type PermissionStatus = "pending" | "approved" | "denied";
 export type AgentKind =
@@ -805,6 +806,43 @@ export async function setNotificationLanguage(language: string): Promise<void> {
     return;
   }
   await invoke("set_notification_language", { language });
+}
+
+export type ShortcutAction = "summon" | "approve" | "deny";
+
+export interface GlobalShortcutConfig {
+  enabled: boolean;
+  summon: string;
+  approve: string;
+  deny: string;
+}
+
+/** Per-action error text from the last registration attempt; null/undefined = OK. */
+export interface GlobalShortcutErrors {
+  summon?: string | null;
+  approve?: string | null;
+  deny?: string | null;
+}
+
+export interface GlobalShortcutView {
+  config: GlobalShortcutConfig;
+  errors: GlobalShortcutErrors;
+}
+
+export async function getGlobalShortcutConfig(): Promise<GlobalShortcutView> {
+  if (!isTauriRuntime()) {
+    return { config: { ...DEFAULT_GLOBAL_SHORTCUTS }, errors: {} };
+  }
+  return invoke<GlobalShortcutView>("get_global_shortcut_config");
+}
+
+export async function setGlobalShortcutConfig(
+  config: GlobalShortcutConfig,
+): Promise<GlobalShortcutView> {
+  if (!isTauriRuntime()) {
+    return { config, errors: {} };
+  }
+  return invoke<GlobalShortcutView>("set_global_shortcut_config", { config });
 }
 
 export async function getCurrentLyrics(): Promise<LyricPayload | null> {

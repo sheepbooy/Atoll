@@ -5588,6 +5588,81 @@ kbd {
   color: rgba(255, 255, 255, 0.92);
 }
 
+/* -- global shortcuts -- */
+.settings-shortcut-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-shortcut-input {
+  width: 128px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 650;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) ease,
+    background var(--duration-fast) ease;
+}
+
+.settings-shortcut-input:read-only:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.settings-shortcut-input:focus {
+  outline: none;
+  border-color: rgba(111, 220, 255, 0.45);
+  background: rgba(111, 220, 255, 0.08);
+  cursor: default;
+}
+
+.settings-shortcut-input.is-recording {
+  border-color: rgba(111, 220, 255, 0.55);
+  color: rgba(111, 220, 255, 0.95);
+}
+
+.settings-shortcut-input:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.settings-shortcut-clear {
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.settings-shortcut-clear:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+}
+
+.settings-shortcut-clear:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.settings-shortcut-hint {
+  color: rgba(111, 220, 255, 0.75);
+}
+
+.settings-shortcut-error {
+  color: rgba(255, 118, 108, 0.95);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
 .settings-inline-button {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
