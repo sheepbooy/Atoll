@@ -57,9 +57,10 @@
 - **开机自启动** — Settings → General 可开启 Launch at login（macOS / Windows）
 - **应用内更新** — 启动时自动检测新版本，三点菜单一键下载安装并重启
 - **Cursor IDE** — Hook 集成、会话与 subagent 追踪、Token 统计；Shell 权限由 Cursor 自带 UI 处理，Atoll 以 observer hooks 异步监听，不阻塞 IDE；顶栏 **Open Cursor** 一键跳回 IDE
+- **Gemini CLI** — Hook 集成：`BeforeTool` 阻断式审批，Shell / 写文件 / 网络抓取等有副作用的工具先经 Atoll 批准才执行，拒绝时模型直接收到阻断原因；Atoll 未运行时自动回落 Gemini 自带权限流程，不阻塞会话
 - **全程本地** — Hook 桥接 `127.0.0.1:47777`，数据不出本机
 
-目前支持 **Claude Code**（CLI 与 Desktop）、**Codex**（CLI 与 Desktop）、**Cursor IDE**（macOS Apple Silicon 与 Windows x64）和 **ZCode**（CLI 与 Desktop）。
+目前支持 **Claude Code**（CLI 与 Desktop）、**Codex**（CLI 与 Desktop）、**Cursor IDE**（macOS Apple Silicon 与 Windows x64）、**ZCode**（CLI 与 Desktop）和 **Gemini CLI**。
 
 ---
 
@@ -141,9 +142,12 @@ Atoll 通过应用内 **一键安装 Hook**，无需手动编辑配置文件。
 | **Claude Code**（CLI + Desktop） | 菜单 → Settings → Agent hooks → Install | Desktop：权限选 **Ask permissions**，安装后完全退出并重启 Claude Desktop，再在 Code 标签触发一次 Bash 权限验证 |
 | **Codex**（CLI + Desktop） | 同上 → Install Codex | Desktop/CLI：安装后在 Codex 中打开 `/hooks` 并信任 Atoll hook，完全退出并重启 Codex Desktop，再触发一次 shell 权限验证 |
 | **Cursor**（IDE Agent） | 同上 → Install Cursor | 安装后在 Cursor Settings → Hooks 确认 hook 已加载，重启 Cursor，再在 Agent 模式触发一次 Shell 工具以验证 observer hooks；Shell 权限仍由 Cursor 自身 UI 处理 |
-| **ZCode**（CLI + Desktop） | 同上 → Install ZCode | 安装后在 ZCode 中触发一次权限请求验证；Token 统计读取 `~/.zcode/cli/rollout`（含子代理归集） |
+| **ZCode**（CLI + Desktop） | 同上 → Install ZCode | 安装后完全退出并重启 ZCode，再触发一次 shell 权限验证；Token 统计读取 `~/.zcode/cli/rollout`（含子代理归集） |
+| **Gemini CLI** | 同上 → Install Gemini | 安装后在 Gemini 中打开 `/hooks` 并信任 Atoll hook，重启 Gemini，再触发一次 shell 命令验证（在 Atoll 各执行一次批准与拒绝） |
 
-Hook 注册 `PermissionRequest`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）、`~/.codex/hooks.json`、`~/.zcode/cli/config.json` 或 Cursor hooks 配置。安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`。
+Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）、`~/.codex/hooks.json`、`~/.zcode/cli/config.json`、Cursor hooks 配置或 `~/.gemini/settings.json`。安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`。
+
+> Gemini CLI 的 hook 按"项目路径 + hook 键"管理信任：安装后需在 Gemini 中执行 `/hooks` 信任 Atoll hook。Gemini 自身审批模式（如默认确认）仍会生效——Atoll 的拒绝先于 Gemini 确认生效，Atoll 的批准则在 Gemini 判定需要确认时仍走其原生确认。
 
 卸载：Settings → Agent hooks → Uninstall（仅移除 Atoll 条目，保留你的其他 hooks）。
 
@@ -228,7 +232,7 @@ npm run tauri build  # 打包
 
 ```
 src/                          React 浮岛 UI
-src-tauri/src/hook_bridge.rs  本地 HTTP 桥接（Claude + Codex + Cursor）
+src-tauri/src/hook_bridge.rs  本地 HTTP 桥接（Claude + Codex + Cursor + ZCode + Gemini）
 src-tauri/src/transcript.rs   JSONL 会话 & Token 解析
 scripts/atoll-*-hook.mjs      Hook shim（随应用分发）
 ```
@@ -258,7 +262,8 @@ npm run export:brand     # Logo 状态 + Agent 形象
 - [ ] Windows 代码签名
 - [x] ZCode hook 适配
 - [x] ZCode token 用量统计（rollout JSONL，含子代理归集）
-- [ ] Gemini 等更多 Agent 适配
+- [x] Gemini CLI hook 适配（BeforeTool 阻断式审批）
+- [ ] 更多 Agent 适配
 - [x] Cursor hook 适配
 - [x] 新请求自动展开、通知中心提醒（强制打断 / 仅通知两种模式，Settings → Notifications）
 - [x] 审批历史持久化、导出、会话搜索
