@@ -1566,9 +1566,63 @@ kbd {
   background: rgba(205, 193, 255, 0.12);
 }
 
+/* ─── 全局快捷键 preview ─── */
+
+.shortcuts-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+}
+
+.shortcut-action {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.shortcut-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.shortcut-keys kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border-medium);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
 /* ─── agent 卡片里的 ZCode 吉祥物 ─── */
 
 .agent-card-mascot .mascot-slot .zcode {
+  width: 48px;
+  height: 48px;
+}
+
+.agent-card-mascot .mascot-slot .gemini {
   width: 48px;
   height: 48px;
 }
