@@ -561,6 +561,68 @@ fn uninstall_hooks_for(profile: &AgentHookProfile, app: AppHandle) -> Result<Hoo
     Ok((profile.status)(&app))
 }
 
+fn install_hooks_for(profile: &AgentHookProfile, app: AppHandle) -> Result<HookStatus, String> {
+    let source_script_path = resolve_install_hook_script_path(&app, profile.script_name)?;
+    let script_path = materialize_hook_deployment(&app, profile.script_name, &source_script_path)?;
+
+    if !std::path::Path::new(&script_path).exists() {
+        return Err(format!("Hook script not found at: {script_path}"));
+    }
+
+    let node_path = (profile.resolve_node)()?;
+
+    let config_path =
+        (profile.config_path)().ok_or_else(|| "Cannot determine home directory".to_string())?;
+
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Cannot create {} directory: {e}", profile.config_dir_label))?;
+    }
+
+    let mut config: Value = if config_path.exists() {
+        let content = std::fs::read_to_string(&config_path)
+            .map_err(|e| format!("Cannot read {}: {e}", profile.io_label))?;
+        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()))
+    } else {
+        Value::Object(Default::default())
+    };
+
+    let hook_command = (profile.build_hook_command)(&app, &node_path, &script_path)?;
+    (profile.apply_hooks)(&app, &mut config, &hook_command)?;
+
+    let formatted = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Cannot serialize {}: {e}", profile.io_label))?;
+    std::fs::write(&config_path, formatted)
+        .map_err(|e| format!("Cannot write {}: {e}", profile.io_label))?;
+
+    let written = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("Cannot verify {}: {e}", profile.io_label))?;
+    let verify: Value = serde_json::from_str(&written)
+        .map_err(|e| format!("Cannot parse {} after write: {e}", profile.io_label))?;
+    if !(profile.has_hooks)(&verify) {
+        return Err(format!(
+            "{} hooks were not saved correctly. Check permissions on {}.",
+            profile.display_name, profile.permissions_hint
+        ));
+    }
+
+    if let Err(error) = hook_bridge::refresh_bridge_config_file(&app) {
+        eprintln!(
+            "Atoll failed to refresh bridge.json after {} hook install: {error}",
+            profile.display_name
+        );
+    }
+    (profile.record_installed)(profile.key, &script_path);
+
+    let state = app.state::<AppState>();
+    if let Some(refresh) = profile.pre_snapshot_refresh {
+        refresh(&app, &state);
+    }
+    emit_hook_snapshot_changed(&app)?;
+
+    Ok((profile.status)(&app))
+}
+
 fn apply_claude_hooks(
     _app: &AppHandle,
     config: &mut Value,
@@ -703,162 +765,7 @@ pub(crate) fn get_claude_hook_status(app: AppHandle) -> Result<HookStatus, Strin
 
 #[tauri::command]
 pub(crate) fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let source_script_path = resolve_install_hook_script_path(&app, "atoll-claude-hook.mjs")?;
-    let script_path =
-        materialize_hook_deployment(&app, "atoll-claude-hook.mjs", &source_script_path)?;
-
-    if !std::path::Path::new(&script_path).exists() {
-        return Err(format!("Hook script not found at: {script_path}"));
-    }
-
-    let node_path = resolve_node_executable()?;
-
-    let settings_path =
-        claude_settings_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
-
-    if let Some(parent) = settings_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Cannot create ~/.claude directory: {e}"))?;
-    }
-
-    let mut settings: Value = if settings_path.exists() {
-        let content = std::fs::read_to_string(&settings_path)
-            .map_err(|e| format!("Cannot read settings: {e}"))?;
-        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()))
-    } else {
-        Value::Object(Default::default())
-    };
-
-    let hook_command = format_hook_command(
-        hook_runner_for_command(&app).as_deref(),
-        &node_path,
-        &script_path,
-    );
-    let atoll_hooks = serde_json::json!({
-        "PermissionRequest": [
-            {
-                "matcher": "*",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": hook_command,
-                        "timeout": 1800
-                    }
-                ]
-            }
-        ],
-        "PostToolUse": [
-            {
-                "matcher": "*",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": hook_command,
-                        "timeout": 30
-                    }
-                ]
-            }
-        ],
-        "PostToolUseFailure": [
-            {
-                "matcher": "*",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": hook_command,
-                        "timeout": 30
-                    }
-                ]
-            }
-        ],
-        "Stop": [
-            {
-                "matcher": "*",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": hook_command,
-                        "timeout": 30
-                    }
-                ]
-            }
-        ],
-        "StopFailure": [
-            {
-                "matcher": "*",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": hook_command,
-                        "timeout": 30
-                    }
-                ]
-            }
-        ],
-        "SubagentStop": [
-            {
-                "matcher": "*",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": hook_command,
-                        "timeout": 30
-                    }
-                ]
-            }
-        ],
-        "SubagentStart": [
-            {
-                "matcher": "*",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": hook_command,
-                        "timeout": 30
-                    }
-                ]
-            }
-        ]
-    });
-
-    let settings_obj = settings
-        .as_object_mut()
-        .ok_or_else(|| "Settings file is not a JSON object".to_string())?;
-    let hooks_entry = settings_obj
-        .entry("hooks")
-        .or_insert_with(|| Value::Object(Default::default()));
-    upsert_claude_hook_events(hooks_entry, &atoll_hooks);
-
-    let formatted = serde_json::to_string_pretty(&settings)
-        .map_err(|e| format!("Cannot serialize settings: {e}"))?;
-    std::fs::write(&settings_path, formatted).map_err(|e| format!("Cannot write settings: {e}"))?;
-
-    let written = std::fs::read_to_string(&settings_path)
-        .map_err(|e| format!("Cannot verify settings: {e}"))?;
-    let verify: Value = serde_json::from_str(&written)
-        .map_err(|e| format!("Cannot parse settings after write: {e}"))?;
-    if !has_atoll_claude_hooks(&verify) {
-        return Err(
-            "Claude hooks were not saved correctly. Check permissions on ~/.claude/settings.json."
-                .into(),
-        );
-    }
-
-    if let Err(error) = hook_bridge::refresh_bridge_config_file(&app) {
-        eprintln!("Atoll failed to refresh bridge.json after Claude hook install: {error}");
-    }
-    hook_trust::record_hook_installed("claude", &script_path);
-
-    let state = app.state::<AppState>();
-    let snapshot = build_snapshot(&app, &state);
-    if let Ok(mut last) = state.last_listening_online.lock() {
-        *last = Some(snapshot.online);
-    }
-    remember_hook_health(&state, &snapshot.hook_health);
-    app.emit("snapshot-changed", &snapshot)
-        .map_err(|error| error.to_string())?;
-
-    Ok(claude_hook_status(&app))
+    install_hooks_for(&CLAUDE_HOOK_PROFILE, app)
 }
 
 #[tauri::command]
@@ -1198,142 +1105,7 @@ pub(crate) fn materialize_hook_deployment(
 
 #[tauri::command]
 pub(crate) fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let source_script_path = resolve_install_hook_script_path(&app, "atoll-codex-hook.mjs")?;
-    let script_path =
-        materialize_hook_deployment(&app, "atoll-codex-hook.mjs", &source_script_path)?;
-
-    if !std::path::Path::new(&script_path).exists() {
-        return Err(format!("Hook script not found at: {script_path}"));
-    }
-
-    let node_path = resolve_node_executable_for_codex()?;
-
-    let hooks_path =
-        codex_hooks_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
-
-    if let Some(parent) = hooks_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Cannot create ~/.codex directory: {e}"))?;
-    }
-
-    let mut config: Value = if hooks_path.exists() {
-        let content =
-            std::fs::read_to_string(&hooks_path).map_err(|e| format!("Cannot read hooks: {e}"))?;
-        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()))
-    } else {
-        Value::Object(Default::default())
-    };
-
-    #[cfg(windows)]
-    let hook_command = write_codex_hook_launcher_command(&app, &node_path, &script_path)?;
-    #[cfg(not(windows))]
-    let hook_command = format_hook_command(None, &node_path, &script_path);
-    let atoll_hooks = serde_json::json!({
-        "PermissionRequest": [
-            {
-                "matcher": "*",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": hook_command,
-                        "timeout": 1800,
-                        "statusMessage": "Atoll approval"
-                    }
-                ]
-            }
-        ],
-        "PostToolUse": [
-            {
-                "matcher": "*",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": hook_command,
-                        "timeout": 30,
-                        "statusMessage": "Atoll session sync"
-                    }
-                ]
-            }
-        ],
-        "Stop": [
-            {
-                "matcher": "*",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": hook_command,
-                        "timeout": 30,
-                        "statusMessage": "Atoll session sync"
-                    }
-                ]
-            }
-        ],
-        "SubagentStop": [
-            {
-                "matcher": "*",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": hook_command,
-                        "timeout": 30,
-                        "statusMessage": "Atoll session sync"
-                    }
-                ]
-            }
-        ],
-        "SubagentStart": [
-            {
-                "matcher": "*",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": hook_command,
-                        "timeout": 30,
-                        "statusMessage": "Atoll session sync"
-                    }
-                ]
-            }
-        ]
-    });
-
-    let config_obj = config
-        .as_object_mut()
-        .ok_or_else(|| "hooks.json is not a JSON object".to_string())?;
-    let hooks_obj = config_obj
-        .entry("hooks")
-        .or_insert_with(|| Value::Object(Default::default()));
-    upsert_codex_hook_events(hooks_obj, &atoll_hooks);
-
-    let formatted = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("Cannot serialize hooks: {e}"))?;
-    std::fs::write(&hooks_path, formatted).map_err(|e| format!("Cannot write hooks: {e}"))?;
-
-    let written =
-        std::fs::read_to_string(&hooks_path).map_err(|e| format!("Cannot verify hooks: {e}"))?;
-    let verify: Value = serde_json::from_str(&written)
-        .map_err(|e| format!("Cannot parse hooks after write: {e}"))?;
-    if !has_atoll_codex_hooks(&verify) {
-        return Err(
-            "Codex hooks were not saved correctly. Check permissions on ~/.codex/hooks.json."
-                .into(),
-        );
-    }
-
-    if let Err(error) = hook_bridge::refresh_bridge_config_file(&app) {
-        eprintln!("Atoll failed to refresh bridge.json after Codex hook install: {error}");
-    }
-    hook_trust::on_codex_hooks_installed(&script_path);
-
-    let state = app.state::<AppState>();
-    let snapshot = build_snapshot(&app, &state);
-    if let Ok(mut last) = state.last_listening_online.lock() {
-        *last = Some(snapshot.online);
-    }
-    remember_hook_health(&state, &snapshot.hook_health);
-    app.emit("snapshot-changed", &snapshot)
-        .map_err(|error| error.to_string())?;
-
-    Ok(codex_hook_status(&app))
+    install_hooks_for(&CODEX_HOOK_PROFILE, app)
 }
 
 #[tauri::command]
@@ -1348,121 +1120,7 @@ pub(crate) fn get_zcode_hook_status(app: AppHandle) -> Result<HookStatus, String
 
 #[tauri::command]
 pub(crate) fn install_zcode_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let source_script_path = resolve_install_hook_script_path(&app, "atoll-zcode-hook.mjs")?;
-    let script_path =
-        materialize_hook_deployment(&app, "atoll-zcode-hook.mjs", &source_script_path)?;
-
-    if !std::path::Path::new(&script_path).exists() {
-        return Err(format!("Hook script not found at: {script_path}"));
-    }
-
-    let node_path = resolve_node_executable()?;
-
-    let config_path =
-        zcode_config_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
-
-    if let Some(parent) = config_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Cannot create ~/.zcode/cli directory: {e}"))?;
-    }
-
-    let mut config: Value = if config_path.exists() {
-        let content = std::fs::read_to_string(&config_path)
-            .map_err(|e| format!("Cannot read config: {e}"))?;
-        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()))
-    } else {
-        Value::Object(Default::default())
-    };
-
-    let hook_command = write_zcode_hook_launcher_command(&app, &node_path, &script_path)?;
-
-    // ZCode's matcher is a case-sensitive regex on the tool name; omitting it
-    // matches every tool (a literal "*" is not guaranteed by the schema).
-    // PreToolUse is intentionally NOT registered: it fires for every tool call,
-    // while PermissionRequest already covers the approval flow (same split as
-    // the Claude/Codex integrations).
-    let zcode_hook = |timeout: i64, status_message: &str| {
-        json!({
-            "type": "command",
-            "command": hook_command,
-            "timeout": timeout,
-            "statusMessage": status_message
-        })
-    };
-    let atoll_hooks = serde_json::json!({
-        "PermissionRequest": [
-            { "hooks": [zcode_hook(1800, "Atoll approval")] }
-        ],
-        "PostToolUse": [
-            { "hooks": [zcode_hook(30, "Atoll session sync")] }
-        ],
-        "PostToolUseFailure": [
-            { "hooks": [zcode_hook(30, "Atoll session sync")] }
-        ],
-        "Stop": [
-            { "hooks": [zcode_hook(30, "Atoll session sync")] }
-        ],
-        "SessionStart": [
-            { "hooks": [zcode_hook(30, "Atoll session sync")] }
-        ],
-        "UserPromptSubmit": [
-            { "hooks": [zcode_hook(30, "Atoll session sync")] }
-        ]
-    });
-
-    let config_obj = config
-        .as_object_mut()
-        .ok_or_else(|| "config.json is not a JSON object".to_string())?;
-    let hooks_obj = config_obj
-        .entry("hooks")
-        .or_insert_with(|| Value::Object(Default::default()));
-    if !hooks_obj.is_object() {
-        *hooks_obj = Value::Object(Default::default());
-    }
-    let hooks_map = hooks_obj
-        .as_object_mut()
-        .ok_or_else(|| "config.json hooks is not a JSON object".to_string())?;
-    // Configuration-file hooks are disabled by default in ZCode; the hook
-    // runner only runs when this flag is set.
-    hooks_map.insert("enabled".to_string(), Value::Bool(true));
-    let events_obj = hooks_map
-        .entry("events")
-        .or_insert_with(|| Value::Object(Default::default()));
-    if !events_obj.is_object() {
-        *events_obj = Value::Object(Default::default());
-    }
-    upsert_zcode_hook_events(events_obj, &atoll_hooks);
-
-    let formatted = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("Cannot serialize config: {e}"))?;
-    std::fs::write(&config_path, formatted).map_err(|e| format!("Cannot write config: {e}"))?;
-
-    let written =
-        std::fs::read_to_string(&config_path).map_err(|e| format!("Cannot verify config: {e}"))?;
-    let verify: Value = serde_json::from_str(&written)
-        .map_err(|e| format!("Cannot parse config after write: {e}"))?;
-    if !has_atoll_zcode_hooks(&verify) {
-        return Err(
-            "ZCode hooks were not saved correctly. Check permissions on ~/.zcode/cli/config.json."
-                .into(),
-        );
-    }
-
-    if let Err(error) = hook_bridge::refresh_bridge_config_file(&app) {
-        eprintln!("Atoll failed to refresh bridge.json after ZCode hook install: {error}");
-    }
-    hook_trust::record_hook_installed("zcode", &script_path);
-
-    let state = app.state::<AppState>();
-    let snapshot = build_snapshot(&app, &state);
-    if let Ok(mut last) = state.last_listening_online.lock() {
-        *last = Some(snapshot.online);
-    }
-    remember_hook_health(&state, &snapshot.hook_health);
-    app.emit("snapshot-changed", &snapshot)
-        .map_err(|error| error.to_string())?;
-
-    Ok(zcode_hook_status(&app))
+    install_hooks_for(&ZCODE_HOOK_PROFILE, app)
 }
 
 #[tauri::command]
@@ -1477,115 +1135,7 @@ pub(crate) fn get_gemini_hook_status(app: AppHandle) -> Result<HookStatus, Strin
 
 #[tauri::command]
 pub(crate) fn install_gemini_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let source_script_path = resolve_install_hook_script_path(&app, "atoll-gemini-hook.mjs")?;
-    let script_path =
-        materialize_hook_deployment(&app, "atoll-gemini-hook.mjs", &source_script_path)?;
-
-    if !std::path::Path::new(&script_path).exists() {
-        return Err(format!("Hook script not found at: {script_path}"));
-    }
-
-    let node_path = resolve_node_executable()?;
-
-    let settings_path =
-        gemini_settings_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
-
-    if let Some(parent) = settings_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Cannot create ~/.gemini directory: {e}"))?;
-    }
-
-    let mut settings: Value = if settings_path.exists() {
-        let content = std::fs::read_to_string(&settings_path)
-            .map_err(|e| format!("Cannot read settings: {e}"))?;
-        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()))
-    } else {
-        Value::Object(Default::default())
-    };
-
-    let hook_command = format_hook_command(
-        hook_runner_for_command(&app).as_deref(),
-        &node_path,
-        &script_path,
-    );
-
-    // Gemini CLI hook timeouts are in MILLISECONDS (CommandHookConfig.timeout,
-    // default 60000). BeforeTool blocks until the Atoll user decides; observer
-    // events only register sessions and must never stall a turn.
-    // The BeforeTool matcher mirrors the gate list in atoll-gemini-hook.mjs so
-    // read-only tools never spawn the hook process.
-    let gemini_hook = |timeout: i64| {
-        json!({
-            "type": "command",
-            "command": hook_command,
-            "timeout": timeout
-        })
-    };
-    let atoll_hooks = serde_json::json!({
-        "BeforeTool": [
-            {
-                "matcher": "run_shell_command|write_file|replace|web_fetch|save_memory|invoke_agent|mcp_",
-                "hooks": [gemini_hook(1_800_000)]
-            }
-        ],
-        "SessionStart": [
-            { "hooks": [gemini_hook(30_000)] }
-        ],
-        "SessionEnd": [
-            { "hooks": [gemini_hook(30_000)] }
-        ],
-        "AfterTool": [
-            { "hooks": [gemini_hook(30_000)] }
-        ],
-        "AfterAgent": [
-            { "hooks": [gemini_hook(30_000)] }
-        ],
-        "Notification": [
-            { "hooks": [gemini_hook(30_000)] }
-        ]
-    });
-
-    let settings_obj = settings
-        .as_object_mut()
-        .ok_or_else(|| "settings.json is not a JSON object".to_string())?;
-    let hooks_obj = settings_obj
-        .entry("hooks")
-        .or_insert_with(|| Value::Object(Default::default()));
-    if !hooks_obj.is_object() {
-        *hooks_obj = Value::Object(Default::default());
-    }
-    upsert_gemini_hook_entries(hooks_obj, &atoll_hooks);
-
-    let formatted = serde_json::to_string_pretty(&settings)
-        .map_err(|e| format!("Cannot serialize settings: {e}"))?;
-    std::fs::write(&settings_path, formatted).map_err(|e| format!("Cannot write settings: {e}"))?;
-
-    let written = std::fs::read_to_string(&settings_path)
-        .map_err(|e| format!("Cannot verify settings: {e}"))?;
-    let verify: Value = serde_json::from_str(&written)
-        .map_err(|e| format!("Cannot parse settings after write: {e}"))?;
-    if !has_atoll_gemini_hooks(&verify) {
-        return Err(
-            "Gemini hooks were not saved correctly. Check permissions on ~/.gemini/settings.json."
-                .into(),
-        );
-    }
-
-    if let Err(error) = hook_bridge::refresh_bridge_config_file(&app) {
-        eprintln!("Atoll failed to refresh bridge.json after Gemini hook install: {error}");
-    }
-    hook_trust::record_hook_installed("gemini", &script_path);
-
-    let state = app.state::<AppState>();
-    let snapshot = build_snapshot(&app, &state);
-    if let Ok(mut last) = state.last_listening_online.lock() {
-        *last = Some(snapshot.online);
-    }
-    remember_hook_health(&state, &snapshot.hook_health);
-    app.emit("snapshot-changed", &snapshot)
-        .map_err(|error| error.to_string())?;
-
-    Ok(gemini_hook_status(&app))
+    install_hooks_for(&GEMINI_HOOK_PROFILE, app)
 }
 
 #[tauri::command]
@@ -1600,83 +1150,7 @@ pub(crate) fn get_cursor_hook_status(app: AppHandle) -> Result<HookStatus, Strin
 
 #[tauri::command]
 pub(crate) fn install_cursor_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let source_script_path = resolve_install_hook_script_path(&app, "atoll-cursor-hook.mjs")?;
-    let script_path =
-        materialize_hook_deployment(&app, "atoll-cursor-hook.mjs", &source_script_path)?;
-
-    if !std::path::Path::new(&script_path).exists() {
-        return Err(format!("Hook script not found at: {script_path}"));
-    }
-
-    let node_path = resolve_node_executable()?;
-
-    let hooks_path =
-        cursor_hooks_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
-
-    if let Some(parent) = hooks_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Cannot create ~/.cursor directory: {e}"))?;
-    }
-
-    let mut config: Value = if hooks_path.exists() {
-        let content =
-            std::fs::read_to_string(&hooks_path).map_err(|e| format!("Cannot read hooks: {e}"))?;
-        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()))
-    } else {
-        Value::Object(Default::default())
-    };
-
-    if config.get("version").is_none() {
-        if let Some(obj) = config.as_object_mut() {
-            obj.insert("version".to_string(), json!(1));
-        }
-    }
-
-    let hook_command = write_cursor_hook_launcher_command(&app, &node_path, &script_path)?;
-
-    let config_obj = config
-        .as_object_mut()
-        .ok_or_else(|| "hooks.json is not a JSON object".to_string())?;
-    let hooks_obj = config_obj
-        .entry("hooks")
-        .or_insert_with(|| Value::Object(Default::default()));
-    upsert_cursor_hook_events(
-        hooks_obj,
-        &hook_command,
-        &hook_bridge::cursor_hook_url_for_app(&app),
-    );
-
-    let formatted = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("Cannot serialize hooks: {e}"))?;
-    std::fs::write(&hooks_path, formatted).map_err(|e| format!("Cannot write hooks: {e}"))?;
-
-    let written =
-        std::fs::read_to_string(&hooks_path).map_err(|e| format!("Cannot verify hooks: {e}"))?;
-    let verify: Value = serde_json::from_str(&written)
-        .map_err(|e| format!("Cannot parse hooks after write: {e}"))?;
-    if !has_atoll_cursor_hooks(&verify) {
-        return Err(
-            "Cursor hooks were not saved correctly. Check permissions on ~/.cursor/hooks.json."
-                .into(),
-        );
-    }
-
-    if let Err(error) = hook_bridge::refresh_bridge_config_file(&app) {
-        eprintln!("Atoll failed to refresh bridge.json after Cursor hook install: {error}");
-    }
-    hook_trust::record_hook_installed("cursor", &script_path);
-
-    let state = app.state::<AppState>();
-    refresh_hook_health_cache(&app, &state);
-    let snapshot = build_snapshot(&app, &state);
-    if let Ok(mut last) = state.last_listening_online.lock() {
-        *last = Some(snapshot.online);
-    }
-    remember_hook_health(&state, &snapshot.hook_health);
-    app.emit("snapshot-changed", &snapshot)
-        .map_err(|error| error.to_string())?;
-
-    Ok(cursor_hook_status(&app))
+    install_hooks_for(&CURSOR_HOOK_PROFILE, app)
 }
 
 #[tauri::command]
