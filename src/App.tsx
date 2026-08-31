@@ -1,188 +1,45 @@
 import {
-  CSSProperties,
-  FocusEvent,
-  KeyboardEvent as ReactKeyboardEvent,
-  memo,
-  MouseEvent,
-  PointerEvent as ReactPointerEvent,
-  ReactNode,
-  UIEvent as ReactUIEvent,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
+  CSSProperties,
+  FocusEvent,
+  MouseEvent,
 } from "react";
-import { useTranslation } from "react-i18next";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-
-const IS_WINDOWS =
-  typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
-const IS_MACOS =
-  typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
-
-const DECISION_SHORTCUTS = {
-  deny: IS_WINDOWS ? "Del" : "⌫",
-  approve: IS_WINDOWS ? "Enter" : "↵",
-  always: IS_WINDOWS ? "Shift+Enter" : "⇧↵",
-} as const;
 import {
   Archive,
-  ArrowLeft,
   ArrowUpCircle,
   Activity,
-  Check,
-  CheckCheck,
-  ChevronRight,
   ChevronUp,
-  CircleCheck,
   CircleDollarSign,
   ClipboardList,
   Clock,
   Download,
   Ellipsis,
-  ExternalLink,
-  FolderClosed,
-  Hammer,
-  HelpCircle,
   Bell,
   History,
   Layers,
   Music,
-  Pin,
-  PinOff,
   Power,
   RefreshCw,
   Settings2,
   Sparkles,
-  TriangleAlert,
-  Trash2,
-  X,
 } from "lucide-react";
 import {
-  checkAppUpdate,
-  getAppVersion,
-  installAppUpdate,
-  UPDATE_INITIAL_DELAY_MS,
-  UPDATE_RECHECK_MS,
-  type AppUpdateState,
-} from "./appUpdate";
+  useTranslation,
+} from "react-i18next";
 import {
-  analyzeHookHealth,
-  deriveHeaderLogoDisplay,
-  hookAgentNote,
-  hookAttentionTitle,
-  hookRetrustNote,
-  hookStatusIssue,
-  isHookReady,
-  deadCompetingHooks,
-  mergeHookHealthPreferReady,
-  type HeaderLogoDisplay,
-  type HookAgentKey,
-} from "./hookHealth";
+  getCurrentWindow,
+} from "@tauri-apps/api/window";
 import {
-  changeAppLanguage,
-  readLanguage,
-  type AppLanguage,
-} from "./i18n";
-import i18n from "./i18n";
-import {
-  markAllHookAgentsConfigured,
-  markHookAgentConfigured,
-  readConfiguredHookAgents,
-  seedConfiguredFromHookHealth,
-} from "./hookAgentsConfigured";
-import {
-  beginCollapse,
-  beginExpand,
-  COLLAPSE_ANIMATION_MS,
-  finishCollapse,
-  finishExpand,
-  IDLE_COLLAPSE_DELAY_MS,
-  MICRO_SHRINK_DELAY_MS,
-  PANEL_EXIT_MS,
-  PresentationPhase,
-  PRESENTATION_SETTLE_FALLBACK_MS,
-  RESOLVE_FEEDBACK_MS,
-} from "./islandPresentation";
-import { AgentMascot, AGENT_ACCENT } from "./AgentMascot";
-import { NowPlayingCard } from "./NowPlayingCard";
-import { ClipboardHistoryView } from "./ClipboardHistoryView";
-import { ApprovalHistoryView } from "./ApprovalHistoryView";
-import { LyricsMarquee, lyricsMatchTrack } from "./LyricsMarquee";
-import {
-  ClipboardSettingsView,
-  IslandSettingsView,
-  MascotSettingsView,
-  NotificationSettingsView,
-  ShortcutSettingsView,
-  MAX_CLIPBOARD_LIMIT,
-  MAX_IDLE_DURATION_MIN,
-  MAX_IDLE_INTERVAL_MIN,
-  MAX_MAX_SUBAGENT_DISPLAY,
-  MAX_RETENTION_MINUTES,
-  MediaSettingsView,
-  MIN_CLIPBOARD_LIMIT,
-  MIN_IDLE_DURATION_MIN,
-  MIN_IDLE_INTERVAL_MIN,
-  MIN_MAX_SUBAGENT_DISPLAY,
-  MIN_RETENTION_MINUTES,
-  SessionSettingsView,
-} from "./SettingsPages";
-import { SettingsView } from "./SettingsView";
-import type { ClawdMood } from "./ClawdMascot";
-import { getSessionColor, getSubagentColor, getSubagentMood } from "./subagentIdentity";
-import { AtollLogo, type AtollActivity } from "./AtollLogo";
-import { deriveAppLogoState, deriveAtollActivity } from "./logoStates";
-import {
-  ABSOLUTE_MAX_COMPACT_ICONS,
-  COMPACT_HEADER_GAP,
-  COMPACT_METRICS_GAP,
-  COMPACT_NOTCH_INNER_GAP,
-  computeCollapsedWindowWidth,
-  computeCompactHeaderLayout,
-  computeCompactLeftPaneWidth,
-  computeMaxCompactIconLimit,
-  computeMicroWindowWidth,
-  MIN_MAX_COMPACT_ICONS,
-} from "./compactLayout";
-import { TokenCounter } from "./TokenCounter";
-import { TokenHeatmapView } from "./TokenHeatmapView";
-import { formatCompactTokenCount } from "./tokenCounterFormat";
-import { formatCompactCost } from "./costFormat";
-import {
-  type CompactIndicatorMode,
-  EXPANDED_COUNTER_DISPLAY_KEY,
-  FOLDED_COUNTER_DISPLAY_KEY,
-  HEATMAP_DISPLAY_KEY,
-  readCompactIndicator,
-  readDisplayMode,
-  SETTINGS_BADGE_DISPLAY_KEY,
-  writeCompactIndicator,
-  writeDisplayMode,
-  type UsageDisplayMode,
-} from "./displayPrefs";
-import {
-  byModelCostUsd,
-  getPricing,
-  pricingRateMap,
-  type ModelPricingEntry,
-} from "./pricing";
-import { UsageSettingsView } from "./UsageSettingsView";
-import { getDemoMode, isGifCaptureMode, shouldAutoExpandDemo } from "./demoSnapshot";
-import { manageAsyncUnlisten } from "./asyncUnlisten";
-import { toPng } from "html-to-image";
-
+  toPng,
+} from "html-to-image";
 import {
   getSnapshot,
   normalizeSnapshot,
   getSessionRequests,
-  getSessionChat,
-  getSessionTranscript,
-  IslandSnapshot,
-  TokenUsage,
   onIslandHoverChanged,
   onIslandOpenRequested,
   onIslandPresentationSettled,
@@ -191,25 +48,15 @@ import {
   onCaptureScreenshotRequested,
   captureProvideScreenshot,
   onSnapshotChanged,
-  PermissionRequest,
-  SessionSummary,
-  ChatMessage,
-  HookStatus,
-  HookHealthSnapshot,
-  EMPTY_HOOK_HEALTH,
-  NowPlayingTrack,
-  MediaCommand,
   getMediaCardEnabled,
   getArtworkBackdropEnabled,
   getApprovalNoticeMode,
   setApprovalNoticeMode,
   setNotificationLanguage,
-  ApprovalNoticeMode,
   onNowPlayingChanged,
   sendMediaCommand,
   setMediaCardEnabled,
   setArtworkBackdropEnabled,
-  ClipboardEntry,
   getClipboardHistory,
   getClipboardHistoryEnabled,
   getClipboardHistoryLimit,
@@ -224,11 +71,9 @@ import {
   archiveSubagent,
   archiveCompletedSubagents,
   pinSession,
-  SubagentSummary,
   deactivateAtoll,
   quitAtoll,
   resolvePermissionRequest,
-  resolvePermissionWithInput,
   setIslandPresentation,
   setImeActive,
   setCompactLayout,
@@ -236,7 +81,6 @@ import {
   usesMicroIslandSync,
   setSessionAutoApprove,
   getNotchMetrics,
-  NotchMetrics,
   installClaudeHooks,
   uninstallClaudeHooks,
   removeCompetingClaudeHooks,
@@ -248,12 +92,9 @@ import {
   uninstallZcodeHooks,
   installGeminiHooks,
   uninstallGeminiHooks,
-  getSessionRetention,
   setSessionRetention,
   setSubagentRetention,
   openAgentApp,
-  type SessionHost,
-  openUrl,
   isAutostartEnabled,
   enableAutostart,
   disableAutostart,
@@ -262,516 +103,256 @@ import {
   onLyricsChanged,
   onLyricsPosition,
   getCurrentLyrics,
-  type LyricPayload,
   getGlobalShortcutConfig,
   setGlobalShortcutConfig,
+  type IslandSnapshot,
+  type PermissionRequest,
+  type HookStatus,
+  type HookHealthSnapshot,
+  type NowPlayingTrack,
+  type ApprovalNoticeMode,
+  type ClipboardEntry,
+  type NotchMetrics,
+  type LyricPayload,
   type GlobalShortcutConfig,
   type GlobalShortcutView,
   type ShortcutAction,
 } from "./tauri";
 import {
+  checkAppUpdate,
+  getAppVersion,
+  installAppUpdate,
+  UPDATE_INITIAL_DELAY_MS,
+  UPDATE_RECHECK_MS,
+  type AppUpdateState,
+} from "./appUpdate";
+import {
+  analyzeHookHealth,
+  deriveHeaderLogoDisplay,
+  hookAgentNote,
+  hookAttentionTitle,
+  mergeHookHealthPreferReady,
+  type HeaderLogoDisplay,
+} from "./hookHealth";
+import i18n from "./i18n";
+import {
+  changeAppLanguage,
+  readLanguage,
+  type AppLanguage,
+} from "./i18n";
+import {
+  markAllHookAgentsConfigured,
+  markHookAgentConfigured,
+  readConfiguredHookAgents,
+  seedConfiguredFromHookHealth,
+} from "./hookAgentsConfigured";
+import {
+  beginCollapse,
+  beginExpand,
+  COLLAPSE_ANIMATION_MS,
+  finishExpand,
+  IDLE_COLLAPSE_DELAY_MS,
+  MICRO_SHRINK_DELAY_MS,
+  PANEL_EXIT_MS,
+  PRESENTATION_SETTLE_FALLBACK_MS,
+  RESOLVE_FEEDBACK_MS,
+  type PresentationPhase,
+} from "./islandPresentation";
+import {
+  NowPlayingCard,
+} from "./NowPlayingCard";
+import {
+  ClipboardHistoryView,
+} from "./ClipboardHistoryView";
+import {
+  ApprovalHistoryView,
+} from "./ApprovalHistoryView";
+import {
+  LyricsMarquee,
+  lyricsMatchTrack,
+} from "./LyricsMarquee";
+import {
+  ClipboardSettingsView,
+  IslandSettingsView,
+  MascotSettingsView,
+  NotificationSettingsView,
+  ShortcutSettingsView,
+  MAX_CLIPBOARD_LIMIT,
+  MediaSettingsView,
+  MIN_CLIPBOARD_LIMIT,
+  SessionSettingsView,
+} from "./SettingsPages";
+import {
+  SettingsView,
+} from "./SettingsView";
+import {
+  deriveAppLogoState,
+  deriveAtollActivity,
+} from "./logoStates";
+import {
+  computeCollapsedWindowWidth,
+  computeCompactHeaderLayout,
+  computeCompactLeftPaneWidth,
+  computeMaxCompactIconLimit,
+  computeMicroWindowWidth,
+} from "./compactLayout";
+import {
+  TokenCounter,
+} from "./TokenCounter";
+import {
+  TokenHeatmapView,
+} from "./TokenHeatmapView";
+import {
+  formatCompactTokenCount,
+} from "./tokenCounterFormat";
+import {
+  formatCompactCost,
+} from "./costFormat";
+import {
+  EXPANDED_COUNTER_DISPLAY_KEY,
+  FOLDED_COUNTER_DISPLAY_KEY,
+  HEATMAP_DISPLAY_KEY,
+  readCompactIndicator,
+  readDisplayMode,
+  SETTINGS_BADGE_DISPLAY_KEY,
+  writeCompactIndicator,
+  writeDisplayMode,
+  type CompactIndicatorMode,
+  type UsageDisplayMode,
+} from "./displayPrefs";
+import {
+  byModelCostUsd,
+  getPricing,
+  pricingRateMap,
+  type ModelPricingEntry,
+} from "./pricing";
+import {
+  UsageSettingsView,
+} from "./UsageSettingsView";
+import {
+  getDemoMode,
+  isGifCaptureMode,
+  shouldAutoExpandDemo,
+} from "./demoSnapshot";
+import {
+  manageAsyncUnlisten,
+} from "./asyncUnlisten";
+import {
   DEFAULT_GLOBAL_SHORTCUTS,
   withShortcutAction,
 } from "./shortcuts";
-
-type Decision = "approved" | "denied";
-type AgentKind = PermissionRequest["agent"];
-type PanelView =
-  | { kind: "home" }
-  | { kind: "session"; sessionId: string }
-  | { kind: "subagent"; sessionId: string; agentId: string }
-  | { kind: "subagentList"; sessionId: string }
-  | { kind: "settings"; page: SettingsPage }
-  | { kind: "clipboard" }
-  | { kind: "history" };
-type SettingsPage =
-  | "main"
-  | "hooks"
-  | "tokens"
-  | "usage"
-  | "island"
-  | "media"
-  | "clipboard"
-  | "sessions"
-  | "mascot"
-  | "notifications"
-  | "shortcuts";
-type FoldedIslandSize = "small" | "regular";
-// Window-space rect of the compact media thumb plus the window size it was
-// measured against; scales the expanded artwork backdrop back onto the thumb.
-type ArtworkBackdropOrigin = {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  winW: number;
-  winH: number;
-};
-
-// Mean-luminance test so dark covers can relax the backdrop scrim instead of
-// collapsing into a dead black slab.
-function sampleArtworkIsDark(base64: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const size = 24;
-        const canvas = document.createElement("canvas");
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          resolve(false);
-          return;
-        }
-        ctx.drawImage(img, 0, 0, size, size);
-        const { data } = ctx.getImageData(0, 0, size, size);
-        let luminance = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          luminance += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-        }
-        resolve(luminance / (data.length / 4) / 255 < 0.3);
-      } catch {
-        resolve(false);
-      }
-    };
-    img.onerror = () => resolve(false);
-    img.src = `data:image/jpeg;base64,${base64}`;
-  });
-}
-
-const COMPACT_ICON_SETTING_KEY = "atoll.maxCompactIcons";
-const FOLDED_ISLAND_SIZE_SETTING_KEY = "atoll.foldedIslandSize";
-const RETENTION_SETTING_KEY = "atoll.sessionRetentionMinutes";
-const SUBAGENT_RETENTION_SETTING_KEY = "atoll.subagentRetentionMinutes";
-const MAX_SUBAGENT_DISPLAY_SETTING_KEY = "atoll.maxSubagentDisplay";
-const DEFAULT_MAX_COMPACT_ICONS = 3;
-const DEFAULT_MAX_SUBAGENT_DISPLAY = 3;
-const DEFAULT_RETENTION_MINUTES = 15;
-const DEFAULT_SUBAGENT_RETENTION_MINUTES = 10;
-const IDLE_INTERVAL_SETTING_KEY = "atoll.idleIntervalMin";
-const IDLE_DURATION_SETTING_KEY = "atoll.idleDurationMin";
-const DEFAULT_IDLE_INTERVAL_MIN = 10;
-const DEFAULT_IDLE_DURATION_MIN = 20;
-const SETTINGS_INITIALIZED_KEY = "atoll.settingsInitialized";
-const ZERO_TOKEN_USAGE: TokenUsage = {
-  inputTokens: 0,
-  outputTokens: 0,
-  cacheReadTokens: 0,
-  cacheCreationTokens: 0,
-};
-const EMPTY_NOTCH_METRICS: NotchMetrics = {
-  hasNotch: false,
-  width: 0,
-  height: 0,
-};
-
-function clampCompactIconLimit(
-  value: number,
-  max = ABSOLUTE_MAX_COMPACT_ICONS,
-) {
-  return Math.min(max, Math.max(MIN_MAX_COMPACT_ICONS, Math.round(value)));
-}
-
-function readStoredSetting(
-  key: string,
-  defaultValue: number,
-  clamp: (value: number) => number,
-) {
-  if (typeof window === "undefined") return defaultValue;
-  try {
-    const stored = window.localStorage.getItem(key);
-    if (stored === null || stored.trim() === "") return defaultValue;
-    const raw = Number(stored);
-    if (!Number.isFinite(raw)) return defaultValue;
-    return clamp(raw);
-  } catch {
-    return defaultValue;
-  }
-}
-
-function markSettingsInitialized() {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(SETTINGS_INITIALIZED_KEY, "1");
-  } catch {
-    // ignore local storage errors
-  }
-}
-
-function migrateLegacySettings() {
-  if (typeof window === "undefined") return;
-  try {
-    if (window.localStorage.getItem(SETTINGS_INITIALIZED_KEY) === "1") return;
-
-    const stored = {
-      icons: window.localStorage.getItem(COMPACT_ICON_SETTING_KEY),
-      retention: window.localStorage.getItem(RETENTION_SETTING_KEY),
-      interval: window.localStorage.getItem(IDLE_INTERVAL_SETTING_KEY),
-      duration: window.localStorage.getItem(IDLE_DURATION_SETTING_KEY),
-    };
-    const hasAnyStored = Object.values(stored).some(
-      (value) => value !== null && value.trim() !== "",
-    );
-
-    // First launch with the old bug wrote every slider to its minimum (1).
-    if (
-      hasAnyStored &&
-      stored.icons === "1" &&
-      stored.retention === "1" &&
-      stored.interval === "1" &&
-      stored.duration === "1"
-    ) {
-      window.localStorage.setItem(
-        COMPACT_ICON_SETTING_KEY,
-        String(DEFAULT_MAX_COMPACT_ICONS),
-      );
-      window.localStorage.setItem(
-        RETENTION_SETTING_KEY,
-        String(DEFAULT_RETENTION_MINUTES),
-      );
-      window.localStorage.setItem(
-        IDLE_INTERVAL_SETTING_KEY,
-        String(DEFAULT_IDLE_INTERVAL_MIN),
-      );
-      window.localStorage.setItem(
-        IDLE_DURATION_SETTING_KEY,
-        String(DEFAULT_IDLE_DURATION_MIN),
-      );
-    }
-
-    if (hasAnyStored) {
-      markSettingsInitialized();
-    }
-  } catch {
-    // ignore local storage errors
-  }
-}
-
-if (typeof window !== "undefined") {
-  migrateLegacySettings();
-}
-
-function readCompactIconLimit() {
-  return readStoredSetting(
-    COMPACT_ICON_SETTING_KEY,
-    DEFAULT_MAX_COMPACT_ICONS,
-    (value) => clampCompactIconLimit(value),
-  );
-}
-
-function readFoldedIslandSize(): FoldedIslandSize {
-  if (typeof window === "undefined") return "small";
-  try {
-    const stored = window.localStorage.getItem(FOLDED_ISLAND_SIZE_SETTING_KEY);
-    return stored === "regular" ? "regular" : "small";
-  } catch {
-    return "small";
-  }
-}
-
-function clampRetentionMinutes(value: number) {
-  return Math.min(
-    MAX_RETENTION_MINUTES,
-    Math.max(MIN_RETENTION_MINUTES, Math.round(value)),
-  );
-}
-
-function readRetentionMinutes() {
-  return readStoredSetting(
-    RETENTION_SETTING_KEY,
-    DEFAULT_RETENTION_MINUTES,
-    clampRetentionMinutes,
-  );
-}
-
-function readSubagentRetentionMinutes() {
-  return readStoredSetting(
-    SUBAGENT_RETENTION_SETTING_KEY,
-    DEFAULT_SUBAGENT_RETENTION_MINUTES,
-    clampRetentionMinutes,
-  );
-}
-
-function clampMaxSubagentDisplay(value: number) {
-  return Math.min(
-    MAX_MAX_SUBAGENT_DISPLAY,
-    Math.max(MIN_MAX_SUBAGENT_DISPLAY, Math.round(value)),
-  );
-}
-
-function readMaxSubagentDisplay() {
-  return readStoredSetting(
-    MAX_SUBAGENT_DISPLAY_SETTING_KEY,
-    DEFAULT_MAX_SUBAGENT_DISPLAY,
-    clampMaxSubagentDisplay,
-  );
-}
-
-function clampIdleInterval(v: number) {
-  return Math.min(MAX_IDLE_INTERVAL_MIN, Math.max(MIN_IDLE_INTERVAL_MIN, Math.round(v)));
-}
-function readIdleInterval() {
-  return readStoredSetting(
-    IDLE_INTERVAL_SETTING_KEY,
-    DEFAULT_IDLE_INTERVAL_MIN,
-    clampIdleInterval,
-  );
-}
-
-function clampIdleDuration(v: number) {
-  return Math.min(MAX_IDLE_DURATION_MIN, Math.max(MIN_IDLE_DURATION_MIN, Math.round(v)));
-}
-function readIdleDuration() {
-  return readStoredSetting(
-    IDLE_DURATION_SETTING_KEY,
-    DEFAULT_IDLE_DURATION_MIN,
-    clampIdleDuration,
-  );
-}
-
-const initialSnapshot: IslandSnapshot = {
-  online: false,
-  pendingCount: 0,
-  archivedCount: 0,
-  activeRequest: null,
-  recent: [],
-  sessions: [],
-  dailyTokens: ZERO_TOKEN_USAGE,
-  activeSessionTokens: ZERO_TOKEN_USAGE,
-  hookHealth: EMPTY_HOOK_HEALTH,
-};
-
-const agentLabels: Record<AgentKind, string> = {
-  claude: "Claude",
-  codex: "Codex",
-  cursor: "Cursor",
-  zcode: "ZCode",
-  gemini: "Gemini",
-  other: "Agent",
-};
-
-const agentTone: Record<AgentKind, string> = {
-  claude: "coral",
-  codex: "cyan",
-  cursor: "violet",
-  zcode: "sky",
-  gemini: "lime",
-  other: "neutral",
-};
-
-const agentSortRank: Record<AgentKind, number> = {
-  claude: 0,
-  codex: 1,
-  cursor: 2,
-  zcode: 2,
-  gemini: 2,
-  other: 3,
-};
-const agentMascotAccent = (agent: AgentKind) => AGENT_ACCENT[agent]?.accent;
-const agentMascotDark = (agent: AgentKind) => AGENT_ACCENT[agent]?.accentDark;
-
-const PANEL_GLOW: Record<AgentKind, string> = {
-  claude: "rgba(255, 129, 117, 0.18)",
-  codex: "rgba(97, 216, 247, 0.18)",
-  cursor: "rgba(167, 139, 250, 0.18)",
-  zcode: "rgba(56, 189, 248, 0.18)",
-  gemini: "rgba(178, 229, 120, 0.18)",
-  other: "rgba(201, 188, 255, 0.16)",
-};
-
-type RiskLevel = "danger" | "caution";
-
-const DANGER_PATTERNS: RegExp[] = [
-  /\brm\s+(-\w*\s+)*-?\w*[rf]\w*[rf]/i,
-  /\bsudo\b/i,
-  /git\s+push\b[^\n]*(--force\b|\s-f\b|--force-with-lease\b)/i,
-  /git\s+reset\s+--hard\b/i,
-  /\bdd\s+if=/i,
-  /\bmkfs\b/i,
-  /:\(\)\s*\{[^}]*\}\s*;\s*:/,
-  /chmod\s+-?\w*\s*777\b/i,
-  /(curl|wget)[^|]*\|\s*(sudo\s+)?(ba|z|fi)?sh\b/i,
-  />\s*\/dev\/(sd|disk|null|zero)/i,
-  /\bkill(all)?\b|\bkill\s+-9\b/i,
-  /\b(shutdown|reboot|halt|poweroff)\b/i,
-  /\bDROP\s+(TABLE|DATABASE)\b/i,
-  /\bTRUNCATE\s+TABLE\b/i,
-  /Remove-Item\b[^\n]*(-Recurse|-Force)/i,
-  /\bdel\s+\/f\b/i,
-  /\bformat\s+[a-z]:/i,
-];
-
-const CAUTION_PATTERNS: RegExp[] = [
-  /\brm\s+-/i,
-  /\bgit\s+clean\b/i,
-  /\bgit\s+checkout\s+--\s/i,
-  /\b(npm|pnpm|yarn|bun)\s+(install|i|ci|add|remove)\b/i,
-  /\b(mv|chmod|chown|ln)\b/i,
-  /\bdocker\b[^\n]*\b(rm|rmi|prune|down|stop)\b/i,
-  /\b(brew|apt|apt-get|yum|dnf|pacman)\s+(install|remove|uninstall)\b/i,
-  /\bpowershell\b[^\n]*(-ExecutionPolicy|-EncodedCommand)/i,
-  />>?\s*[^\s|&]/,
-];
-
-function assessRisk(command: string): RiskLevel | null {
-  if (DANGER_PATTERNS.some((pattern) => pattern.test(command))) return "danger";
-  if (CAUTION_PATTERNS.some((pattern) => pattern.test(command))) return "caution";
-  return null;
-}
-
-function localizedRiskLabel(risk: RiskLevel): string {
-  return i18n.t(risk === "danger" ? "approval.riskHigh" : "approval.riskReview");
-}
-
-function deriveSessionMood(
-  session: SessionSummary,
-  activeRequest: PermissionRequest | null,
-  justResolved: boolean,
-): ClawdMood {
-  if (activeRequest && activeRequest.session === session.sessionId) {
-    return assessRisk(activeRequest.command) === "danger" ? "worried" : "alert";
-  }
-  if (session.pendingCount > 0) return "alert";
-  if (justResolved) return "happy";
-  return "calm";
-}
-
-// Keep in sync with COMPACT_WINDOW_HEIGHT in src-tauri/src/lib.rs.
-const COMPACT_WINDOW_HEIGHT = 36;
-// Keep in sync with MICRO_WINDOW_HEIGHT in src-tauri/src/lib.rs.
-const MICRO_WINDOW_HEIGHT = 24;
-// Keep in sync with NOTCH_COVER_PADDING in src-tauri/src/lib.rs.
-const NOTCH_COVER_PADDING = 16;
-
-// Keep in sync with EXPANDED_IDLE_WINDOW_HEIGHT in src-tauri/src/lib.rs.
-const EXPANDED_IDLE_WINDOW_HEIGHT = 240;
-// Keep in sync with EXPANDED_PLAN_WINDOW_WIDTH in src-tauri/src/lib.rs.
-const EXPANDED_PLAN_WINDOW_WIDTH = 680;
-// Keep in sync with EXPANDED_PLAN_WINDOW_HEIGHT in src-tauri/src/lib.rs.
-const EXPANDED_PLAN_WINDOW_HEIGHT = 680;
-// Keep in sync with EXPANDED_SETTINGS_WINDOW_WIDTH in src-tauri/src/lib.rs.
-const EXPANDED_SETTINGS_WINDOW_WIDTH = 680;
-// Keep in sync with EXPANDED_SETTINGS_WINDOW_HEIGHT in src-tauri/src/lib.rs.
-const EXPANDED_SETTINGS_WINDOW_HEIGHT = 680;
-
-function isPlanModeCommand(command: string): boolean {
-  return (
-    command.startsWith("AskUserQuestion:") ||
-    command === "AskUserQuestion" ||
-    command.startsWith("ExitPlanMode:") ||
-    command === "ExitPlanMode"
-  );
-}
-
-function snapshotHasPlanPending(snapshot: IslandSnapshot): boolean {
-  return snapshot.recent.some(
-    (request) => request.status === "pending" && isPlanModeCommand(request.command),
-  );
-}
-
-function applyWindowMetrics(notch: NotchMetrics) {
-  if (typeof document === "undefined") return;
-  const root = document.documentElement;
-  root.style.setProperty("--compact-height", `${COMPACT_WINDOW_HEIGHT}px`);
-  root.style.setProperty("--micro-height", `${MICRO_WINDOW_HEIGHT}px`);
-  root.style.setProperty(
-    "--expanded-idle-height",
-    `${EXPANDED_IDLE_WINDOW_HEIGHT}px`,
-  );
-  root.style.setProperty(
-    "--expanded-plan-width",
-    `${EXPANDED_PLAN_WINDOW_WIDTH}px`,
-  );
-  root.style.setProperty(
-    "--expanded-plan-height",
-    `${EXPANDED_PLAN_WINDOW_HEIGHT}px`,
-  );
-  root.style.setProperty(
-    "--expanded-settings-width",
-    `${EXPANDED_SETTINGS_WINDOW_WIDTH}px`,
-  );
-  root.style.setProperty(
-    "--expanded-settings-height",
-    `${EXPANDED_SETTINGS_WINDOW_HEIGHT}px`,
-  );
-  const coverHeight = notch.hasNotch
-    ? Math.max(0, notch.height + NOTCH_COVER_PADDING)
-    : 0;
-  root.style.setProperty("--notch-height", `${coverHeight}px`);
-  root.style.setProperty("--notch-width", `${Math.max(0, notch.width)}px`);
-  if (notch.leftAreaWidth) {
-    root.style.setProperty(
-      "--notch-left-area-width",
-      `${Math.max(0, notch.leftAreaWidth)}px`,
-    );
-  } else {
-    root.style.removeProperty("--notch-left-area-width");
-  }
-  root.style.setProperty("--compact-notch-inner-gap", `${COMPACT_NOTCH_INNER_GAP}px`);
-  root.style.setProperty(
-    "--compact-header-gap",
-    `${notch.hasNotch ? 0 : COMPACT_HEADER_GAP}px`,
-  );
-  root.style.setProperty("--compact-metrics-gap", `${COMPACT_METRICS_GAP}px`);
-  root.classList.toggle("has-notch", notch.hasNotch);
-}
-
-function compactPresentationKey(
-  mode: "micro" | "compact" | "dormant",
-  width: number,
-  leftWidth: number,
-): string {
-  if (mode === "micro") return `micro:${width}`;
-  return mode === "dormant" ? "dormant" : `compact:${width}:${leftWidth}`;
-}
-
-function microPresentationWidth(
-  sessionCount: number,
-  tokenTotal: number,
-  tokenCompactLevel: number,
-): number {
-  return computeMicroWindowWidth(sessionCount, tokenTotal, tokenCompactLevel);
-}
-
-function shouldRestInMicro(usesMicro: boolean): boolean {
-  return usesMicro;
-}
-
-function shouldUseMicroIsland(
-  supportsMicroIsland: boolean,
-  foldedIslandSize: FoldedIslandSize,
-): boolean {
-  return supportsMicroIsland && foldedIslandSize === "small";
-}
-
-function resolveCollapsedMode(
-  usesMicro: boolean,
-  supportsMicroIsland: boolean,
-  sessionCount: number,
-  pendingCount: number,
-  phase: PresentationPhase,
-  hasLyrics: boolean,
-): "micro" | "compact" | "dormant" {
-  if (phase === "micro") return "micro";
-  if (shouldRestInMicro(usesMicro)) return "compact";
-  if (supportsMicroIsland) return "compact";
-  if (sessionCount === 0 && pendingCount === 0) {
-    // Stay compact when lyrics are showing so the header has room.
-    return hasLyrics ? "compact" : "dormant";
-  }
-  return "compact";
-}
-
-function expandedPresentationKey(
-  idle: boolean,
-  plan: boolean,
-  settings: boolean,
-): string {
-  if (plan) return "expanded:plan";
-  if (settings) return "expanded:settings";
-  return `expanded:${idle}`;
-}
+import {
+  type Decision,
+  type AgentKind,
+  type PanelView,
+  type SettingsPage,
+  type FoldedIslandSize,
+  type ArtworkBackdropOrigin,
+} from "./appTypes";
+import {
+  sampleArtworkIsDark,
+} from "./artwork";
+import {
+  COMPACT_ICON_SETTING_KEY,
+  FOLDED_ISLAND_SIZE_SETTING_KEY,
+  RETENTION_SETTING_KEY,
+  SUBAGENT_RETENTION_SETTING_KEY,
+  MAX_SUBAGENT_DISPLAY_SETTING_KEY,
+  IDLE_INTERVAL_SETTING_KEY,
+  IDLE_DURATION_SETTING_KEY,
+  markSettingsInitialized,
+  clampCompactIconLimit,
+  readCompactIconLimit,
+  readFoldedIslandSize,
+  clampRetentionMinutes,
+  readRetentionMinutes,
+  readSubagentRetentionMinutes,
+  clampMaxSubagentDisplay,
+  readMaxSubagentDisplay,
+  clampIdleInterval,
+  readIdleInterval,
+  clampIdleDuration,
+  readIdleDuration,
+} from "./settingsStorage";
+import {
+  ZERO_TOKEN_USAGE,
+  EMPTY_NOTCH_METRICS,
+  initialSnapshot,
+} from "./snapshotDefaults";
+import {
+  agentSortRank,
+  PANEL_GLOW,
+} from "./agents";
+import {
+  COMPACT_WINDOW_HEIGHT,
+  applyWindowMetrics,
+  compactPresentationKey,
+  microPresentationWidth,
+  shouldRestInMicro,
+  shouldUseMicroIsland,
+  resolveCollapsedMode,
+  expandedPresentationKey,
+} from "./islandLayout";
+import {
+  isPlanModeCommand,
+  snapshotHasPlanPending,
+  getPlanModeType,
+} from "./planMode";
+import {
+  isImeTextTarget,
+  isTextEntryActive,
+} from "./imeHelpers";
+import {
+  IS_MACOS,
+} from "./platform";
+import {
+  UpdateNotice,
+} from "./components/UpdateNotice";
+import {
+  CompactSessionStack,
+} from "./components/CompactSessionStack";
+import {
+  AgentTabBar,
+} from "./components/AgentTabBar";
+import {
+  SessionListView,
+} from "./components/SessionListView";
+import {
+  PlanQuestionCard,
+} from "./components/PlanQuestionCard";
+import {
+  PlanApprovalCard,
+} from "./components/PlanApprovalCard";
+import {
+  ApprovalCard,
+} from "./components/ApprovalCard";
+import {
+  SessionSubviewNav,
+} from "./components/SessionSubviewNav";
+import {
+  SettingsPageNav,
+  SettingsSubviewNav,
+} from "./components/SettingsNavs";
+import {
+  SessionChatView,
+} from "./components/SessionChatView";
+import {
+  SubagentListView,
+} from "./components/SubagentListView";
+import {
+  SubagentDetailView,
+} from "./components/SubagentDetailView";
+import {
+  HooksView,
+  formatHookInstallErrorMessage,
+  type HookMenuAgent,
+} from "./components/HooksView";
+import {
+  HeaderLogo,
+} from "./components/HeaderLogo";
+import {
+  IdleView,
+} from "./components/IdleView";
 
 export function App() {
   const { t, i18n: i18nInstance } = useTranslation();
@@ -4554,2099 +4135,4 @@ export function App() {
       </section>
     </main>
   );
-}
-
-function UpdateNotice({
-  version,
-  onDismiss,
-}: {
-  version: string;
-  onDismiss: () => void;
-}) {
-  const { t } = useTranslation();
-
-  return (
-    <div
-      className="update-notice-layer"
-      data-no-drag
-      onMouseDown={(event) => event.stopPropagation()}
-      onClick={onDismiss}
-    >
-      <div
-        className="update-notice-card"
-        role="alertdialog"
-        aria-labelledby="update-notice-title"
-        aria-describedby="update-notice-desc"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="update-notice-icon-wrap" aria-hidden="true">
-          <CircleCheck size={28} strokeWidth={1.75} />
-        </div>
-        <p id="update-notice-title" className="update-notice-title">
-          {t("update.noticeTitle")}
-        </p>
-        <p id="update-notice-desc" className="update-notice-desc">
-          {t("update.noticeDesc", { version })}
-        </p>
-        <button type="button" className="update-notice-button" onClick={onDismiss}>
-          {t("update.ok")}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Compact Header ───────────────────────────────────────────── */
-
-interface CompactSessionStackProps {
-  sessions: SessionSummary[];
-  overflowCount?: number;
-  placement?: "left" | "right";
-  activeRequest: PermissionRequest | null;
-  justResolved: boolean;
-}
-
-function CompactSessionStack({
-  sessions,
-  overflowCount = 0,
-  placement = "left",
-  activeRequest,
-  justResolved,
-}: CompactSessionStackProps) {
-  if (sessions.length === 0 && overflowCount === 0) {
-    return null;
-  }
-
-  return (
-    <span
-      className={`compact-session-stack ${
-        placement === "right" ? "compact-session-stack--right" : ""
-      }`}
-      aria-hidden="true"
-    >
-      {sessions.map((session) => {
-        const sessionColor = getSessionColor(session.sessionId);
-        return (
-          <span
-            key={session.sessionId}
-            className={`compact-session-dot ${sessionColor.tone} ${
-              session.pendingCount > 0 ? "has-pending" : ""
-            }`}
-            title={`${agentLabels[session.agent]} · ${sessionDisplayName(
-              session.cwd,
-            )}`}
-          >
-            <AgentMascot
-              agent={session.agent}
-              mood={deriveSessionMood(session, activeRequest, justResolved)}
-              accent={sessionColor.accent}
-              accentDark={sessionColor.accentDark}
-              size={session.agent === "cursor" ? 20 : 18}
-            />
-          </span>
-        );
-      })}
-      {overflowCount > 0 ? (
-        <span className="compact-session-overflow">+{overflowCount}</span>
-      ) : null}
-    </span>
-  );
-}
-
-interface AgentTabBarProps {
-  agents: AgentKind[];
-  selectedAgent: AgentKind | null;
-  pendingCountByAgent: Record<AgentKind, number>;
-  showTabs: boolean;
-  compact?: boolean;
-  online: boolean;
-  onSelectAgent: (agent: AgentKind) => void;
-}
-
-function AgentTabBar({
-  agents,
-  selectedAgent,
-  pendingCountByAgent,
-  showTabs,
-  compact = false,
-  online,
-  onSelectAgent,
-}: AgentTabBarProps) {
-  const { t } = useTranslation();
-
-  if (agents.length === 0) {
-    return (
-      <span className="agent-tabs-empty">
-        {online ? t("header.listeningForAgents") : t("header.offline")}
-      </span>
-    );
-  }
-
-  const active = selectedAgent ?? agents[0];
-  if (!showTabs) {
-    const pending = pendingCountByAgent[active] ?? 0;
-    const mood: ClawdMood = pending > 0 ? "alert" : "calm";
-    return (
-      <span className={`agent-tab is-static ${agentTone[active]}${compact ? " is-compact" : ""}`} data-no-drag>
-        <AgentMascot
-          agent={active}
-          mood={mood}
-          accent={agentMascotAccent(active)}
-          accentDark={agentMascotDark(active)}
-          size={compact ? 14 : 16}
-        />
-        {!compact ? <span>{agentLabels[active]}</span> : null}
-        {pending > 0 ? <span className="agent-tab-pending">{pending}</span> : null}
-      </span>
-    );
-  }
-
-  return (
-    <div className={`agent-tabbar${compact ? " is-compact" : ""}`} data-no-drag>
-      {agents.map((agent) => {
-        const pending = pendingCountByAgent[agent] ?? 0;
-        const isActive = agent === active;
-        const mood: ClawdMood = pending > 0 ? "alert" : "calm";
-        return (
-          <button
-            key={agent}
-            type="button"
-            className={`agent-tab ${isActive ? "is-active" : ""} ${agentTone[agent]}${compact ? " is-compact" : ""}`}
-            onClick={() => onSelectAgent(agent)}
-            aria-label={agentLabels[agent]}
-            title={agentLabels[agent]}
-          >
-            <AgentMascot
-              agent={agent}
-              mood={mood}
-              accent={agentMascotAccent(agent)}
-              accentDark={agentMascotDark(agent)}
-              size={compact ? 14 : 16}
-            />
-            {!compact ? <span>{agentLabels[agent]}</span> : null}
-            {pending > 0 ? <span className="agent-tab-pending">{pending}</span> : null}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ─── Session List View ───────────────────────────────────────── */
-
-function sessionIdAtClientPoint(
-  x: number,
-  y: number,
-  listEl: HTMLElement | null,
-): string | null {
-  if (!listEl) return null;
-  for (const item of listEl.querySelectorAll<HTMLElement>("[data-session-id]")) {
-    const rect = item.getBoundingClientRect();
-    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-      return item.dataset.sessionId ?? null;
-    }
-  }
-  return null;
-}
-
-interface SessionListViewProps {
-  sessions: SessionSummary[];
-  activeRequest: PermissionRequest | null;
-  justResolved: boolean;
-  isExpanded: boolean;
-  maxSubagentDisplay: number;
-  onSelectSession: (sessionId: string) => void;
-  onSelectSubagent: (sessionId: string, agentId: string) => void;
-  onArchiveSession: (sessionId: string) => void;
-  onArchiveCompletedSubagents: (sessionId: string) => void;
-  onPinSession: (sessionId: string, pinned: boolean) => void;
-  onViewSubagentList: (sessionId: string) => void;
-}
-
-function partitionSubagents(subagents: SubagentSummary[], limit: number) {
-  const sorted = [...subagents].sort((a, b) => {
-    const aDone = Boolean(a.completedAt);
-    const bDone = Boolean(b.completedAt);
-    if (aDone !== bDone) {
-      return aDone ? 1 : -1;
-    }
-    return a.startedAt.localeCompare(b.startedAt);
-  });
-  const visible = sorted.slice(0, limit);
-  const overflowCount = sorted.length - visible.length;
-  return { visible, overflowCount, hidden: sorted.slice(limit) };
-}
-
-function SessionListView({
-  sessions,
-  activeRequest,
-  justResolved,
-  isExpanded,
-  maxSubagentDisplay,
-  onSelectSession,
-  onSelectSubagent,
-  onArchiveSession,
-  onArchiveCompletedSubagents,
-  onPinSession,
-  onViewSubagentList,
-}: SessionListViewProps) {
-  const { t } = useTranslation();
-  const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!isExpanded) {
-      setHoveredSessionId(null);
-      return;
-    }
-
-    const unsubscribe = manageAsyncUnlisten(
-      onIslandHoverChanged(({ hovering, clientX, clientY }) => {
-        if (!hovering || clientX == null || clientY == null) {
-          if (!hovering) {
-            setHoveredSessionId(null);
-          }
-          return;
-        }
-        setHoveredSessionId(sessionIdAtClientPoint(clientX, clientY, listRef.current));
-      }),
-    );
-
-    return () => {
-      unsubscribe();
-    };
-  }, [isExpanded, sessions.length]);
-
-  function handleListPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
-    const item = (event.target as HTMLElement).closest<HTMLElement>("[data-session-id]");
-    setHoveredSessionId(item?.dataset.sessionId ?? null);
-  }
-
-  function handleSessionMainKeyDown(
-    event: ReactKeyboardEvent<HTMLDivElement>,
-    sessionId: string,
-  ) {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
-    onSelectSession(sessionId);
-  }
-
-  return (
-    <div className="session-list-view">
-      <div className="session-list-header">
-        <Layers size={12} />
-        <span>{t("session.count", { count: sessions.length })}</span>
-      </div>
-      <div
-        ref={listRef}
-        className="session-list"
-        onPointerMove={handleListPointerMove}
-        onPointerLeave={() => setHoveredSessionId(null)}
-      >
-        {sessions.map((session, sessionIndex) => {
-          const sessionColor = getSessionColor(session.sessionId);
-          const isHovered = hoveredSessionId === session.sessionId;
-          return (
-            <div
-              key={session.sessionId}
-              data-session-id={session.sessionId}
-              className={`session-item ${session.pinned ? "is-pinned" : ""} ${isHovered ? "is-hovered" : ""}`}
-              style={{ "--stagger-i": Math.min(sessionIndex, 8) } as CSSProperties}
-            >
-              <div
-                className="session-item-main"
-                role="button"
-                tabIndex={0}
-                onClick={() => onSelectSession(session.sessionId)}
-                onKeyDown={(event) => handleSessionMainKeyDown(event, session.sessionId)}
-              >
-                <div className="session-item-left">
-                  <span className="session-clawd">
-                    <AgentMascot
-                      agent={session.agent}
-                      mood={deriveSessionMood(session, activeRequest, justResolved)}
-                      accent={sessionColor.accent}
-                      accentDark={sessionColor.accentDark}
-                    />
-                  </span>
-                  <div className="session-item-info">
-                    <span className="session-item-name">
-                      {session.pinned ? <Pin size={10} className="pin-indicator" /> : null}
-                      {sessionDisplayName(session.cwd)}
-                    </span>
-                    <span className="session-item-meta">
-                      {session.cwd}
-                      <span className="meta-divider">·</span>
-                      <span className={`session-agent-pill ${sessionColor.tone}`}>
-                        {agentLabels[session.agent]}
-                      </span>
-                      <span className="meta-divider">·</span>
-                      {timeAgo(session.lastActivity)}
-                    </span>
-                    {session.activeSubagents && session.activeSubagents.length > 0 ? (
-                      <div className="session-subagents">
-                        {(() => {
-                          const { visible, overflowCount, hidden } = partitionSubagents(
-                            session.activeSubagents,
-                            maxSubagentDisplay,
-                          );
-                          const hasCompleted = session.activeSubagents.some((sub) => Boolean(sub.completedAt));
-                          return (
-                            <>
-                              <div className="session-subagents-chips">
-                                {visible.map((sub) => {
-                                  const subagentColor = getSubagentColor(sub.agentId);
-                                  const subagentMood = getSubagentMood(sub.agentId, Boolean(sub.completedAt));
-                                  return (
-                                    <button
-                                      key={sub.agentId}
-                                      className={`subagent-chip ${subagentColor.tone} ${sub.completedAt ? "is-completed" : ""}`}
-                                      type="button"
-                                      title={
-                                        sub.completedAt
-                                          ? t("session.subagentDone", {
-                                              agentType: sub.agentType,
-                                            })
-                                          : sub.agentType
-                                      }
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onSelectSubagent(session.sessionId, sub.agentId);
-                                      }}
-                                    >
-                                      <AgentMascot
-                                        agent={session.agent}
-                                        size={14}
-                                        mood={subagentMood}
-                                        accent={subagentColor.accent}
-                                        accentDark={subagentColor.accentDark}
-                                      />
-                                      <span className="subagent-chip-label">{sub.agentType}</span>
-                                      {sub.completedAt ? <Check size={10} /> : null}
-                                    </button>
-                                  );
-                                })}
-                                {overflowCount > 0 ? (
-                                  <span
-                                    className="subagent-chip-overflow"
-                                    title={hidden.map((sub) => sub.agentType).join(", ")}
-                                  >
-                                    +{overflowCount}
-                                  </span>
-                                ) : null}
-                              </div>
-                              <div className="session-subagents-actions">
-                                {session.activeSubagents.length >= 2 ? (
-                                  <button
-                                    type="button"
-                                    className="subagent-view-all-btn"
-                                    title={t("session.viewAllSubagents")}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onViewSubagentList(session.sessionId);
-                                    }}
-                                  >
-                                    <Layers size={12} />
-                                  </button>
-                                ) : null}
-                                <button
-                                  type="button"
-                                  className="subagent-bulk-archive-btn"
-                                  title={t("session.archiveCompletedSubagents")}
-                                  disabled={!hasCompleted}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onArchiveCompletedSubagents(session.sessionId);
-                                  }}
-                                >
-                                  <Archive size={12} />
-                                </button>
-                              </div>
-                            </>
-                          );
-                        })()}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="session-item-trail">
-                  {session.pendingCount > 0 ? (
-                    <span className="session-pending-badge">{session.pendingCount}</span>
-                  ) : null}
-                  <ChevronRight size={14} />
-                </div>
-              </div>
-              <div className="session-item-actions">
-                <button
-                  type="button"
-                  className="session-action-btn"
-                  title={session.pinned ? t("session.unpin") : t("session.pin")}
-                  onClick={(e) => { e.stopPropagation(); onPinSession(session.sessionId, !session.pinned); }}
-                >
-                  {session.pinned ? <PinOff size={12} /> : <Pin size={12} />}
-                </button>
-                <button
-                  type="button"
-                  className="session-action-btn"
-                  title={t("session.archive")}
-                  onClick={(e) => { e.stopPropagation(); onArchiveSession(session.sessionId); }}
-                >
-                  <Archive size={12} />
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/* ─── Approval Card ───────────────────────────────────────────── */
-
-function getPlanModeType(request: PermissionRequest): "question" | "exitPlan" | null {
-  if (isPlanModeCommand(request.command)) {
-    if (
-      request.command.startsWith("AskUserQuestion:") ||
-      request.command === "AskUserQuestion"
-    ) {
-      return "question";
-    }
-    return "exitPlan";
-  }
-  return null;
-}
-
-interface PlanQuestionOption {
-  label: string;
-  description: string;
-}
-
-interface PlanQuestion {
-  question: string;
-  header: string;
-  options: PlanQuestionOption[];
-  multiSelect: boolean;
-}
-
-interface PlanQuestionCardProps {
-  request: PermissionRequest;
-  onResolve: (snapshot: IslandSnapshot) => void;
-}
-
-function parsePlanContent(toolInput: unknown): string | null {
-  if (!toolInput || typeof toolInput !== "object") {
-    return null;
-  }
-  const plan = (toolInput as { plan?: unknown }).plan;
-  if (typeof plan !== "string") {
-    return null;
-  }
-  const trimmed = plan.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function parsePlanQuestions(toolInput: unknown): PlanQuestion[] {
-  if (!toolInput || typeof toolInput !== "object") {
-    return [];
-  }
-  const questions = (toolInput as { questions?: unknown }).questions;
-  if (!Array.isArray(questions)) {
-    return [];
-  }
-  return questions.flatMap((entry) => {
-    if (!entry || typeof entry !== "object") {
-      return [];
-    }
-    const record = entry as Record<string, unknown>;
-    const question = typeof record.question === "string" ? record.question : "";
-    const header = typeof record.header === "string" ? record.header : "";
-    const multiSelect = Boolean(record.multiSelect);
-    const options = Array.isArray(record.options)
-      ? record.options.flatMap((option) => {
-          if (!option || typeof option !== "object") {
-            return [];
-          }
-          const optionRecord = option as Record<string, unknown>;
-          const label = typeof optionRecord.label === "string" ? optionRecord.label : "";
-          const description =
-            typeof optionRecord.description === "string" ? optionRecord.description : "";
-          if (!label) {
-            return [];
-          }
-          return [{ label, description }];
-        })
-      : [];
-    if (!question || options.length === 0) {
-      return [];
-    }
-    return [{ question, header, options, multiSelect }];
-  });
-}
-
-function getOriginalQuestions(toolInput: unknown): unknown[] {
-  if (!toolInput || typeof toolInput !== "object") return [];
-  const questions = (toolInput as { questions?: unknown }).questions;
-  return Array.isArray(questions) ? questions : [];
-}
-
-const OTHER_SENTINEL = "__atoll_other__";
-
-function PlanQuestionCard({ request, onResolve }: PlanQuestionCardProps) {
-  const { t } = useTranslation();
-  const questions = useMemo(() => parsePlanQuestions(request.toolInput), [request.toolInput]);
-  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
-  const [otherActive, setOtherActive] = useState<Record<string, boolean>>({});
-  const [otherText, setOtherText] = useState<Record<string, string>>({});
-  const [freeResponse, setFreeResponse] = useState("");
-  const [useFreeResponse, setUseFreeResponse] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  function toggleOption(question: PlanQuestion, label: string) {
-    const key = question.question;
-    if (label === OTHER_SENTINEL) {
-      setOtherActive((c) => ({ ...c, [key]: !c[key] }));
-      if (otherActive[key]) {
-        setOtherText((c) => ({ ...c, [key]: "" }));
-        setAnswers((current) => {
-          if (question.multiSelect) {
-            const existing = current[key];
-            const selected = Array.isArray(existing) ? existing : existing ? [existing] : [];
-            return { ...current, [key]: selected.filter((item) => item !== OTHER_SENTINEL) };
-          }
-          const { [key]: _, ...rest } = current;
-          return rest;
-        });
-      }
-      return;
-    }
-    setAnswers((current) => {
-      if (question.multiSelect) {
-        const existing = current[key];
-        const selected = Array.isArray(existing) ? existing : existing ? [existing] : [];
-        const next = selected.includes(label)
-          ? selected.filter((item) => item !== label)
-          : [...selected, label];
-        return { ...current, [key]: next };
-      }
-      setOtherActive((c) => ({ ...c, [key]: false }));
-      setOtherText((c) => ({ ...c, [key]: "" }));
-      return { ...current, [key]: label };
-    });
-  }
-
-  function isOptionSelected(question: PlanQuestion, label: string) {
-    if (label === OTHER_SENTINEL) return !!otherActive[question.question];
-    const key = question.question;
-    const value = answers[key];
-    if (Array.isArray(value)) return value.includes(label);
-    return value === label;
-  }
-
-  function buildUpdatedInput(): Record<string, unknown> {
-    const originalQuestions = getOriginalQuestions(request.toolInput);
-    if (useFreeResponse && freeResponse.trim()) {
-      const text = freeResponse.trim();
-      const finalAnswers: Record<string, string> = {};
-      for (const entry of originalQuestions) {
-        const questionText = (entry as { question?: unknown })?.question;
-        if (typeof questionText === "string" && questionText) {
-          finalAnswers[questionText] = text;
-        }
-      }
-      return { questions: originalQuestions, answers: finalAnswers };
-    }
-    // Agents require every answer to be a plain string; multi-select choices
-    // (plus "Other" text) are joined the same way the official clients do.
-    const finalAnswers: Record<string, string> = {};
-    for (const q of questions) {
-      const key = q.question;
-      if (otherActive[key] && otherText[key]?.trim()) {
-        if (q.multiSelect) {
-          const existing = answers[key];
-          const selected = Array.isArray(existing) ? existing : existing ? [existing] : [];
-          const parts = selected.filter((s) => s !== OTHER_SENTINEL);
-          finalAnswers[key] = [...parts, otherText[key].trim()].join(", ");
-        } else {
-          finalAnswers[key] = otherText[key].trim();
-        }
-      } else {
-        const val = answers[key];
-        if (val !== undefined) {
-          finalAnswers[key] = Array.isArray(val) ? val.join(", ") : val;
-        }
-      }
-    }
-    return {
-      questions: originalQuestions,
-      answers: finalAnswers,
-    };
-  }
-
-  async function handleSubmit() {
-    setBusy(true);
-    try {
-      const snapshot = await resolvePermissionWithInput(
-        request.id,
-        "approved",
-        "",
-        buildUpdatedInput(),
-      );
-      onResolve(snapshot);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleDeny() {
-    setBusy(true);
-    try {
-      const snapshot = await resolvePermissionRequest(request.id, "denied");
-      onResolve(snapshot);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="approval-view plan-question-view">
-      <div className="request-main">
-        <div className="request-kicker">
-          <span className="kicker-label">
-            <HelpCircle size={14} />
-            {t("plan.questionsKicker")}
-          </span>
-          <span className={`agent-label ${getSessionColor(request.session).tone}`}>
-            {agentLabels[request.agent]}
-          </span>
-        </div>
-        {useFreeResponse ? (
-          <div className="plan-questions">
-            <div className="plan-question-block">
-              <p className="plan-question-text">{t("plan.typeResponse")}</p>
-              <textarea
-                className="plan-other-input plan-free-response"
-                value={freeResponse}
-                onChange={(e) => setFreeResponse((e.target as HTMLTextAreaElement).value)}
-                placeholder={t("plan.placeholderFreeform")}
-                rows={4}
-                disabled={busy}
-              />
-            </div>
-          </div>
-        ) : (
-          <div className="plan-questions">
-            {questions.map((question) => (
-              <div className="plan-question-block" key={question.question}>
-                {question.header ? <p className="plan-question-header">{question.header}</p> : null}
-                <p className="plan-question-text">{question.question}</p>
-                <div className="plan-options">
-                  {question.options.map((option) => {
-                    const selected = isOptionSelected(question, option.label);
-                    return (
-                      <button
-                        key={option.label}
-                        type="button"
-                        className={`plan-option ${selected ? "selected" : ""}`}
-                        onClick={() => toggleOption(question, option.label)}
-                        disabled={busy}
-                      >
-                        <span className="plan-option-label">{option.label}</span>
-                        {option.description ? (
-                          <span className="plan-option-description">{option.description}</span>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    className={`plan-option plan-option-other ${isOptionSelected(question, OTHER_SENTINEL) ? "selected" : ""}`}
-                    onClick={() => toggleOption(question, OTHER_SENTINEL)}
-                    disabled={busy}
-                  >
-                    <span className="plan-option-label">{t("plan.other")}</span>
-                  </button>
-                </div>
-                {otherActive[question.question] && (
-                  <input
-                    type="text"
-                    className="plan-other-input"
-                    placeholder={t("plan.placeholderAnswer")}
-                    value={otherText[question.question] || ""}
-                    onChange={(e) =>
-                      setOtherText((c) => ({
-                        ...c,
-                        [question.question]: (e.target as HTMLInputElement).value,
-                      }))
-                    }
-                    disabled={busy}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="approval-footer">
-        <button
-          type="button"
-          className="plan-toggle-free"
-          onClick={() => setUseFreeResponse((v) => !v)}
-          disabled={busy}
-        >
-          {useFreeResponse ? t("plan.backToOptions") : t("plan.replyFreely")}
-        </button>
-        <div className="decision-row">
-          <button
-            className="decision-button deny"
-            type="button"
-            onClick={handleDeny}
-            disabled={busy}
-          >
-            <X size={16} />
-            <span>{busy ? t("approval.denying") : t("approval.deny")}</span>
-          </button>
-          <button
-            className="decision-button approve"
-            type="button"
-            onClick={handleSubmit}
-            disabled={busy}
-          >
-            <Check size={16} />
-            <span>{busy ? t("plan.submitting") : t("plan.submit")}</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-interface PlanApprovalCardProps {
-  request: PermissionRequest;
-  onResolve: (snapshot: IslandSnapshot) => void;
-}
-
-function PlanApprovalCard({ request, onResolve }: PlanApprovalCardProps) {
-  const { t } = useTranslation();
-  const sessionColor = getSessionColor(request.session);
-  const [busy, setBusy] = useState(false);
-  const planContent = useMemo(() => parsePlanContent(request.toolInput), [request.toolInput]);
-
-  function handlePlanPreviewClick(event: MouseEvent<HTMLDivElement>) {
-    const anchor = (event.target as HTMLElement).closest("a");
-    if (anchor?.href) {
-      event.preventDefault();
-      openUrl(anchor.href);
-    }
-  }
-
-  async function handleApprove() {
-    setBusy(true);
-    try {
-      const snapshot = await resolvePermissionRequest(request.id, "approved");
-      onResolve(snapshot);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleContinuePlanning() {
-    setBusy(true);
-    try {
-      const snapshot = await resolvePermissionRequest(
-        request.id,
-        "denied",
-        "Continue planning",
-      );
-      onResolve(snapshot);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="approval-view plan-approval-view">
-      <div className="request-main">
-        <div className="request-kicker">
-          <span className="kicker-label">
-            <AgentMascot
-              agent={request.agent}
-              mood="alert"
-              accent={sessionColor.accent}
-              accentDark={sessionColor.accentDark}
-              size={18}
-            />
-            {t("plan.readyToBuild")}
-          </span>
-          <span className={`agent-label ${sessionColor.tone}`}>{agentLabels[request.agent]}</span>
-        </div>
-        <p className="plan-approval-message">{t("plan.readyMessage")}</p>
-        {planContent ? (
-          <div className="plan-preview" onClick={handlePlanPreviewClick}>
-            <div className="plan-preview-md">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{planContent}</ReactMarkdown>
-            </div>
-          </div>
-        ) : null}
-      </div>
-      <div className="approval-footer">
-        <div className="decision-row">
-          <button
-            className="decision-button deny"
-            type="button"
-            onClick={handleContinuePlanning}
-            disabled={busy}
-          >
-            <HelpCircle size={16} />
-            <span>{busy ? t("plan.sending") : t("plan.continuePlanning")}</span>
-          </button>
-          <button
-            className="decision-button approve"
-            type="button"
-            onClick={handleApprove}
-            disabled={busy}
-          >
-            <Hammer size={16} />
-            <span>{busy ? t("approval.approving") : t("plan.agreeToBuild")}</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-interface ApprovalCardProps {
-  request: PermissionRequest;
-  busyDecision: Decision | null;
-  sessions: SessionSummary[];
-  onApprove: () => void;
-  onDeny: () => void;
-  onAlwaysApprove: () => void;
-  onViewSession: (sessionId: string) => void;
-}
-
-function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAlwaysApprove, onViewSession }: ApprovalCardProps) {
-  const { t } = useTranslation();
-  const session = sessions.find((s) => s.sessionId === request.session);
-  const sessionColor = getSessionColor(request.session);
-  const tone = sessionColor.tone;
-  const risk = useMemo(() => assessRisk(request.command), [request.command]);
-  const mascotMood: ClawdMood = risk === "danger" ? "worried" : "alert";
-  const resolvingClass =
-    busyDecision === "approved"
-      ? " is-resolving-approve"
-      : busyDecision === "denied"
-        ? " is-resolving-deny"
-        : "";
-
-  return (
-    <div
-      className={`approval-view is-arrive ${risk ? `is-${risk}` : ""}${resolvingClass}`}
-      style={
-        {
-          "--approval-glow": sessionColor.accent
-            ? `${sessionColor.accent}59`
-            : "rgba(111, 220, 255, 0.35)",
-        } as CSSProperties
-      }
-    >
-      <div className="request-main stagger-child" style={{ "--stagger-i": 0 } as CSSProperties}>
-        <div className="request-kicker">
-          <span className="kicker-label">
-            <AgentMascot
-              agent={request.agent}
-              mood={mascotMood}
-              accent={sessionColor.accent}
-              accentDark={sessionColor.accentDark}
-              size={18}
-            />
-            {t("approval.commandRequest")}
-          </span>
-          <span className="kicker-tags">
-            {risk ? (
-              <span className={`risk-pill ${risk}`}>
-                <TriangleAlert size={11} />
-                {localizedRiskLabel(risk)}
-              </span>
-            ) : null}
-            <span className={`agent-label ${tone}`}>{agentLabels[request.agent]}</span>
-          </span>
-        </div>
-        <code className={`command-block ${risk ? `risk-${risk}` : ""}`}>{request.command}</code>
-        {request.detail ? <p className="request-detail">{request.detail}</p> : null}
-        <div className="cwd-line" title={request.cwd}>
-          <FolderClosed size={11} />
-          <span className="cwd-path">{request.cwd}</span>
-        </div>
-      </div>
-
-      <div className="approval-footer stagger-child" style={{ "--stagger-i": 1 } as CSSProperties}>
-        <div className={`decision-row ${request.supportsAlways ? "has-always" : ""}`}>
-          <button
-            className="decision-button deny"
-            type="button"
-            onClick={onDeny}
-            disabled={busyDecision !== null}
-          >
-            <X size={16} />
-            <span>{busyDecision === "denied" ? t("approval.denying") : t("approval.deny")}</span>
-            <kbd className="decision-kbd" aria-hidden="true">{DECISION_SHORTCUTS.deny}</kbd>
-          </button>
-          <button
-            className="decision-button approve"
-            type="button"
-            onClick={onApprove}
-            disabled={busyDecision !== null}
-          >
-            <Check size={16} />
-            <span>{busyDecision === "approved" ? t("approval.approving") : t("approval.approve")}</span>
-            <kbd className="decision-kbd" aria-hidden="true">{DECISION_SHORTCUTS.approve}</kbd>
-          </button>
-          {request.supportsAlways ? (
-            <button
-              className="decision-button always-approve"
-              type="button"
-              onClick={onAlwaysApprove}
-              disabled={busyDecision !== null}
-              title={t("approval.alwaysTitle")}
-            >
-              <CheckCheck size={16} />
-              <span>{t("approval.always")}</span>
-              <kbd className="decision-kbd" aria-hidden="true">{DECISION_SHORTCUTS.always}</kbd>
-            </button>
-          ) : null}
-        </div>
-        {session ? (
-          <button
-            type="button"
-            className="view-session-link"
-            onClick={() => onViewSession(request.session)}
-          >
-            {t("approval.viewSession")}
-            <ChevronRight size={12} />
-          </button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-/* ─── Subview Header Nav (menu-bar row) ───────────────────────── */
-
-interface SessionSubviewNavProps {
-  cwd: string;
-  agent?: AgentKind;
-  sessionId?: string;
-  sessionHost?: SessionHost;
-  onBack: () => void;
-  onOpenExternal: () => void;
-}
-
-function sessionJumpLabel(agent?: AgentKind, sessionHost?: SessionHost): string {
-  if (agent === "claude") {
-    if (sessionHost === "claudeCli") return i18n.t("nav.terminal");
-    return i18n.t("nav.openClaude");
-  }
-  if (agent === "codex") {
-    if (sessionHost === "codexCli") return i18n.t("nav.terminal");
-    return i18n.t("nav.openCodex");
-  }
-  if (agent === "cursor") {
-    return i18n.t("nav.openCursor");
-  }
-  if (agent === "zcode") {
-    if (sessionHost === "zcodeCli") return i18n.t("nav.terminal");
-    return i18n.t("nav.openZcode");
-  }
-  return i18n.t("nav.terminal");
-}
-
-function SessionSubviewNav({
-  cwd,
-  agent,
-  sessionId,
-  sessionHost,
-  onBack,
-  onOpenExternal,
-}: SessionSubviewNavProps) {
-  const { t } = useTranslation();
-
-  return (
-    <div className="session-detail-nav" data-no-drag>
-      <button type="button" className="back-button" onClick={onBack}>
-        <ArrowLeft size={13} />
-        <span>{t("nav.back")}</span>
-      </button>
-      <button
-        type="button"
-        className="open-terminal-button"
-        onClick={onOpenExternal}
-      >
-        <ExternalLink size={13} />
-        <span>{sessionJumpLabel(agent, sessionHost)}</span>
-      </button>
-    </div>
-  );
-}
-
-function SettingsPageNav({
-  onBack,
-  backLabel,
-  icon,
-  title,
-}: {
-  onBack: () => void;
-  backLabel: string;
-  icon: ReactNode;
-  title: string;
-}) {
-  return (
-    <div className="settings-subview-nav" data-no-drag>
-      <button type="button" className="back-button" onClick={onBack}>
-        <ArrowLeft size={13} />
-        <span>{backLabel}</span>
-      </button>
-      <span className="settings-header-title">
-        {icon}
-        <span>{title}</span>
-      </span>
-    </div>
-  );
-}
-
-interface SettingsSubviewNavProps {
-  onBack: () => void;
-}
-
-function SettingsSubviewNav({ onBack }: SettingsSubviewNavProps) {
-  const { t } = useTranslation();
-
-  return (
-    <div className="settings-subview-nav" data-no-drag>
-      <button type="button" className="back-button" onClick={onBack}>
-        <ArrowLeft size={13} />
-        <span>{t("nav.back")}</span>
-      </button>
-      <span className="settings-header-title">
-        <Settings2 size={14} />
-        <span>{t("nav.settings")}</span>
-      </span>
-    </div>
-  );
-}
-
-/* ─── Session Chat View ───────────────────────────────────────── */
-
-interface SessionChatViewProps {
-  sessionId: string;
-  transcriptPath: string | null;
-  requests: PermissionRequest[];
-  agent: AgentKind;
-}
-
-function SessionChatView({ sessionId, transcriptPath, requests, agent }: SessionChatViewProps) {
-  const { t } = useTranslation();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const pollWhileActive = agent === "cursor" || agent === "zcode";
-
-  useEffect(() => {
-    let active = true;
-    let loading = false;
-    setLoadFailed(false);
-
-    function loadByPath(path: string) {
-      return getSessionTranscript(path)
-        .then((msgs) => {
-          if (!active) return;
-          setLoadFailed(false);
-          setMessages(msgs);
-        })
-        .catch(() => {
-          if (!active) return;
-          setLoadFailed(true);
-        });
-    }
-
-    function loadBySession() {
-      return getSessionChat(sessionId)
-        .then((msgs) => {
-          if (!active) return;
-          setLoadFailed(false);
-          setMessages(msgs);
-        })
-        .catch(() => {
-          if (!active) return;
-          setLoadFailed(true);
-        });
-    }
-
-    function load() {
-      if (loading) {
-        return Promise.resolve();
-      }
-      loading = true;
-      const request = transcriptPath
-        ? loadByPath(transcriptPath)
-        : pollWhileActive
-          ? loadBySession()
-          : Promise.resolve();
-      return request.finally(() => {
-        loading = false;
-      });
-    }
-
-    function loadAndIgnore() {
-      void load();
-    }
-
-    loadAndIgnore();
-    const interval = pollWhileActive ? window.setInterval(loadAndIgnore, 2000) : undefined;
-    return () => {
-      active = false;
-      if (interval !== undefined) {
-        window.clearInterval(interval);
-      }
-    };
-  }, [sessionId, transcriptPath, pollWhileActive]);
-
-  useEffect(() => {
-    if (!scrollRef.current) {
-      return;
-    }
-    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages]);
-
-  return (
-    <div className="session-chat">
-      <div className="chat-messages" ref={scrollRef}>
-        {messages.length === 0 && requests.length === 0 ? (
-          <div className="chat-empty">
-            {loadFailed
-              ? t("chat.transcriptUnavailable")
-              : pollWhileActive || transcriptPath
-                ? t("chat.loading")
-                : t("chat.noHistory")}
-          </div>
-        ) : null}
-        {messages.map((msg, i) => (
-          <ChatBubble key={i} message={msg} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ─── Subagent List View ──────────────────────────────────────── */
-
-interface SubagentListViewProps {
-  subagents: SubagentSummary[];
-  agent: AgentKind;
-  onSelectSubagent: (agentId: string) => void;
-  onArchiveCompletedSubagents: () => void | Promise<void>;
-}
-
-const SUBAGENT_LIST_VIRTUALIZE_THRESHOLD = 40;
-const SUBAGENT_LIST_ROW_HEIGHT = 52;
-const SUBAGENT_LIST_OVERSCAN = 6;
-const SUBAGENT_LIST_FALLBACK_VIEWPORT_HEIGHT = 260;
-
-function sortSubagents(subagents: SubagentSummary[]) {
-  return [...subagents].sort((a, b) => {
-    const aDone = Boolean(a.completedAt);
-    const bDone = Boolean(b.completedAt);
-    if (aDone !== bDone) return aDone ? 1 : -1;
-    return b.startedAt.localeCompare(a.startedAt);
-  });
-}
-
-interface SubagentListRowProps {
-  subagent: SubagentSummary;
-  agent: AgentKind;
-  onSelectSubagent: (agentId: string) => void;
-  style?: CSSProperties;
-}
-
-const SubagentListRow = memo(function SubagentListRow({
-  subagent,
-  agent,
-  onSelectSubagent,
-  style,
-}: SubagentListRowProps) {
-  const { t } = useTranslation();
-  const completed = Boolean(subagent.completedAt);
-  const color = getSubagentColor(subagent.agentId);
-  const mood = getSubagentMood(subagent.agentId, completed);
-  const handleClick = useCallback(() => {
-    onSelectSubagent(subagent.agentId);
-  }, [onSelectSubagent, subagent.agentId]);
-
-  return (
-    <button
-      type="button"
-      className={`subagent-list-item ${color.tone} ${completed ? "is-completed" : ""}`}
-      onClick={handleClick}
-      style={style}
-    >
-      <AgentMascot
-        agent={agent}
-        size={18}
-        mood={mood}
-        accent={color.accent}
-        accentDark={color.accentDark}
-        animated={false}
-      />
-      <div className="subagent-list-item-info">
-        <span className={`subagent-list-item-name ${color.tone}`}>
-          {subagent.agentType}
-        </span>
-        <span className="subagent-list-item-meta">
-          {timeAgo(subagent.startedAt)}
-          {subagent.lastMessage ? (
-            <>
-              <span className="meta-divider">·</span>
-              <span className="subagent-list-item-last-msg">
-                {subagent.lastMessage}
-              </span>
-            </>
-          ) : null}
-        </span>
-      </div>
-      <div className="subagent-list-item-trail">
-        {completed ? (
-          <span className="subagent-status-badge done">
-            <Check size={10} /> {t("subagent.done")}
-          </span>
-        ) : (
-          <span className="subagent-status-badge running">{t("subagent.running")}</span>
-        )}
-        <ChevronRight size={14} />
-      </div>
-    </button>
-  );
-});
-
-function SubagentListView({
-  subagents,
-  agent,
-  onSelectSubagent,
-  onArchiveCompletedSubagents,
-}: SubagentListViewProps) {
-  const { t } = useTranslation();
-  const listRef = useRef<HTMLDivElement>(null);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [viewportHeight, setViewportHeight] = useState(0);
-  const [archiveBusy, setArchiveBusy] = useState(false);
-  const listState = useMemo(() => {
-    let runningCount = 0;
-    let hasCompleted = false;
-    for (const subagent of subagents) {
-      if (subagent.completedAt) {
-        hasCompleted = true;
-      } else {
-        runningCount += 1;
-      }
-    }
-    return {
-      sorted: sortSubagents(subagents),
-      runningCount,
-      hasCompleted,
-    };
-  }, [subagents]);
-  const { sorted, runningCount, hasCompleted } = listState;
-  const shouldVirtualize = sorted.length > SUBAGENT_LIST_VIRTUALIZE_THRESHOLD;
-  const effectiveViewportHeight =
-    viewportHeight || SUBAGENT_LIST_FALLBACK_VIEWPORT_HEIGHT;
-  const maxScrollTop = Math.max(
-    0,
-    sorted.length * SUBAGENT_LIST_ROW_HEIGHT - effectiveViewportHeight,
-  );
-  const virtualScrollTop = shouldVirtualize
-    ? Math.min(scrollTop, maxScrollTop)
-    : 0;
-  const visibleStart = shouldVirtualize
-    ? Math.max(
-        0,
-        Math.floor(virtualScrollTop / SUBAGENT_LIST_ROW_HEIGHT) -
-          SUBAGENT_LIST_OVERSCAN,
-      )
-    : 0;
-  const visibleEnd = shouldVirtualize
-    ? Math.min(
-        sorted.length,
-        Math.ceil(
-          (virtualScrollTop + effectiveViewportHeight) /
-            SUBAGENT_LIST_ROW_HEIGHT,
-        ) + SUBAGENT_LIST_OVERSCAN,
-      )
-    : sorted.length;
-  const visibleSubagents = shouldVirtualize
-    ? sorted.slice(visibleStart, visibleEnd)
-    : sorted;
-
-  useEffect(() => {
-    const listEl = listRef.current;
-    if (!listEl) return;
-
-    const updateViewport = () => {
-      setViewportHeight(listEl.clientHeight);
-    };
-    updateViewport();
-
-    if (typeof ResizeObserver !== "undefined") {
-      const observer = new ResizeObserver(updateViewport);
-      observer.observe(listEl);
-      return () => observer.disconnect();
-    }
-
-    window.addEventListener("resize", updateViewport);
-    return () => window.removeEventListener("resize", updateViewport);
-  }, []);
-
-  useEffect(() => {
-    if (!shouldVirtualize && scrollTop !== 0) {
-      setScrollTop(0);
-      return;
-    }
-    if (shouldVirtualize && scrollTop > maxScrollTop) {
-      setScrollTop(maxScrollTop);
-    }
-  }, [maxScrollTop, scrollTop, shouldVirtualize]);
-
-  const handleScroll = useCallback((event: ReactUIEvent<HTMLDivElement>) => {
-    setScrollTop(event.currentTarget.scrollTop);
-  }, []);
-
-  async function handleArchiveCompletedSubagents() {
-    if (archiveBusy) return;
-    setArchiveBusy(true);
-    try {
-      await onArchiveCompletedSubagents();
-    } finally {
-      setArchiveBusy(false);
-    }
-  }
-
-  return (
-    <div className="subagent-list-view">
-      <div className="subagent-list-header">
-        <div className="subagent-list-title-row">
-          <Layers size={14} />
-          <span className="subagent-list-title">
-            {t("subagent.listTitle", { count: subagents.length })}
-          </span>
-          {runningCount > 0 ? (
-            <span className="subagent-list-running-badge">
-              {t("subagent.runningBadge", { count: runningCount })}
-            </span>
-          ) : null}
-        </div>
-        {hasCompleted ? (
-          <button
-            type="button"
-            className="subagent-list-archive-all-btn"
-            onClick={handleArchiveCompletedSubagents}
-            disabled={archiveBusy}
-          >
-            <Archive size={12} />
-            <span>
-              {archiveBusy ? t("subagent.archiving") : t("subagent.archiveCompleted")}
-            </span>
-          </button>
-        ) : null}
-      </div>
-      <div
-        ref={listRef}
-        className={`subagent-list-body ${shouldVirtualize ? "is-virtualized" : ""}`}
-        onScroll={handleScroll}
-      >
-        {shouldVirtualize ? (
-          <div
-            className="subagent-list-virtual-spacer"
-            style={{ height: sorted.length * SUBAGENT_LIST_ROW_HEIGHT }}
-          >
-            <div
-              className="subagent-list-virtual-window"
-              style={{
-                transform: `translateY(${
-                  visibleStart * SUBAGENT_LIST_ROW_HEIGHT
-                }px)`,
-              }}
-            >
-              {visibleSubagents.map((subagent) => (
-                <SubagentListRow
-                  key={subagent.agentId}
-                  subagent={subagent}
-                  agent={agent}
-                  onSelectSubagent={onSelectSubagent}
-                  style={{ height: SUBAGENT_LIST_ROW_HEIGHT }}
-                />
-              ))}
-            </div>
-          </div>
-        ) : (
-          visibleSubagents.map((subagent) => (
-            <SubagentListRow
-              key={subagent.agentId}
-              subagent={subagent}
-              agent={agent}
-              onSelectSubagent={onSelectSubagent}
-            />
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ─── Subagent Detail View ───────────────────────────────────── */
-
-interface SubagentDetailViewProps {
-  agentId: string;
-  agent: AgentKind;
-  agentType: string;
-  startedAt: string;
-  completedAt: string | null;
-  lastMessage: string | null;
-  transcriptPath: string | null;
-  onArchive: () => void | Promise<void>;
-}
-
-function SubagentDetailView({
-  agentId,
-  agent,
-  agentType,
-  startedAt,
-  completedAt,
-  lastMessage,
-  transcriptPath,
-  onArchive,
-}: SubagentDetailViewProps) {
-  const { t } = useTranslation();
-  const subagentColor = getSubagentColor(agentId);
-  const subagentMood = getSubagentMood(agentId, Boolean(completedAt));
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [archiveBusy, setArchiveBusy] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const prevCountRef = useRef(0);
-
-  useEffect(() => {
-    if (!transcriptPath) return;
-    let active = true;
-    setLoadFailed(false);
-    function load() {
-      getSessionTranscript(transcriptPath!)
-        .then((msgs) => {
-          if (!active) return;
-          setLoadFailed(false);
-          if (msgs.length !== prevCountRef.current) {
-            prevCountRef.current = msgs.length;
-            setMessages(msgs);
-          }
-        })
-        .catch(() => {
-          if (!active) return;
-          setLoadFailed(true);
-        });
-    }
-    load();
-    const pollMs = completedAt ? 0 : 2000;
-    const interval = pollMs > 0 ? setInterval(load, pollMs) : undefined;
-    return () => {
-      active = false;
-      if (interval) clearInterval(interval);
-    };
-  }, [transcriptPath, completedAt]);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
-
-  async function handleArchive() {
-    if (archiveBusy) return;
-    setArchiveBusy(true);
-    try {
-      await onArchive();
-    } finally {
-      setArchiveBusy(false);
-    }
-  }
-
-  return (
-    <div className="subagent-detail-view">
-      <div className="subagent-detail-header">
-        <div className="subagent-detail-title-row">
-          <AgentMascot
-            agent={agent}
-            size={20}
-            mood={subagentMood}
-            accent={subagentColor.accent}
-            accentDark={subagentColor.accentDark}
-          />
-          <h2 className={`subagent-detail-title ${subagentColor.tone}`}>{agentType}</h2>
-          {completedAt ? (
-            <span className="subagent-status-badge done">
-              <Check size={10} /> {t("subagent.done")}
-            </span>
-          ) : (
-            <span className="subagent-status-badge running">{t("subagent.running")}</span>
-          )}
-        </div>
-        <p className="subagent-detail-subtitle">
-          {t("subagent.started", { timeAgo: timeAgo(startedAt) })}
-          {completedAt
-            ? ` ${t("subagent.finished", { timeAgo: timeAgo(completedAt) })}`
-            : ""}
-        </p>
-        {lastMessage && messages.length === 0 ? (
-          <p className="subagent-last-message">{lastMessage}</p>
-        ) : null}
-      </div>
-      <div className="session-chat">
-        <div className="chat-messages" ref={scrollRef}>
-          {messages.length === 0 && !lastMessage ? (
-            <div className="chat-empty">
-              {!transcriptPath
-                ? t("subagent.noTranscriptPath")
-                : loadFailed && completedAt
-                  ? t("chat.transcriptUnavailable")
-                  : t("subagent.loading")}
-            </div>
-          ) : null}
-          {messages.map((msg, i) => (
-            <ChatBubble key={i} message={msg} />
-          ))}
-        </div>
-      </div>
-      {completedAt ? (
-        <div className="subagent-detail-footer">
-          <button
-            type="button"
-            className="subagent-archive-btn"
-            onClick={handleArchive}
-            disabled={archiveBusy}
-          >
-            <Archive size={14} />
-            <span>{archiveBusy ? t("subagent.archiving") : t("subagent.archive")}</span>
-          </button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/* ─── Hooks View ──────────────────────────────────────────────── */
-
-interface HookMenuAgent {
-  key: string;
-  label: string;
-  status: HookStatus | null;
-  note?: string;
-  onInstall: () => void;
-  onUninstall: () => void;
-  onRemoveCompetingHooks?: () => void;
-}
-
-interface HooksViewProps {
-  agents: HookMenuAgent[];
-  hookBusy: boolean;
-  hookInstallError: string | null;
-  onInstallAll: () => void;
-  onUninstallAll: () => void;
-}
-
-function formatHookInstallErrorMessage(error: unknown): string {
-  if (typeof error === "string") return error;
-  if (error instanceof Error) return error.message;
-  return i18n.t("error.unknown", { ns: "hooks" });
-}
-
-function HooksView({
-  agents,
-  hookBusy,
-  hookInstallError,
-  onInstallAll,
-  onUninstallAll,
-}: HooksViewProps) {
-  const { t } = useTranslation("hooks");
-  const installedCount = agents.filter((agent) => agent.status?.installed).length;
-  const missingCount = agents.filter(
-    (agent) => agent.status && !agent.status.installed,
-  ).length;
-
-  return (
-    <div className="settings-view" data-no-drag>
-      <div className="settings-body">
-        <div className="settings-section">
-          <span className="settings-section-label">{t("section.agents")}</span>
-          {hookInstallError ? (
-            <span className="settings-card-desc settings-hook-warning">{hookInstallError}</span>
-          ) : null}
-          {missingCount > 0 || installedCount > 1 ? (
-            <div className="settings-hook-bulk">
-              {missingCount > 0 ? (
-                <button
-                  type="button"
-                  className="settings-hook-button"
-                  onClick={onInstallAll}
-                  disabled={hookBusy}
-                  data-no-drag
-                >
-                  <Download size={13} />
-                  {t("bulk.installAll")}
-                </button>
-              ) : null}
-              {installedCount > 1 ? (
-                <button
-                  type="button"
-                  className="settings-hook-button is-muted"
-                  onClick={onUninstallAll}
-                  disabled={hookBusy}
-                  data-no-drag
-                >
-                  <Trash2 size={13} />
-                  {t("bulk.uninstallAll")}
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-          {agents.map((agent) => {
-            const installed = Boolean(agent.status?.installed);
-            const scriptMissing = agent.status && !agent.status.scriptFound;
-            const ready = isHookReady(agent.status);
-            const needsRetrust = ready && Boolean(agent.status?.needsRetrust);
-            const statusIssue = hookStatusIssue(agent.status);
-            const deadCompetitors = deadCompetingHooks(agent.status);
-            return (
-              <div key={agent.key} className="settings-card settings-hook-card">
-                <div className="settings-card-head">
-                  <span className="settings-card-title">{agent.label}</span>
-                  <span
-                    className={`settings-hook-badge${
-                      ready
-                        ? needsRetrust
-                          ? " is-warning"
-                          : " is-installed"
-                        : installed
-                          ? " is-warning"
-                          : " is-missing"
-                    }`}
-                  >
-                    {ready
-                      ? needsRetrust
-                        ? t("status.needsRetrust")
-                        : t("status.connected")
-                      : installed
-                        ? t("status.shimMissing")
-                        : t("status.notInstalled")}
-                  </span>
-                </div>
-                {agent.status?.settingsPath ? (
-                  <span className="settings-card-desc settings-hook-path">
-                    {agent.status.settingsPath}
-                  </span>
-                ) : null}
-                {agent.note && (!installed || agent.key === "codex" || agent.key === "claude" || agent.key === "cursor" || agent.key === "zcode" || agent.key === "gemini") ? (
-                  <span className="settings-card-desc">{agent.note}</span>
-                ) : null}
-                {agent.key === "claude" ? (
-                  <details className="settings-hook-desktop-note">
-                    <summary>{t("checklist.claudeTitle")}</summary>
-                    <ul>
-                      <li>{t("checklist.claudeNode")}</li>
-                      <li>{t("checklist.claudePermissions")}</li>
-                      <li>{t("checklist.claudeRestart")}</li>
-                      <li>{t("checklist.claudeVerify")}</li>
-                    </ul>
-                  </details>
-                ) : null}
-                {agent.key === "codex" ? (
-                  <details className="settings-hook-desktop-note">
-                    <summary>{t("checklist.codexTitle")}</summary>
-                    <ul>
-                      <li>{t("checklist.codexNode")}</li>
-                      <li>{t("checklist.codexTrust")}</li>
-                      <li>{t("checklist.codexRestart")}</li>
-                      <li>{t("checklist.codexVerify")}</li>
-                    </ul>
-                  </details>
-                ) : null}
-                {agent.key === "zcode" ? (
-                  <details className="settings-hook-desktop-note">
-                    <summary>{t("checklist.zcodeTitle")}</summary>
-                    <ul>
-                      <li>{t("checklist.zcodeNode")}</li>
-                      <li>{t("checklist.zcodeEnable")}</li>
-                      <li>{t("checklist.zcodeRestart")}</li>
-                      <li>{t("checklist.zcodeVerify")}</li>
-                    </ul>
-                  </details>
-                ) : null}
-                {agent.key === "gemini" ? (
-                  <details className="settings-hook-desktop-note">
-                    <summary>{t("checklist.geminiTitle")}</summary>
-                    <ul>
-                      <li>{t("checklist.geminiNode")}</li>
-                      <li>{t("checklist.geminiTrust")}</li>
-                      <li>{t("checklist.geminiRestart")}</li>
-                      <li>{t("checklist.geminiVerify")}</li>
-                    </ul>
-                  </details>
-                ) : null}
-                {agent.key === "cursor" ? (
-                  <details className="settings-hook-desktop-note">
-                    <summary>{t("checklist.cursorTitle")}</summary>
-                    <ul>
-                      <li>{t("checklist.cursorNode")}</li>
-                      <li>{t("checklist.cursorSettings")}</li>
-                      <li>{t("checklist.cursorRestart")}</li>
-                      <li>{t("checklist.cursorVerify")}</li>
-                    </ul>
-                  </details>
-                ) : null}
-                {needsRetrust ? (
-                  <span className="settings-card-desc settings-hook-warning">
-                    {hookRetrustNote(agent.key as HookAgentKey)}
-                  </span>
-                ) : null}
-                {statusIssue ? (
-                  <span className="settings-card-desc settings-hook-warning">
-                    {statusIssue}
-                  </span>
-                ) : null}
-                {scriptMissing ? (
-                  <span className="settings-card-desc settings-hook-warning">
-                    {t("warning.scriptMissing")}
-                  </span>
-                ) : null}
-                {deadCompetitors.length > 0 && agent.onRemoveCompetingHooks ? (
-                  <div className="settings-hook-competing">
-                    <span className="settings-card-desc settings-hook-warning">
-                      {t("competing.deadWarning", {
-                        count: deadCompetitors.length,
-                      })}
-                    </span>
-                    <ul className="settings-hook-competing-list">
-                      {deadCompetitors.map((hook) => (
-                        <li key={`${hook.event}:${hook.command}`} className="settings-hook-competing-item">
-                          <code>{hook.command}</code>
-                          <span className="settings-hook-competing-event">
-                            {hook.event}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                    <button
-                      type="button"
-                      className="settings-hook-button"
-                      onClick={agent.onRemoveCompetingHooks}
-                      disabled={hookBusy}
-                      data-no-drag
-                    >
-                      <Trash2 size={13} />
-                      {t("competing.removeDead")}
-                    </button>
-                  </div>
-                ) : null}
-                <div className="settings-hook-actions">
-                  {installed ? (
-                    <button
-                      type="button"
-                      className="settings-hook-button is-muted"
-                      onClick={agent.onUninstall}
-                      disabled={hookBusy}
-                      data-no-drag
-                    >
-                      <Trash2 size={13} />
-                      {t("action.uninstall")}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="settings-hook-button"
-                      onClick={agent.onInstall}
-                      disabled={hookBusy}
-                      data-no-drag
-                    >
-                      <Download size={13} />
-                      {hookBusy ? t("action.installing") : t("action.install")}
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Idle View ───────────────────────────────────────────────── */
-
-interface HeaderLogoProps {
-  display: HeaderLogoDisplay;
-  size: number;
-  idleIntervalSec: number;
-  idleDurationSec: number;
-  motionPaused: boolean;
-}
-
-function HeaderLogo({
-  display,
-  size,
-  idleIntervalSec,
-  idleDurationSec,
-  motionPaused,
-}: HeaderLogoProps) {
-  if (display.kind === "agent") {
-    return (
-      <AgentMascot
-        agent={display.agent}
-        mood={display.mood}
-        size={size}
-        className="header-agent-logo"
-        accent={agentMascotAccent(display.agent)}
-        accentDark={agentMascotDark(display.agent)}
-      />
-    );
-  }
-
-  return (
-    <AtollLogo
-      size={size}
-      activity={display.activity}
-      idleIntervalSec={idleIntervalSec}
-      idleDurationSec={idleDurationSec}
-      motionPaused={motionPaused}
-    />
-  );
-}
-
-interface IdleViewProps {
-  needsHookSetup: boolean;
-  needsReconnect: boolean;
-  disconnectedAgents: Array<{ key: HookAgentKey; label: string; status: HookStatus }>;
-  retrustAgents: Array<{ key: HookAgentKey; label: string; status: HookStatus }>;
-  onOpenHooks: () => void;
-}
-
-function IdleView({
-  needsHookSetup,
-  needsReconnect,
-  disconnectedAgents,
-  retrustAgents,
-  onOpenHooks,
-}: IdleViewProps) {
-  const { t } = useTranslation();
-
-  if (!needsHookSetup) {
-    const hasDisconnected = disconnectedAgents.length > 0;
-    const hasRetrust = retrustAgents.length > 0;
-    const reconnectTitle =
-      hasDisconnected && hasRetrust
-        ? t("idle.reconnectTitleNeedAttention", {
-            agents: [...disconnectedAgents, ...retrustAgents]
-              .map((agent) => agent.label)
-              .join(", "),
-          })
-        : hasDisconnected
-          ? t("idle.reconnectTitleDisconnected", {
-              agents: disconnectedAgents.map((agent) => agent.label).join(", "),
-            })
-          : t("idle.reconnectTitleRetrust", {
-              agents: retrustAgents.map((agent) => agent.label).join(", "),
-            });
-    const reconnectDetail = hasDisconnected
-      ? t("idle.reconnectDisconnectedDetail")
-      : hasRetrust
-        ? t("idle.reconnectRetrustDetail")
-        : "";
-    return (
-      <div className={`idle-view${needsReconnect ? " idle-view--alert" : ""}`}>
-        <div className="idle-stack">
-          {needsReconnect ? (
-            <div className="idle-reconnect-banner">
-              <div className="idle-reconnect-icon" aria-hidden="true">
-                <TriangleAlert size={14} />
-              </div>
-              <div className="idle-reconnect-copy">
-                <strong>{reconnectTitle}</strong>
-                <span>{reconnectDetail}</span>
-              </div>
-              <button
-                type="button"
-                className="install-button is-compact"
-                onClick={onOpenHooks}
-                data-no-drag
-              >
-                {t("idle.reconnect")}
-              </button>
-            </div>
-          ) : null}
-          <div className="idle-content stagger-child" style={{ "--stagger-i": 0 } as CSSProperties}>
-            <span className="idle-dot" />
-            <span className="idle-text">{t("idle.waiting")}</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="idle-view setup-view">
-      <div className="setup-card stagger-child" style={{ "--stagger-i": 0 } as CSSProperties}>
-        <div className="setup-head">
-          <div className="idle-icon setup-icon">
-            <Download size={16} />
-          </div>
-          <div className="setup-copy">
-            <h2>{t("idle.setupTitle")}</h2>
-            <p>{t("idle.setupDescription")}</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          className="install-button stagger-child"
-          style={{ "--stagger-i": 1 } as CSSProperties}
-          onClick={onOpenHooks}
-          data-no-drag
-        >
-          <Download size={14} />
-          <span>{t("idle.openHooks")}</span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Helpers ─────────────────────────────────────────────────── */
-
-const NON_TEXT_INPUT_TYPES = new Set([
-  "button",
-  "checkbox",
-  "radio",
-  "range",
-  "file",
-  "submit",
-  "reset",
-  "hidden",
-  "color",
-  "image",
-]);
-
-function isImeTextTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.tagName === "TEXTAREA" || target.isContentEditable) return true;
-  if (target.tagName !== "INPUT") return false;
-  return !NON_TEXT_INPUT_TYPES.has((target as HTMLInputElement).type);
-}
-
-// True only while a real text field is focused (the reply input). Used to keep
-// the island open while typing, without letting a stray button focus pin it.
-function isTextEntryActive() {
-  if (typeof document === "undefined") return false;
-  return isImeTextTarget(document.activeElement);
-}
-
-function sessionDisplayName(cwd: string) {
-  if (!cwd || cwd === ".") {
-    return i18n.t("session.cursorSession");
-  }
-  const parts = cwd.split(/[/\\]/).filter(Boolean);
-  return parts[parts.length - 1] || cwd;
-}
-
-function ChatBubbleQuestionReadonly({
-  toolInput,
-  toolOutput,
-}: {
-  toolInput: unknown;
-  toolOutput?: string | null;
-}) {
-  const { t } = useTranslation();
-  const input = toolInput as { questions?: Array<{ question: string; header?: string; options?: Array<{ label: string; description?: string }>; multiSelect?: boolean }> } | null;
-  const questions = input?.questions;
-  if (!questions?.length) return null;
-  const answer = toolOutput?.trim();
-
-  return (
-    <div className="chat-question-readonly">
-      {questions.map((q, qi) => (
-        <div key={qi} className="chat-question-item">
-          {q.header && <span className="chat-question-header">{q.header}</span>}
-          <span className="chat-question-text">{q.question}</span>
-          {q.options && (
-            <div className="chat-question-options">
-              {q.options.map((opt, oi) => (
-                <span key={oi} className="chat-question-option">{opt.label}</span>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
-      {answer && (
-        <div className="chat-question-answer">
-          <span className="chat-question-answer-label">{t("chat.yourAnswer")}</span>
-          <span className="chat-question-answer-text">{answer}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ChatBubble({ message }: { message: ChatMessage }) {
-  const text =
-    message.content ||
-    (message.toolName
-      ? i18n.t("chat.usingTool", { toolName: message.toolName })
-      : "");
-  const hasMarkdown = useMemo(() => /[*_`#\[\]!\n>|]/.test(text), [text]);
-  const isQuestion = message.toolName === "AskUserQuestion" && message.toolInput;
-
-  function handleClick(event: MouseEvent<HTMLDivElement>) {
-    const anchor = (event.target as HTMLElement).closest("a");
-    if (anchor?.href) {
-      event.preventDefault();
-      event.stopPropagation();
-      openUrl(anchor.href);
-    }
-  }
-
-  return (
-    <div className={`chat-bubble ${message.role}`} onClick={handleClick}>
-      {message.toolName ? (
-        <span className="chat-tool-badge">{message.toolName}</span>
-      ) : null}
-      {isQuestion ? (
-        <ChatBubbleQuestionReadonly toolInput={message.toolInput} toolOutput={message.toolOutput} />
-      ) : hasMarkdown ? (
-        <div className="chat-bubble-md">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
-        </div>
-      ) : (
-        <span className="chat-bubble-text">{text}</span>
-      )}
-    </div>
-  );
-}
-
-function timeAgo(isoDate: string) {
-  const elapsedSeconds = Math.max(1, Math.floor((Date.now() - new Date(isoDate).getTime()) / 1000));
-
-  if (elapsedSeconds < 60) {
-    return i18n.t("time.agoSeconds", { seconds: elapsedSeconds });
-  }
-
-  const elapsedMinutes = Math.floor(elapsedSeconds / 60);
-  if (elapsedMinutes < 60) {
-    return i18n.t("time.agoMinutes", { minutes: elapsedMinutes });
-  }
-
-  const elapsedHours = Math.floor(elapsedMinutes / 60);
-  return i18n.t("time.agoHours", { hours: elapsedHours });
 }
