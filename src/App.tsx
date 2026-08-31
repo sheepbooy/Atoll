@@ -308,6 +308,9 @@ import {
 import {
   UpdateNotice,
 } from "./components/UpdateNotice";
+import { useUpdater } from "./hooks/useUpdater";
+import { useLyrics } from "./hooks/useLyrics";
+import { useClipboardHistory } from "./hooks/useClipboardHistory";
 import {
   CompactSessionStack,
 } from "./components/CompactSessionStack";
@@ -413,15 +416,22 @@ export function App() {
   const lastNativePresentationKeyRef = useRef<string | null>(null);
   const [busyDecision, setBusyDecision] = useState<Decision | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [updateState, setUpdateState] = useState<AppUpdateState>({ status: "idle" });
-  const [updateNotice, setUpdateNotice] = useState<string | null>(null);
-  const updateCheckInFlightRef = useRef(false);
-  const updateNoticeTimerRef = useRef<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef<Decision | null>(null);
   busyRef.current = busyDecision;
   const menuOpenRef = useRef(false);
   menuOpenRef.current = menuOpen;
+  const {
+    updateNotice,
+    updateAvailable,
+    updateVersion,
+    updateDownloading,
+    updateDownloadProgress,
+    updateChecking,
+    dismissUpdateNotice,
+    handleCheckForUpdates,
+    handleInstallUpdate,
+  } = useUpdater({ closeMenu: () => setMenuOpen(false) });
 
   const [panelView, setPanelView] = useState<PanelView>({ kind: "home" });
   const panelViewRef = useRef<PanelView>({ kind: "home" });
@@ -519,16 +529,16 @@ export function App() {
       cancelled = true;
     };
   }, [nowPlayingTrack?.artworkBase64]);
-  const [lyricsData, setLyricsData] = useState<LyricPayload | null>(null);
-  const [playbackPosition, setPlaybackPosition] = useState<{
-    position: number;
-    playing: boolean;
-    receivedAt: number;
-  } | null>(null);
-  const [lyricsEnabled, setLyricsEnabledState] = useState(false);
-  const [clipboardHistory, setClipboardHistory] = useState<ClipboardEntry[]>([]);
-  const [clipboardEnabled, setClipboardEnabled] = useState(false);
-  const [clipboardLimit, setClipboardLimit] = useState(50);
+  const { lyricsData, playbackPosition, lyricsEnabled, handleChangeLyricsEnabled } =
+    useLyrics();
+  const {
+    clipboardHistory,
+    clipboardEnabled,
+    clipboardLimit,
+    setClipboardHistory,
+    handleChangeClipboardEnabled,
+    handleChangeClipboardLimit,
+  } = useClipboardHistory();
   const [justResolved, setJustResolved] = useState(false);
   const [hookHealthHydrated, setHookHealthHydrated] = useState(false);
   const [configuredHookAgents, setConfiguredHookAgents] = useState(() =>
@@ -972,42 +982,9 @@ export function App() {
     getArtworkBackdropEnabled()
       .then(setArtworkBackdropEnabledState)
       .catch(() => undefined);
-    getLyricsEnabled()
-      .then(setLyricsEnabledState)
-      .catch(() => undefined);
-    getCurrentLyrics()
-      .then(setLyricsData)
-      .catch(() => undefined);
-    getClipboardHistoryEnabled()
-      .then(setClipboardEnabled)
-      .catch(() => undefined);
-    getClipboardHistoryLimit()
-      .then(setClipboardLimit)
-      .catch(() => undefined);
-    getClipboardHistory()
-      .then(setClipboardHistory)
-      .catch(() => undefined);
-    const unsubscribeClipboard = manageAsyncUnlisten(
-      onClipboardHistoryChanged((entries) => {
-        setClipboardHistory(entries);
-      }),
-    );
     const unsubscribeMedia = manageAsyncUnlisten(
       onNowPlayingChanged((track) => {
         setNowPlayingTrack(track);
-      }),
-    );
-    const unsubscribeLyrics = manageAsyncUnlisten(
-      onLyricsChanged((payload) => {
-        setLyricsData(payload);
-      }),
-    );
-    const unsubscribeLyricsPos = manageAsyncUnlisten(
-      onLyricsPosition(({ position, playing }) => {
-        if (position == null) {
-          return;
-        }
-        setPlaybackPosition({ position, playing, receivedAt: Date.now() });
       }),
     );
     const unsubscribe = manageAsyncUnlisten(
@@ -1174,9 +1151,6 @@ export function App() {
       unsubscribeCaptureHooks();
       unsubscribeScreenshot();
       unsubscribeMedia();
-      unsubscribeClipboard();
-      unsubscribeLyrics();
-      unsubscribeLyricsPos();
       clearTransitionWork();
       clearIdleTimer();
     };
@@ -1227,66 +1201,6 @@ export function App() {
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [menuOpen]);
-
-  useEffect(() => {
-    if (!updateNotice) {
-      return;
-    }
-
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        dismissUpdateNotice();
-      }
-    }
-
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [updateNotice]);
-
-  useEffect(() => {
-    return () => {
-      if (updateNoticeTimerRef.current !== null) {
-        window.clearTimeout(updateNoticeTimerRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const runSilentCheck = async () => {
-      if (updateCheckInFlightRef.current) {
-        return;
-      }
-      updateCheckInFlightRef.current = true;
-      const result = await checkAppUpdate();
-      updateCheckInFlightRef.current = false;
-      if (cancelled || result.status === "error") {
-        return;
-      }
-      setUpdateState(result);
-    };
-
-    const initialTimer = window.setTimeout(() => {
-      if (!cancelled) {
-        void runSilentCheck();
-      }
-    }, UPDATE_INITIAL_DELAY_MS);
-
-    const intervalId = window.setInterval(() => {
-      if (!cancelled) {
-        void runSilentCheck();
-      }
-    }, UPDATE_RECHECK_MS);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(initialTimer);
-      window.clearInterval(intervalId);
-    };
-  }, []);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -2706,33 +2620,6 @@ export function App() {
     setArtworkBackdropEnabled(enabled).catch(() => undefined);
   }, []);
 
-  const handleChangeLyricsEnabled = useCallback((enabled: boolean) => {
-    setLyricsEnabledState(enabled);
-    setLyricsEnabled(enabled).catch(() => undefined);
-    if (!enabled) {
-      setLyricsData(null);
-    }
-  }, []);
-
-  const handleChangeClipboardEnabled = useCallback((enabled: boolean) => {
-    setClipboardEnabled(enabled);
-    setClipboardHistoryEnabled(enabled).catch(() => undefined);
-    if (enabled) {
-      getClipboardHistory()
-        .then(setClipboardHistory)
-        .catch(() => undefined);
-    }
-  }, []);
-
-  const handleChangeClipboardLimit = useCallback((limit: number) => {
-    const clamped = Math.min(
-      MAX_CLIPBOARD_LIMIT,
-      Math.max(MIN_CLIPBOARD_LIMIT, Math.round(limit)),
-    );
-    setClipboardLimit(clamped);
-    setClipboardHistoryLimit(clamped).catch(() => undefined);
-  }, []);
-
   const hookMenuAgents: HookMenuAgent[] = [
     {
       key: "claude",
@@ -2828,82 +2715,6 @@ export function App() {
     hookHealthHydrated &&
     (hookHealthAnalysis.needsFirstTimeSetup || hookHealthAnalysis.needsReconnect);
   const hooksSetupSummary = hookHealthAnalysis.summary;
-
-  const updateAvailable = updateState.status === "available";
-  const updateVersion =
-    updateState.status === "available" || updateState.status === "downloading"
-      ? updateState.version
-      : null;
-  const updateDownloading = updateState.status === "downloading";
-  const updateDownloadProgress =
-    updateState.status === "downloading" ? updateState.progress : 0;
-  const updateChecking = updateState.status === "checking";
-
-  function dismissUpdateNotice() {
-    setUpdateNotice(null);
-    if (updateNoticeTimerRef.current !== null) {
-      window.clearTimeout(updateNoticeTimerRef.current);
-      updateNoticeTimerRef.current = null;
-    }
-  }
-
-  function showUpdateNotice(version: string) {
-    dismissUpdateNotice();
-    setUpdateNotice(version);
-    updateNoticeTimerRef.current = window.setTimeout(() => {
-      dismissUpdateNotice();
-    }, 5000);
-  }
-
-  async function runUpdateCheck() {
-    if (updateCheckInFlightRef.current || updateDownloading) {
-      return;
-    }
-    updateCheckInFlightRef.current = true;
-    setUpdateState({ status: "checking" });
-    const result = await checkAppUpdate();
-    updateCheckInFlightRef.current = false;
-    if (result.status === "error") {
-      setUpdateState({ status: "idle" });
-      return;
-    }
-    setUpdateState(result);
-  }
-
-  async function handleCheckForUpdates() {
-    setMenuOpen(false);
-    if (updateCheckInFlightRef.current || updateDownloading) {
-      return;
-    }
-    updateCheckInFlightRef.current = true;
-    setUpdateState({ status: "checking" });
-    const result = await checkAppUpdate();
-    updateCheckInFlightRef.current = false;
-    if (result.status === "error") {
-      setUpdateState({ status: "idle" });
-      return;
-    }
-    setUpdateState(result);
-    if (result.status === "idle") {
-      const version = (await getAppVersion()) ?? "0.0.0";
-      showUpdateNotice(version);
-    }
-  }
-
-  async function handleInstallUpdate() {
-    if (!updateAvailable || !updateVersion) {
-      return;
-    }
-    setMenuOpen(false);
-    setUpdateState({ status: "downloading", version: updateVersion, progress: 0 });
-    try {
-      await installAppUpdate((progress) => {
-        setUpdateState({ status: "downloading", version: updateVersion, progress });
-      });
-    } catch {
-      setUpdateState({ status: "idle" });
-    }
-  }
 
   async function handleQuit() {
     setMenuOpen(false);
