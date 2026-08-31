@@ -1,0 +1,107 @@
+name: CI
+
+# PR 与 main push 的门禁：类型检查、前端测试、Rust 测试、hook shim 集成测试。
+# 发布构建（release.yml）另在 tag 推送时触发。
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (tsc + vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: npm test -- --run
+
+  rust:
+    name: Rust (fmt + test, macOS)
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: macos-14-cargo-ci-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: macos-14-cargo-ci-
+
+      - name: Check formatting
+        run: cargo fmt --check
+        working-directory: src-tauri
+
+      - name: Test
+        run: cargo test
+        working-directory: src-tauri
+
+  rust-windows:
+    # Windows 平台编译经常单独损坏（见 v0.1.56 的 windows crate API 事故），
+    # 用 cargo check 快速兜底，完整构建仍由 release.yml 负责。
+    name: Rust (check, Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: windows-latest-cargo-ci-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: windows-latest-cargo-ci-
+
+      - name: Check
+        run: cargo check
+        working-directory: src-tauri
+
+  hook-shims:
+    name: Hook shims (node:test)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Test
+        run: node --test scripts/*.test.mjs

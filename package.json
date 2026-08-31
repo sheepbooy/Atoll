@@ -2,12 +2,19 @@
   "name": "atoll",
   "private": true,
   "version": "0.1.58",
+  "description": "Menu-bar approval island for coding agents — approve, deny, or always-allow permission requests without switching windows.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sheepbooy/Atoll.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:shims": "node --test scripts/*.test.mjs",
     "tauri": "tauri",
     "capture:gif": "node scripts/capture-app-media.mjs",
     "capture:media": "node scripts/capture-app-media.mjs",
