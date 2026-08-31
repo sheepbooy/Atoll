@@ -4,6 +4,13 @@
 
 ## [未发布]
 
+## [0.1.59] - 2026-08-31
+
+### 改进
+- **全面结构性重构（行为与界面不变）**：前端把约 6,600 行的 `App.tsx` 拆分为 18 个组件、9 个 hooks 与共享模块，2,351 行的 `App.test.tsx` 按域拆分为 8 个测试文件（52 个用例与断言全部保留，共享 mock 桥抽到 `src/test-utils/appTestBridge.ts`）；Rust 侧 `lib.rs`（约 15,300 行）相继拆出 state / settings / transcript_cache / tray / token_usage / monitors / window / session / hooks 模块，`hook_bridge` 拆为 7 个子模块；hook 安装 / 状态读取 / 卸载管线收敛为按 Agent 的配置表驱动（`AgentHookProfile`），hooks.rs 从约 2,900 行降到约 1,070 行并拆出部署物化 / Node 解析 / launcher 修复 / Agent 修复套件子模块，五个 Agent 的真实差异（Codex 桌面版 Node、ZCode enabled/events 嵌套、Gemini 毫秒超时与门控工具、Cursor 修复套件、Claude 竞品检测）逐字保留；五个 hook shim 脚本去重到共享运行时。全量测试基线不变：Rust 281 通过（6 忽略）/ 前端 275 通过 / hook shim 6 通过
+- **CI**：新增 PR 门禁 workflow——前端 tsc + vitest、Rust fmt + test、Windows cargo check、hook shim node --test
+- **杂项**：补 MIT LICENSE 与包元数据；官网补充全局快捷键功能卡并修正 Gemini 卡片形象；zcode token 测试夹具改为日期无关，避免跨日失效
+
 ## [0.1.58] - 2026-08-31
 
 ### 新增

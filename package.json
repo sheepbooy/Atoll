@@ -1,7 +1,7 @@
 {
   "name": "atoll",
   "private": true,
-  "version": "0.1.58",
+  "version": "0.1.59",
   "description": "Menu-bar approval island for coding agents — approve, deny, or always-allow permission requests without switching windows.",
   "license": "MIT",
   "repository": {
