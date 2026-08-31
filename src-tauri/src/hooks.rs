@@ -72,6 +72,550 @@ impl Default for HookStatus {
     }
 }
 
+/// One hook event written to an agent's config on install. Timeouts are in
+/// the unit the agent expects: seconds for Claude/Codex/ZCode, milliseconds
+/// for Gemini.
+pub(crate) struct HookEventSpec {
+    pub(crate) event: &'static str,
+    pub(crate) timeout: i64,
+    /// Optional `statusMessage` the agent shows while the hook runs.
+    pub(crate) status_message: Option<&'static str>,
+    /// `Some` wraps the hook in a matcher group (Claude/Codex use `"*"`;
+    /// Gemini's BeforeTool carries its gated-tools regex). `None` lists the
+    /// hook bare under the event.
+    pub(crate) matcher: Option<&'static str>,
+}
+
+const CLAUDE_HOOK_EVENTS: &[HookEventSpec] = &[
+    HookEventSpec {
+        event: "PermissionRequest",
+        timeout: 1800,
+        status_message: None,
+        matcher: Some("*"),
+    },
+    HookEventSpec {
+        event: "PostToolUse",
+        timeout: 30,
+        status_message: None,
+        matcher: Some("*"),
+    },
+    HookEventSpec {
+        event: "PostToolUseFailure",
+        timeout: 30,
+        status_message: None,
+        matcher: Some("*"),
+    },
+    HookEventSpec {
+        event: "Stop",
+        timeout: 30,
+        status_message: None,
+        matcher: Some("*"),
+    },
+    HookEventSpec {
+        event: "StopFailure",
+        timeout: 30,
+        status_message: None,
+        matcher: Some("*"),
+    },
+    HookEventSpec {
+        event: "SubagentStop",
+        timeout: 30,
+        status_message: None,
+        matcher: Some("*"),
+    },
+    HookEventSpec {
+        event: "SubagentStart",
+        timeout: 30,
+        status_message: None,
+        matcher: Some("*"),
+    },
+];
+
+const CODEX_HOOK_EVENTS: &[HookEventSpec] = &[
+    HookEventSpec {
+        event: "PermissionRequest",
+        timeout: 1800,
+        status_message: Some("Atoll approval"),
+        matcher: Some("*"),
+    },
+    HookEventSpec {
+        event: "PostToolUse",
+        timeout: 30,
+        status_message: Some("Atoll session sync"),
+        matcher: Some("*"),
+    },
+    HookEventSpec {
+        event: "Stop",
+        timeout: 30,
+        status_message: Some("Atoll session sync"),
+        matcher: Some("*"),
+    },
+    HookEventSpec {
+        event: "SubagentStop",
+        timeout: 30,
+        status_message: Some("Atoll session sync"),
+        matcher: Some("*"),
+    },
+    HookEventSpec {
+        event: "SubagentStart",
+        timeout: 30,
+        status_message: Some("Atoll session sync"),
+        matcher: Some("*"),
+    },
+];
+
+// ZCode's matcher is a case-sensitive regex on the tool name; omitting it
+// matches every tool (a literal "*" is not guaranteed by the schema).
+// PreToolUse is intentionally NOT registered: it fires for every tool call,
+// while PermissionRequest already covers the approval flow (same split as
+// the Claude/Codex integrations).
+const ZCODE_HOOK_EVENTS: &[HookEventSpec] = &[
+    HookEventSpec {
+        event: "PermissionRequest",
+        timeout: 1800,
+        status_message: Some("Atoll approval"),
+        matcher: None,
+    },
+    HookEventSpec {
+        event: "PostToolUse",
+        timeout: 30,
+        status_message: Some("Atoll session sync"),
+        matcher: None,
+    },
+    HookEventSpec {
+        event: "PostToolUseFailure",
+        timeout: 30,
+        status_message: Some("Atoll session sync"),
+        matcher: None,
+    },
+    HookEventSpec {
+        event: "Stop",
+        timeout: 30,
+        status_message: Some("Atoll session sync"),
+        matcher: None,
+    },
+    HookEventSpec {
+        event: "SessionStart",
+        timeout: 30,
+        status_message: Some("Atoll session sync"),
+        matcher: None,
+    },
+    HookEventSpec {
+        event: "UserPromptSubmit",
+        timeout: 30,
+        status_message: Some("Atoll session sync"),
+        matcher: None,
+    },
+];
+
+// Gemini CLI hook timeouts are in MILLISECONDS (CommandHookConfig.timeout,
+// default 60000). BeforeTool blocks until the Atoll user decides; observer
+// events only register sessions and must never stall a turn.
+// The BeforeTool matcher mirrors the gate list in atoll-gemini-hook.mjs so
+// read-only tools never spawn the hook process.
+const GEMINI_HOOK_EVENTS: &[HookEventSpec] = &[
+    HookEventSpec {
+        event: "BeforeTool",
+        timeout: 1_800_000,
+        status_message: None,
+        matcher: Some(
+            "run_shell_command|write_file|replace|web_fetch|save_memory|invoke_agent|mcp_",
+        ),
+    },
+    HookEventSpec {
+        event: "SessionStart",
+        timeout: 30_000,
+        status_message: None,
+        matcher: None,
+    },
+    HookEventSpec {
+        event: "SessionEnd",
+        timeout: 30_000,
+        status_message: None,
+        matcher: None,
+    },
+    HookEventSpec {
+        event: "AfterTool",
+        timeout: 30_000,
+        status_message: None,
+        matcher: None,
+    },
+    HookEventSpec {
+        event: "AfterAgent",
+        timeout: 30_000,
+        status_message: None,
+        matcher: None,
+    },
+    HookEventSpec {
+        event: "Notification",
+        timeout: 30_000,
+        status_message: None,
+        matcher: None,
+    },
+];
+
+/// Build the Atoll hook payload from an agent's event table, keyed by event
+/// name. serde_json sorts object keys on serialization, so this matches the
+/// byte output of the per-agent `json!` literals it replaces.
+fn atoll_events_json(hook_command: &str, events: &[HookEventSpec]) -> Value {
+    let mut event_map = serde_json::Map::new();
+    for spec in events {
+        let mut hook = json!({
+            "type": "command",
+            "command": hook_command,
+            "timeout": spec.timeout,
+        });
+        if let Some(status_message) = spec.status_message {
+            hook["statusMessage"] = json!(status_message);
+        }
+        let entry = match spec.matcher {
+            Some(matcher) => json!({ "matcher": matcher, "hooks": [hook] }),
+            None => json!({ "hooks": [hook] }),
+        };
+        event_map.insert(spec.event.to_string(), entry);
+    }
+    Value::Object(event_map)
+}
+
+/// Static per-agent wiring for the hook install/read/uninstall pipeline. The
+/// `#[tauri::command]` entry points stay named per agent; they look up their
+/// profile and hand it to the shared implementation. Fields that vary in
+/// *shape* between agents (ZCode's enabled+events nesting, Codex's desktop
+/// node and trust cache, Cursor's entry-style hooks and lazy repair kit) are
+/// function fields so each agent keeps its exact behavior.
+pub(crate) struct AgentHookProfile {
+    /// hook_trust bookkeeping key ("claude").
+    pub(crate) key: &'static str,
+    /// Capitalized agent name used in user-facing errors and logs ("Claude").
+    pub(crate) display_name: &'static str,
+    /// Deployed hook script file name ("atoll-claude-hook.mjs").
+    pub(crate) script_name: &'static str,
+    /// Substring identifying Atoll's command inside the agent config.
+    pub(crate) marker: &'static str,
+    /// Path of the agent config file that stores hooks.
+    pub(crate) config_path: fn() -> Option<std::path::PathBuf>,
+    /// Directory shown in the create_dir_all error ("~/.claude").
+    pub(crate) config_dir_label: &'static str,
+    /// Config file name used in "… is not a JSON object" errors.
+    pub(crate) config_display: &'static str,
+    /// Config path echoed in the not-saved error ("~/.claude/settings.json").
+    pub(crate) permissions_hint: &'static str,
+    /// Config file role used in read/serialize/write/verify errors
+    /// ("settings", "hooks", or "config").
+    pub(crate) io_label: &'static str,
+    /// Event table written on install. Cursor writes entries directly (see
+    /// [`upsert_cursor_hook_events`]) and carries none here.
+    pub(crate) events: &'static [HookEventSpec],
+    /// Does a parsed config contain Atoll's hooks for this agent?
+    pub(crate) has_hooks: fn(&Value) -> bool,
+    /// Build the platform-appropriate hook command for a fresh install.
+    pub(crate) build_hook_command:
+        fn(&AppHandle, node_path: &str, script_path: &str) -> Result<String, String>,
+    /// Node resolution; Codex prefers its desktop bundle.
+    pub(crate) resolve_node: fn() -> Result<String, String>,
+    /// Merge Atoll's hooks into a parsed config (install path).
+    pub(crate) apply_hooks:
+        fn(&AppHandle, config: &mut Value, hook_command: &str) -> Result<(), String>,
+    /// Strip Atoll's hooks from a parsed config (uninstall path).
+    pub(crate) uninstall_from: fn(&mut Value),
+    /// Record a completed install in hook-trust state.
+    pub(crate) record_installed: fn(agent_key: &str, script_path: &str),
+    /// Read the current status (the slow, config-inspecting path).
+    pub(crate) status: fn(&AppHandle) -> HookStatus,
+    /// True when installed configs get the dev-path drift check.
+    pub(crate) checks_dev_drift: bool,
+    /// Windows PowerShell launcher config this agent launches hooks through,
+    /// if any; repaired in place on status reads.
+    pub(crate) launcher_config: Option<&'static str>,
+    /// Lazy repair applied to a parsed config before reading status (Cursor's
+    /// repair kit); the returned config replaces the parsed one.
+    pub(crate) repair_installed: Option<
+        fn(&AppHandle, config_path: &str, config: Option<&Value>, hook_url: &str) -> Option<Value>,
+    >,
+    /// Post-status adjustment (Claude attaches competitor hooks).
+    pub(crate) post_status: Option<fn(&mut HookStatus, config: Option<&Value>)>,
+    /// Extra refresh before the install/uninstall snapshot is built (Cursor
+    /// re-runs hook health because its status reader repairs lazily).
+    pub(crate) pre_snapshot_refresh: Option<fn(&AppHandle, &AppState)>,
+}
+
+/// Claude/Gemini build the command inline; no launcher indirection.
+fn runner_hook_command(
+    app: &AppHandle,
+    node_path: &str,
+    script_path: &str,
+) -> Result<String, String> {
+    Ok(format_hook_command(
+        hook_runner_for_command(app).as_deref(),
+        node_path,
+        script_path,
+    ))
+}
+
+fn record_codex_installed(_agent_key: &str, script_path: &str) {
+    hook_trust::on_codex_hooks_installed(script_path);
+}
+
+pub(crate) const CLAUDE_HOOK_PROFILE: AgentHookProfile = AgentHookProfile {
+    key: "claude",
+    display_name: "Claude",
+    script_name: "atoll-claude-hook.mjs",
+    marker: "atoll-claude-hook",
+    config_path: claude_settings_path,
+    config_dir_label: "~/.claude",
+    config_display: "Settings file",
+    permissions_hint: "~/.claude/settings.json",
+    io_label: "settings",
+    events: CLAUDE_HOOK_EVENTS,
+    has_hooks: has_atoll_claude_hooks,
+    build_hook_command: runner_hook_command,
+    resolve_node: resolve_node_executable,
+    apply_hooks: apply_claude_hooks,
+    uninstall_from: uninstall_claude_from_config,
+    record_installed: hook_trust::record_hook_installed,
+    status: claude_hook_status,
+    checks_dev_drift: false,
+    launcher_config: None,
+    repair_installed: None,
+    post_status: Some(attach_competing_hooks),
+    pre_snapshot_refresh: None,
+};
+
+pub(crate) const CODEX_HOOK_PROFILE: AgentHookProfile = AgentHookProfile {
+    key: "codex",
+    display_name: "Codex",
+    script_name: "atoll-codex-hook.mjs",
+    marker: "atoll-codex-hook",
+    config_path: codex_hooks_path,
+    config_dir_label: "~/.codex",
+    config_display: "hooks.json",
+    permissions_hint: "~/.codex/hooks.json",
+    io_label: "hooks",
+    events: CODEX_HOOK_EVENTS,
+    has_hooks: has_atoll_codex_hooks,
+    build_hook_command: write_codex_hook_launcher_command,
+    resolve_node: resolve_node_executable_for_codex,
+    apply_hooks: apply_codex_hooks,
+    uninstall_from: uninstall_codex_from_config,
+    record_installed: record_codex_installed,
+    status: codex_hook_status,
+    checks_dev_drift: true,
+    launcher_config: Some("codex-hook-launcher.json"),
+    repair_installed: None,
+    post_status: None,
+    pre_snapshot_refresh: None,
+};
+
+pub(crate) const ZCODE_HOOK_PROFILE: AgentHookProfile = AgentHookProfile {
+    key: "zcode",
+    display_name: "ZCode",
+    script_name: "atoll-zcode-hook.mjs",
+    marker: "atoll-zcode-hook",
+    config_path: zcode_config_path,
+    config_dir_label: "~/.zcode/cli",
+    config_display: "config.json",
+    permissions_hint: "~/.zcode/cli/config.json",
+    io_label: "config",
+    events: ZCODE_HOOK_EVENTS,
+    has_hooks: has_atoll_zcode_hooks,
+    build_hook_command: write_zcode_hook_launcher_command,
+    resolve_node: resolve_node_executable,
+    apply_hooks: apply_zcode_hooks,
+    uninstall_from: uninstall_zcode_from_config,
+    record_installed: hook_trust::record_hook_installed,
+    status: zcode_hook_status,
+    checks_dev_drift: true,
+    launcher_config: Some("zcode-hook-launcher.json"),
+    repair_installed: None,
+    post_status: None,
+    pre_snapshot_refresh: None,
+};
+
+pub(crate) const GEMINI_HOOK_PROFILE: AgentHookProfile = AgentHookProfile {
+    key: "gemini",
+    display_name: "Gemini",
+    script_name: "atoll-gemini-hook.mjs",
+    marker: "atoll-gemini-hook",
+    config_path: gemini_settings_path,
+    config_dir_label: "~/.gemini",
+    config_display: "settings.json",
+    permissions_hint: "~/.gemini/settings.json",
+    io_label: "settings",
+    events: GEMINI_HOOK_EVENTS,
+    has_hooks: has_atoll_gemini_hooks,
+    build_hook_command: runner_hook_command,
+    resolve_node: resolve_node_executable,
+    apply_hooks: apply_gemini_hooks,
+    uninstall_from: uninstall_gemini_from_config,
+    record_installed: hook_trust::record_hook_installed,
+    status: gemini_hook_status,
+    checks_dev_drift: true,
+    launcher_config: None,
+    repair_installed: None,
+    post_status: None,
+    pre_snapshot_refresh: None,
+};
+
+pub(crate) const CURSOR_HOOK_PROFILE: AgentHookProfile = AgentHookProfile {
+    key: "cursor",
+    display_name: "Cursor",
+    script_name: "atoll-cursor-hook.mjs",
+    marker: "atoll-cursor-hook",
+    config_path: cursor_hooks_path,
+    config_dir_label: "~/.cursor",
+    config_display: "hooks.json",
+    permissions_hint: "~/.cursor/hooks.json",
+    io_label: "hooks",
+    events: &[],
+    has_hooks: has_atoll_cursor_hooks,
+    build_hook_command: write_cursor_hook_launcher_command,
+    resolve_node: resolve_node_executable,
+    apply_hooks: apply_cursor_hooks,
+    uninstall_from: uninstall_cursor_from_config,
+    record_installed: hook_trust::record_hook_installed,
+    status: cursor_hook_status,
+    checks_dev_drift: true,
+    launcher_config: Some("cursor-hook-launcher.json"),
+    repair_installed: Some(maybe_repair_cursor_hook_events),
+    post_status: None,
+    pre_snapshot_refresh: Some(refresh_hook_health_cache),
+};
+
+fn apply_claude_hooks(
+    _app: &AppHandle,
+    config: &mut Value,
+    hook_command: &str,
+) -> Result<(), String> {
+    let atoll_hooks = atoll_events_json(hook_command, CLAUDE_HOOK_PROFILE.events);
+    let hooks_entry = entry_for_hooks(config, CLAUDE_HOOK_PROFILE.config_display)?;
+    upsert_claude_hook_events(hooks_entry, &atoll_hooks);
+    Ok(())
+}
+
+fn apply_codex_hooks(
+    _app: &AppHandle,
+    config: &mut Value,
+    hook_command: &str,
+) -> Result<(), String> {
+    let atoll_hooks = atoll_events_json(hook_command, CODEX_HOOK_PROFILE.events);
+    let hooks_entry = entry_for_hooks(config, CODEX_HOOK_PROFILE.config_display)?;
+    upsert_codex_hook_events(hooks_entry, &atoll_hooks);
+    Ok(())
+}
+
+fn apply_zcode_hooks(
+    _app: &AppHandle,
+    config: &mut Value,
+    hook_command: &str,
+) -> Result<(), String> {
+    let atoll_hooks = atoll_events_json(hook_command, ZCODE_HOOK_PROFILE.events);
+    let hooks_obj = entry_for_hooks(config, ZCODE_HOOK_PROFILE.config_display)?;
+    if !hooks_obj.is_object() {
+        *hooks_obj = Value::Object(Default::default());
+    }
+    let hooks_map = hooks_obj
+        .as_object_mut()
+        .ok_or_else(|| "config.json hooks is not a JSON object".to_string())?;
+    // Configuration-file hooks are disabled by default in ZCode; the hook
+    // runner only runs when this flag is set.
+    hooks_map.insert("enabled".to_string(), Value::Bool(true));
+    let events_obj = hooks_map
+        .entry("events")
+        .or_insert_with(|| Value::Object(Default::default()));
+    if !events_obj.is_object() {
+        *events_obj = Value::Object(Default::default());
+    }
+    upsert_zcode_hook_events(events_obj, &atoll_hooks);
+    Ok(())
+}
+
+fn apply_gemini_hooks(
+    _app: &AppHandle,
+    config: &mut Value,
+    hook_command: &str,
+) -> Result<(), String> {
+    let atoll_hooks = atoll_events_json(hook_command, GEMINI_HOOK_PROFILE.events);
+    let hooks_obj = entry_for_hooks(config, GEMINI_HOOK_PROFILE.config_display)?;
+    if !hooks_obj.is_object() {
+        *hooks_obj = Value::Object(Default::default());
+    }
+    upsert_gemini_hook_entries(hooks_obj, &atoll_hooks);
+    Ok(())
+}
+
+fn apply_cursor_hooks(
+    app: &AppHandle,
+    config: &mut Value,
+    hook_command: &str,
+) -> Result<(), String> {
+    if config.get("version").is_none() {
+        if let Some(obj) = config.as_object_mut() {
+            obj.insert("version".to_string(), json!(1));
+        }
+    }
+    let hooks_obj = entry_for_hooks(config, CURSOR_HOOK_PROFILE.config_display)?;
+    upsert_cursor_hook_events(
+        hooks_obj,
+        hook_command,
+        &hook_bridge::cursor_hook_url_for_app(app),
+    );
+    Ok(())
+}
+
+/// Enter the `hooks` object of a parsed agent config, creating it when
+/// missing. `config_display` names the file in the not-an-object error.
+fn entry_for_hooks<'a>(
+    config: &'a mut Value,
+    config_display: &str,
+) -> Result<&'a mut Value, String> {
+    let obj = config
+        .as_object_mut()
+        .ok_or_else(|| format!("{config_display} is not a JSON object"))?;
+    Ok(obj
+        .entry("hooks")
+        .or_insert_with(|| Value::Object(Default::default())))
+}
+
+fn uninstall_claude_from_config(settings: &mut Value) {
+    if let Some(obj) = settings.as_object_mut() {
+        if let Some(hooks) = obj.get_mut("hooks") {
+            remove_atoll_claude_hooks(hooks);
+            if hooks.as_object().map(|map| map.is_empty()).unwrap_or(false) {
+                obj.remove("hooks");
+            }
+        }
+    }
+}
+
+fn uninstall_codex_from_config(config: &mut Value) {
+    if let Some(hooks) = config.get_mut("hooks") {
+        remove_atoll_codex_hooks(hooks);
+    }
+}
+
+fn uninstall_gemini_from_config(settings: &mut Value) {
+    if let Some(hooks) = settings.get_mut("hooks") {
+        remove_atoll_gemini_hooks(hooks);
+    }
+}
+
+fn uninstall_cursor_from_config(config: &mut Value) {
+    if let Some(hooks) = config.get_mut("hooks") {
+        remove_atoll_cursor_hooks(hooks);
+    }
+}
+
+fn uninstall_zcode_from_config(config: &mut Value) {
+    // `hooks.enabled` is left untouched: the user may have other configuration
+    // hooks that depend on the flag being set.
+    if let Some(events) = config
+        .get_mut("hooks")
+        .and_then(|hooks| hooks.get_mut("events"))
+    {
+        remove_atoll_zcode_hooks(events);
+    }
+}
+
 #[tauri::command]
 pub(crate) fn get_claude_hook_status(app: AppHandle) -> Result<HookStatus, String> {
     if capture::force_hook_uninstalled() {
@@ -1800,13 +2344,19 @@ pub(crate) fn format_cursor_hook_command(
     format_hook_command(runner_path, node_path, script_path)
 }
 
-pub(crate) fn upsert_claude_hook_events(existing_hooks: &mut Value, atoll_hooks: &Value) {
+/// Merge Atoll's per-event matcher groups into `existing_hooks`, replacing
+/// any previous Atoll entries event-by-event and keeping every foreign
+/// matcher intact.
+fn upsert_hook_events_matching(
+    existing_hooks: &mut Value,
+    atoll_hooks: &Value,
+    panic_context: &str,
+    matcher_has_atoll: fn(&Value) -> bool,
+) {
     let Some(atoll_map) = atoll_hooks.as_object() else {
         return;
     };
-    let hooks_obj = existing_hooks
-        .as_object_mut()
-        .expect("hooks value should be object");
+    let hooks_obj = existing_hooks.as_object_mut().expect(panic_context);
 
     for (event, atoll_matchers) in atoll_map {
         let Some(atoll_array) = atoll_matchers.as_array() else {
@@ -1818,7 +2368,7 @@ pub(crate) fn upsert_claude_hook_events(existing_hooks: &mut Value, atoll_hooks:
             .and_then(Value::as_array)
             .map(|arr| {
                 arr.iter()
-                    .filter(|matcher| !matcher_group_has_atoll_claude(matcher))
+                    .filter(|matcher| !matcher_has_atoll(matcher))
                     .cloned()
                     .collect()
             })
@@ -1832,7 +2382,21 @@ pub(crate) fn upsert_claude_hook_events(existing_hooks: &mut Value, atoll_hooks:
     }
 }
 
-pub(crate) fn remove_atoll_claude_hooks(hooks: &mut Value) {
+pub(crate) fn upsert_claude_hook_events(existing_hooks: &mut Value, atoll_hooks: &Value) {
+    upsert_hook_events_matching(
+        existing_hooks,
+        atoll_hooks,
+        "hooks value should be object",
+        matcher_group_has_atoll_claude,
+    );
+}
+
+/// Strip every hook whose command carries `marker` from all event arrays,
+/// then drop the events left empty. `preserve_non_array_keys` keeps
+/// non-array values sharing the object with the events; Gemini keeps
+/// `enabled`/`disabled`/`notifications` config keys alongside its event
+/// entries, the other agents prune anything non-array.
+fn remove_hooks_with_marker(hooks: &mut Value, marker: &str, preserve_non_array_keys: bool) {
     let Some(hooks_obj) = hooks.as_object_mut() else {
         return;
     };
@@ -1845,7 +2409,7 @@ pub(crate) fn remove_atoll_claude_hooks(hooks: &mut Value) {
                         !hook
                             .get("command")
                             .and_then(Value::as_str)
-                            .map(|cmd| cmd.contains("atoll-claude-hook"))
+                            .map(|cmd| cmd.contains(marker))
                             .unwrap_or(false)
                     });
                 }
@@ -1864,11 +2428,17 @@ pub(crate) fn remove_atoll_claude_hooks(hooks: &mut Value) {
         matchers
             .as_array()
             .map(|arr| !arr.is_empty())
-            .unwrap_or(false)
+            .unwrap_or(preserve_non_array_keys)
     });
 }
 
-pub(crate) fn matcher_group_has_atoll_claude(matcher: &Value) -> bool {
+pub(crate) fn remove_atoll_claude_hooks(hooks: &mut Value) {
+    remove_hooks_with_marker(hooks, "atoll-claude-hook", false);
+}
+
+/// True when the matcher group's hooks array contains a command carrying
+/// `marker`.
+fn matcher_group_has_marker(matcher: &Value, marker: &str) -> bool {
     matcher
         .get("hooks")
         .and_then(Value::as_array)
@@ -1876,11 +2446,15 @@ pub(crate) fn matcher_group_has_atoll_claude(matcher: &Value) -> bool {
             hook_arr.iter().any(|hook| {
                 hook.get("command")
                     .and_then(Value::as_str)
-                    .map(|cmd| cmd.contains("atoll-claude-hook"))
+                    .map(|cmd| cmd.contains(marker))
                     .unwrap_or(false)
             })
         })
         .unwrap_or(false)
+}
+
+pub(crate) fn matcher_group_has_atoll_claude(matcher: &Value) -> bool {
+    matcher_group_has_marker(matcher, "atoll-claude-hook")
 }
 
 /// Events where a dead competitor hook can veto Atoll's permission decision
@@ -1996,246 +2570,57 @@ pub(crate) fn remove_dead_competing_hooks_from_config(settings: &mut Value) -> b
 }
 
 pub(crate) fn upsert_codex_hook_events(existing_hooks: &mut Value, atoll_hooks: &Value) {
-    let Some(atoll_map) = atoll_hooks.as_object() else {
-        return;
-    };
-    let hooks_obj = existing_hooks
-        .as_object_mut()
-        .expect("hooks value should be object");
-
-    for (event, atoll_matchers) in atoll_map {
-        let Some(atoll_array) = atoll_matchers.as_array() else {
-            continue;
-        };
-
-        let mut merged: Vec<Value> = hooks_obj
-            .get(event)
-            .and_then(Value::as_array)
-            .map(|arr| {
-                arr.iter()
-                    .filter(|matcher| !matcher_group_has_atoll_codex(matcher))
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        for matcher in atoll_array {
-            merged.push(matcher.clone());
-        }
-
-        hooks_obj.insert(event.clone(), Value::Array(merged));
-    }
+    upsert_hook_events_matching(
+        existing_hooks,
+        atoll_hooks,
+        "hooks value should be object",
+        matcher_group_has_atoll_codex,
+    );
 }
 
 pub(crate) fn remove_atoll_codex_hooks(hooks: &mut Value) {
-    let Some(hooks_obj) = hooks.as_object_mut() else {
-        return;
-    };
-
-    for matchers in hooks_obj.values_mut() {
-        if let Some(arr) = matchers.as_array_mut() {
-            for matcher in arr.iter_mut() {
-                if let Some(hook_arr) = matcher.get_mut("hooks").and_then(Value::as_array_mut) {
-                    hook_arr.retain(|hook| {
-                        !hook
-                            .get("command")
-                            .and_then(Value::as_str)
-                            .map(|cmd| cmd.contains("atoll-codex-hook"))
-                            .unwrap_or(false)
-                    });
-                }
-            }
-            arr.retain(|matcher| {
-                matcher
-                    .get("hooks")
-                    .and_then(Value::as_array)
-                    .map(|hooks| !hooks.is_empty())
-                    .unwrap_or(false)
-            });
-        }
-    }
-
-    hooks_obj.retain(|_, matchers| {
-        matchers
-            .as_array()
-            .map(|arr| !arr.is_empty())
-            .unwrap_or(false)
-    });
+    remove_hooks_with_marker(hooks, "atoll-codex-hook", false);
 }
 
 pub(crate) fn upsert_zcode_hook_events(existing_events: &mut Value, atoll_hooks: &Value) {
-    let Some(atoll_map) = atoll_hooks.as_object() else {
-        return;
-    };
-    let events_obj = existing_events
-        .as_object_mut()
-        .expect("zcode events value should be object");
-
-    for (event, atoll_matchers) in atoll_map {
-        let Some(atoll_array) = atoll_matchers.as_array() else {
-            continue;
-        };
-
-        let mut merged: Vec<Value> = events_obj
-            .get(event)
-            .and_then(Value::as_array)
-            .map(|arr| {
-                arr.iter()
-                    .filter(|matcher| !matcher_group_has_atoll_zcode(matcher))
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        for matcher in atoll_array {
-            merged.push(matcher.clone());
-        }
-
-        events_obj.insert(event.clone(), Value::Array(merged));
-    }
+    upsert_hook_events_matching(
+        existing_events,
+        atoll_hooks,
+        "zcode events value should be object",
+        matcher_group_has_atoll_zcode,
+    );
 }
 
 pub(crate) fn remove_atoll_zcode_hooks(events: &mut Value) {
-    let Some(events_obj) = events.as_object_mut() else {
-        return;
-    };
-
-    for matchers in events_obj.values_mut() {
-        if let Some(arr) = matchers.as_array_mut() {
-            for matcher in arr.iter_mut() {
-                if let Some(hook_arr) = matcher.get_mut("hooks").and_then(Value::as_array_mut) {
-                    hook_arr.retain(|hook| {
-                        !hook
-                            .get("command")
-                            .and_then(Value::as_str)
-                            .map(|cmd| cmd.contains("atoll-zcode-hook"))
-                            .unwrap_or(false)
-                    });
-                }
-            }
-            arr.retain(|matcher| {
-                matcher
-                    .get("hooks")
-                    .and_then(Value::as_array)
-                    .map(|hooks| !hooks.is_empty())
-                    .unwrap_or(false)
-            });
-        }
-    }
-
-    events_obj.retain(|_, matchers| {
-        matchers
-            .as_array()
-            .map(|arr| !arr.is_empty())
-            .unwrap_or(false)
-    });
+    remove_hooks_with_marker(events, "atoll-zcode-hook", false);
 }
 
 pub(crate) fn upsert_gemini_hook_entries(existing_hooks: &mut Value, atoll_hooks: &Value) {
-    let Some(atoll_map) = atoll_hooks.as_object() else {
-        return;
-    };
-    let hooks_obj = existing_hooks
-        .as_object_mut()
-        .expect("gemini hooks value should be object");
-
-    for (event, atoll_matchers) in atoll_map {
-        let Some(atoll_array) = atoll_matchers.as_array() else {
-            continue;
-        };
-
-        let mut merged: Vec<Value> = hooks_obj
-            .get(event)
-            .and_then(Value::as_array)
-            .map(|arr| {
-                arr.iter()
-                    .filter(|matcher| !matcher_group_has_atoll_gemini(matcher))
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        for matcher in atoll_array {
-            merged.push(matcher.clone());
-        }
-
-        hooks_obj.insert(event.clone(), Value::Array(merged));
-    }
+    upsert_hook_events_matching(
+        existing_hooks,
+        atoll_hooks,
+        "gemini hooks value should be object",
+        matcher_group_has_atoll_gemini,
+    );
 }
 
 pub(crate) fn remove_atoll_gemini_hooks(hooks: &mut Value) {
-    let Some(hooks_obj) = hooks.as_object_mut() else {
-        return;
-    };
-
-    for matchers in hooks_obj.values_mut() {
-        if let Some(arr) = matchers.as_array_mut() {
-            for matcher in arr.iter_mut() {
-                if let Some(hook_arr) = matcher.get_mut("hooks").and_then(Value::as_array_mut) {
-                    hook_arr.retain(|hook| {
-                        !hook
-                            .get("command")
-                            .and_then(Value::as_str)
-                            .map(|cmd| cmd.contains("atoll-gemini-hook"))
-                            .unwrap_or(false)
-                    });
-                }
-            }
-            arr.retain(|matcher| {
-                matcher
-                    .get("hooks")
-                    .and_then(Value::as_array)
-                    .map(|hooks| !hooks.is_empty())
-                    .unwrap_or(false)
-            });
-        }
-    }
-
-    // Preserve non-array config keys (`enabled`/`disabled`/`notifications`)
-    // that Gemini keeps alongside the event entries.
-    hooks_obj.retain(|_, matchers| {
-        matchers
-            .as_array()
-            .map(|arr| !arr.is_empty())
-            .unwrap_or(true)
-    });
+    remove_hooks_with_marker(hooks, "atoll-gemini-hook", true);
 }
 
 /// Gemini stores hook event entries directly under `hooks` in settings.json
 /// (alongside optional `enabled`/`disabled`/`notifications` config keys).
 pub(crate) fn has_atoll_gemini_hooks(settings: &Value) -> bool {
-    let Some(hooks) = settings.get("hooks").and_then(Value::as_object) else {
-        return false;
-    };
-
-    ["BeforeTool", "SessionStart", "AfterTool"]
-        .iter()
-        .all(|event| {
-            hooks
-                .get(*event)
-                .map(|matchers| {
-                    matchers
-                        .as_array()
-                        .map(|arr| arr.iter().any(matcher_group_has_atoll_gemini))
-                        .unwrap_or(false)
-                })
-                .unwrap_or(false)
-        })
+    has_atoll_hooks_in(
+        settings,
+        HookEventsLayout::Direct,
+        GEMINI_CORE_HOOK_EVENTS,
+        matcher_group_has_atoll_gemini,
+    )
 }
 
 pub(crate) fn matcher_group_has_atoll_gemini(matcher: &Value) -> bool {
-    matcher
-        .get("hooks")
-        .and_then(Value::as_array)
-        .map(|hook_arr| {
-            hook_arr.iter().any(|hook| {
-                hook.get("command")
-                    .and_then(Value::as_str)
-                    .map(|cmd| cmd.contains("atoll-gemini-hook"))
-                    .unwrap_or(false)
-            })
-        })
-        .unwrap_or(false)
+    matcher_group_has_marker(matcher, "atoll-gemini-hook")
 }
 
 pub(crate) fn read_json_file(path: &str) -> Option<Value> {
@@ -2569,118 +2954,107 @@ pub(crate) fn hook_runner_for_command(app: &AppHandle) -> Option<String> {
     resolve_hook_runner_path(app)
 }
 
-pub(crate) fn has_atoll_claude_hooks(settings: &Value) -> bool {
-    let Some(hooks) = settings.get("hooks").and_then(Value::as_object) else {
+/// Where an agent stores its event arrays beneath the `hooks` key.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HookEventsLayout {
+    /// Event arrays sit directly under `hooks` (Claude, Codex, Gemini).
+    Direct,
+    /// ZCode nests event arrays under `hooks.events` and only runs
+    /// configuration-file hooks when `hooks.enabled` is true.
+    EnabledNestedEvents,
+}
+
+/// Shared body of the `has_atoll_*_hooks` predicates: every core event must
+/// list at least one matcher group belonging to Atoll.
+fn has_atoll_hooks_in(
+    config: &Value,
+    layout: HookEventsLayout,
+    core_events: &[&str],
+    matcher_has_atoll: fn(&Value) -> bool,
+) -> bool {
+    let Some(hooks) = config.get("hooks").and_then(Value::as_object) else {
         return false;
     };
-
-    let has_atoll_command = |matchers: &Value| {
-        matchers
-            .as_array()
-            .map(|arr| {
-                arr.iter().any(|matcher| {
-                    matcher
-                        .get("hooks")
-                        .and_then(Value::as_array)
-                        .map(|hook_arr| {
-                            hook_arr.iter().any(|hook| {
-                                hook.get("command")
-                                    .and_then(Value::as_str)
-                                    .map(|cmd| cmd.contains("atoll-claude-hook"))
-                                    .unwrap_or(false)
-                            })
-                        })
-                        .unwrap_or(false)
-                })
-            })
-            .unwrap_or(false)
+    let events = match layout {
+        HookEventsLayout::Direct => hooks,
+        HookEventsLayout::EnabledNestedEvents => {
+            // ZCode runs configuration-file hooks only when `hooks.enabled` is true.
+            if !hooks
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                return false;
+            }
+            match hooks.get("events").and_then(Value::as_object) {
+                Some(events) => events,
+                None => return false,
+            }
+        }
     };
 
+    core_events.iter().all(|event| {
+        events
+            .get(*event)
+            .map(|matchers| {
+                matchers
+                    .as_array()
+                    .map(|arr| arr.iter().any(matcher_has_atoll))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false)
+    })
+}
+
+/// Events that must carry an Atoll hook for the agent to count as installed.
+const CLAUDE_CORE_HOOK_EVENTS: &[&str] = &["PermissionRequest", "PostToolUse", "Stop"];
+const CODEX_CORE_HOOK_EVENTS: &[&str] =
+    &["PermissionRequest", "PostToolUse", "Stop", "SubagentStop"];
+const ZCODE_CORE_HOOK_EVENTS: &[&str] = &["PermissionRequest", "PostToolUse", "Stop"];
+const GEMINI_CORE_HOOK_EVENTS: &[&str] = &["BeforeTool", "SessionStart", "AfterTool"];
+
+/// Claude's post-status hook: surface non-Atoll hooks registered for the
+/// events where a dead competitor can veto Atoll's permission decisions.
+fn attach_competing_hooks(status: &mut HookStatus, config: Option<&Value>) {
+    status.competing_hooks = config
+        .map(|cfg| detect_competing_claude_hooks(cfg))
+        .unwrap_or_default();
+}
+
+pub(crate) fn has_atoll_claude_hooks(settings: &Value) -> bool {
     // "Stop" is required for token refresh on normal (no-tool) turns.
-    ["PermissionRequest", "PostToolUse", "Stop"]
-        .iter()
-        .all(|event| hooks.get(*event).map(has_atoll_command).unwrap_or(false))
+    has_atoll_hooks_in(
+        settings,
+        HookEventsLayout::Direct,
+        CLAUDE_CORE_HOOK_EVENTS,
+        matcher_group_has_atoll_claude,
+    )
 }
 
 pub(crate) fn has_atoll_codex_hooks(config: &Value) -> bool {
-    let Some(hooks) = config.get("hooks").and_then(Value::as_object) else {
-        return false;
-    };
-
-    ["PermissionRequest", "PostToolUse", "Stop", "SubagentStop"]
-        .iter()
-        .all(|event| {
-            hooks
-                .get(*event)
-                .map(|matchers| {
-                    matchers
-                        .as_array()
-                        .map(|arr| arr.iter().any(matcher_group_has_atoll_codex))
-                        .unwrap_or(false)
-                })
-                .unwrap_or(false)
-        })
+    has_atoll_hooks_in(
+        config,
+        HookEventsLayout::Direct,
+        CODEX_CORE_HOOK_EVENTS,
+        matcher_group_has_atoll_codex,
+    )
 }
 
 pub(crate) fn matcher_group_has_atoll_codex(matcher: &Value) -> bool {
-    matcher
-        .get("hooks")
-        .and_then(Value::as_array)
-        .map(|hook_arr| {
-            hook_arr.iter().any(|hook| {
-                hook.get("command")
-                    .and_then(Value::as_str)
-                    .map(|cmd| cmd.contains("atoll-codex-hook"))
-                    .unwrap_or(false)
-            })
-        })
-        .unwrap_or(false)
+    matcher_group_has_marker(matcher, "atoll-codex-hook")
 }
 
 pub(crate) fn has_atoll_zcode_hooks(config: &Value) -> bool {
-    let Some(hooks) = config.get("hooks").and_then(Value::as_object) else {
-        return false;
-    };
-    // ZCode runs configuration-file hooks only when `hooks.enabled` is true.
-    if !hooks
-        .get("enabled")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
-        return false;
-    }
-    let Some(events) = hooks.get("events").and_then(Value::as_object) else {
-        return false;
-    };
-
-    ["PermissionRequest", "PostToolUse", "Stop"]
-        .iter()
-        .all(|event| {
-            events
-                .get(*event)
-                .map(|matchers| {
-                    matchers
-                        .as_array()
-                        .map(|arr| arr.iter().any(matcher_group_has_atoll_zcode))
-                        .unwrap_or(false)
-                })
-                .unwrap_or(false)
-        })
+    has_atoll_hooks_in(
+        config,
+        HookEventsLayout::EnabledNestedEvents,
+        ZCODE_CORE_HOOK_EVENTS,
+        matcher_group_has_atoll_zcode,
+    )
 }
 
 pub(crate) fn matcher_group_has_atoll_zcode(matcher: &Value) -> bool {
-    matcher
-        .get("hooks")
-        .and_then(Value::as_array)
-        .map(|hook_arr| {
-            hook_arr.iter().any(|hook| {
-                hook.get("command")
-                    .and_then(Value::as_str)
-                    .map(|cmd| cmd.contains("atoll-zcode-hook"))
-                    .unwrap_or(false)
-            })
-        })
-        .unwrap_or(false)
+    matcher_group_has_marker(matcher, "atoll-zcode-hook")
 }
 
 pub(crate) fn hook_entry_has_atoll_cursor(entry: &Value) -> bool {
