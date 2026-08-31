@@ -14,6 +14,7 @@ import {
   appUpdateBridge,
   bridge,
   connectedHookHealth,
+  emptyHookHealth,
   emptySnapshot,
   emitIslandHover,
   emitIslandOpen,
