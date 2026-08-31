@@ -432,250 +432,96 @@ pub(crate) fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
     }
 }
 
-pub(crate) fn claude_hook_status(app: &AppHandle) -> HookStatus {
-    let settings_path = claude_settings_path()
+/// Read one agent's hook status through its profile. Shared shape:
+/// inspect the config, lazily repair when installed (Cursor only), refresh
+/// deployed assets, resolve script readiness, then assemble the status.
+/// Real per-agent differences stay on the profile: Claude skips the dev-drift
+/// check but attaches competitor hooks; Codex/ZCode/Cursor repair their
+/// Windows launcher configs; Cursor runs its repair kit before everything.
+fn agent_hook_status(app: &AppHandle, profile: &AgentHookProfile) -> HookStatus {
+    let config_path = (profile.config_path)()
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let settings = read_json_file(&settings_path);
-    let installed = settings
+    let mut config = read_json_file(&config_path);
+    let installed = config
         .as_ref()
-        .map(|config| has_atoll_claude_hooks(config))
+        .map(|config| (profile.has_hooks)(config))
         .unwrap_or(false);
     if installed {
-        refresh_deployed_hook_assets_if_needed(app, "atoll-claude-hook.mjs");
+        if let Some(repair) = profile.repair_installed {
+            let hook_url = hook_bridge::cursor_hook_url_for_app(app);
+            if let Some(repaired) = repair(app, &config_path, config.as_ref(), &hook_url) {
+                config = Some(repaired);
+            }
+        }
+        refresh_deployed_hook_assets_if_needed(app, profile.script_name);
     }
-    let (script_path, script_found) =
-        resolve_hook_script_readiness(app, "atoll-claude-hook.mjs", settings.as_ref());
+    let (mut script_path, mut script_found) =
+        resolve_hook_script_readiness(app, profile.script_name, config.as_ref());
+    if installed {
+        // No-op off Windows, where the launcher variants do nothing.
+        if let Some(launcher_config) = profile.launcher_config {
+            maybe_repair_hook_launcher_config(app, profile.script_name, launcher_config);
+        }
+        if profile.checks_dev_drift {
+            if let (Some(cfg), Ok(preferred)) = (
+                config.as_ref(),
+                resolve_install_hook_script_path(app, profile.script_name),
+            ) {
+                if let Some(configured) = configured_atoll_hook_script_path(cfg, profile.marker) {
+                    if should_flag_dev_hook_drift(&configured, &preferred)
+                        && deployed_hook_script_path(profile.script_name).is_none()
+                    {
+                        script_found = false;
+                    }
+                }
+            }
+        }
+    }
+    script_path = canonical_hook_script_path(
+        app,
+        profile.script_name,
+        config.as_ref(),
+        profile.marker,
+        &script_path,
+    );
+    if !script_path.is_empty() && std::path::Path::new(&script_path).is_file() {
+        script_found = true;
+    }
     let mut status = build_hook_status(
-        installed,
-        script_found,
-        settings_path,
-        script_path,
-        settings.as_ref(),
-        "atoll-claude-hook",
-        "claude",
-    );
-    status.competing_hooks = settings
-        .as_ref()
-        .map(|cfg| detect_competing_claude_hooks(cfg))
-        .unwrap_or_default();
-    status
-}
-
-pub(crate) fn codex_hook_status(app: &AppHandle) -> HookStatus {
-    let hooks_path = codex_hooks_path()
-        .map(|path| path.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let config = read_json_file(&hooks_path);
-    let installed = config
-        .as_ref()
-        .map(|hooks| has_atoll_codex_hooks(hooks))
-        .unwrap_or(false);
-    if installed {
-        refresh_deployed_hook_assets_if_needed(app, "atoll-codex-hook.mjs");
-    }
-    let (mut script_path, mut script_found) =
-        resolve_hook_script_readiness(app, "atoll-codex-hook.mjs", config.as_ref());
-    if installed {
-        #[cfg(windows)]
-        maybe_repair_hook_launcher_config(app, "atoll-codex-hook.mjs", "codex-hook-launcher.json");
-        if let (Some(cfg), Ok(preferred)) = (
-            config.as_ref(),
-            resolve_install_hook_script_path(app, "atoll-codex-hook.mjs"),
-        ) {
-            if let Some(configured) = configured_atoll_hook_script_path(cfg, "atoll-codex-hook") {
-                if should_flag_dev_hook_drift(&configured, &preferred)
-                    && deployed_hook_script_path("atoll-codex-hook.mjs").is_none()
-                {
-                    script_found = false;
-                }
-            }
-        }
-    }
-    script_path = canonical_hook_script_path(
-        app,
-        "atoll-codex-hook.mjs",
-        config.as_ref(),
-        "atoll-codex-hook",
-        &script_path,
-    );
-    if !script_path.is_empty() && std::path::Path::new(&script_path).is_file() {
-        script_found = true;
-    }
-    build_hook_status(
-        installed,
-        script_found,
-        hooks_path,
-        script_path,
-        config.as_ref(),
-        "atoll-codex-hook",
-        "codex",
-    )
-}
-
-pub(crate) fn zcode_hook_status(app: &AppHandle) -> HookStatus {
-    let config_path = zcode_config_path()
-        .map(|path| path.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let config = read_json_file(&config_path);
-    let installed = config
-        .as_ref()
-        .map(|hooks| has_atoll_zcode_hooks(hooks))
-        .unwrap_or(false);
-    if installed {
-        refresh_deployed_hook_assets_if_needed(app, "atoll-zcode-hook.mjs");
-    }
-    let (mut script_path, mut script_found) =
-        resolve_hook_script_readiness(app, "atoll-zcode-hook.mjs", config.as_ref());
-    if installed {
-        #[cfg(windows)]
-        maybe_repair_hook_launcher_config(app, "atoll-zcode-hook.mjs", "zcode-hook-launcher.json");
-        if let (Some(cfg), Ok(preferred)) = (
-            config.as_ref(),
-            resolve_install_hook_script_path(app, "atoll-zcode-hook.mjs"),
-        ) {
-            if let Some(configured) = configured_atoll_hook_script_path(cfg, "atoll-zcode-hook") {
-                if should_flag_dev_hook_drift(&configured, &preferred)
-                    && deployed_hook_script_path("atoll-zcode-hook.mjs").is_none()
-                {
-                    script_found = false;
-                }
-            }
-        }
-    }
-    script_path = canonical_hook_script_path(
-        app,
-        "atoll-zcode-hook.mjs",
-        config.as_ref(),
-        "atoll-zcode-hook",
-        &script_path,
-    );
-    if !script_path.is_empty() && std::path::Path::new(&script_path).is_file() {
-        script_found = true;
-    }
-    build_hook_status(
         installed,
         script_found,
         config_path,
         script_path,
         config.as_ref(),
-        "atoll-zcode-hook",
-        "zcode",
-    )
+        profile.marker,
+        profile.key,
+    );
+    if let Some(post) = profile.post_status {
+        post(&mut status, config.as_ref());
+    }
+    status
+}
+
+pub(crate) fn claude_hook_status(app: &AppHandle) -> HookStatus {
+    agent_hook_status(app, &CLAUDE_HOOK_PROFILE)
+}
+
+pub(crate) fn codex_hook_status(app: &AppHandle) -> HookStatus {
+    agent_hook_status(app, &CODEX_HOOK_PROFILE)
+}
+
+pub(crate) fn zcode_hook_status(app: &AppHandle) -> HookStatus {
+    agent_hook_status(app, &ZCODE_HOOK_PROFILE)
 }
 
 pub(crate) fn gemini_hook_status(app: &AppHandle) -> HookStatus {
-    let settings_path = gemini_settings_path()
-        .map(|path| path.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let settings = read_json_file(&settings_path);
-    let installed = settings
-        .as_ref()
-        .map(|config| has_atoll_gemini_hooks(config))
-        .unwrap_or(false);
-    if installed {
-        refresh_deployed_hook_assets_if_needed(app, "atoll-gemini-hook.mjs");
-    }
-    let (mut script_path, mut script_found) =
-        resolve_hook_script_readiness(app, "atoll-gemini-hook.mjs", settings.as_ref());
-    if installed {
-        if let (Some(cfg), Ok(preferred)) = (
-            settings.as_ref(),
-            resolve_install_hook_script_path(app, "atoll-gemini-hook.mjs"),
-        ) {
-            if let Some(configured) = configured_atoll_hook_script_path(cfg, "atoll-gemini-hook") {
-                if should_flag_dev_hook_drift(&configured, &preferred)
-                    && deployed_hook_script_path("atoll-gemini-hook.mjs").is_none()
-                {
-                    script_found = false;
-                }
-            }
-        }
-    }
-    script_path = canonical_hook_script_path(
-        app,
-        "atoll-gemini-hook.mjs",
-        settings.as_ref(),
-        "atoll-gemini-hook",
-        &script_path,
-    );
-    if !script_path.is_empty() && std::path::Path::new(&script_path).is_file() {
-        script_found = true;
-    }
-    build_hook_status(
-        installed,
-        script_found,
-        settings_path,
-        script_path,
-        settings.as_ref(),
-        "atoll-gemini-hook",
-        "gemini",
-    )
+    agent_hook_status(app, &GEMINI_HOOK_PROFILE)
 }
 
 pub(crate) fn cursor_hook_status(app: &AppHandle) -> HookStatus {
-    let hooks_path = cursor_hooks_path()
-        .map(|path| path.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let mut config = read_json_file(&hooks_path);
-    let installed = config
-        .as_ref()
-        .map(|hooks| has_atoll_cursor_hooks(hooks))
-        .unwrap_or(false);
-    if installed {
-        if let Some(repaired) = maybe_repair_cursor_hook_events(
-            app,
-            &hooks_path,
-            config.as_ref(),
-            &hook_bridge::cursor_hook_url_for_app(app),
-        ) {
-            config = Some(repaired);
-        }
-        refresh_deployed_hook_assets_if_needed(app, "atoll-cursor-hook.mjs");
-    }
-    let (mut script_path, mut script_found) =
-        resolve_hook_script_readiness(app, "atoll-cursor-hook.mjs", config.as_ref());
-    if installed {
-        #[cfg(windows)]
-        maybe_repair_hook_launcher_config(
-            app,
-            "atoll-cursor-hook.mjs",
-            "cursor-hook-launcher.json",
-        );
-        if let (Some(cfg), Ok(preferred)) = (
-            config.as_ref(),
-            resolve_install_hook_script_path(app, "atoll-cursor-hook.mjs"),
-        ) {
-            if let Some(configured) = configured_atoll_hook_script_path(cfg, "atoll-cursor-hook") {
-                if should_flag_dev_hook_drift(&configured, &preferred)
-                    && deployed_hook_script_path("atoll-cursor-hook.mjs").is_none()
-                {
-                    script_found = false;
-                }
-            }
-        }
-    }
-    script_path = canonical_hook_script_path(
-        app,
-        "atoll-cursor-hook.mjs",
-        config.as_ref(),
-        "atoll-cursor-hook",
-        &script_path,
-    );
-    if !script_path.is_empty() && std::path::Path::new(&script_path).is_file() {
-        script_found = true;
-    }
-    build_hook_status(
-        installed,
-        script_found,
-        hooks_path,
-        script_path,
-        config.as_ref(),
-        "atoll-cursor-hook",
-        "cursor",
-    )
+    agent_hook_status(app, &CURSOR_HOOK_PROFILE)
 }
-
 pub(crate) fn is_dev_hook_script_path(path: &str) -> bool {
     path.contains("/target/debug/")
         || path.contains("/target/release/")
