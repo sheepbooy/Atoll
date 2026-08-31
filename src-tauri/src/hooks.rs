@@ -86,82 +86,38 @@ pub(crate) struct HookEventSpec {
     pub(crate) matcher: Option<&'static str>,
 }
 
+impl HookEventSpec {
+    const fn new(
+        event: &'static str,
+        timeout: i64,
+        status_message: Option<&'static str>,
+        matcher: Option<&'static str>,
+    ) -> Self {
+        Self {
+            event,
+            timeout,
+            status_message,
+            matcher,
+        }
+    }
+}
+
 const CLAUDE_HOOK_EVENTS: &[HookEventSpec] = &[
-    HookEventSpec {
-        event: "PermissionRequest",
-        timeout: 1800,
-        status_message: None,
-        matcher: Some("*"),
-    },
-    HookEventSpec {
-        event: "PostToolUse",
-        timeout: 30,
-        status_message: None,
-        matcher: Some("*"),
-    },
-    HookEventSpec {
-        event: "PostToolUseFailure",
-        timeout: 30,
-        status_message: None,
-        matcher: Some("*"),
-    },
-    HookEventSpec {
-        event: "Stop",
-        timeout: 30,
-        status_message: None,
-        matcher: Some("*"),
-    },
-    HookEventSpec {
-        event: "StopFailure",
-        timeout: 30,
-        status_message: None,
-        matcher: Some("*"),
-    },
-    HookEventSpec {
-        event: "SubagentStop",
-        timeout: 30,
-        status_message: None,
-        matcher: Some("*"),
-    },
-    HookEventSpec {
-        event: "SubagentStart",
-        timeout: 30,
-        status_message: None,
-        matcher: Some("*"),
-    },
+    HookEventSpec::new("PermissionRequest", 1800, None, Some("*")),
+    HookEventSpec::new("PostToolUse", 30, None, Some("*")),
+    HookEventSpec::new("PostToolUseFailure", 30, None, Some("*")),
+    HookEventSpec::new("Stop", 30, None, Some("*")),
+    HookEventSpec::new("StopFailure", 30, None, Some("*")),
+    HookEventSpec::new("SubagentStop", 30, None, Some("*")),
+    HookEventSpec::new("SubagentStart", 30, None, Some("*")),
 ];
 
 const CODEX_HOOK_EVENTS: &[HookEventSpec] = &[
-    HookEventSpec {
-        event: "PermissionRequest",
-        timeout: 1800,
-        status_message: Some("Atoll approval"),
-        matcher: Some("*"),
-    },
-    HookEventSpec {
-        event: "PostToolUse",
-        timeout: 30,
-        status_message: Some("Atoll session sync"),
-        matcher: Some("*"),
-    },
-    HookEventSpec {
-        event: "Stop",
-        timeout: 30,
-        status_message: Some("Atoll session sync"),
-        matcher: Some("*"),
-    },
-    HookEventSpec {
-        event: "SubagentStop",
-        timeout: 30,
-        status_message: Some("Atoll session sync"),
-        matcher: Some("*"),
-    },
-    HookEventSpec {
-        event: "SubagentStart",
-        timeout: 30,
-        status_message: Some("Atoll session sync"),
-        matcher: Some("*"),
-    },
+    HookEventSpec::new("PermissionRequest", 1800, Some("Atoll approval"), Some("*")),
+    HookEventSpec::new("PostToolUse", 30, Some("Atoll session sync"), Some("*")),
+    HookEventSpec::new("Stop", 30, Some("Atoll session sync"), Some("*")),
+    HookEventSpec::new("SubagentStop", 30, Some("Atoll session sync"), Some("*")),
+    HookEventSpec::new("SubagentStart", 30, Some("Atoll session sync"), Some("*")),
 ];
 
 // ZCode's matcher is a case-sensitive regex on the tool name; omitting it
@@ -170,42 +126,12 @@ const CODEX_HOOK_EVENTS: &[HookEventSpec] = &[
 // while PermissionRequest already covers the approval flow (same split as
 // the Claude/Codex integrations).
 const ZCODE_HOOK_EVENTS: &[HookEventSpec] = &[
-    HookEventSpec {
-        event: "PermissionRequest",
-        timeout: 1800,
-        status_message: Some("Atoll approval"),
-        matcher: None,
-    },
-    HookEventSpec {
-        event: "PostToolUse",
-        timeout: 30,
-        status_message: Some("Atoll session sync"),
-        matcher: None,
-    },
-    HookEventSpec {
-        event: "PostToolUseFailure",
-        timeout: 30,
-        status_message: Some("Atoll session sync"),
-        matcher: None,
-    },
-    HookEventSpec {
-        event: "Stop",
-        timeout: 30,
-        status_message: Some("Atoll session sync"),
-        matcher: None,
-    },
-    HookEventSpec {
-        event: "SessionStart",
-        timeout: 30,
-        status_message: Some("Atoll session sync"),
-        matcher: None,
-    },
-    HookEventSpec {
-        event: "UserPromptSubmit",
-        timeout: 30,
-        status_message: Some("Atoll session sync"),
-        matcher: None,
-    },
+    HookEventSpec::new("PermissionRequest", 1800, Some("Atoll approval"), None),
+    HookEventSpec::new("PostToolUse", 30, Some("Atoll session sync"), None),
+    HookEventSpec::new("PostToolUseFailure", 30, Some("Atoll session sync"), None),
+    HookEventSpec::new("Stop", 30, Some("Atoll session sync"), None),
+    HookEventSpec::new("SessionStart", 30, Some("Atoll session sync"), None),
+    HookEventSpec::new("UserPromptSubmit", 30, Some("Atoll session sync"), None),
 ];
 
 // Gemini CLI hook timeouts are in MILLISECONDS (CommandHookConfig.timeout,
@@ -222,36 +148,11 @@ const GEMINI_HOOK_EVENTS: &[HookEventSpec] = &[
             "run_shell_command|write_file|replace|web_fetch|save_memory|invoke_agent|mcp_",
         ),
     },
-    HookEventSpec {
-        event: "SessionStart",
-        timeout: 30_000,
-        status_message: None,
-        matcher: None,
-    },
-    HookEventSpec {
-        event: "SessionEnd",
-        timeout: 30_000,
-        status_message: None,
-        matcher: None,
-    },
-    HookEventSpec {
-        event: "AfterTool",
-        timeout: 30_000,
-        status_message: None,
-        matcher: None,
-    },
-    HookEventSpec {
-        event: "AfterAgent",
-        timeout: 30_000,
-        status_message: None,
-        matcher: None,
-    },
-    HookEventSpec {
-        event: "Notification",
-        timeout: 30_000,
-        status_message: None,
-        matcher: None,
-    },
+    HookEventSpec::new("SessionStart", 30_000, None, None),
+    HookEventSpec::new("SessionEnd", 30_000, None, None),
+    HookEventSpec::new("AfterTool", 30_000, None, None),
+    HookEventSpec::new("AfterAgent", 30_000, None, None),
+    HookEventSpec::new("Notification", 30_000, None, None),
 ];
 
 /// Build the Atoll hook payload from an agent's event table, keyed by event
