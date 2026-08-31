@@ -311,6 +311,7 @@ import {
 import { useUpdater } from "./hooks/useUpdater";
 import { useLyrics } from "./hooks/useLyrics";
 import { useClipboardHistory } from "./hooks/useClipboardHistory";
+import { useNowPlaying } from "./hooks/useNowPlaying";
 import {
   CompactSessionStack,
 } from "./components/CompactSessionStack";
@@ -476,12 +477,9 @@ export function App() {
   const [pricingModels, setPricingModels] = useState<ModelPricingEntry[]>([]);
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
   const [launchAtLoginBusy, setLaunchAtLoginBusy] = useState(false);
-  const [nowPlayingTrack, setNowPlayingTrack] = useState<NowPlayingTrack | null>(null);
-  const [mediaCardEnabled, setMediaCardEnabledState] = useState(true);
   const [approvalNoticeMode, setApprovalNoticeModeState] =
     useState<ApprovalNoticeMode>("interrupt");
   const [globalShortcutView, setGlobalShortcutView] = useState<GlobalShortcutView | null>(null);
-  const [artworkBackdropEnabled, setArtworkBackdropEnabledState] = useState(false);
   // Rect of the compact media thumb (window coords) captured right before the
   // expand animation starts; drives the artwork backdrop grow-from-thumb origin.
   const [artworkBackdropOrigin, setArtworkBackdropOrigin] =
@@ -489,7 +487,6 @@ export function App() {
   const artworkBackdropOriginRef = useRef<ArtworkBackdropOrigin | null>(null);
   const [artworkBackdropRevealed, setArtworkBackdropRevealed] = useState(false);
   const [artworkBackdropExitFade, setArtworkBackdropExitFade] = useState(false);
-  const [artworkIsDark, setArtworkIsDark] = useState(false);
   const artworkBackdropExitFadeRef = useRef(false);
   const compactMediaThumbRef = useRef<HTMLImageElement | null>(null);
 
@@ -516,19 +513,6 @@ export function App() {
     artworkBackdropOriginRef.current = null;
     setArtworkBackdropOrigin(null);
   }, [phase]);
-
-  // Re-test backdrop luminance whenever the artwork changes.
-  useEffect(() => {
-    const base64 = nowPlayingTrack?.artworkBase64;
-    if (!base64) return;
-    let cancelled = false;
-    sampleArtworkIsDark(base64).then((dark) => {
-      if (!cancelled) setArtworkIsDark(dark);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [nowPlayingTrack?.artworkBase64]);
   const { lyricsData, playbackPosition, lyricsEnabled, handleChangeLyricsEnabled } =
     useLyrics();
   const {
@@ -539,6 +523,14 @@ export function App() {
     handleChangeClipboardEnabled,
     handleChangeClipboardLimit,
   } = useClipboardHistory();
+  const {
+    nowPlayingTrack,
+    mediaCardEnabled,
+    artworkBackdropEnabled,
+    artworkIsDark,
+    handleChangeMediaCardEnabled,
+    handleChangeArtworkBackdropEnabled,
+  } = useNowPlaying();
   const [justResolved, setJustResolved] = useState(false);
   const [hookHealthHydrated, setHookHealthHydrated] = useState(false);
   const [configuredHookAgents, setConfiguredHookAgents] = useState(() =>
@@ -969,9 +961,6 @@ export function App() {
         setNotchMetricsHydrated(true);
       });
     setSessionRetention(readRetentionMinutes()).catch(() => undefined);
-    getMediaCardEnabled()
-      .then(setMediaCardEnabledState)
-      .catch(() => undefined);
     getApprovalNoticeMode()
       .then(setApprovalNoticeModeState)
       .catch(() => undefined);
@@ -979,14 +968,6 @@ export function App() {
       .then(setGlobalShortcutView)
       .catch(() => undefined);
     setNotificationLanguage(readLanguage()).catch(() => undefined);
-    getArtworkBackdropEnabled()
-      .then(setArtworkBackdropEnabledState)
-      .catch(() => undefined);
-    const unsubscribeMedia = manageAsyncUnlisten(
-      onNowPlayingChanged((track) => {
-        setNowPlayingTrack(track);
-      }),
-    );
     const unsubscribe = manageAsyncUnlisten(
       onSnapshotChanged((nextSnapshot) => {
         applySnapshot(nextSnapshot, { mergeHookHealth: true });
@@ -1150,7 +1131,6 @@ export function App() {
       unsubscribeCapture();
       unsubscribeCaptureHooks();
       unsubscribeScreenshot();
-      unsubscribeMedia();
       clearTransitionWork();
       clearIdleTimer();
     };
@@ -2609,16 +2589,6 @@ export function App() {
     },
     [],
   );
-
-  const handleChangeMediaCardEnabled = useCallback((enabled: boolean) => {
-    setMediaCardEnabledState(enabled);
-    setMediaCardEnabled(enabled).catch(() => undefined);
-  }, []);
-
-  const handleChangeArtworkBackdropEnabled = useCallback((enabled: boolean) => {
-    setArtworkBackdropEnabledState(enabled);
-    setArtworkBackdropEnabled(enabled).catch(() => undefined);
-  }, []);
 
   const hookMenuAgents: HookMenuAgent[] = [
     {
