@@ -481,6 +481,31 @@ pub(crate) const CURSOR_HOOK_PROFILE: AgentHookProfile = AgentHookProfile {
     pre_snapshot_refresh: Some(refresh_hook_health_cache),
 };
 
+/// Status reported while the capture override forces every agent to look
+/// uninstalled.
+pub(crate) fn forced_uninstalled_status(app: &AppHandle, profile: &AgentHookProfile) -> HookStatus {
+    let script_path = resolve_hook_script_path(app, profile.script_name).unwrap_or_default();
+    HookStatus {
+        installed: false,
+        script_found: !script_path.is_empty() && std::path::Path::new(&script_path).exists(),
+        settings_path: (profile.config_path)()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        script_path,
+        node_path: String::new(),
+        node_found: resolve_node_executable().is_ok(),
+        needs_retrust: false,
+        competing_hooks: Vec::new(),
+    }
+}
+
+fn get_hook_status_for(profile: &AgentHookProfile, app: AppHandle) -> Result<HookStatus, String> {
+    if capture::force_hook_uninstalled() {
+        return Ok(forced_uninstalled_status(&app, profile));
+    }
+    Ok((profile.status)(&app))
+}
+
 fn apply_claude_hooks(
     _app: &AppHandle,
     config: &mut Value,
@@ -618,23 +643,7 @@ fn uninstall_zcode_from_config(config: &mut Value) {
 
 #[tauri::command]
 pub(crate) fn get_claude_hook_status(app: AppHandle) -> Result<HookStatus, String> {
-    if capture::force_hook_uninstalled() {
-        let script_path =
-            resolve_hook_script_path(&app, "atoll-claude-hook.mjs").unwrap_or_default();
-        return Ok(HookStatus {
-            installed: false,
-            script_found: !script_path.is_empty() && std::path::Path::new(&script_path).exists(),
-            settings_path: claude_settings_path()
-                .map(|path| path.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            script_path,
-            node_path: String::new(),
-            node_found: resolve_node_executable().is_ok(),
-            needs_retrust: false,
-            competing_hooks: Vec::new(),
-        });
-    }
-    Ok(claude_hook_status(&app))
+    get_hook_status_for(&CLAUDE_HOOK_PROFILE, app)
 }
 
 #[tauri::command]
@@ -901,23 +910,7 @@ pub(crate) fn gemini_settings_path() -> Option<std::path::PathBuf> {
 }
 #[tauri::command]
 pub(crate) fn get_codex_hook_status(app: AppHandle) -> Result<HookStatus, String> {
-    if capture::force_hook_uninstalled() {
-        let script_path =
-            resolve_hook_script_path(&app, "atoll-codex-hook.mjs").unwrap_or_default();
-        return Ok(HookStatus {
-            installed: false,
-            script_found: !script_path.is_empty() && std::path::Path::new(&script_path).exists(),
-            settings_path: codex_hooks_path()
-                .map(|path| path.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            script_path,
-            node_path: String::new(),
-            node_found: resolve_node_executable().is_ok(),
-            needs_retrust: false,
-            competing_hooks: Vec::new(),
-        });
-    }
-    Ok(codex_hook_status(&app))
+    get_hook_status_for(&CODEX_HOOK_PROFILE, app)
 }
 
 /// Stable hook install dir so hooks.json does not point at `target/debug/scripts`,
@@ -1380,23 +1373,7 @@ pub(crate) fn uninstall_codex_hooks(app: AppHandle) -> Result<HookStatus, String
 
 #[tauri::command]
 pub(crate) fn get_zcode_hook_status(app: AppHandle) -> Result<HookStatus, String> {
-    if capture::force_hook_uninstalled() {
-        let script_path =
-            resolve_hook_script_path(&app, "atoll-zcode-hook.mjs").unwrap_or_default();
-        return Ok(HookStatus {
-            installed: false,
-            script_found: !script_path.is_empty() && std::path::Path::new(&script_path).exists(),
-            settings_path: zcode_config_path()
-                .map(|path| path.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            script_path,
-            node_path: String::new(),
-            node_found: resolve_node_executable().is_ok(),
-            needs_retrust: false,
-            competing_hooks: Vec::new(),
-        });
-    }
-    Ok(zcode_hook_status(&app))
+    get_hook_status_for(&ZCODE_HOOK_PROFILE, app)
 }
 
 #[tauri::command]
@@ -1570,23 +1547,7 @@ pub(crate) fn uninstall_zcode_hooks(app: AppHandle) -> Result<HookStatus, String
 
 #[tauri::command]
 pub(crate) fn get_gemini_hook_status(app: AppHandle) -> Result<HookStatus, String> {
-    if capture::force_hook_uninstalled() {
-        let script_path =
-            resolve_hook_script_path(&app, "atoll-gemini-hook.mjs").unwrap_or_default();
-        return Ok(HookStatus {
-            installed: false,
-            script_found: !script_path.is_empty() && std::path::Path::new(&script_path).exists(),
-            settings_path: gemini_settings_path()
-                .map(|path| path.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            script_path,
-            node_path: String::new(),
-            node_found: resolve_node_executable().is_ok(),
-            needs_retrust: false,
-            competing_hooks: Vec::new(),
-        });
-    }
-    Ok(gemini_hook_status(&app))
+    get_hook_status_for(&GEMINI_HOOK_PROFILE, app)
 }
 
 #[tauri::command]
@@ -1749,23 +1710,7 @@ pub(crate) fn uninstall_gemini_hooks(app: AppHandle) -> Result<HookStatus, Strin
 
 #[tauri::command]
 pub(crate) fn get_cursor_hook_status(app: AppHandle) -> Result<HookStatus, String> {
-    if capture::force_hook_uninstalled() {
-        let script_path =
-            resolve_hook_script_path(&app, "atoll-cursor-hook.mjs").unwrap_or_default();
-        return Ok(HookStatus {
-            installed: false,
-            script_found: !script_path.is_empty() && std::path::Path::new(&script_path).exists(),
-            settings_path: cursor_hooks_path()
-                .map(|path| path.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            script_path,
-            node_path: String::new(),
-            node_found: resolve_node_executable().is_ok(),
-            needs_retrust: false,
-            competing_hooks: Vec::new(),
-        });
-    }
-    Ok(cursor_hook_status(&app))
+    get_hook_status_for(&CURSOR_HOOK_PROFILE, app)
 }
 
 #[tauri::command]

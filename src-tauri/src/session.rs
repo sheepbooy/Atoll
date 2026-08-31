@@ -361,82 +361,12 @@ pub(crate) fn sync_hook_health_snapshot(app: &AppHandle, state: &AppState) {
 
 pub(crate) fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
     if capture::force_hook_uninstalled() {
-        let claude_script_path =
-            resolve_hook_script_path(app, "atoll-claude-hook.mjs").unwrap_or_default();
-        let codex_script_path =
-            resolve_hook_script_path(app, "atoll-codex-hook.mjs").unwrap_or_default();
-        let cursor_script_path =
-            resolve_hook_script_path(app, "atoll-cursor-hook.mjs").unwrap_or_default();
-        let zcode_script_path =
-            resolve_hook_script_path(app, "atoll-zcode-hook.mjs").unwrap_or_default();
-        let gemini_script_path =
-            resolve_hook_script_path(app, "atoll-gemini-hook.mjs").unwrap_or_default();
         return HookHealthSnapshot {
-            claude: HookStatus {
-                installed: false,
-                script_found: !claude_script_path.is_empty()
-                    && std::path::Path::new(&claude_script_path).exists(),
-                settings_path: claude_settings_path()
-                    .map(|path| path.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                script_path: claude_script_path,
-                node_path: String::new(),
-                node_found: resolve_node_executable().is_ok(),
-                needs_retrust: false,
-                competing_hooks: Vec::new(),
-            },
-            codex: HookStatus {
-                installed: false,
-                script_found: !codex_script_path.is_empty()
-                    && std::path::Path::new(&codex_script_path).exists(),
-                settings_path: codex_hooks_path()
-                    .map(|path| path.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                script_path: codex_script_path,
-                node_path: String::new(),
-                node_found: resolve_node_executable().is_ok(),
-                needs_retrust: false,
-                competing_hooks: Vec::new(),
-            },
-            cursor: HookStatus {
-                installed: false,
-                script_found: !cursor_script_path.is_empty()
-                    && std::path::Path::new(&cursor_script_path).exists(),
-                settings_path: cursor_hooks_path()
-                    .map(|path| path.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                script_path: cursor_script_path,
-                node_path: String::new(),
-                node_found: resolve_node_executable().is_ok(),
-                needs_retrust: false,
-                competing_hooks: Vec::new(),
-            },
-            zcode: HookStatus {
-                installed: false,
-                script_found: !zcode_script_path.is_empty()
-                    && std::path::Path::new(&zcode_script_path).exists(),
-                settings_path: zcode_config_path()
-                    .map(|path| path.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                script_path: zcode_script_path,
-                node_path: String::new(),
-                node_found: resolve_node_executable().is_ok(),
-                needs_retrust: false,
-                competing_hooks: Vec::new(),
-            },
-            gemini: HookStatus {
-                installed: false,
-                script_found: !gemini_script_path.is_empty()
-                    && std::path::Path::new(&gemini_script_path).exists(),
-                settings_path: gemini_settings_path()
-                    .map(|path| path.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                script_path: gemini_script_path,
-                node_path: String::new(),
-                node_found: resolve_node_executable().is_ok(),
-                needs_retrust: false,
-                competing_hooks: Vec::new(),
-            },
+            claude: forced_uninstalled_status(app, &CLAUDE_HOOK_PROFILE),
+            codex: forced_uninstalled_status(app, &CODEX_HOOK_PROFILE),
+            cursor: forced_uninstalled_status(app, &CURSOR_HOOK_PROFILE),
+            zcode: forced_uninstalled_status(app, &ZCODE_HOOK_PROFILE),
+            gemini: forced_uninstalled_status(app, &GEMINI_HOOK_PROFILE),
         };
     }
 
