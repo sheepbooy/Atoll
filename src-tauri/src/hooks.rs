@@ -506,6 +506,61 @@ fn get_hook_status_for(profile: &AgentHookProfile, app: AppHandle) -> Result<Hoo
     Ok((profile.status)(&app))
 }
 
+/// Status reported for an agent whose config file is already gone: nothing
+/// to uninstall, and the trust record goes with it.
+fn not_installed_status(config_path: &std::path::Path) -> HookStatus {
+    HookStatus {
+        installed: false,
+        script_found: false,
+        settings_path: config_path.to_string_lossy().into(),
+        script_path: String::new(),
+        node_path: String::new(),
+        node_found: resolve_node_executable().is_ok(),
+        needs_retrust: false,
+        competing_hooks: Vec::new(),
+    }
+}
+
+/// Rebuild the island snapshot after a hook config mutation and emit it so
+/// every open window re-renders from the same state.
+fn emit_hook_snapshot_changed(app: &AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let snapshot = build_snapshot(app, &state);
+    if let Ok(mut last) = state.last_listening_online.lock() {
+        *last = Some(snapshot.online);
+    }
+    remember_hook_health(&state, &snapshot.hook_health);
+    app.emit("snapshot-changed", &snapshot)
+        .map_err(|error| error.to_string())
+}
+
+fn uninstall_hooks_for(profile: &AgentHookProfile, app: AppHandle) -> Result<HookStatus, String> {
+    let config_path =
+        (profile.config_path)().ok_or_else(|| "Cannot determine home directory".to_string())?;
+
+    if !config_path.exists() {
+        hook_trust::clear_hook_installed(profile.key);
+        return Ok(not_installed_status(&config_path));
+    }
+
+    let content = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("Cannot read {}: {e}", profile.io_label))?;
+    let mut config: Value =
+        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()));
+
+    (profile.uninstall_from)(&mut config);
+
+    let formatted = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Cannot serialize {}: {e}", profile.io_label))?;
+    std::fs::write(&config_path, formatted)
+        .map_err(|e| format!("Cannot write {}: {e}", profile.io_label))?;
+    hook_trust::clear_hook_installed(profile.key);
+
+    emit_hook_snapshot_changed(&app)?;
+
+    Ok((profile.status)(&app))
+}
+
 fn apply_claude_hooks(
     _app: &AppHandle,
     config: &mut Value,
@@ -808,52 +863,7 @@ pub(crate) fn install_claude_hooks(app: AppHandle) -> Result<HookStatus, String>
 
 #[tauri::command]
 pub(crate) fn uninstall_claude_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let settings_path =
-        claude_settings_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
-
-    if !settings_path.exists() {
-        hook_trust::clear_hook_installed("claude");
-        return Ok(HookStatus {
-            installed: false,
-            script_found: false,
-            settings_path: settings_path.to_string_lossy().into(),
-            script_path: String::new(),
-            node_path: String::new(),
-            node_found: resolve_node_executable().is_ok(),
-            needs_retrust: false,
-            competing_hooks: Vec::new(),
-        });
-    }
-
-    let content = std::fs::read_to_string(&settings_path)
-        .map_err(|e| format!("Cannot read settings: {e}"))?;
-    let mut settings: Value =
-        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()));
-
-    if let Some(obj) = settings.as_object_mut() {
-        if let Some(hooks) = obj.get_mut("hooks") {
-            remove_atoll_claude_hooks(hooks);
-            if hooks.as_object().map(|map| map.is_empty()).unwrap_or(false) {
-                obj.remove("hooks");
-            }
-        }
-    }
-
-    let formatted = serde_json::to_string_pretty(&settings)
-        .map_err(|e| format!("Cannot serialize settings: {e}"))?;
-    std::fs::write(&settings_path, formatted).map_err(|e| format!("Cannot write settings: {e}"))?;
-    hook_trust::clear_hook_installed("claude");
-
-    let state = app.state::<AppState>();
-    let snapshot = build_snapshot(&app, &state);
-    if let Ok(mut last) = state.last_listening_online.lock() {
-        *last = Some(snapshot.online);
-    }
-    remember_hook_health(&state, &snapshot.hook_health);
-    app.emit("snapshot-changed", &snapshot)
-        .map_err(|error| error.to_string())?;
-
-    Ok(claude_hook_status(&app))
+    uninstall_hooks_for(&CLAUDE_HOOK_PROFILE, app)
 }
 
 /// Remove non-Atoll hooks from `~/.claude/settings.json` whose command binary no
@@ -1328,47 +1338,7 @@ pub(crate) fn install_codex_hooks(app: AppHandle) -> Result<HookStatus, String> 
 
 #[tauri::command]
 pub(crate) fn uninstall_codex_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let hooks_path =
-        codex_hooks_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
-
-    if !hooks_path.exists() {
-        hook_trust::clear_hook_installed("codex");
-        return Ok(HookStatus {
-            installed: false,
-            script_found: false,
-            settings_path: hooks_path.to_string_lossy().into(),
-            script_path: String::new(),
-            node_path: String::new(),
-            node_found: resolve_node_executable().is_ok(),
-            needs_retrust: false,
-            competing_hooks: Vec::new(),
-        });
-    }
-
-    let content =
-        std::fs::read_to_string(&hooks_path).map_err(|e| format!("Cannot read hooks: {e}"))?;
-    let mut config: Value =
-        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()));
-
-    if let Some(hooks) = config.get_mut("hooks") {
-        remove_atoll_codex_hooks(hooks);
-    }
-
-    let formatted = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("Cannot serialize hooks: {e}"))?;
-    std::fs::write(&hooks_path, formatted).map_err(|e| format!("Cannot write hooks: {e}"))?;
-    hook_trust::clear_hook_installed("codex");
-
-    let state = app.state::<AppState>();
-    let snapshot = build_snapshot(&app, &state);
-    if let Ok(mut last) = state.last_listening_online.lock() {
-        *last = Some(snapshot.online);
-    }
-    remember_hook_health(&state, &snapshot.hook_health);
-    app.emit("snapshot-changed", &snapshot)
-        .map_err(|error| error.to_string())?;
-
-    Ok(codex_hook_status(&app))
+    uninstall_hooks_for(&CODEX_HOOK_PROFILE, app)
 }
 
 #[tauri::command]
@@ -1497,52 +1467,7 @@ pub(crate) fn install_zcode_hooks(app: AppHandle) -> Result<HookStatus, String> 
 
 #[tauri::command]
 pub(crate) fn uninstall_zcode_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let config_path =
-        zcode_config_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
-
-    if !config_path.exists() {
-        hook_trust::clear_hook_installed("zcode");
-        return Ok(HookStatus {
-            installed: false,
-            script_found: false,
-            settings_path: config_path.to_string_lossy().into(),
-            script_path: String::new(),
-            node_path: String::new(),
-            node_found: resolve_node_executable().is_ok(),
-            needs_retrust: false,
-            competing_hooks: Vec::new(),
-        });
-    }
-
-    let content =
-        std::fs::read_to_string(&config_path).map_err(|e| format!("Cannot read config: {e}"))?;
-    let mut config: Value =
-        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()));
-
-    // `hooks.enabled` is left untouched: the user may have other configuration
-    // hooks that depend on the flag being set.
-    if let Some(events) = config
-        .get_mut("hooks")
-        .and_then(|hooks| hooks.get_mut("events"))
-    {
-        remove_atoll_zcode_hooks(events);
-    }
-
-    let formatted = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("Cannot serialize config: {e}"))?;
-    std::fs::write(&config_path, formatted).map_err(|e| format!("Cannot write config: {e}"))?;
-    hook_trust::clear_hook_installed("zcode");
-
-    let state = app.state::<AppState>();
-    let snapshot = build_snapshot(&app, &state);
-    if let Ok(mut last) = state.last_listening_online.lock() {
-        *last = Some(snapshot.online);
-    }
-    remember_hook_health(&state, &snapshot.hook_health);
-    app.emit("snapshot-changed", &snapshot)
-        .map_err(|error| error.to_string())?;
-
-    Ok(zcode_hook_status(&app))
+    uninstall_hooks_for(&ZCODE_HOOK_PROFILE, app)
 }
 
 #[tauri::command]
@@ -1665,47 +1590,7 @@ pub(crate) fn install_gemini_hooks(app: AppHandle) -> Result<HookStatus, String>
 
 #[tauri::command]
 pub(crate) fn uninstall_gemini_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let settings_path =
-        gemini_settings_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
-
-    if !settings_path.exists() {
-        hook_trust::clear_hook_installed("gemini");
-        return Ok(HookStatus {
-            installed: false,
-            script_found: false,
-            settings_path: settings_path.to_string_lossy().into(),
-            script_path: String::new(),
-            node_path: String::new(),
-            node_found: resolve_node_executable().is_ok(),
-            needs_retrust: false,
-            competing_hooks: Vec::new(),
-        });
-    }
-
-    let content = std::fs::read_to_string(&settings_path)
-        .map_err(|e| format!("Cannot read settings: {e}"))?;
-    let mut settings: Value =
-        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()));
-
-    if let Some(hooks) = settings.get_mut("hooks") {
-        remove_atoll_gemini_hooks(hooks);
-    }
-
-    let formatted = serde_json::to_string_pretty(&settings)
-        .map_err(|e| format!("Cannot serialize settings: {e}"))?;
-    std::fs::write(&settings_path, formatted).map_err(|e| format!("Cannot write settings: {e}"))?;
-    hook_trust::clear_hook_installed("gemini");
-
-    let state = app.state::<AppState>();
-    let snapshot = build_snapshot(&app, &state);
-    if let Ok(mut last) = state.last_listening_online.lock() {
-        *last = Some(snapshot.online);
-    }
-    remember_hook_health(&state, &snapshot.hook_health);
-    app.emit("snapshot-changed", &snapshot)
-        .map_err(|error| error.to_string())?;
-
-    Ok(gemini_hook_status(&app))
+    uninstall_hooks_for(&GEMINI_HOOK_PROFILE, app)
 }
 
 #[tauri::command]
@@ -1796,47 +1681,7 @@ pub(crate) fn install_cursor_hooks(app: AppHandle) -> Result<HookStatus, String>
 
 #[tauri::command]
 pub(crate) fn uninstall_cursor_hooks(app: AppHandle) -> Result<HookStatus, String> {
-    let hooks_path =
-        cursor_hooks_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
-
-    if !hooks_path.exists() {
-        hook_trust::clear_hook_installed("cursor");
-        return Ok(HookStatus {
-            installed: false,
-            script_found: false,
-            settings_path: hooks_path.to_string_lossy().into(),
-            script_path: String::new(),
-            node_path: String::new(),
-            node_found: resolve_node_executable().is_ok(),
-            needs_retrust: false,
-            competing_hooks: Vec::new(),
-        });
-    }
-
-    let content =
-        std::fs::read_to_string(&hooks_path).map_err(|e| format!("Cannot read hooks: {e}"))?;
-    let mut config: Value =
-        serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()));
-
-    if let Some(hooks) = config.get_mut("hooks") {
-        remove_atoll_cursor_hooks(hooks);
-    }
-
-    let formatted = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("Cannot serialize hooks: {e}"))?;
-    std::fs::write(&hooks_path, formatted).map_err(|e| format!("Cannot write hooks: {e}"))?;
-    hook_trust::clear_hook_installed("cursor");
-
-    let state = app.state::<AppState>();
-    let snapshot = build_snapshot(&app, &state);
-    if let Ok(mut last) = state.last_listening_online.lock() {
-        *last = Some(snapshot.online);
-    }
-    remember_hook_health(&state, &snapshot.hook_health);
-    app.emit("snapshot-changed", &snapshot)
-        .map_err(|error| error.to_string())?;
-
-    Ok(cursor_hook_status(&app))
+    uninstall_hooks_for(&CURSOR_HOOK_PROFILE, app)
 }
 
 pub(crate) fn normalize_hook_script_path(path: &str) -> String {
