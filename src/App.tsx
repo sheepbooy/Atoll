@@ -313,6 +313,7 @@ import { useLyrics } from "./hooks/useLyrics";
 import { useClipboardHistory } from "./hooks/useClipboardHistory";
 import { useNowPlaying } from "./hooks/useNowPlaying";
 import { useDisplayAndSettingsPrefs } from "./hooks/useDisplayAndSettingsPrefs";
+import { useHookInstaller } from "./hooks/useHookInstaller";
 import {
   CompactSessionStack,
 } from "./components/CompactSessionStack";
@@ -434,21 +435,41 @@ export function App() {
     handleCheckForUpdates,
     handleInstallUpdate,
   } = useUpdater({ closeMenu: () => setMenuOpen(false) });
+  const {
+    hookBusy,
+    hookInstallError,
+    setHookInstallError,
+    configuredHookAgents,
+    setConfiguredHookAgents,
+    applyHookInstallSnapshot,
+    handleInstallClaudeHooks,
+    handleInstallCodexHooks,
+    handleInstallZcodeHooks,
+    handleInstallGeminiHooks,
+    handleInstallCursorHooks,
+    handleInstallAllHooks,
+    handleUninstallClaudeHooks,
+    handleUninstallCodexHooks,
+    handleUninstallZcodeHooks,
+    handleUninstallGeminiHooks,
+    handleUninstallCursorHooks,
+    handleUninstallHooks,
+    handleRemoveCompetingClaudeHooks,
+  } = useHookInstaller({
+    applySnapshot,
+    snapshotRef,
+    invalidatePendingSnapshotLoads,
+    collapseIsland,
+    markHookHealthHydrated: () => setHookHealthHydrated(true),
+    closeMenu: () => setMenuOpen(false),
+  });
+
 
   const [panelView, setPanelView] = useState<PanelView>({ kind: "home" });
   const panelViewRef = useRef<PanelView>({ kind: "home" });
   panelViewRef.current = panelView;
   const [sessionRequests, setSessionRequests] = useState<PermissionRequest[]>([]);
   const navigationSeqRef = useRef(0);
-  const [hookBusy, setHookBusy] = useState(false);
-  const [hookInstallError, setHookInstallError] = useState<string | null>(null);
-  // Safety net for a wedged hook invoke: without a forced reset, one call that
-  // never resolves would keep every hook button disabled until app restart.
-  useEffect(() => {
-    if (!hookBusy) return;
-    const timeout = window.setTimeout(() => setHookBusy(false), 30_000);
-    return () => window.clearTimeout(timeout);
-  }, [hookBusy]);
   const [hooksBackTarget, setHooksBackTarget] = useState<"home" | "settings-main">("home");
   const [tokensBackTarget, setTokensBackTarget] = useState<"home" | "settings-main">("home");
   const [usageBackTarget, setUsageBackTarget] = useState<"home" | "settings-main">("home");
@@ -574,9 +595,6 @@ export function App() {
   }, [foldedIslandSize, supportsMicroIsland]);
   const [justResolved, setJustResolved] = useState(false);
   const [hookHealthHydrated, setHookHealthHydrated] = useState(false);
-  const [configuredHookAgents, setConfiguredHookAgents] = useState(() =>
-    readConfiguredHookAgents(),
-  );
   const [navDirection, setNavDirection] = useState<"forward" | "back" | null>(null);
   const [panelAnimKey, setPanelAnimKey] = useState(0);
   const [panelExiting, setPanelExiting] = useState(false);
@@ -2022,457 +2040,6 @@ export function App() {
 
   function invalidatePendingSnapshotLoads() {
     snapshotLoadSeqRef.current += 1;
-  }
-
-  function applyHookInstallSnapshot(
-    statuses: Partial<
-      Record<"claude" | "codex" | "cursor" | "zcode" | "gemini", HookStatus>
-    >,
-  ) {
-    invalidatePendingSnapshotLoads();
-    const installedHealth: HookHealthSnapshot = {
-      claude: statuses.claude ?? snapshotRef.current.hookHealth.claude,
-      codex: statuses.codex ?? snapshotRef.current.hookHealth.codex,
-      cursor: statuses.cursor ?? snapshotRef.current.hookHealth.cursor,
-      zcode: statuses.zcode ?? snapshotRef.current.hookHealth.zcode,
-      gemini: statuses.gemini ?? snapshotRef.current.hookHealth.gemini,
-    };
-    const optimisticHookHealth = mergeHookHealthPreferReady(
-      snapshotRef.current.hookHealth,
-      installedHealth,
-    );
-    applySnapshot({
-      ...snapshotRef.current,
-      hookHealth: optimisticHookHealth,
-      online: true,
-    });
-    setHookHealthHydrated(true);
-    return getSnapshot()
-      .catch(() => null)
-      .then((nextSnapshot) => {
-        if (!nextSnapshot) return;
-        applySnapshot({
-          ...nextSnapshot,
-          hookHealth: mergeHookHealthPreferReady(
-            nextSnapshot.hookHealth,
-            installedHealth,
-          ),
-          online: nextSnapshot.online || true,
-        });
-      });
-  }
-
-  async function handleInstallClaudeHooks() {
-    setHookBusy(true);
-    setHookInstallError(null);
-    try {
-      const status = await installClaudeHooks();
-      if (status.installed) {
-        setConfiguredHookAgents(markHookAgentConfigured("claude"));
-      }
-      await applyHookInstallSnapshot({ claude: status });
-      if (status.installed) {
-        collapseIsland(true);
-      }
-    } catch (error) {
-      setHookInstallError(
-        i18n.t("error.installFailed", {
-          ns: "hooks",
-          agentLabel: "Claude Code",
-          message: formatHookInstallErrorMessage(error),
-        }),
-      );
-    } finally {
-      setHookBusy(false);
-    }
-  }
-
-  async function handleInstallCodexHooks() {
-    setHookBusy(true);
-    setHookInstallError(null);
-    try {
-      const status = await installCodexHooks();
-      if (status.installed) {
-        setConfiguredHookAgents(markHookAgentConfigured("codex"));
-      }
-      await applyHookInstallSnapshot({ codex: status });
-      if (status.installed) {
-        setHookInstallError(null);
-      } else {
-        setHookInstallError(
-          i18n.t("error.codexNotSaved", { ns: "hooks" }),
-        );
-      }
-    } catch (error) {
-      setHookInstallError(
-        i18n.t("error.installFailed", {
-          ns: "hooks",
-          agentLabel: "Codex",
-          message: formatHookInstallErrorMessage(error),
-        }),
-      );
-    } finally {
-      setHookBusy(false);
-    }
-  }
-
-  async function handleInstallZcodeHooks() {
-    setHookBusy(true);
-    setHookInstallError(null);
-    try {
-      const status = await installZcodeHooks();
-      if (status.installed) {
-        setConfiguredHookAgents(markHookAgentConfigured("zcode"));
-      }
-      await applyHookInstallSnapshot({ zcode: status });
-      if (status.installed) {
-        collapseIsland(true);
-      }
-    } catch (error) {
-      setHookInstallError(
-        i18n.t("error.installFailed", {
-          ns: "hooks",
-          agentLabel: "ZCode",
-          message: formatHookInstallErrorMessage(error),
-        }),
-      );
-    } finally {
-      setHookBusy(false);
-    }
-  }
-
-  async function handleInstallGeminiHooks() {
-    setHookBusy(true);
-    setHookInstallError(null);
-    try {
-      const status = await installGeminiHooks();
-      if (status.installed) {
-        setConfiguredHookAgents(markHookAgentConfigured("gemini"));
-      }
-      await applyHookInstallSnapshot({ gemini: status });
-      if (status.installed) {
-        collapseIsland(true);
-      }
-    } catch (error) {
-      setHookInstallError(
-        i18n.t("error.installFailed", {
-          ns: "hooks",
-          agentLabel: "Gemini CLI",
-          message: formatHookInstallErrorMessage(error),
-        }),
-      );
-    } finally {
-      setHookBusy(false);
-    }
-  }
-
-  async function handleInstallAllHooks() {
-    setHookBusy(true);
-    setHookInstallError(null);
-    try {
-      setConfiguredHookAgents(markAllHookAgentsConfigured());
-      const [claudeStatus, codexStatus, cursorStatus, zcodeStatus, geminiStatus] =
-        await Promise.all([
-          installClaudeHooks(),
-          installCodexHooks(),
-          installCursorHooks(),
-          installZcodeHooks(),
-          installGeminiHooks(),
-        ]);
-      await applyHookInstallSnapshot({
-        claude: claudeStatus,
-        codex: codexStatus,
-        cursor: cursorStatus,
-        zcode: zcodeStatus,
-        gemini: geminiStatus,
-      });
-      if (
-        claudeStatus.installed ||
-        codexStatus.installed ||
-        cursorStatus.installed ||
-        zcodeStatus.installed ||
-        geminiStatus.installed
-      ) {
-        collapseIsland(true);
-      }
-      const failures = [
-        !claudeStatus.installed ? "Claude Code" : null,
-        !codexStatus.installed ? "Codex" : null,
-        !cursorStatus.installed ? "Cursor" : null,
-        !zcodeStatus.installed ? "ZCode" : null,
-        !geminiStatus.installed ? "Gemini CLI" : null,
-      ].filter(Boolean);
-      if (failures.length > 0) {
-        setHookInstallError(
-          i18n.t("error.installPartial", {
-            ns: "hooks",
-            agents: failures.join(", "),
-          }),
-        );
-      }
-    } catch (error) {
-      setHookInstallError(
-        i18n.t("error.installFailed", {
-          ns: "hooks",
-          agentLabel: "Agent hooks",
-          message: formatHookInstallErrorMessage(error),
-        }),
-      );
-    } finally {
-      setHookBusy(false);
-    }
-  }
-
-  async function handleUninstallClaudeHooks() {
-    setMenuOpen(false);
-    setHookBusy(true);
-    setHookInstallError(null);
-    try {
-      const status = await uninstallClaudeHooks();
-      const nextSnapshot = await getSnapshot().catch(() => null);
-      if (nextSnapshot) {
-        applySnapshot(nextSnapshot);
-      } else {
-        applySnapshot({
-          ...snapshotRef.current,
-          hookHealth: {
-            ...snapshotRef.current.hookHealth,
-            claude: status,
-          },
-        });
-      }
-    } catch (error) {
-      setHookInstallError(
-        i18n.t("error.uninstallFailed", {
-          ns: "hooks",
-          agentLabel: "Claude Code",
-          message: formatHookInstallErrorMessage(error),
-        }),
-      );
-    } finally {
-      setHookBusy(false);
-    }
-  }
-
-  async function handleRemoveCompetingClaudeHooks() {
-    setMenuOpen(false);
-    setHookBusy(true);
-    setHookInstallError(null);
-    try {
-      const status = await removeCompetingClaudeHooks();
-      const nextSnapshot = await getSnapshot().catch(() => null);
-      if (nextSnapshot) {
-        applySnapshot(nextSnapshot);
-      } else {
-        applySnapshot({
-          ...snapshotRef.current,
-          hookHealth: {
-            ...snapshotRef.current.hookHealth,
-            claude: status,
-          },
-        });
-      }
-    } catch (error) {
-      setHookInstallError(
-        i18n.t("error.cleanupFailed", {
-          ns: "hooks",
-          message: formatHookInstallErrorMessage(error),
-        }),
-      );
-    } finally {
-      setHookBusy(false);
-    }
-  }
-
-  async function handleUninstallCodexHooks() {
-    setMenuOpen(false);
-    setHookBusy(true);
-    try {
-      const status = await uninstallCodexHooks();
-      const nextSnapshot = await getSnapshot().catch(() => null);
-      if (nextSnapshot) {
-        applySnapshot(nextSnapshot);
-      } else {
-        applySnapshot({
-          ...snapshotRef.current,
-          hookHealth: {
-            ...snapshotRef.current.hookHealth,
-            codex: status,
-          },
-        });
-      }
-    } catch (error) {
-      setHookInstallError(
-        i18n.t("error.uninstallFailed", {
-          ns: "hooks",
-          agentLabel: "Codex",
-          message: formatHookInstallErrorMessage(error),
-        }),
-      );
-    } finally {
-      setHookBusy(false);
-    }
-  }
-
-  async function handleUninstallZcodeHooks() {
-    setMenuOpen(false);
-    setHookBusy(true);
-    try {
-      const status = await uninstallZcodeHooks();
-      const nextSnapshot = await getSnapshot().catch(() => null);
-      if (nextSnapshot) {
-        applySnapshot(nextSnapshot);
-      } else {
-        applySnapshot({
-          ...snapshotRef.current,
-          hookHealth: {
-            ...snapshotRef.current.hookHealth,
-            zcode: status,
-          },
-        });
-      }
-    } catch (error) {
-      setHookInstallError(
-        i18n.t("error.uninstallFailed", {
-          ns: "hooks",
-          agentLabel: "ZCode",
-          message: formatHookInstallErrorMessage(error),
-        }),
-      );
-    } finally {
-      setHookBusy(false);
-    }
-  }
-
-  async function handleUninstallGeminiHooks() {
-    setMenuOpen(false);
-    setHookBusy(true);
-    try {
-      const status = await uninstallGeminiHooks();
-      const nextSnapshot = await getSnapshot().catch(() => null);
-      if (nextSnapshot) {
-        applySnapshot(nextSnapshot);
-      } else {
-        applySnapshot({
-          ...snapshotRef.current,
-          hookHealth: {
-            ...snapshotRef.current.hookHealth,
-            gemini: status,
-          },
-        });
-      }
-    } catch (error) {
-      setHookInstallError(
-        i18n.t("error.uninstallFailed", {
-          ns: "hooks",
-          agentLabel: "Gemini CLI",
-          message: formatHookInstallErrorMessage(error),
-        }),
-      );
-    } finally {
-      setHookBusy(false);
-    }
-  }
-
-  async function handleUninstallHooks() {
-    setMenuOpen(false);
-    setHookBusy(true);
-    setHookInstallError(null);
-    try {
-      const [claudeStatus, codexStatus, cursorStatus, zcodeStatus, geminiStatus] =
-        await Promise.all([
-          uninstallClaudeHooks(),
-          uninstallCodexHooks(),
-          uninstallCursorHooks(),
-          uninstallZcodeHooks(),
-          uninstallGeminiHooks(),
-        ]);
-      const nextSnapshot = await getSnapshot().catch(() => null);
-      if (nextSnapshot) {
-        applySnapshot(nextSnapshot);
-      } else {
-        applySnapshot({
-          ...snapshotRef.current,
-          hookHealth: {
-            ...snapshotRef.current.hookHealth,
-            claude: claudeStatus,
-            codex: codexStatus,
-            cursor: cursorStatus,
-            zcode: zcodeStatus,
-            gemini: geminiStatus,
-          },
-        });
-      }
-    } catch (error) {
-      setHookInstallError(
-        i18n.t("error.uninstallAllFailed", {
-          ns: "hooks",
-          message: formatHookInstallErrorMessage(error),
-        }),
-      );
-    } finally {
-      setHookBusy(false);
-    }
-  }
-
-  async function handleInstallCursorHooks() {
-    setHookBusy(true);
-    setHookInstallError(null);
-    try {
-      const status = await installCursorHooks();
-      if (status.installed) {
-        setConfiguredHookAgents(markHookAgentConfigured("cursor"));
-      }
-      await applyHookInstallSnapshot({ cursor: status });
-      if (status.installed) {
-        setHookInstallError(null);
-      } else {
-        setHookInstallError(
-          i18n.t("error.cursorNotSaved", { ns: "hooks" }),
-        );
-      }
-    } catch (error) {
-      setHookInstallError(
-        i18n.t("error.installFailed", {
-          ns: "hooks",
-          agentLabel: "Cursor",
-          message: formatHookInstallErrorMessage(error),
-        }),
-      );
-    } finally {
-      setHookBusy(false);
-    }
-  }
-
-  async function handleUninstallCursorHooks() {
-    setMenuOpen(false);
-    setHookBusy(true);
-    setHookInstallError(null);
-    try {
-      const status = await uninstallCursorHooks();
-      const nextSnapshot = await getSnapshot().catch(() => null);
-      if (nextSnapshot) {
-        applySnapshot(nextSnapshot);
-      } else {
-        applySnapshot({
-          ...snapshotRef.current,
-          hookHealth: {
-            ...snapshotRef.current.hookHealth,
-            cursor: status,
-          },
-        });
-      }
-    } catch (error) {
-      setHookInstallError(
-        i18n.t("error.uninstallFailed", {
-          ns: "hooks",
-          agentLabel: "Cursor",
-          message: formatHookInstallErrorMessage(error),
-        }),
-      );
-    } finally {
-      setHookBusy(false);
-    }
   }
 
   async function handleChangeLanguage(nextLanguage: AppLanguage) {
