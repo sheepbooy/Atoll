@@ -232,7 +232,7 @@ pub(crate) enum IslandWindowMode {
 pub(crate) use crate::media::NowPlayingTrack;
 
 #[cfg(target_os = "windows")]
-pub(crate) use media_windows::NowPlayingTrack;
+pub(crate) use crate::media_windows::NowPlayingTrack;
 
 /// Stub for platforms without a media source (e.g. Linux) so the command
 /// signature compiles without the platform media modules.
