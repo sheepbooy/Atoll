@@ -315,6 +315,7 @@ import { useNowPlaying } from "./hooks/useNowPlaying";
 import { useDisplayAndSettingsPrefs } from "./hooks/useDisplayAndSettingsPrefs";
 import { useHookInstaller } from "./hooks/useHookInstaller";
 import { useApprovals } from "./hooks/useApprovals";
+import { usePanelNavigation } from "./hooks/usePanelNavigation";
 import {
   CompactSessionStack,
 } from "./components/CompactSessionStack";
@@ -462,14 +463,8 @@ export function App() {
     closeMenu: () => setMenuOpen(false),
   });
 
-  const [panelView, setPanelView] = useState<PanelView>({ kind: "home" });
-  const panelViewRef = useRef<PanelView>({ kind: "home" });
-  panelViewRef.current = panelView;
   const [sessionRequests, setSessionRequests] = useState<PermissionRequest[]>([]);
-  const navigationSeqRef = useRef(0);
-  const [hooksBackTarget, setHooksBackTarget] = useState<"home" | "settings-main">("home");
-  const [tokensBackTarget, setTokensBackTarget] = useState<"home" | "settings-main">("home");
-  const [usageBackTarget, setUsageBackTarget] = useState<"home" | "settings-main">("home");
+
   const [selectedAgent, setSelectedAgent] = useState<AgentKind | null>(null);
   const [notchMetrics, setNotchMetrics] = useState<NotchMetrics>(EMPTY_NOTCH_METRICS);
   const [pricingModels, setPricingModels] = useState<ModelPricingEntry[]>([]);
@@ -591,13 +586,77 @@ export function App() {
     }
   }, [foldedIslandSize, supportsMicroIsland]);
   const [hookHealthHydrated, setHookHealthHydrated] = useState(false);
-  const [navDirection, setNavDirection] = useState<"forward" | "back" | null>(null);
-  const [panelAnimKey, setPanelAnimKey] = useState(0);
-  const [panelExiting, setPanelExiting] = useState(false);
-  const panelExitTimerRef = useRef<number | null>(null);
   const lastSyncedRequestIdRef = useRef<string | null>(null);
   const selectedAgentRef = useRef<AgentKind | null>(null);
   selectedAgentRef.current = selectedAgent;
+  const sessions = snapshot.sessions;
+
+  // FSM-aware pre-step shared by the settings-page openers in usePanelNavigation.
+  function ensureExpandedSettingsPresentation() {
+    if (phaseRef.current === "expanded" && panelViewRef.current.kind !== "settings") {
+      const previousKey = lastNativePresentationKeyRef.current;
+      lastNativePresentationKeyRef.current = expandedPresentationKey(false, false, true);
+      syncNativeIslandPresentation(
+        "expanded",
+        undefined,
+        false,
+        undefined,
+        false,
+        true,
+      ).catch(() => {
+        lastNativePresentationKeyRef.current = previousKey;
+      });
+    }
+  }
+
+  function refreshClipboardHistory() {
+    getClipboardHistory()
+      .then(setClipboardHistory)
+      .catch(() => undefined);
+  }
+
+  const {
+    panelView,
+    panelViewRef,
+    setPanelView,
+    setNavDirection,
+    navigationSeqRef,
+    hooksBackTarget,
+    tokensBackTarget,
+    usageBackTarget,
+    navDirection,
+    panelAnimKey,
+    panelExiting,
+    navigateToSession,
+    navigateToSubagent,
+    navigateToSubagentList,
+    navigateBack,
+    handleOpenTokensFromCounter,
+    handleOpenTokensFromSettings,
+    navigateBackFromTokens,
+    handleOpenUsageFromSettings,
+    navigateBackFromUsage,
+    handleOpenClipboard,
+    handleOpenHistory,
+    handleOpenSettings,
+    openSettingsSubpage,
+    navigateBackToSettingsMain,
+    openHooksPage,
+    handleOpenHooks,
+    handleOpenHooksFromSettings,
+    navigateBackFromHooks,
+    tryBeginPanelExit,
+    cancelPanelExit,
+    clearPanelExitTimer,
+  } = usePanelNavigation({
+    sessions,
+    setSessionRequests,
+    expandIsland,
+    ensureExpandedSettingsPresentation,
+    refreshClipboardHistory,
+    closeMenu: () => setMenuOpen(false),
+  });
+
   const { busyDecision, justResolved, resolveActive, resolveRequest } = useApprovals({
     snapshot,
     snapshotRef,
@@ -613,7 +672,8 @@ export function App() {
 
 
   const activeRequest = snapshot.activeRequest;
-  const sessions = snapshot.sessions;
+
+
   const hookHealthAnalysis = useMemo(
     () =>
       analyzeHookHealth(snapshot.hookHealth, {
@@ -1267,38 +1327,6 @@ export function App() {
   }, [maxCompactIconLimit]);
 
 
-  useEffect(() => {
-    if (panelView.kind === "session") {
-      if (!sessions.some((session) => session.sessionId === panelView.sessionId)) {
-        ++navigationSeqRef.current;
-        setPanelView({ kind: "home" });
-        setSessionRequests([]);
-      }
-      return;
-    }
-    if (panelView.kind === "subagent") {
-      const session = sessions.find((s) => s.sessionId === panelView.sessionId);
-      const subagent = session?.activeSubagents?.find(
-        (sub) => sub.agentId === panelView.agentId,
-      );
-      if (!subagent) {
-        ++navigationSeqRef.current;
-        if (session) {
-          setPanelView({ kind: "session", sessionId: panelView.sessionId });
-        } else {
-          setPanelView({ kind: "home" });
-        }
-      }
-      return;
-    }
-    if (panelView.kind === "subagentList") {
-      if (!sessions.some((s) => s.sessionId === panelView.sessionId)) {
-        ++navigationSeqRef.current;
-        setPanelView({ kind: "home" });
-      }
-    }
-  }, [panelView, sessions]);
-
   const hasIncompleteSubagents = useMemo(
     () =>
       sessions.some((session) =>
@@ -1363,42 +1391,6 @@ export function App() {
     }
   }
 
-  async function navigateToSession(sessionId: string) {
-    const seq = ++navigationSeqRef.current;
-    setSessionRequests([]);
-    setNavDirection("forward");
-    setPanelAnimKey((key) => key + 1);
-    expandIsland();
-    setPanelView({ kind: "session", sessionId });
-    try {
-      const requests = await getSessionRequests(sessionId);
-      if (navigationSeqRef.current === seq) {
-        setSessionRequests(requests);
-      }
-    } catch {
-      // Tauri invoke failed; leave requests empty rather than hanging.
-    }
-  }
-
-  function navigateToSubagent(sessionId: string, agentId: string) {
-    setNavDirection("forward");
-    setPanelAnimKey((key) => key + 1);
-    setPanelView({ kind: "subagent", sessionId, agentId });
-  }
-
-  function navigateToSubagentList(sessionId: string) {
-    setNavDirection("forward");
-    setPanelAnimKey((key) => key + 1);
-    setPanelView({ kind: "subagentList", sessionId });
-  }
-
-  function navigateBack() {
-    ++navigationSeqRef.current;
-    setNavDirection("back");
-    setPanelAnimKey((key) => key + 1);
-    setPanelView({ kind: "home" });
-  }
-
   function setPresentationPhase(next: PresentationPhase) {
     phaseRef.current = next;
     setPhase(next);
@@ -1438,10 +1430,7 @@ export function App() {
       window.clearTimeout(transitionTimerRef.current);
       transitionTimerRef.current = null;
     }
-    if (panelExitTimerRef.current !== null) {
-      window.clearTimeout(panelExitTimerRef.current);
-      panelExitTimerRef.current = null;
-    }
+    clearPanelExitTimer();
     // Drop any closures waiting on a settled event so a superseded transition
     // cannot fire its finalize step on the next expand/collapse.
     pendingExpandRef.current = null;
@@ -1566,13 +1555,7 @@ export function App() {
   async function expandIsland() {
     clearIdleTimer();
     holdCompactAfterSubviewOpenRef.current = false;
-    if (panelExitTimerRef.current !== null) {
-      window.clearTimeout(panelExitTimerRef.current);
-      panelExitTimerRef.current = null;
-    }
-    if (panelExiting) {
-      setPanelExiting(false);
-    }
+    cancelPanelExit();
 
     const next = beginExpand(phaseRef.current);
     if (next === phaseRef.current) return;
@@ -1690,13 +1673,10 @@ export function App() {
     setMenuOpen(false);
 
     // Fade panel content out before the native window shrink starts.
-    if (phaseRef.current === "expanded" && !panelExiting) {
-      setPanelExiting(true);
-      panelExitTimerRef.current = window.setTimeout(() => {
-        panelExitTimerRef.current = null;
-        setPanelExiting(false);
-        collapseIslandNow(releaseFocus);
-      }, PANEL_EXIT_MS);
+    if (
+      phaseRef.current === "expanded" &&
+      tryBeginPanelExit(() => collapseIslandNow(releaseFocus))
+    ) {
       return;
     }
 
@@ -2117,158 +2097,6 @@ export function App() {
     if (panelView.kind !== "home") {
       ++navigationSeqRef.current;
       setPanelView({ kind: "home" });
-    }
-  }
-
-  function openTokensPage(backTarget: "home" | "settings-main") {
-    setMenuOpen(false);
-    setTokensBackTarget(backTarget);
-    setNavDirection("forward");
-    setPanelAnimKey((key) => key + 1);
-    setPanelView({ kind: "settings", page: "tokens" });
-  }
-
-  function handleOpenTokensFromCounter() {
-    if (panelView.kind === "settings" && panelView.page === "tokens") return;
-    // Kick off the settings-size resize before mounting the tokens page so the
-    // native animation starts with a light DOM. TokenHeatmapView further defers
-    // its dense grid/charts until COLLAPSE_ANIMATION_MS elapses.
-    if (phaseRef.current === "expanded" && panelView.kind !== "settings") {
-      const previousKey = lastNativePresentationKeyRef.current;
-      lastNativePresentationKeyRef.current = expandedPresentationKey(false, false, true);
-      syncNativeIslandPresentation(
-        "expanded",
-        undefined,
-        false,
-        undefined,
-        false,
-        true,
-      ).catch(() => {
-        lastNativePresentationKeyRef.current = previousKey;
-      });
-    }
-    openTokensPage(panelView.kind === "settings" ? "settings-main" : "home");
-  }
-
-  function handleOpenTokensFromSettings() {
-    openTokensPage("settings-main");
-  }
-
-  function navigateBackFromTokens() {
-    if (tokensBackTarget === "settings-main") {
-      setNavDirection("back");
-      setPanelAnimKey((key) => key + 1);
-      setPanelView({ kind: "settings", page: "main" });
-    } else {
-      navigateBack();
-    }
-  }
-
-  function openUsagePage(backTarget: "home" | "settings-main") {
-    setMenuOpen(false);
-    setUsageBackTarget(backTarget);
-    setNavDirection("forward");
-    setPanelAnimKey((key) => key + 1);
-    setPanelView({ kind: "settings", page: "usage" });
-  }
-
-  function openClipboardPage() {
-    setMenuOpen(false);
-    setNavDirection("forward");
-    setPanelAnimKey((key) => key + 1);
-    setPanelView({ kind: "clipboard" });
-    getClipboardHistory()
-      .then(setClipboardHistory)
-      .catch(() => undefined);
-  }
-
-  function handleOpenClipboard() {
-    openClipboardPage();
-  }
-
-  function openHistoryPage() {
-    setMenuOpen(false);
-    setNavDirection("forward");
-    setPanelAnimKey((key) => key + 1);
-    setPanelView({ kind: "history" });
-  }
-
-  function handleOpenHistory() {
-    openHistoryPage();
-  }
-
-  function handleOpenUsageFromSettings() {
-    openUsagePage("settings-main");
-  }
-
-  function navigateBackFromUsage() {
-    if (usageBackTarget === "settings-main") {
-      setNavDirection("back");
-      setPanelAnimKey((key) => key + 1);
-      setPanelView({ kind: "settings", page: "main" });
-    } else {
-      navigateBack();
-    }
-  }
-
-  function handleOpenSettings() {
-    setMenuOpen(false);
-    setNavDirection("forward");
-    setPanelAnimKey((key) => key + 1);
-    if (phaseRef.current === "expanded" && panelView.kind !== "settings") {
-      const previousKey = lastNativePresentationKeyRef.current;
-      lastNativePresentationKeyRef.current = expandedPresentationKey(false, false, true);
-      syncNativeIslandPresentation(
-        "expanded",
-        undefined,
-        false,
-        undefined,
-        false,
-        true,
-      ).catch(() => {
-        lastNativePresentationKeyRef.current = previousKey;
-      });
-    }
-    setPanelView({ kind: "settings", page: "main" });
-  }
-
-  function openSettingsSubpage(
-    page: Exclude<SettingsPage, "main" | "hooks" | "tokens" | "usage">,
-  ) {
-    setNavDirection("forward");
-    setPanelAnimKey((key) => key + 1);
-    setPanelView({ kind: "settings", page });
-  }
-
-  function navigateBackToSettingsMain() {
-    setNavDirection("back");
-    setPanelAnimKey((key) => key + 1);
-    setPanelView({ kind: "settings", page: "main" });
-  }
-
-  function openHooksPage(backTarget: "home" | "settings-main") {
-    setMenuOpen(false);
-    setHooksBackTarget(backTarget);
-    setNavDirection("forward");
-    setPanelAnimKey((key) => key + 1);
-    setPanelView({ kind: "settings", page: "hooks" });
-  }
-
-  function handleOpenHooks() {
-    openHooksPage("home");
-  }
-
-  function handleOpenHooksFromSettings() {
-    openHooksPage("settings-main");
-  }
-
-  function navigateBackFromHooks() {
-    if (hooksBackTarget === "settings-main") {
-      setNavDirection("back");
-      setPanelAnimKey((key) => key + 1);
-      setPanelView({ kind: "settings", page: "main" });
-    } else {
-      navigateBack();
     }
   }
 
