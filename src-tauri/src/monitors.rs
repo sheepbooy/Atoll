@@ -1,6 +1,9 @@
 //! Background monitors and timers: Now Playing polling, clipboard watching,
 //! lyrics lookup, auto-archiving, token-history persistence, and the periodic
 //! token-refresh sweep.
+const TOKEN_REFRESH_INTERVAL_ACTIVE: Duration = Duration::from_millis(900);
+const TOKEN_REFRESH_INTERVAL_IDLE: Duration = Duration::from_secs(5);
+const HOOK_ACTIVITY_IDLE_THRESHOLD: Duration = Duration::from_secs(30);
 
 use std::sync::atomic::Ordering;
 use std::time::Duration;
