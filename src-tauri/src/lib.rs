@@ -598,27 +598,25 @@ pub(crate) fn schedule_observer_snapshot_emit(app: &AppHandle) {
         return;
     }
     let app = app.clone();
-    thread::spawn(move || {
-        loop {
-            let state = app.state::<AppState>();
-            let before = state.snapshot_debounce_generation.load(Ordering::Acquire);
-            thread::sleep(OBSERVER_SNAPSHOT_DEBOUNCE);
-            if state.snapshot_debounce_generation.load(Ordering::Acquire) != before {
-                continue;
-            }
-            let snapshot = build_snapshot(&app, &state);
-            let _ = app.emit("snapshot-changed", &snapshot);
-            state
+    thread::spawn(move || loop {
+        let state = app.state::<AppState>();
+        let before = state.snapshot_debounce_generation.load(Ordering::Acquire);
+        thread::sleep(OBSERVER_SNAPSHOT_DEBOUNCE);
+        if state.snapshot_debounce_generation.load(Ordering::Acquire) != before {
+            continue;
+        }
+        let snapshot = build_snapshot(&app, &state);
+        let _ = app.emit("snapshot-changed", &snapshot);
+        state
+            .snapshot_debounce_worker_running
+            .store(false, Ordering::Release);
+        if state.snapshot_debounce_generation.load(Ordering::Acquire) == before
+            || state
                 .snapshot_debounce_worker_running
-                .store(false, Ordering::Release);
-            if state.snapshot_debounce_generation.load(Ordering::Acquire) == before
-                || state
-                    .snapshot_debounce_worker_running
-                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                    .is_err()
-            {
-                break;
-            }
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+        {
+            break;
         }
     });
 }
@@ -665,12 +663,11 @@ pub(crate) fn build_snapshot(_app: &AppHandle, state: &AppState) -> IslandSnapsh
     let token_usage_by_model = lock_state(&state.session_token_usage_by_model).clone();
     let known_sessions = lock_state(&state.known_sessions).clone();
     let pinned = lock_state(&state.pinned_sessions).clone();
-    let cursor_subagent_conversation_ids: HashSet<String> = lock_state(
-        &state.cursor_subagent_conversations,
-    )
-    .keys()
-    .cloned()
-    .collect();
+    let cursor_subagent_conversation_ids: HashSet<String> =
+        lock_state(&state.cursor_subagent_conversations)
+            .keys()
+            .cloned()
+            .collect();
     let online = state
         .last_listening_online
         .lock()
@@ -1537,11 +1534,8 @@ async fn set_island_presentation(
                 .compact_width
                 .lock()
                 .map_err(|error| error.to_string())?;
-            let presentation_width = resolve_presentation_width(
-                mode,
-                compact_width,
-                saved_compact_width,
-            );
+            let presentation_width =
+                resolve_presentation_width(mode, compact_width, saved_compact_width);
             let compact_left_width = *state
                 .compact_left_width
                 .lock()
@@ -1592,11 +1586,7 @@ async fn set_island_presentation(
         .compact_width
         .lock()
         .map_err(|error| error.to_string())?;
-    let presentation_width = resolve_presentation_width(
-        mode,
-        compact_width,
-        saved_compact_width,
-    );
+    let presentation_width = resolve_presentation_width(mode, compact_width, saved_compact_width);
     let compact_left_width = *state
         .compact_left_width
         .lock()
@@ -1824,10 +1814,7 @@ fn truncate_transcript_content(content: String) -> String {
     truncated
 }
 
-fn parse_transcript_line(
-    format: transcript::TranscriptFormat,
-    line: &str,
-) -> Option<ChatMessage> {
+fn parse_transcript_line(format: transcript::TranscriptFormat, line: &str) -> Option<ChatMessage> {
     if format == transcript::TranscriptFormat::Codex {
         let parsed = transcript::parse_codex_message_line(line)?;
         return Some(ChatMessage {
@@ -1914,9 +1901,7 @@ fn read_transcript_messages_cached(
         .and_then(|cache| cache.entries.get(transcript_path).cloned());
 
     if let Some(entry) = cached.as_ref() {
-        if entry.file_len == file_len
-            && entry.read_offset >= file_len
-            && entry.modified == modified
+        if entry.file_len == file_len && entry.read_offset >= file_len && entry.modified == modified
         {
             return Ok(entry.messages.iter().cloned().collect());
         }
@@ -1924,9 +1909,7 @@ fn read_transcript_messages_cached(
 
     let append_only = cached
         .as_ref()
-        .is_some_and(|entry| {
-            file_len > entry.file_len && entry.read_offset == entry.file_len
-        });
+        .is_some_and(|entry| file_len > entry.file_len && entry.read_offset == entry.file_len);
     let start = if append_only {
         cached.as_ref().map(|entry| entry.read_offset).unwrap_or(0)
     } else {
@@ -1936,7 +1919,8 @@ fn read_transcript_messages_cached(
         .map_err(|error| format!("Cannot open transcript: {error}"))?;
     file.seek(SeekFrom::Start(start))
         .map_err(|error| format!("Cannot seek transcript: {error}"))?;
-    let mut bytes = Vec::with_capacity((file_len - start).min(TRANSCRIPT_INITIAL_TAIL_BYTES) as usize);
+    let mut bytes =
+        Vec::with_capacity((file_len - start).min(TRANSCRIPT_INITIAL_TAIL_BYTES) as usize);
     file.take(TRANSCRIPT_INITIAL_TAIL_BYTES)
         .read_to_end(&mut bytes)
         .map_err(|error| format!("Cannot read transcript: {error}"))?;
@@ -2108,8 +2092,8 @@ async fn get_session_chat(app: AppHandle, session_id: String) -> Result<Vec<Chat
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let requests = lock_state(&state.requests).clone();
-        let path = resolve_session_transcript_path(&state, &session_id, &requests)
-            .ok_or_else(|| {
+        let path =
+            resolve_session_transcript_path(&state, &session_id, &requests).ok_or_else(|| {
                 eprintln!("Atoll chat: no transcript resolved for session {session_id}");
                 format!("No transcript found for session {session_id}")
             })?;
@@ -2575,11 +2559,7 @@ fn refresh_zcode_subagents(
     }
 }
 
-fn update_zcode_subagents(
-    state: &AppState,
-    parent_session_id: &str,
-    today_key: &str,
-) -> bool {
+fn update_zcode_subagents(state: &AppState, parent_session_id: &str, today_key: &str) -> bool {
     let metas = collect_zcode_subagent_metas(parent_session_id);
     if metas.is_empty() {
         return false;
@@ -2625,7 +2605,10 @@ fn collect_zcode_subagent_metas(parent_session_id: &str) -> Vec<ZcodeSubagentMet
         // Anything final (completed, error, aborted, ...) closes the chip;
         // only unknown or in-flight statuses count as running.
         let is_active = status.is_empty()
-            || matches!(status.as_str(), "running" | "pending" | "in_progress" | "started");
+            || matches!(
+                status.as_str(),
+                "running" | "pending" | "in_progress" | "started"
+            );
         let agent_type = value
             .get("profileSnapshot")
             .and_then(|profile| profile.get("name"))
@@ -2956,14 +2939,12 @@ fn extract_cursor_model(payload: &serde_json::Value) -> String {
         ],
     )
     .or_else(|| {
-        payload
-            .get("response")
-            .and_then(|response| {
-                first_json_string(
-                    response,
-                    &["model", "modelName", "model_name", "model_id", "modelId"],
-                )
-            })
+        payload.get("response").and_then(|response| {
+            first_json_string(
+                response,
+                &["model", "modelName", "model_name", "model_id", "modelId"],
+            )
+        })
     })
     .unwrap_or_else(|| pricing::UNKNOWN_MODEL.to_string())
 }
@@ -2996,7 +2977,9 @@ fn get_pricing() -> Result<pricing::PricingResponse, String> {
 }
 
 #[tauri::command]
-fn set_model_rate(request: pricing::SetModelRateRequest) -> Result<pricing::PricingResponse, String> {
+fn set_model_rate(
+    request: pricing::SetModelRateRequest,
+) -> Result<pricing::PricingResponse, String> {
     pricing::set_model_rate(request)
 }
 
@@ -3443,10 +3426,7 @@ fn persist_clipboard_history_limit(limit: usize) {
         .and_then(|c| serde_json::from_str(&c).ok())
         .unwrap_or_else(|| Value::Object(Default::default()));
     if let Some(obj) = config.as_object_mut() {
-        obj.insert(
-            "clipboardHistoryLimit".into(),
-            Value::from(limit as u64),
-        );
+        obj.insert("clipboardHistoryLimit".into(), Value::from(limit as u64));
     }
     if let Ok(formatted) = serde_json::to_string_pretty(&config) {
         let _ = std::fs::write(path, formatted);
@@ -3774,7 +3754,11 @@ fn get_clipboard_history_enabled(state: State<'_, AppState>) -> bool {
 }
 
 #[tauri::command]
-fn set_clipboard_history_enabled(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> bool {
+fn set_clipboard_history_enabled(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> bool {
     *lock_state(&state.clipboard_history_enabled) = enabled;
     persist_clipboard_history_enabled(enabled);
     if enabled {
@@ -4980,9 +4964,7 @@ pub(crate) fn register_subagent_start(
     if let Ok(mut subagents) = state.active_subagents.lock() {
         if !subagents.iter().any(|s| s.agent_id == subagent.agent_id) {
             if subagents.len() >= MAX_ACTIVE_SUBAGENTS {
-                subagents.retain(|existing| {
-                    !existing.archived && existing.completed_at.is_none()
-                });
+                subagents.retain(|existing| !existing.archived && existing.completed_at.is_none());
             }
             if subagents.len() >= MAX_ACTIVE_SUBAGENTS {
                 eprintln!(
@@ -5550,8 +5532,7 @@ fn cursor_hooks_path() -> Option<std::path::PathBuf> {
 }
 
 fn zcode_config_path() -> Option<std::path::PathBuf> {
-    dirs::home_dir()
-        .map(|home| home.join(".zcode").join("cli").join("config.json"))
+    dirs::home_dir().map(|home| home.join(".zcode").join("cli").join("config.json"))
 }
 
 fn gemini_settings_path() -> Option<std::path::PathBuf> {
@@ -5587,7 +5568,12 @@ fn zcode_session_agents_dir(parent_session_id: &str) -> Option<std::path::PathBu
     if !is_safe_zcode_session_id(parent_session_id) {
         return None;
     }
-    dirs::home_dir().map(|home| home.join(".zcode").join("cli").join("agents").join(parent_session_id))
+    dirs::home_dir().map(|home| {
+        home.join(".zcode")
+            .join("cli")
+            .join("agents")
+            .join(parent_session_id)
+    })
 }
 
 /// Virtual transcript path for ZCode sessions: their chat history lives in
@@ -5630,11 +5616,9 @@ fn read_zcode_chat_messages(session_id: &str) -> Result<Vec<ChatMessage>, String
         return Err("ZCode database not found".to_string());
     }
 
-    let connection = rusqlite::Connection::open_with_flags(
-        &db_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .map_err(|error| format!("Cannot open ZCode database: {error}"))?;
+    let connection =
+        rusqlite::Connection::open_with_flags(&db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|error| format!("Cannot open ZCode database: {error}"))?;
     connection
         .busy_timeout(std::time::Duration::from_millis(500))
         .map_err(|error| format!("Cannot query ZCode database: {error}"))?;
@@ -5697,7 +5681,11 @@ fn read_zcode_chat_messages(session_id: &str) -> Result<Vec<ChatMessage>, String
                 }
                 current_content.push_str(&text);
             }
-            ZcodeChatPart::Tool { name, input, output } => {
+            ZcodeChatPart::Tool {
+                name,
+                input,
+                output,
+            } => {
                 flush_zcode_chat_message(&mut messages, &current_role, &current_content);
                 current_content.clear();
                 messages.push(ChatMessage {
@@ -5735,7 +5723,11 @@ fn zcode_chat_part(part: &Value) -> ZcodeChatPart {
     let part_type = part.get("type").and_then(Value::as_str).unwrap_or("");
     match part_type {
         "text" => {
-            if part.get("synthetic").and_then(Value::as_bool).unwrap_or(false) {
+            if part
+                .get("synthetic")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
                 return ZcodeChatPart::Skip;
             }
             let text = part
@@ -6039,7 +6031,9 @@ fn materialize_hook_deployment(
     source_script_path: &str,
 ) -> Result<String, String> {
     static DEPLOY_LOCK: Mutex<()> = Mutex::new(());
-    let _guard = DEPLOY_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let _guard = DEPLOY_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
 
     let source = std::path::Path::new(source_script_path);
     if !hook_script_is_usable(source) {
@@ -6310,8 +6304,8 @@ fn install_zcode_hooks(app: AppHandle) -> Result<HookStatus, String> {
     }
 
     let mut config: Value = if config_path.exists() {
-        let content =
-            std::fs::read_to_string(&config_path).map_err(|e| format!("Cannot read config: {e}"))?;
+        let content = std::fs::read_to_string(&config_path)
+            .map_err(|e| format!("Cannot read config: {e}"))?;
         serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()))
     } else {
         Value::Object(Default::default())
@@ -6562,8 +6556,7 @@ fn install_gemini_hooks(app: AppHandle) -> Result<HookStatus, String> {
 
     let formatted = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("Cannot serialize settings: {e}"))?;
-    std::fs::write(&settings_path, formatted)
-        .map_err(|e| format!("Cannot write settings: {e}"))?;
+    std::fs::write(&settings_path, formatted).map_err(|e| format!("Cannot write settings: {e}"))?;
 
     let written = std::fs::read_to_string(&settings_path)
         .map_err(|e| format!("Cannot verify settings: {e}"))?;
@@ -6623,8 +6616,7 @@ fn uninstall_gemini_hooks(app: AppHandle) -> Result<HookStatus, String> {
 
     let formatted = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("Cannot serialize settings: {e}"))?;
-    std::fs::write(&settings_path, formatted)
-        .map_err(|e| format!("Cannot write settings: {e}"))?;
+    std::fs::write(&settings_path, formatted).map_err(|e| format!("Cannot write settings: {e}"))?;
     hook_trust::clear_hook_installed("gemini");
 
     let state = app.state::<AppState>();
@@ -6984,12 +6976,7 @@ fn bundled_hook_script_candidates(
             candidates.push(exe_dir.join("scripts").join(script_name));
             if exe_dir.file_name().is_some_and(|name| name == "MacOS") {
                 if let Some(contents) = exe_dir.parent() {
-                    candidates.push(
-                        contents
-                            .join("Resources")
-                            .join("scripts")
-                            .join(script_name),
-                    );
+                    candidates.push(contents.join("Resources").join("scripts").join(script_name));
                 }
             }
         }
@@ -7884,7 +7871,8 @@ fn resolve_hook_script_readiness(
 ) -> (String, bool) {
     let marker = script_name.trim_end_matches(".mjs");
     let mut script_path = resolve_hook_script_path(app, script_name).unwrap_or_default();
-    let mut script_found = !script_path.is_empty() && hook_script_is_usable(Path::new(&script_path));
+    let mut script_found =
+        !script_path.is_empty() && hook_script_is_usable(Path::new(&script_path));
 
     if !script_found {
         if let Some(configured) =
@@ -8506,7 +8494,9 @@ pub fn run() {
             media_card_enabled: Mutex::new(load_media_card_enabled()),
             artwork_backdrop_enabled: Mutex::new(load_artwork_backdrop_enabled()),
             clipboard_history_limit: Mutex::new(load_clipboard_history_limit()),
-            clipboard_history: Mutex::new(clipboard_history::load_history(load_clipboard_history_limit())),
+            clipboard_history: Mutex::new(clipboard_history::load_history(
+                load_clipboard_history_limit(),
+            )),
             clipboard_history_enabled: Mutex::new(load_clipboard_history_enabled()),
             lyrics_enabled: Mutex::new(load_lyrics_enabled()),
             lyrics: Mutex::new(None),
@@ -8868,10 +8858,7 @@ fn read_clipboard_snapshot(app: &AppHandle) -> Option<clipboard_history::Clipboa
     call_on_main_thread(app, clipboard_history::read_clipboard_snapshot).flatten()
 }
 
-fn write_clipboard_payload(
-    app: &AppHandle,
-    payload: &clipboard_history::ClipboardPayload,
-) -> bool {
+fn write_clipboard_payload(app: &AppHandle, payload: &clipboard_history::ClipboardPayload) -> bool {
     let payload = payload.clone();
     call_on_main_thread(app, move || {
         clipboard_history::write_clipboard_payload(&payload)
@@ -9164,7 +9151,11 @@ fn start_auto_archive_timer(app: AppHandle) {
         };
 
         for request in &stale_pending_requests {
-            approval_history::record_outcome(&state, request, approval_history::HistoryStatus::Expired);
+            approval_history::record_outcome(
+                &state,
+                request,
+                approval_history::HistoryStatus::Expired,
+            );
         }
 
         if !stale_pending_requests.is_empty() {
@@ -9667,7 +9658,13 @@ fn apply_island_window_mode(
         ),
     };
 
-    platform::set_island_window_frame_now(window, position, logical_window_size, scale_factor, home)?;
+    platform::set_island_window_frame_now(
+        window,
+        position,
+        logical_window_size,
+        scale_factor,
+        home,
+    )?;
     platform::ensure_island_on_top(window);
     Ok(Some(home))
 }
@@ -10138,9 +10135,7 @@ fn snapshot_from(
             if excluded_session_ids.contains(&request.session) {
                 continue;
             }
-            if matches!(request.agent, AgentKind::Codex)
-                && is_codex_internal_cwd(&request.cwd)
-            {
+            if matches!(request.agent, AgentKind::Codex) && is_codex_internal_cwd(&request.cwd) {
                 continue;
             }
             // Pinned sessions are always retained regardless of time.
@@ -10836,8 +10831,8 @@ mod core_tests {
         std::fs::write(&transcript_path, content).expect("write transcript");
 
         let state = test_app_state();
-        let messages = read_transcript_messages_cached(&state, &transcript_path)
-            .expect("read messages");
+        let messages =
+            read_transcript_messages_cached(&state, &transcript_path).expect("read messages");
 
         assert_eq!(messages.len(), TRANSCRIPT_MAX_MESSAGES);
         assert_eq!(messages[0].content, "message 25");
@@ -10850,10 +10845,8 @@ mod core_tests {
     fn transcript_cache_reads_appends_and_recovers_from_truncation() {
         use std::io::Write;
 
-        let dir = std::env::temp_dir().join(format!(
-            "atoll-transcript-cache-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("atoll-transcript-cache-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let path = dir.join("session.jsonl");
         std::fs::write(
@@ -10925,10 +10918,8 @@ mod core_tests {
         let _env = TOKEN_HISTORY_ENV_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let path = std::env::temp_dir().join(format!(
-            "atoll-rollover-lock-{}.json",
-            uuid::Uuid::new_v4()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("atoll-rollover-lock-{}.json", uuid::Uuid::new_v4()));
         std::env::set_var("ATOLL_TOKEN_HISTORY_PATH", &path);
 
         let state = Arc::new(test_app_state());
@@ -11117,10 +11108,7 @@ mod core_tests {
 
     #[test]
     fn empty_hook_scripts_are_not_usable() {
-        let dir = std::env::temp_dir().join(format!(
-            "atoll-empty-hook-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let dir = std::env::temp_dir().join(format!("atoll-empty-hook-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let empty = dir.join("atoll-claude-hook.mjs");
         std::fs::write(&empty, []).expect("empty script");
@@ -11147,10 +11135,7 @@ mod core_tests {
 
     #[test]
     fn install_source_skips_empty_files_and_finds_repo_script() {
-        let dir = std::env::temp_dir().join(format!(
-            "atoll-hook-source-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let dir = std::env::temp_dir().join(format!("atoll-hook-source-{}", uuid::Uuid::new_v4()));
         let scripts = dir.join("scripts");
         std::fs::create_dir_all(&scripts).expect("scripts dir");
         let empty = scripts.join("atoll-claude-hook.mjs");
@@ -11163,7 +11148,10 @@ mod core_tests {
         ));
         assert!(found.is_some());
         let found = found.expect("repo script");
-        assert!(found.ends_with("scripts/atoll-claude-hook.mjs") || found.ends_with("scripts\\atoll-claude-hook.mjs"));
+        assert!(
+            found.ends_with("scripts/atoll-claude-hook.mjs")
+                || found.ends_with("scripts\\atoll-claude-hook.mjs")
+        );
         assert_ne!(
             std::fs::metadata(&found).expect("meta").len(),
             0,
@@ -11174,10 +11162,8 @@ mod core_tests {
 
     #[test]
     fn copy_deployed_hook_file_does_not_truncate_when_source_is_destination() {
-        let dir = std::env::temp_dir().join(format!(
-            "atoll-hook-self-copy-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("atoll-hook-self-copy-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let script = dir.join("atoll-claude-hook.mjs");
         std::fs::write(&script, "keep me").expect("script");
@@ -12374,7 +12360,14 @@ mod core_tests {
             height: 38.0,
             ..NotchMetrics::default()
         };
-        let compact = island_window_logical_size(IslandWindowMode::Compact, 132.0, notch, false, false, false);
+        let compact = island_window_logical_size(
+            IslandWindowMode::Compact,
+            132.0,
+            notch,
+            false,
+            false,
+            false,
+        );
         // Compact sits in the menu-bar band (like dormant) — no extra_top.
         assert_eq!(compact.height, COMPACT_WINDOW_HEIGHT);
         // Width is clamped up to the notch width so the capsule visually
@@ -12382,11 +12375,25 @@ mod core_tests {
         assert_eq!(compact.width, 200.0);
 
         // Content wider than the notch keeps its own width.
-        let wide = island_window_logical_size(IslandWindowMode::Compact, 300.0, notch, false, false, false);
+        let wide = island_window_logical_size(
+            IslandWindowMode::Compact,
+            300.0,
+            notch,
+            false,
+            false,
+            false,
+        );
         assert_eq!(wide.width, 300.0);
 
         // Dormant is slightly wider than the notch (padding on each side).
-        let dormant = island_window_logical_size(IslandWindowMode::Dormant, 132.0, notch, false, false, false);
+        let dormant = island_window_logical_size(
+            IslandWindowMode::Dormant,
+            132.0,
+            notch,
+            false,
+            false,
+            false,
+        );
         assert_eq!(dormant.width, 200.0 + 2.0 * DORMANT_NOTCH_PADDING);
         assert_eq!(dormant.height, DORMANT_WINDOW_HEIGHT);
     }
@@ -12431,16 +12438,37 @@ mod core_tests {
         let no_notch = NotchMetrics::default();
 
         // Compact: content width is kept as-is on non-notched displays.
-        let compact = island_window_logical_size(IslandWindowMode::Compact, 132.0, no_notch, false, false, false);
+        let compact = island_window_logical_size(
+            IslandWindowMode::Compact,
+            132.0,
+            no_notch,
+            false,
+            false,
+            false,
+        );
         assert_eq!(compact.width, 132.0);
         assert_eq!(compact.height, COMPACT_WINDOW_HEIGHT);
 
         // A compact_width that already exceeds the floor is kept as-is.
-        let wide = island_window_logical_size(IslandWindowMode::Compact, 250.0, no_notch, false, false, false);
+        let wide = island_window_logical_size(
+            IslandWindowMode::Compact,
+            250.0,
+            no_notch,
+            false,
+            false,
+            false,
+        );
         assert_eq!(wide.width, 250.0);
 
         // Dormant: uses the same FALLBACK_NOTCH_WIDTH reference + padding.
-        let dormant = island_window_logical_size(IslandWindowMode::Dormant, 132.0, no_notch, false, false, false);
+        let dormant = island_window_logical_size(
+            IslandWindowMode::Dormant,
+            132.0,
+            no_notch,
+            false,
+            false,
+            false,
+        );
         assert_eq!(
             dormant.width,
             FALLBACK_NOTCH_WIDTH + 2.0 * DORMANT_NOTCH_PADDING
@@ -13948,7 +13976,8 @@ mod codex_hooks_tests {
             use super::resolve_node_executable_from_where;
 
             if std::path::Path::new(r"C:\Program Files\nodejs\node.exe").exists() {
-                let resolved = resolve_node_executable_from_where().expect("where should find node");
+                let resolved =
+                    resolve_node_executable_from_where().expect("where should find node");
                 assert!(std::path::Path::new(&resolved).exists());
             }
         }
@@ -14197,7 +14226,13 @@ mod zcode_token_tests {
 
     const PARENT_SESSION: &str = "sess_11111111-2222-4333-8444-555555555555";
     const CHILD_SESSION: &str = "sess_subagent_agent_66666666-7777-4888-9999-000000000000";
-    const TODAY_ISO: &str = "2026-08-29T10:00:00.000Z";
+
+    /// Fixture timestamps must be "now": the token parser drops rollout lines
+    /// whose local day differs from the current one, so a fixed date would go
+    /// stale as soon as the calendar moves past it.
+    fn today_iso() -> String {
+        crate::iso_timestamp_now()
+    }
 
     fn zcode_line(session: &str, iso: &str, model: &str, usage: Value) -> String {
         json!({
@@ -14211,7 +14246,7 @@ mod zcode_token_tests {
     }
 
     fn today_key() -> String {
-        crate::local_time::local_day_key_from_iso(TODAY_ISO).expect("local day key")
+        crate::local_time::local_day_key_from_iso(&today_iso()).expect("local day key")
     }
 
     /// Redirect HOME into a temp dir so `zcode_rollout_path` lands in fixtures.
@@ -14223,7 +14258,11 @@ mod zcode_token_tests {
 
     impl HomeGuard {
         pub(crate) fn new(tag: &str) -> Self {
-            let home = std::env::temp_dir().join(format!("atoll-zcode-token-{}-{}", tag, std::process::id()));
+            let home = std::env::temp_dir().join(format!(
+                "atoll-zcode-token-{}-{}",
+                tag,
+                std::process::id()
+            ));
             let _ = std::fs::remove_dir_all(&home);
             std::fs::create_dir_all(&home).expect("create temp home");
             let previous = std::env::var_os("HOME");
@@ -14261,13 +14300,13 @@ mod zcode_token_tests {
                 "{}\n{}\n",
                 zcode_line(
                     PARENT_SESSION,
-                    TODAY_ISO,
+                    &today_iso(),
                     "GLM-5.3",
                     json!({ "inputTokens": 38758, "outputTokens": 147, "cacheReadTokens": 38400, "cacheWriteTokens": 12 })
                 ),
                 zcode_line(
                     PARENT_SESSION,
-                    TODAY_ISO,
+                    &today_iso(),
                     "GLM-4.7",
                     json!({ "inputTokens": 232, "outputTokens": 77, "cacheReadTokens": 0, "cacheWriteTokens": 0 })
                 ),
@@ -14284,7 +14323,7 @@ mod zcode_token_tests {
             "profileSnapshot": { "name": "Explore" },
             "prompt": "Search the codebase for usages",
             "status": status,
-            "createdAt": TODAY_ISO,
+            "createdAt": today_iso(),
         });
         if let Some(completed_at) = completed_at {
             metadata["completedAt"] = json!(completed_at);
@@ -14313,7 +14352,7 @@ mod zcode_token_tests {
                 "{}\n",
                 zcode_line(
                     CHILD_SESSION,
-                    TODAY_ISO,
+                    &today_iso(),
                     "GLM-5.3",
                     json!({ "inputTokens": 34456, "outputTokens": 2992, "cacheReadTokens": 32320, "cacheWriteTokens": 0 })
                 ),
@@ -14342,7 +14381,10 @@ mod zcode_token_tests {
             "claude",
             "",
         ] {
-            assert!(zcode_rollout_path(bad).is_none(), "expected rejection: {bad}");
+            assert!(
+                zcode_rollout_path(bad).is_none(),
+                "expected rejection: {bad}"
+            );
         }
     }
 
@@ -14407,13 +14449,8 @@ mod zcode_token_tests {
         let _home = HomeGuard::new("missing-rollout");
         let state = test_app_state();
 
-        refresh_session_token_usage(
-            &state,
-            PARENT_SESSION,
-            None,
-            Some(&AgentKind::Zcode),
-        )
-        .expect("refresh without rollout file");
+        refresh_session_token_usage(&state, PARENT_SESSION, None, Some(&AgentKind::Zcode))
+            .expect("refresh without rollout file");
 
         // A zero entry may be registered, but nothing was counted.
         let usage = state
@@ -14466,7 +14503,7 @@ mod zcode_token_tests {
         }
 
         // Subagent completes: chip closes, tokens must not be counted twice.
-        write_subagent_metadata(&home.home, "completed", Some(TODAY_ISO));
+        write_subagent_metadata(&home.home, "completed", Some(&today_iso()));
         let changed = update_zcode_subagents(&state, PARENT_SESSION, &today_key());
         assert!(changed, "completion should close the chip");
         {
@@ -14495,7 +14532,7 @@ mod zcode_token_tests {
         let state = test_app_state();
 
         write_child_rollout(&home.home);
-        write_subagent_metadata(&home.home, "completed", Some(TODAY_ISO));
+        write_subagent_metadata(&home.home, "completed", Some(&today_iso()));
 
         let changed = update_zcode_subagents(&state, PARENT_SESSION, &today_key());
         assert!(!changed, "finished-before-seen subagents stay invisible");
@@ -14634,11 +14671,23 @@ mod claude_hooks_tests {
 
         let competing = detect_competing_claude_hooks(&config);
         assert_eq!(competing.len(), 2);
-        let ping = competing.iter().find(|c| c.command.contains("ping-island-bridge")).unwrap();
-        assert!(!ping.binary_exists, "ping-island binary should be flagged missing");
+        let ping = competing
+            .iter()
+            .find(|c| c.command.contains("ping-island-bridge"))
+            .unwrap();
+        assert!(
+            !ping.binary_exists,
+            "ping-island binary should be flagged missing"
+        );
         assert_eq!(ping.event, "PermissionRequest");
-        let echo_hook = competing.iter().find(|c| c.command.contains("/bin/echo")).unwrap();
-        assert!(echo_hook.binary_exists, "/bin/echo binary should be present");
+        let echo_hook = competing
+            .iter()
+            .find(|c| c.command.contains("/bin/echo"))
+            .unwrap();
+        assert!(
+            echo_hook.binary_exists,
+            "/bin/echo binary should be present"
+        );
         assert_eq!(echo_hook.event, "Notification");
     }
 
@@ -14679,7 +14728,10 @@ mod claude_hooks_tests {
         assert!(removed);
 
         let hooks = settings.get("hooks").unwrap();
-        let pr = hooks.get("PermissionRequest").and_then(|v| v.as_array()).unwrap();
+        let pr = hooks
+            .get("PermissionRequest")
+            .and_then(|v| v.as_array())
+            .unwrap();
         let commands: Vec<&str> = pr[0]
             .get("hooks")
             .and_then(|v| v.as_array())
@@ -14687,9 +14739,18 @@ mod claude_hooks_tests {
             .iter()
             .map(|h| h.get("command").and_then(|c| c.as_str()).unwrap_or(""))
             .collect();
-        assert!(commands.iter().any(|c| c.contains("atoll-claude-hook")), "Atoll hook must survive");
-        assert!(commands.iter().any(|c| c.contains("/bin/echo")), "live competitor must survive");
-        assert!(!commands.iter().any(|c| c.contains("ping-island-bridge")), "dead competitor must be removed");
+        assert!(
+            commands.iter().any(|c| c.contains("atoll-claude-hook")),
+            "Atoll hook must survive"
+        );
+        assert!(
+            commands.iter().any(|c| c.contains("/bin/echo")),
+            "live competitor must survive"
+        );
+        assert!(
+            !commands.iter().any(|c| c.contains("ping-island-bridge")),
+            "dead competitor must be removed"
+        );
     }
 
     #[test]
@@ -14707,8 +14768,13 @@ mod claude_hooks_tests {
 
         let removed = remove_dead_competing_hooks_from_config(&mut settings);
         assert!(removed);
-        assert!(settings.get("hooks").map(|h| h.as_object().map(|o| o.is_empty()).unwrap_or(true)).unwrap_or(true),
-            "hooks object should be empty or absent after removing the only dead hook");
+        assert!(
+            settings
+                .get("hooks")
+                .map(|h| h.as_object().map(|o| o.is_empty()).unwrap_or(true))
+                .unwrap_or(true),
+            "hooks object should be empty or absent after removing the only dead hook"
+        );
     }
 
     #[test]
@@ -15028,7 +15094,7 @@ mod cursor_hooks_tests {
 mod zcode_chat_tests {
     use super::{
         parse_zcode_db_session_path, read_zcode_chat_messages, truncate_transcript_content,
-        zcode_db_session_path, TRANSCRIPT_MAX_MESSAGES, TOKEN_HISTORY_ENV_LOCK,
+        zcode_db_session_path, TOKEN_HISTORY_ENV_LOCK, TRANSCRIPT_MAX_MESSAGES,
         TRANSCRIPT_MESSAGE_MAX_CHARS,
     };
     use crate::zcode_token_tests::HomeGuard;
@@ -15129,10 +15195,7 @@ mod zcode_chat_tests {
         assert_eq!(messages[2].role, "assistant");
         assert_eq!(messages[2].content, "");
         assert_eq!(messages[2].tool_name.as_deref(), Some("Bash"));
-        assert_eq!(
-            messages[2].tool_input,
-            Some(json!({ "command": "ls -la" }))
-        );
+        assert_eq!(messages[2].tool_input, Some(json!({ "command": "ls -la" })));
         // Non-question tool outputs stay out of the transcript.
         assert_eq!(messages[2].tool_output, None);
         assert_eq!(messages[3].tool_name.as_deref(), Some("AskUserQuestion"));
@@ -15142,9 +15205,11 @@ mod zcode_chat_tests {
         );
 
         // Other sessions stay isolated; invalid ids are rejected before I/O.
-        assert!(read_zcode_chat_messages("sess_ffffffff-ffff-4fff-8fff-ffffffffffff")
-            .expect("unknown session reads empty")
-            .is_empty());
+        assert!(
+            read_zcode_chat_messages("sess_ffffffff-ffff-4fff-8fff-ffffffffffff")
+                .expect("unknown session reads empty")
+                .is_empty()
+        );
         assert!(read_zcode_chat_messages("../escape").is_err());
     }
 
@@ -15166,7 +15231,10 @@ mod zcode_chat_tests {
 
         let read = read_zcode_chat_messages(SESSION).expect("read chat");
         assert_eq!(read.len(), TRANSCRIPT_MAX_MESSAGES);
-        assert_eq!(read[0].content, format!("message {}", total - TRANSCRIPT_MAX_MESSAGES));
+        assert_eq!(
+            read[0].content,
+            format!("message {}", total - TRANSCRIPT_MAX_MESSAGES)
+        );
         assert_eq!(
             read[read.len() - 1].content,
             format!("message {}", total - 1)
@@ -15199,7 +15267,7 @@ mod zcode_chat_tests {
         use super::{
             iso_timestamp_now, snapshot_from, KnownSession, PermissionRequest, PermissionStatus,
         };
-        use super::{AgentKind, platform};
+        use super::{platform, AgentKind};
         use std::collections::{HashMap, HashSet};
 
         let ephemeral = "/tmp/atoll-ephemeral-hook-transcript.jsonl";
@@ -15287,4 +15355,3 @@ mod zcode_chat_tests {
         assert_eq!(session.transcript_path.as_deref(), Some(virtual_path));
     }
 }
-
