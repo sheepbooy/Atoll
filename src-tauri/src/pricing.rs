@@ -789,8 +789,7 @@ mod tests {
             catalog_path.to_string_lossy().as_ref(),
         );
 
-        let response =
-            get_pricing_with_discovered(HashSet::from(["zzz-unpriced".into()])).unwrap();
+        let response = get_pricing_with_discovered(HashSet::from(["zzz-unpriced".into()])).unwrap();
         assert_eq!(response.models[0].model_id, "zzz-unpriced");
         assert!(response.models[0].is_unpriced);
 
@@ -800,7 +799,10 @@ mod tests {
     #[test]
     fn catalog_is_stale_when_missing_or_old() {
         assert!(catalog_is_stale(1_700_000_000, None));
-        assert!(catalog_is_stale(1_700_000_000, Some("2000-01-01T00:00:00Z")));
+        assert!(catalog_is_stale(
+            1_700_000_000,
+            Some("2000-01-01T00:00:00Z")
+        ));
     }
 
     #[test]
@@ -891,18 +893,18 @@ mod tests {
         hide_model("custom-only".into()).expect("hide custom");
 
         let response = get_pricing_with_discovered(HashSet::new()).unwrap();
-        assert!(
-            !response
-                .models
-                .iter()
-                .any(|model| model.model_id == "gpt-4o" || model.model_id == "custom-only")
-        );
+        assert!(!response
+            .models
+            .iter()
+            .any(|model| model.model_id == "gpt-4o" || model.model_id == "custom-only"));
         assert_eq!(effective_rate("gpt-4o").unwrap().input_per_million, 2.50);
         assert_eq!(effective_rate("custom-only"), None);
 
         let reloaded = load_overrides();
         assert!(reloaded.hidden_model_ids.contains(&"gpt-4o".to_string()));
-        assert!(reloaded.hidden_model_ids.contains(&"custom-only".to_string()));
+        assert!(reloaded
+            .hidden_model_ids
+            .contains(&"custom-only".to_string()));
         assert!(!reloaded.overrides.contains_key("custom-only"));
 
         cleanup_pricing_paths(&pricing_path, &catalog_path);
@@ -924,14 +926,12 @@ mod tests {
 
         hide_model("discovered-model".into()).expect("hide discovered");
 
-        let response = get_pricing_with_discovered(HashSet::from(["discovered-model".into()]))
-            .unwrap();
-        assert!(
-            !response
-                .models
-                .iter()
-                .any(|model| model.model_id == "discovered-model")
-        );
+        let response =
+            get_pricing_with_discovered(HashSet::from(["discovered-model".into()])).unwrap();
+        assert!(!response
+            .models
+            .iter()
+            .any(|model| model.model_id == "discovered-model"));
 
         cleanup_pricing_paths(&pricing_path, &catalog_path);
     }
@@ -996,10 +996,7 @@ mod tests {
             .hidden_models
             .iter()
             .any(|model| model.model_id == "gpt-4o"));
-        assert!(!hidden
-            .models
-            .iter()
-            .any(|model| model.model_id == "gpt-4o"));
+        assert!(!hidden.models.iter().any(|model| model.model_id == "gpt-4o"));
 
         let restored = unhide_model("gpt-4o".into()).expect("unhide");
         assert!(restored

@@ -24,8 +24,8 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow, SetWindowPos,
-    SystemParametersInfoW, HWND_TOPMOST, SPI_GETCLIENTAREAANIMATION,
-    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
+    SystemParametersInfoW, HWND_TOPMOST, SPI_GETCLIENTAREAANIMATION, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOSIZE, SWP_SHOWWINDOW, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
 };
 
 use super::SessionHost;
@@ -442,25 +442,21 @@ pub fn is_cursor_app_running() -> bool {
         hidden_command("tasklist").args(["/FI", "IMAGENAME eq Cursor.exe", "/NH"]),
         std::time::Duration::from_secs(2),
     )
-        .map(|output| {
-            String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .any(|line| line.contains("Cursor.exe"))
-        })
-        .unwrap_or(false)
+    .map(|output| {
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .any(|line| line.contains("Cursor.exe"))
+    })
+    .unwrap_or(false)
 }
 
 fn is_cursor_process_pid(pid: u32) -> bool {
     super::command_output_with_timeout(
-        hidden_command("tasklist")
-            .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"]),
+        hidden_command("tasklist").args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"]),
         std::time::Duration::from_secs(2),
     )
-        .map(|output| {
-            String::from_utf8_lossy(&output.stdout)
-                .contains("Cursor.exe")
-        })
-        .unwrap_or(false)
+    .map(|output| String::from_utf8_lossy(&output.stdout).contains("Cursor.exe"))
+    .unwrap_or(false)
 }
 
 fn try_focus_claude_process() -> bool {
@@ -485,9 +481,7 @@ fn try_focus_cursor_process() -> bool {
 /// popping up (see `show_main_window_for_approval` + 10s auto-archive loop).
 fn find_window_by_title(app_name: &'static str) -> Option<windows::Win32::Foundation::HWND> {
     use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
-    use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowTextW, IsWindowVisible,
-    };
+    use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowTextW, IsWindowVisible};
 
     struct Search {
         app_name: &'static str,

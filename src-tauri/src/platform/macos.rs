@@ -379,20 +379,13 @@ pub fn set_island_cursor_events_ignored_if_current(
     presentation_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
     generation: u64,
 ) {
-    apply_island_cursor_events(
-        window,
-        ignore,
-        Some((presentation_generation, generation)),
-    );
+    apply_island_cursor_events(window, ignore, Some((presentation_generation, generation)));
 }
 
 fn apply_island_cursor_events(
     window: &tauri::WebviewWindow,
     ignore: bool,
-    generation_guard: Option<(
-        std::sync::Arc<std::sync::atomic::AtomicU64>,
-        u64,
-    )>,
+    generation_guard: Option<(std::sync::Arc<std::sync::atomic::AtomicU64>, u64)>,
 ) {
     let panel_ptr = panel_store::get_raw();
     if !panel_ptr.is_null() {
@@ -547,8 +540,7 @@ pub fn prefers_reduced_motion() -> bool {
         let Some(ws_class) = objc2::runtime::AnyClass::get(c"NSWorkspace") else {
             return false;
         };
-        let workspace: *mut objc2::runtime::AnyObject =
-            objc2::msg_send![ws_class, sharedWorkspace];
+        let workspace: *mut objc2::runtime::AnyObject = objc2::msg_send![ws_class, sharedWorkspace];
         if workspace.is_null() {
             return false;
         }
@@ -569,9 +561,7 @@ fn appkit_window_origin_y(
 }
 
 pub fn apply_island_window_style(window: &tauri::WebviewWindow) {
-    use objc2_app_kit::{
-        NSColor, NSWindow, NSWindowAnimationBehavior, NSWindowCollectionBehavior,
-    };
+    use objc2_app_kit::{NSColor, NSWindow, NSWindowAnimationBehavior, NSWindowCollectionBehavior};
 
     let Ok(ns_window) = window.ns_window() else {
         return;
@@ -1309,8 +1299,7 @@ fn is_in_cursor_tree(mut pid: u32) -> bool {
         let output = match super::command_output_with_timeout(
             Command::new("ps").args(["-p", &pid.to_string(), "-o", "ppid="]),
             std::time::Duration::from_secs(2),
-        )
-        {
+        ) {
             Ok(output) => output,
             Err(_) => return false,
         };
@@ -1324,8 +1313,7 @@ fn is_in_cursor_tree(mut pid: u32) -> bool {
 }
 
 fn is_cursor_process(pid: u32) -> bool {
-    bundle_id_for_pid(pid as i32)
-        .is_some_and(|bundle| CURSOR_BUNDLE_IDS.contains(&bundle.as_str()))
+    bundle_id_for_pid(pid as i32).is_some_and(|bundle| CURSOR_BUNDLE_IDS.contains(&bundle.as_str()))
 }
 
 fn run_open_claude() -> bool {
@@ -1666,8 +1654,7 @@ fn is_in_codex_desktop_tree(mut pid: u32) -> bool {
         let output = match super::command_output_with_timeout(
             Command::new("ps").args(["-p", &pid.to_string(), "-o", "ppid="]),
             std::time::Duration::from_secs(2),
-        )
-        {
+        ) {
             Ok(output) => output,
             Err(_) => return false,
         };
@@ -1929,8 +1916,7 @@ fn is_in_claude_desktop_tree(mut pid: u32) -> bool {
         let output = match super::command_output_with_timeout(
             Command::new("ps").args(["-p", &pid.to_string(), "-o", "ppid="]),
             std::time::Duration::from_secs(2),
-        )
-        {
+        ) {
             Ok(output) => output,
             Err(_) => return false,
         };

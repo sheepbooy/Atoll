@@ -99,7 +99,11 @@ fn codex_hook_cache_path() -> Option<PathBuf> {
         }
         return Some(PathBuf::from(path));
     }
-    dirs::home_dir().map(|home| home.join(".codex").join("hooks").join("atoll-codex-hook.mjs"))
+    dirs::home_dir().map(|home| {
+        home.join(".codex")
+            .join("hooks")
+            .join("atoll-codex-hook.mjs")
+    })
 }
 
 fn codex_config_path() -> Option<PathBuf> {
@@ -145,7 +149,10 @@ fn codex_cached_script_stale(live_script_path: &str, configured_script_path: Opt
 
 /// True when Codex has persisted hook trust entries but we cannot read a live
 /// script to compare — usually means hooks.json still references a missing path.
-fn codex_trust_state_without_live_script(live_script_path: &str, configured_script_path: Option<&str>) -> bool {
+fn codex_trust_state_without_live_script(
+    live_script_path: &str,
+    configured_script_path: Option<&str>,
+) -> bool {
     let Some(config_path) = codex_config_path() else {
         return false;
     };
@@ -332,7 +339,10 @@ mod tests {
         let path =
             std::env::temp_dir().join(format!("atoll-hook-trust-state-{pid}-{test_name}.json"));
         let _ = std::fs::remove_file(&path);
-        std::env::set_var("ATOLL_HOOK_TRUST_STATE_PATH", path.to_string_lossy().as_ref());
+        std::env::set_var(
+            "ATOLL_HOOK_TRUST_STATE_PATH",
+            path.to_string_lossy().as_ref(),
+        );
         std::env::set_var("ATOLL_CODEX_HOOK_CACHE_PATH", "");
         std::env::set_var("ATOLL_CODEX_CONFIG_PATH", "");
         f();
@@ -377,9 +387,8 @@ mod tests {
     fn reinstalling_clears_previous_drift() {
         with_temp_state("reinstall", || {
             let pid = std::process::id();
-            let cache_path = std::env::temp_dir().join(format!(
-                "atoll-codex-hook-cache-{pid}-reinstall.mjs"
-            ));
+            let cache_path =
+                std::env::temp_dir().join(format!("atoll-codex-hook-cache-{pid}-reinstall.mjs"));
             let _ = std::fs::remove_file(&cache_path);
             std::env::set_var(
                 "ATOLL_CODEX_HOOK_CACHE_PATH",
@@ -416,15 +425,21 @@ mod tests {
     #[test]
     fn missing_script_never_flags_retrust() {
         with_temp_state("missing", || {
-            assert!(!needs_retrust("codex", "/definitely/not/a/real/path.mjs", None));
+            assert!(!needs_retrust(
+                "codex",
+                "/definitely/not/a/real/path.mjs",
+                None
+            ));
         });
     }
 
     #[test]
     fn agents_are_tracked_independently() {
         with_temp_state("multi-agent", || {
-            let codex_script =
-                write_script("atoll-hook-trust-test-multi-codex.mjs", "console.log('codex')");
+            let codex_script = write_script(
+                "atoll-hook-trust-test-multi-codex.mjs",
+                "console.log('codex')",
+            );
             let claude_script = write_script(
                 "atoll-hook-trust-test-multi-claude.mjs",
                 "console.log('claude')",
@@ -504,8 +519,11 @@ mod tests {
             )
             .unwrap();
             std::fs::create_dir_all(&cache_dir).unwrap();
-            std::fs::write(cache_dir.join("atoll-codex-hook.mjs"), "import './atoll-hook-bridge.mjs'")
-                .unwrap();
+            std::fs::write(
+                cache_dir.join("atoll-codex-hook.mjs"),
+                "import './atoll-hook-bridge.mjs'",
+            )
+            .unwrap();
 
             let script = live.to_string_lossy().into_owned();
             assert!(needs_retrust("codex", &script, Some(&script)));
@@ -519,16 +537,17 @@ mod tests {
     fn codex_flags_when_cached_snapshot_differs_from_live_script() {
         with_temp_state("codex-cache", || {
             let pid = std::process::id();
-            let cache_path = std::env::temp_dir().join(format!(
-                "atoll-codex-hook-cache-{pid}-stale.mjs"
-            ));
+            let cache_path =
+                std::env::temp_dir().join(format!("atoll-codex-hook-cache-{pid}-stale.mjs"));
             let _ = std::fs::remove_file(&cache_path);
             std::env::set_var(
                 "ATOLL_CODEX_HOOK_CACHE_PATH",
                 cache_path.to_string_lossy().as_ref(),
             );
-            let live =
-                write_script("atoll-hook-trust-test-live-codex.mjs", "console.log('live')");
+            let live = write_script(
+                "atoll-hook-trust-test-live-codex.mjs",
+                "console.log('live')",
+            );
             std::fs::write(&cache_path, "console.log('cached')").unwrap();
             assert!(needs_retrust("codex", &live, Some(&live)));
             let _ = std::fs::remove_file(&live);
@@ -540,9 +559,8 @@ mod tests {
     fn codex_does_not_flag_when_cache_matches_live_script() {
         with_temp_state("codex-cache-match", || {
             let pid = std::process::id();
-            let cache_path = std::env::temp_dir().join(format!(
-                "atoll-codex-hook-cache-{pid}-match.mjs"
-            ));
+            let cache_path =
+                std::env::temp_dir().join(format!("atoll-codex-hook-cache-{pid}-match.mjs"));
             let _ = std::fs::remove_file(&cache_path);
             std::env::set_var(
                 "ATOLL_CODEX_HOOK_CACHE_PATH",

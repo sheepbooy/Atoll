@@ -520,7 +520,10 @@ pub fn parse_zcode_tokens_from_reader<R: std::io::BufRead + std::io::Seek>(
             continue;
         }
 
-        let timestamp = entry.get("completedAt").and_then(Value::as_str).unwrap_or("");
+        let timestamp = entry
+            .get("completedAt")
+            .and_then(Value::as_str)
+            .unwrap_or("");
         if !crate::local_time::is_local_today(timestamp, today_key) {
             continue;
         }
@@ -706,7 +709,14 @@ mod tests {
                 .expect("local day key"),
         )
         .expect("parse");
-        assert_eq!(result.daily_delta_by_model.get("gpt-4o").unwrap().input_tokens, 10);
+        assert_eq!(
+            result
+                .daily_delta_by_model
+                .get("gpt-4o")
+                .unwrap()
+                .input_tokens,
+            10
+        );
     }
 
     #[test]
@@ -747,8 +757,22 @@ mod tests {
         assert_eq!(result.daily_delta.output_tokens, 147 + 30);
         assert_eq!(result.daily_delta.cache_read_tokens, 38400 + 25920);
         assert_eq!(result.daily_delta.cache_creation_tokens, 12);
-        assert_eq!(result.daily_delta_by_model.get("GLM-5.3").unwrap().input_tokens, 358);
-        assert_eq!(result.daily_delta_by_model.get("GLM-4.7").unwrap().output_tokens, 30);
+        assert_eq!(
+            result
+                .daily_delta_by_model
+                .get("GLM-5.3")
+                .unwrap()
+                .input_tokens,
+            358
+        );
+        assert_eq!(
+            result
+                .daily_delta_by_model
+                .get("GLM-4.7")
+                .unwrap()
+                .output_tokens,
+            30
+        );
     }
 
     #[test]

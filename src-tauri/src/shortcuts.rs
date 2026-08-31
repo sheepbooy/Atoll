@@ -163,13 +163,13 @@ pub(crate) fn normalize_accelerator(input: &str) -> Result<String, String> {
         let primary_token = match upper.as_str() {
             "CMD" | "COMMAND" | "META" | "SUPER" | "WINDOWS" | "WIN" => Some(PrimaryModifier::Cmd),
             "CTRL" | "CONTROL" => Some(PrimaryModifier::Ctrl),
-            "CMDORCTRL" | "COMMANDORCONTROL" | "COMMANDORCTRL" | "CMDORCONTROL" => Some(
-                if cfg!(target_os = "macos") {
+            "CMDORCTRL" | "COMMANDORCONTROL" | "COMMANDORCTRL" | "CMDORCONTROL" => {
+                Some(if cfg!(target_os = "macos") {
                     PrimaryModifier::Cmd
                 } else {
                     PrimaryModifier::Ctrl
-                },
-            ),
+                })
+            }
             _ => None,
         };
         if let Some(value) = primary_token {
@@ -222,7 +222,9 @@ fn normalize_key(upper: &str, input: &str) -> Result<String, String> {
             return Ok(upper.to_string());
         }
         return match upper {
-            "-" | "=" | "[" | "]" | "," | "." | "/" | ";" | "'" | "`" | "\\" => Ok(upper.to_string()),
+            "-" | "=" | "[" | "]" | "," | "." | "/" | ";" | "'" | "`" | "\\" => {
+                Ok(upper.to_string())
+            }
             _ => Err(invalid()),
         };
     }
@@ -283,7 +285,9 @@ fn is_function_key(key: &str) -> bool {
 /// Canonicalize every action of a config, collecting per-action failures.
 /// Invalid accelerators keep their raw value so the UI can show what the user
 /// actually typed next to the error.
-pub(crate) fn canonicalize_config(config: GlobalShortcutConfig) -> (GlobalShortcutConfig, GlobalShortcutErrors) {
+pub(crate) fn canonicalize_config(
+    config: GlobalShortcutConfig,
+) -> (GlobalShortcutConfig, GlobalShortcutErrors) {
     let mut errors = GlobalShortcutErrors::default();
     let mut canonical = config.clone();
     for action in ShortcutAction::ALL {
@@ -329,7 +333,10 @@ fn load_config_from_path(path: &Path) -> GlobalShortcutConfig {
         return defaults;
     };
     GlobalShortcutConfig {
-        enabled: settings.get("enabled").and_then(Value::as_bool).unwrap_or(defaults.enabled),
+        enabled: settings
+            .get("enabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(defaults.enabled),
         summon: sanitized_accel(settings.get("summon"), &defaults.summon),
         approve: sanitized_accel(settings.get("approve"), &defaults.approve),
         deny: sanitized_accel(settings.get("deny"), &defaults.deny),
@@ -396,7 +403,10 @@ pub(crate) fn apply_config(app: &AppHandle, config: &GlobalShortcutConfig) -> Gl
             Ok(shortcut) => shortcut,
             Err(error) => {
                 // Unreachable for canonicalized configs; kept as a guard.
-                errors.set(action, Some(format!("invalid accelerator {accelerator}: {error}")));
+                errors.set(
+                    action,
+                    Some(format!("invalid accelerator {accelerator}: {error}")),
+                );
                 continue;
             }
         };
@@ -412,7 +422,10 @@ pub(crate) fn apply_config(app: &AppHandle, config: &GlobalShortcutConfig) -> Gl
 }
 
 #[cfg(not(desktop))]
-pub(crate) fn apply_config(_app: &AppHandle, _config: &GlobalShortcutConfig) -> GlobalShortcutErrors {
+pub(crate) fn apply_config(
+    _app: &AppHandle,
+    _config: &GlobalShortcutConfig,
+) -> GlobalShortcutErrors {
     GlobalShortcutErrors::default()
 }
 
@@ -458,9 +471,7 @@ fn pending_request_id(state: &crate::AppState) -> Option<String> {
     let requests = crate::lock_state(&state.requests);
     requests
         .iter()
-        .find(|request| {
-            request.status == crate::PermissionStatus::Pending && !request.archived
-        })
+        .find(|request| request.status == crate::PermissionStatus::Pending && !request.archived)
         .map(|request| request.id.clone())
 }
 
@@ -470,9 +481,18 @@ mod tests {
 
     #[test]
     fn normalizes_aliases_case_and_order() {
-        assert_eq!(normalize_accelerator(" cmd + shift + y ").unwrap(), "Cmd+Shift+Y");
-        assert_eq!(normalize_accelerator("SHIFT+ALT+SPACE").unwrap(), "Alt+Shift+Space");
-        assert_eq!(normalize_accelerator("option+command+digit7").unwrap(), "Cmd+Alt+7");
+        assert_eq!(
+            normalize_accelerator(" cmd + shift + y ").unwrap(),
+            "Cmd+Shift+Y"
+        );
+        assert_eq!(
+            normalize_accelerator("SHIFT+ALT+SPACE").unwrap(),
+            "Alt+Shift+Space"
+        );
+        assert_eq!(
+            normalize_accelerator("option+command+digit7").unwrap(),
+            "Cmd+Alt+7"
+        );
         assert_eq!(normalize_accelerator("ctrl+arrowup").unwrap(), "Ctrl+Up");
         assert_eq!(normalize_accelerator("Control+KeyN").unwrap(), "Ctrl+N");
         // Trailing modifier tokens are reordered into the canonical form.
@@ -513,7 +533,10 @@ mod tests {
             "Cmd+F25",
             "Cmd+F0",
         ] {
-            assert!(normalize_accelerator(input).is_err(), "expected reject: {input}");
+            assert!(
+                normalize_accelerator(input).is_err(),
+                "expected reject: {input}"
+            );
         }
     }
 
@@ -577,14 +600,20 @@ mod tests {
             std::process::id()
         ));
         let _ = std::fs::remove_file(&missing);
-        assert_eq!(load_config_from_path(&missing), GlobalShortcutConfig::default());
+        assert_eq!(
+            load_config_from_path(&missing),
+            GlobalShortcutConfig::default()
+        );
 
         let corrupt = std::env::temp_dir().join(format!(
             "atoll-shortcuts-corrupt-{}.json",
             std::process::id()
         ));
         std::fs::write(&corrupt, "not json").unwrap();
-        assert_eq!(load_config_from_path(&corrupt), GlobalShortcutConfig::default());
+        assert_eq!(
+            load_config_from_path(&corrupt),
+            GlobalShortcutConfig::default()
+        );
         let _ = std::fs::remove_file(&corrupt);
     }
 
@@ -614,12 +643,13 @@ mod tests {
 
     #[test]
     fn load_uses_defaults_when_key_missing() {
-        let path = std::env::temp_dir().join(format!(
-            "atoll-shortcuts-nokey-{}.json",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("atoll-shortcuts-nokey-{}.json", std::process::id()));
         std::fs::write(&path, serde_json::json!({ "other": 1 }).to_string()).unwrap();
-        assert_eq!(load_config_from_path(&path), GlobalShortcutConfig::default());
+        assert_eq!(
+            load_config_from_path(&path),
+            GlobalShortcutConfig::default()
+        );
         let _ = std::fs::remove_file(&path);
     }
 

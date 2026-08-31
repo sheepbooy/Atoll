@@ -12,7 +12,10 @@ pub(crate) fn command_output_with_timeout(
     use std::thread;
     use std::time::Instant;
 
-    let mut child = command.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
     let deadline = Instant::now() + timeout;
     loop {
         if child.try_wait()?.is_some() {
@@ -944,7 +947,10 @@ mod tests {
             std::process::Command::new("sleep").arg("5"),
             std::time::Duration::from_millis(50),
         );
-        assert_eq!(result.expect_err("timeout").kind(), std::io::ErrorKind::TimedOut);
+        assert_eq!(
+            result.expect_err("timeout").kind(),
+            std::io::ErrorKind::TimedOut
+        );
         assert!(started.elapsed() < std::time::Duration::from_secs(1));
     }
 

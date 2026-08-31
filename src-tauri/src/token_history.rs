@@ -308,11 +308,8 @@ pub(crate) fn sync_today_to_history(state: &AppState) -> Result<(), String> {
         .map_err(|error| error.to_string())?
         .clone();
     let agent_by_session = build_agent_by_session(state);
-    let mut record = aggregate_day_record(
-        &session_usage,
-        &session_usage_by_model,
-        &agent_by_session,
-    );
+    let mut record =
+        aggregate_day_record(&session_usage, &session_usage_by_model, &agent_by_session);
     let startup_floor = *state
         .startup_daily_floor
         .lock()
@@ -363,11 +360,7 @@ pub(crate) fn flush_day_to_history(state: &AppState, day_key: &str) -> Result<()
         return Ok(());
     }
     let agent_by_session = build_agent_by_session(state);
-    let record = aggregate_day_record(
-        &session_usage,
-        &session_usage_by_model,
-        &agent_by_session,
-    );
+    let record = aggregate_day_record(&session_usage, &session_usage_by_model, &agent_by_session);
     let mut file = load_history_file();
     if let Some(existing) = file.days.get(day_key) {
         let merged = merge_day_records(existing, &record);
@@ -499,9 +492,13 @@ mod tests {
             ("s2".into(), "codex".into()),
         ]);
 
-        let record = aggregate_day_record(&session_usage, &session_usage_by_model, &agent_by_session);
+        let record =
+            aggregate_day_record(&session_usage, &session_usage_by_model, &agent_by_session);
         assert_eq!(record.usage.input_tokens, 300);
-        assert_eq!(record.by_model.get("claude-sonnet").unwrap().input_tokens, 100);
+        assert_eq!(
+            record.by_model.get("claude-sonnet").unwrap().input_tokens,
+            100
+        );
         assert_eq!(record.by_model.get("gpt-4o").unwrap().input_tokens, 200);
     }
 

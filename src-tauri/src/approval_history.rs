@@ -26,7 +26,7 @@ use std::path::PathBuf;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
-use crate::{AppState, PermissionRequest, platform};
+use crate::{platform, AppState, PermissionRequest};
 
 pub const DEFAULT_MAX_ROWS: i64 = 5000;
 pub const RETENTION_DAYS: u64 = 90;
@@ -185,7 +185,11 @@ fn initialize_schema(conn: &Connection) -> Result<(), String> {
     )
     .map_err(|error| error.to_string())?;
     // Migration-if-exists: databases created by older builds may miss columns.
-    migrate_column(conn, "tool_input", "ALTER TABLE approval_history ADD COLUMN tool_input TEXT")?;
+    migrate_column(
+        conn,
+        "tool_input",
+        "ALTER TABLE approval_history ADD COLUMN tool_input TEXT",
+    )?;
     migrate_column(
         conn,
         "transcript_path",
@@ -350,7 +354,12 @@ fn build_filters(query: &ApprovalHistoryQuery) -> (String, Vec<rusqlite::types::
     let mut clauses: Vec<String> = Vec::new();
     let mut params: Vec<rusqlite::types::Value> = Vec::new();
 
-    if let Some(search) = query.search.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(search) = query
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         clauses.push(
             "(command LIKE ? ESCAPE '\\' OR detail LIKE ? ESCAPE '\\' OR cwd LIKE ? ESCAPE '\\')"
                 .to_string(),
@@ -566,7 +575,10 @@ mod tests {
         let guard = approval_history_env_lock();
         let path = temp_db_path(test_name);
         let _ = std::fs::remove_file(&path);
-        std::env::set_var("ATOLL_APPROVAL_HISTORY_PATH", path.to_string_lossy().as_ref());
+        std::env::set_var(
+            "ATOLL_APPROVAL_HISTORY_PATH",
+            path.to_string_lossy().as_ref(),
+        );
         (guard, path)
     }
 
@@ -646,9 +658,18 @@ mod tests {
     fn search_matches_command_detail_and_cwd_case_insensitively() {
         let (_guard, path) = with_temp_db("search");
         let conn = open_db().expect("open db");
-        insert(&conn, &entry("a", "Bash: cargo test", "/work/Atoll", "claude", 100));
-        insert(&conn, &entry("b", "Edit: main.rs", "/work/other", "codex", 200));
-        insert(&conn, &entry("c", "Bash: npm run build", "/work/atoll-site", "zcode", 300));
+        insert(
+            &conn,
+            &entry("a", "Bash: cargo test", "/work/Atoll", "claude", 100),
+        );
+        insert(
+            &conn,
+            &entry("b", "Edit: main.rs", "/work/other", "codex", 200),
+        );
+        insert(
+            &conn,
+            &entry("c", "Bash: npm run build", "/work/atoll-site", "zcode", 300),
+        );
 
         let query = |search: &str| ApprovalHistoryQuery {
             search: Some(search.into()),
@@ -740,7 +761,10 @@ mod tests {
         let (_guard, path) = with_temp_db("paging");
         let conn = open_db().expect("open db");
         for i in 0..7 {
-            insert(&conn, &entry(&format!("r{i}"), &format!("cmd {i}"), "/p", "claude", i));
+            insert(
+                &conn,
+                &entry(&format!("r{i}"), &format!("cmd {i}"), "/p", "claude", i),
+            );
         }
         let page = query_entries(
             &conn,
@@ -765,7 +789,10 @@ mod tests {
         let (_guard, path) = with_temp_db("default-page");
         let conn = open_db().expect("open db");
         for i in 0..(DEFAULT_PAGE_LIMIT + 5) {
-            insert(&conn, &entry(&format!("r{i}"), "cmd", "/p", "claude", i as u64));
+            insert(
+                &conn,
+                &entry(&format!("r{i}"), "cmd", "/p", "claude", i as u64),
+            );
         }
         let page = query_history(&ApprovalHistoryQuery::default()).expect("query");
         assert_eq!(page.total, (DEFAULT_PAGE_LIMIT + 5) as i64);
@@ -782,12 +809,17 @@ mod tests {
         let old = now - RETENTION_DAYS * 24 * 60 * 60 - 10;
         insert(&conn, &entry("old", "cmd", "/p", "claude", old));
         for i in 0..(DEFAULT_MAX_ROWS + 10) {
-            insert(&conn, &entry(&format!("r{i}"), "cmd", "/p", "claude", now + i as u64));
+            insert(
+                &conn,
+                &entry(&format!("r{i}"), "cmd", "/p", "claude", now + i as u64),
+            );
         }
         prune_db(&conn).expect("prune");
 
         let total: i64 = conn
-            .query_row("SELECT COUNT(*) FROM approval_history", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM approval_history", [], |row| {
+                row.get(0)
+            })
             .expect("count");
         assert_eq!(total, DEFAULT_MAX_ROWS);
         let oldest_gone: i64 = conn
@@ -808,7 +840,10 @@ mod tests {
         let export_dir =
             std::env::temp_dir().join(format!("atoll-approval-export-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&export_dir);
-        std::env::set_var("ATOLL_APPROVAL_EXPORT_DIR", export_dir.to_string_lossy().as_ref());
+        std::env::set_var(
+            "ATOLL_APPROVAL_EXPORT_DIR",
+            export_dir.to_string_lossy().as_ref(),
+        );
 
         let conn = open_db().expect("open db");
         let mut tricky = entry("e1", "Bash: echo \"a,b\"\nline2", "/my proj", "claude", 500);
@@ -914,8 +949,11 @@ mod tests {
 
         let mut denied_request = request.clone();
         denied_request.status = crate::PermissionStatus::Denied;
-        let denied =
-            entry_from_request_with_host(&denied_request, HistoryStatus::Denied, "claudeCli".into());
+        let denied = entry_from_request_with_host(
+            &denied_request,
+            HistoryStatus::Denied,
+            "claudeCli".into(),
+        );
         assert_eq!(denied.status, HistoryStatus::Denied);
         assert!(denied.decided_at.is_some());
         assert_eq!(denied.host, "claudeCli");

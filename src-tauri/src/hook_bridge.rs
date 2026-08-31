@@ -16,12 +16,11 @@ use crate::{
     get_stored_session_host, ingest_cursor_token_usage_from_payload, is_codex_internal_session,
     iso_timestamp_now, payload_subagent_id, payload_subagent_parent_session_id, platform,
     purge_tracked_session, refresh_session_token_usage, register_known_session,
-    register_subagent_start, remember_cursor_lifecycle_token_session,
-    resolve_codex_session_cwd, resolve_cursor_session_for_payload,
-    roll_over_token_usage_if_needed, schedule_observer_snapshot_emit,
-    send_approval_notification, show_island_quietly, show_main_window_for_approval,
-    touch_hook_activity, touch_session_activity, AgentKind, AppState, Decision,
-    DecisionWithNote, PermissionRequest, PermissionStatus,
+    register_subagent_start, remember_cursor_lifecycle_token_session, resolve_codex_session_cwd,
+    resolve_cursor_session_for_payload, roll_over_token_usage_if_needed,
+    schedule_observer_snapshot_emit, send_approval_notification, show_island_quietly,
+    show_main_window_for_approval, touch_hook_activity, touch_session_activity, AgentKind,
+    AppState, Decision, DecisionWithNote, PermissionRequest, PermissionStatus,
 };
 
 pub(crate) const DEFAULT_HOOK_PORT: u16 = 47_777;
@@ -51,8 +50,7 @@ const OBSERVER_QUEUE_CAPACITY: usize = 256;
 const MAX_RESOLVED_REQUESTS: usize = 4096;
 const MAX_RESOLVED_REQUESTS_PER_SESSION: usize = 256;
 
-static ACTIVE_CONNECTIONS: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
+static ACTIVE_CONNECTIONS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 static OBSERVER_SENDER: OnceLock<mpsc::SyncSender<ObserverJob>> = OnceLock::new();
 
 #[derive(Clone, Copy)]
@@ -120,7 +118,11 @@ fn enqueue_observer(job: ObserverJob) -> Result<(), String> {
         .map_err(|_| "Atoll observer worker stopped".to_string())
 }
 
-fn record_and_prune_request(state: &AppState, requests: &mut Vec<PermissionRequest>, session: &str) {
+fn record_and_prune_request(
+    state: &AppState,
+    requests: &mut Vec<PermissionRequest>,
+    session: &str,
+) {
     if let Ok(mut totals) = state.session_request_totals.lock() {
         let total = totals.entry(session.to_string()).or_default();
         *total = total.saturating_add(1);
@@ -384,8 +386,7 @@ pub(crate) fn start_server(app: AppHandle) {
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
-                    if ACTIVE_CONNECTIONS.fetch_add(1, Ordering::AcqRel)
-                        >= MAX_INFLIGHT_CONNECTIONS
+                    if ACTIVE_CONNECTIONS.fetch_add(1, Ordering::AcqRel) >= MAX_INFLIGHT_CONNECTIONS
                     {
                         ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::AcqRel);
                         let _ = stream.shutdown(std::net::Shutdown::Both);
@@ -1448,7 +1449,11 @@ fn process_cursor_observer_event(
                 request.detail = format!("{} Auto-approved.", request.detail);
                 let session_id = request.session.clone();
                 touch_session_activity(&state, &session_id);
-                approval_history::record_outcome(&state, &request, approval_history::HistoryStatus::Approved);
+                approval_history::record_outcome(
+                    &state,
+                    &request,
+                    approval_history::HistoryStatus::Approved,
+                );
                 if let Ok(mut requests) = state.requests.lock() {
                     requests.insert(0, request);
                     record_and_prune_request(&state, &mut requests, &session_id);
@@ -1784,7 +1789,11 @@ fn mark_request_completed_externally(
         )
     };
     if let Some(request) = &resolved_request {
-        approval_history::record_outcome(state, request, approval_history::HistoryStatus::AnsweredElsewhere);
+        approval_history::record_outcome(
+            state,
+            request,
+            approval_history::HistoryStatus::AnsweredElsewhere,
+        );
     }
     roll_over_token_usage_if_needed(state);
 
@@ -2339,11 +2348,15 @@ fn hook_peer_session_host(stream: &TcpStream) -> platform::SessionHost {
     eprintln!("[Atoll:host-detect] peer port={port}, own_pid={own_pid}");
 
     let output = match platform::command_output_with_timeout(
-        std::process::Command::new("lsof")
-            .args(["-i", &format!("TCP@127.0.0.1:{port}"), "-n", "-P", "-t"]),
+        std::process::Command::new("lsof").args([
+            "-i",
+            &format!("TCP@127.0.0.1:{port}"),
+            "-n",
+            "-P",
+            "-t",
+        ]),
         Duration::from_secs(2),
-    )
-    {
+    ) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("[Atoll:host-detect] lsof exec failed: {e}");
@@ -2403,11 +2416,15 @@ fn hook_peer_codex_session_host(stream: &TcpStream) -> platform::SessionHost {
     eprintln!("[Atoll:host-detect] peer port={port}, own_pid={own_pid}");
 
     let output = match platform::command_output_with_timeout(
-        std::process::Command::new("lsof")
-            .args(["-i", &format!("TCP@127.0.0.1:{port}"), "-n", "-P", "-t"]),
+        std::process::Command::new("lsof").args([
+            "-i",
+            &format!("TCP@127.0.0.1:{port}"),
+            "-n",
+            "-P",
+            "-t",
+        ]),
         Duration::from_secs(2),
-    )
-    {
+    ) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("[Atoll:host-detect] lsof exec failed: {e}");
@@ -2478,11 +2495,15 @@ fn hook_peer_cursor_session_host(stream: &TcpStream) -> platform::SessionHost {
     let own_pid = std::process::id();
 
     let output = match platform::command_output_with_timeout(
-        std::process::Command::new("lsof")
-            .args(["-i", &format!("TCP@127.0.0.1:{port}"), "-n", "-P", "-t"]),
+        std::process::Command::new("lsof").args([
+            "-i",
+            &format!("TCP@127.0.0.1:{port}"),
+            "-n",
+            "-P",
+            "-t",
+        ]),
         Duration::from_secs(2),
-    )
-    {
+    ) {
         Ok(o) => o,
         Err(_) => return platform::SessionHost::Unknown,
     };
@@ -3045,14 +3066,12 @@ mod payload_tests {
             "hook_event_name": "SessionStart",
             "source": "startup"
         });
-        assert!(
-            permission_request_from_gemini_payload(
-                "req-1".into(),
-                payload,
-                "2026-08-30T00:00:00Z".into(),
-            )
-            .is_none()
-        );
+        assert!(permission_request_from_gemini_payload(
+            "req-1".into(),
+            payload,
+            "2026-08-30T00:00:00Z".into(),
+        )
+        .is_none());
     }
 
     #[test]

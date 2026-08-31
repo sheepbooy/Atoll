@@ -62,17 +62,25 @@ fn adapter_paths() -> Option<(String, String)> {
             let script = candidate.join("mediaremote-adapter.pl");
             let framework = candidate.join("MediaRemoteAdapter.framework");
             if script.exists() && framework.exists() {
-                return Some((script.to_string_lossy().into_owned(), framework.to_string_lossy().into_owned()));
+                return Some((
+                    script.to_string_lossy().into_owned(),
+                    framework.to_string_lossy().into_owned(),
+                ));
             }
         }
     }
     // Dev mode: resolve from the manifest dir (CARGO_MANIFEST_DIR env set by cargo).
     let manifest = option_env!("CARGO_MANIFEST_DIR")?;
-    let dev = std::path::Path::new(manifest).join("resources").join("media");
+    let dev = std::path::Path::new(manifest)
+        .join("resources")
+        .join("media");
     let script = dev.join("mediaremote-adapter.pl");
     let framework = dev.join("MediaRemoteAdapter.framework");
     if script.exists() && framework.exists() {
-        Some((script.to_string_lossy().into_owned(), framework.to_string_lossy().into_owned()))
+        Some((
+            script.to_string_lossy().into_owned(),
+            framework.to_string_lossy().into_owned(),
+        ))
     } else {
         None
     }
@@ -188,10 +196,22 @@ mod tests {
 
     #[test]
     fn app_name_maps_known_bundles() {
-        assert_eq!(app_name_from_bundle(Some("com.apple.Music")), Some("Music".into()));
-        assert_eq!(app_name_from_bundle(Some("com.spotify.client")), Some("Spotify".into()));
-        assert_eq!(app_name_from_bundle(Some("com.tencent.QQMusicMac")), Some("QQ Music".into()));
-        assert_eq!(app_name_from_bundle(Some("com.unknown.app")), Some("com.unknown.app".into()));
+        assert_eq!(
+            app_name_from_bundle(Some("com.apple.Music")),
+            Some("Music".into())
+        );
+        assert_eq!(
+            app_name_from_bundle(Some("com.spotify.client")),
+            Some("Spotify".into())
+        );
+        assert_eq!(
+            app_name_from_bundle(Some("com.tencent.QQMusicMac")),
+            Some("QQ Music".into())
+        );
+        assert_eq!(
+            app_name_from_bundle(Some("com.unknown.app")),
+            Some("com.unknown.app".into())
+        );
         assert_eq!(app_name_from_bundle(None), None);
     }
 }

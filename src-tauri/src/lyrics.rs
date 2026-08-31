@@ -332,7 +332,12 @@ fn fetch_qq(
     let query = format!("{} {}", artist, title);
     let resp = client
         .get("https://c.y.qq.com/soso/fcgi-bin/client_search_cp")
-        .query(&[("p", "1"), ("n", "5"), ("w", query.as_str()), ("format", "json")])
+        .query(&[
+            ("p", "1"),
+            ("n", "5"),
+            ("w", query.as_str()),
+            ("format", "json"),
+        ])
         .header("Referer", "https://y.qq.com")
         .send()
         .ok()?;
@@ -381,9 +386,15 @@ fn fetch_qq(
 fn filter_metadata(mut lines: Vec<LyricLine>) -> Vec<LyricLine> {
     lines.retain(|l| {
         let t = l.text.as_str();
-        !t.contains("作词") && !t.contains("作曲") && !t.contains("编曲")
-            && !t.contains("制作人") && !t.contains("混音") && !t.contains("录音")
-            && !t.contains("和声") && !t.contains("母带") && !t.contains("词：")
+        !t.contains("作词")
+            && !t.contains("作曲")
+            && !t.contains("编曲")
+            && !t.contains("制作人")
+            && !t.contains("混音")
+            && !t.contains("录音")
+            && !t.contains("和声")
+            && !t.contains("母带")
+            && !t.contains("词：")
             && !t.contains("曲：")
     });
     lines
@@ -473,7 +484,10 @@ pub fn parse_lrc(raw: &str) -> Vec<LyricLine> {
         }
         let text = rest.trim().to_string();
         for ms in times {
-            out.push(LyricLine { time_ms: ms, text: text.clone() });
+            out.push(LyricLine {
+                time_ms: ms,
+                text: text.clone(),
+            });
         }
     }
     out.sort_by_key(|l| l.time_ms);
@@ -582,26 +596,41 @@ mod tests {
 
     #[test]
     fn normalize_unifies_width_case_and_space() {
-        assert_eq!(normalize_for_match("肩上蝶（我愿意） FEAT"), "肩上蝶(我愿意)feat");
+        assert_eq!(
+            normalize_for_match("肩上蝶（我愿意） FEAT"),
+            "肩上蝶(我愿意)feat"
+        );
         assert_eq!(normalize_for_match("A　B"), "ab");
     }
 
     #[test]
     fn title_match_tiers_identical_annotation_and_reject() {
         // Same title after normalization (full/half-width punctuation).
-        assert_eq!(title_match_tier("肩上蝶（我愿意化蝶在你肩上落）", "肩上蝶 (我愿意化蝶在你肩上落)"), Some(0));
+        assert_eq!(
+            title_match_tier(
+                "肩上蝶（我愿意化蝶在你肩上落）",
+                "肩上蝶 (我愿意化蝶在你肩上落)"
+            ),
+            Some(0)
+        );
         // Clean title vs annotated variant of the same song — tier 1; the
         // duration gate decides whether the version is acceptable.
         assert_eq!(title_match_tier("肩上蝶", "肩上蝶 (Live版)"), Some(1));
         // Different annotations / different songs are different titles.
-        assert_eq!(title_match_tier("肩上蝶（我愿意化蝶在你肩上落）", "肩上蝶 (Live版)"), None);
+        assert_eq!(
+            title_match_tier("肩上蝶（我愿意化蝶在你肩上落）", "肩上蝶 (Live版)"),
+            None
+        );
         assert_eq!(title_match_tier("是龙", "着魔"), None);
         assert_eq!(title_match_tier("肩上蝶", ""), None);
     }
 
     #[test]
     fn artist_matches_billing_variations() {
-        assert!(artist_matches("金志文", &["金志文".into(), "汤晓菲".into()]));
+        assert!(artist_matches(
+            "金志文",
+            &["金志文".into(), "汤晓菲".into()]
+        ));
         assert!(artist_matches("金志文/汤晓菲", &["金志文".into()]));
         assert!(!artist_matches("张杰", &["石龙".into()]));
         assert!(!artist_matches("张杰", &[]));
@@ -643,7 +672,10 @@ mod tests {
             artists: vec!["张杰".into()],
             duration_secs: Some(230.0),
         };
-        assert!(exact.score("是龙", "张杰", Some(233.0)).unwrap() < close.score("是龙", "张杰", Some(233.0)).unwrap());
+        assert!(
+            exact.score("是龙", "张杰", Some(233.0)).unwrap()
+                < close.score("是龙", "张杰", Some(233.0)).unwrap()
+        );
 
         // Unknown durations are acceptable (tier + zero diff).
         let unknown = LyricsCandidate {
@@ -668,7 +700,10 @@ mod tests {
                 duration_secs: Some(226.0),
             },
         ];
-        assert_eq!(pick_best_index(&candidates, "看我72变", "蔡依林", Some(226.0)), Some(1));
+        assert_eq!(
+            pick_best_index(&candidates, "看我72变", "蔡依林", Some(226.0)),
+            Some(1)
+        );
         // No credible candidate at all.
         let bad = vec![LyricsCandidate {
             title: "着魔".to_string(),
@@ -694,7 +729,10 @@ mod tests {
                 duration_secs: Some(253.0),
             },
         ];
-        assert_eq!(pick_best_index(&candidates, "肩上蝶", "金志文", Some(256.0)), Some(1));
+        assert_eq!(
+            pick_best_index(&candidates, "肩上蝶", "金志文", Some(256.0)),
+            Some(1)
+        );
     }
 
     /// Live integration test for NetEase (primary source) — requires network.
@@ -708,7 +746,9 @@ mod tests {
         let l = lines.unwrap();
         assert!(!l.is_empty());
         // Verify it's the RIGHT lyrics (not a wrong cover).
-        assert!(l.iter().any(|x| x.text.contains("浮夸") || x.text.contains("遁入")));
+        assert!(l
+            .iter()
+            .any(|x| x.text.contains("浮夸") || x.text.contains("遁入")));
         println!("告别前要跳舞: got {} lines", l.len());
     }
 
@@ -722,7 +762,9 @@ mod tests {
         assert!(lines.is_some(), "expected synced lyrics");
         let l = lines.unwrap();
         assert!(!l.is_empty());
-        assert!(l.iter().all(|x| !x.text.contains("作词") && !x.text.contains("作曲")));
+        assert!(l
+            .iter()
+            .all(|x| !x.text.contains("作词") && !x.text.contains("作曲")));
         println!("闪电: got {} lines", l.len());
     }
 
@@ -753,7 +795,9 @@ mod tests {
         let lines = fetch_lyrics("张杰", "是龙", None, Some(233.0));
         assert!(lines.is_some(), "expected synced lyrics");
         let l = lines.unwrap();
-        assert!(l.iter().any(|x| x.text.contains("越战越勇") || x.text.contains("图腾")));
+        assert!(l
+            .iter()
+            .any(|x| x.text.contains("越战越勇") || x.text.contains("图腾")));
         assert!(l.iter().all(|x| !x.text.contains("心魔乱舞")));
         println!("是龙: got {} lines", l.len());
     }
@@ -763,7 +807,12 @@ mod tests {
     fn fetch_live_matching_rejects_wrong_version() {
         // The studio original (256s) is absent from NetEase's top 5 — the
         // old code accepted the 282s Live duet version and its lyrics.
-        let lines = fetch_lyrics("金志文", "肩上蝶（我愿意化蝶在你肩上落）", None, Some(256.0));
+        let lines = fetch_lyrics(
+            "金志文",
+            "肩上蝶（我愿意化蝶在你肩上落）",
+            None,
+            Some(256.0),
+        );
         assert!(lines.is_some(), "expected synced lyrics");
         let l = lines.unwrap();
         assert!(l.iter().any(|x| x.text.contains("一首歌唱不完")));

@@ -80,8 +80,10 @@ pub fn ticks_to_secs(ticks: i64) -> f64 {
 fn now_windows_epoch_ticks() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(elapsed) => (elapsed.as_secs() as i64 + UNIX_TO_WINDOWS_EPOCH_SECS) * 10_000_000
-            + (elapsed.subsec_nanos() as i64 / 100),
+        Ok(elapsed) => {
+            (elapsed.as_secs() as i64 + UNIX_TO_WINDOWS_EPOCH_SECS) * 10_000_000
+                + (elapsed.subsec_nanos() as i64 / 100)
+        }
         Err(_) => 0,
     }
 }
@@ -333,7 +335,12 @@ mod winrt {
                     .map(|t| t.UniversalTime)
                     .unwrap_or(0);
                 let position = raw_position.map(|pos| {
-                    extrapolated_position_secs(pos, playing, last_updated, now_windows_epoch_ticks())
+                    extrapolated_position_secs(
+                        pos,
+                        playing,
+                        last_updated,
+                        now_windows_epoch_ticks(),
+                    )
                 });
                 let duration = timeline
                     .EndTime()
@@ -347,7 +354,10 @@ mod winrt {
         let title_key = title.clone().unwrap_or_default();
         let artist_key = artist.clone().unwrap_or_default();
         let album_key = album.clone().unwrap_or_default();
-        let artwork = read_artwork_cached(&properties, &format!("{title_key}|{artist_key}|{album_key}"));
+        let artwork = read_artwork_cached(
+            &properties,
+            &format!("{title_key}|{artist_key}|{album_key}"),
+        );
 
         let app = session
             .SourceAppUserModelId()
@@ -453,10 +463,7 @@ mod tests {
             10.0
         );
         // Garbage negative position clamps to 0.
-        assert_eq!(
-            extrapolated_position_secs(-3.0, false, 0, 0),
-            0.0
-        );
+        assert_eq!(extrapolated_position_secs(-3.0, false, 0, 0), 0.0);
     }
 
     #[test]
@@ -487,12 +494,17 @@ mod tests {
         );
         assert_eq!(app_name_from_aumid("Tencent.QQMusicPC"), "QQ Music");
         // Unknown: keep the id, minus any "!" resource suffix.
-        assert_eq!(app_name_from_aumid("SomePlayer_8wekyb3d8bbwe!App"), "SomePlayer_8wekyb3d8bbwe");
+        assert_eq!(
+            app_name_from_aumid("SomePlayer_8wekyb3d8bbwe!App"),
+            "SomePlayer_8wekyb3d8bbwe"
+        );
     }
 
     #[test]
     fn png_detection_and_artwork_passthrough() {
-        assert!(is_png(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00]));
+        assert!(is_png(&[
+            0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00
+        ]));
         assert!(!is_png(b"\xFF\xD8\xFF\xe0 jpeg"));
         assert_eq!(artwork_base64(Vec::new()), None);
     }
