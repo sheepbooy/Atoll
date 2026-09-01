@@ -181,9 +181,12 @@ fn atoll_events_json(hook_command: &str, events: &[HookEventSpec]) -> Value {
         if let Some(status_message) = spec.status_message {
             hook["statusMessage"] = json!(status_message);
         }
+        // Each event value must be an array of matcher groups. upsert_*
+        // skips non-arrays, which is what made install look like a
+        // permissions failure after the table-driven refactor.
         let entry = match spec.matcher {
-            Some(matcher) => json!({ "matcher": matcher, "hooks": [hook] }),
-            None => json!({ "hooks": [hook] }),
+            Some(matcher) => json!([{ "matcher": matcher, "hooks": [hook] }]),
+            None => json!([{ "hooks": [hook] }]),
         };
         event_map.insert(spec.event.to_string(), entry);
     }
@@ -1070,4 +1073,81 @@ pub(crate) fn has_atoll_zcode_hooks(config: &Value) -> bool {
 
 pub(crate) fn matcher_group_has_atoll_zcode(matcher: &Value) -> bool {
     matcher_group_has_marker(matcher, "atoll-zcode-hook")
+}
+
+#[cfg(test)]
+mod atoll_events_json_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn event_values_are_matcher_group_arrays() {
+        let events = atoll_events_json(
+            "/opt/homebrew/bin/node /tmp/atoll-claude-hook.mjs",
+            CLAUDE_HOOK_EVENTS,
+        );
+        for spec in CLAUDE_HOOK_EVENTS {
+            let value = events
+                .get(spec.event)
+                .unwrap_or_else(|| panic!("missing {}", spec.event));
+            assert!(
+                value.is_array(),
+                "{} must be an array of matcher groups, got {value}",
+                spec.event
+            );
+        }
+        assert!(has_atoll_claude_hooks(&json!({ "hooks": events })));
+    }
+
+    #[test]
+    fn upsert_adds_atoll_alongside_existing_claude_hooks() {
+        let mut hooks = json!({
+            "PermissionRequest": [{
+                "matcher": "*",
+                "hooks": [{ "type": "command", "command": "/other/bridge --source claude" }]
+            }],
+            "PostToolUse": [{
+                "matcher": "*",
+                "hooks": [{ "type": "command", "command": "/other/bridge --source claude" }]
+            }],
+            "Stop": [{
+                "hooks": [{ "type": "command", "command": "/other/bridge --source claude" }]
+            }]
+        });
+        let atoll = atoll_events_json(
+            "/opt/homebrew/bin/node /tmp/atoll-claude-hook.mjs",
+            CLAUDE_HOOK_EVENTS,
+        );
+        upsert_claude_hook_events(&mut hooks, &atoll);
+        assert!(has_atoll_claude_hooks(&json!({ "hooks": hooks })));
+        let permission = hooks["PermissionRequest"].as_array().unwrap();
+        assert_eq!(permission.len(), 2);
+        assert!(
+            permission.iter().any(|group| group
+                .get("hooks")
+                .and_then(Value::as_array)
+                .map(|arr| arr.iter().any(|hook| hook
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .map(|cmd| cmd.contains("bridge --source claude"))
+                    .unwrap_or(false)))
+                .unwrap_or(false)),
+            "existing competitor hooks must be preserved"
+        );
+    }
+
+    #[test]
+    fn zcode_and_gemini_events_are_also_arrays() {
+        let zcode = atoll_events_json(
+            "/opt/homebrew/bin/node /tmp/atoll-zcode-hook.mjs",
+            ZCODE_HOOK_EVENTS,
+        );
+        assert!(zcode["PermissionRequest"].is_array());
+        let gemini = atoll_events_json(
+            "/opt/homebrew/bin/node /tmp/atoll-gemini-hook.mjs",
+            GEMINI_HOOK_EVENTS,
+        );
+        assert!(gemini["BeforeTool"].is_array());
+        assert!(gemini["SessionStart"].is_array());
+    }
 }
