@@ -39,18 +39,28 @@ export const ACTIVITY_LABELS: Record<AtollActivity, string> = {
   slacking: "slacking",
   napping: "napping",
   dead: "dead",
+  fishing: "fishing",
+  stargazing: "stargazing",
+  garden: "garden",
+  music: "music",
+  gaming: "gaming",
 };
 
 export const ACTIVITY_HINTS: Record<AtollActivity, string> = {
-  idle: "无腿 · 轻浮",
-  coding: "小桌键盘 · 隐形手打字",
-  reading: "胸前捧书 · 隐形手翻页",
-  thinking: "问号气泡 · 隐形手托腮",
-  coffee: "举杯靠近嘴边 · 隐形手",
-  idea: "头顶灯泡 · 隐形手举顶",
-  slacking: "墨镜 + 举手机 · 隐形手",
-  napping: "睡帽 zzz · 无腿",
-  dead: "Hook 断开 · 灰化瘫倒",
+  idle: "无腿悬浮 · 轻浮 + 微动作",
+  coding: "小桌键盘 · 打字-停顿思考-高亮多段循环",
+  reading: "胸前捧书 · 视线扫描 + 翻页",
+  thinking: "问号气泡 · 苦想-灵光(!)-得意多段循环",
+  coffee: "举杯 · 端起-啜饮-满足吐气",
+  idea: "头顶灯泡 · 兴奋蹦跳 + glow 脉冲",
+  slacking: "墨镜 + 举手机 · 刷手机-笑出声-换姿势",
+  napping: "睡帽 zzz · 浅睡-翻身-深睡多段循环",
+  dead: "Hook 断开 · 灰化 X 眼瘫倒",
+  fishing: "岛屿主题 · 静候-咬钩(!)-起竿小鱼跃出",
+  stargazing: "岛屿主题 · 仰望-流星划过-许愿",
+  garden: "岛屿主题 · 举壶浇水-嫩芽弹出-开心",
+  music: "数字生活 · 耳机随拍摇摆 + 副歌大音符",
+  gaming: "数字生活 · 屏内空战-激战-胜利 WIN-瘫坐",
 };
 
 /** 四种应用态 → Logo pose（由 App 条件直接驱动，非随机）。 */
@@ -70,6 +80,12 @@ export const IDLE_EASTER_EGG_ACTIVITIES: AtollActivity[] = [
   "coffee",
   "idea",
   "slacking",
+  "napping",
+  "fishing",
+  "stargazing",
+  "garden",
+  "music",
+  "gaming",
 ];
 
 export function appStateToActivity(state: AppLogoState): AtollActivity {
@@ -84,8 +100,6 @@ export function activityToAppState(activity: AtollActivity): AppLogoState | null
       return "working";
     case "thinking":
       return "pending";
-    case "napping":
-      return "offline";
     case "dead":
       return "offline";
     default:

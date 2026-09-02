@@ -1626,3 +1626,19 @@ kbd {
   width: 48px;
   height: 48px;
 }
+
+/* 空闲彩蛋活动展示条（与 state-grid 同款卡片，紧凑排布） */
+.egg-grid {
+  grid-template-columns: repeat(6, 1fr);
+  margin-top: -28px;
+}
+
+.egg-grid .state-item {
+  padding: 14px 10px 12px;
+}
+
+@media (max-width: 1080px) {
+  .egg-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

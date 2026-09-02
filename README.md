@@ -180,6 +180,14 @@ Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事�
 | 工作中 | 有活跃 Agent 会话 |
 | 离线 | Hook 未就绪或 bridge 不可达 |
 
+空闲时还会随机播放彩蛋活动（钓鱼 / 观星 / 浇花 / 听歌 / 掌机 / 咖啡 / 读书 / 灯泡 / 摸鱼 / 睡觉），全部为多段式循环编排；状态切换时有 cheer / collapse / revive 一次性过场：
+
+<p align="center">
+  <img src="docs/assets/atoll-activities.png" alt="Atoll Logo 全部活动姿态" width="620" />
+</p>
+
+动画面板可经 `?export=brand`（实时播放，可调速）与 `?export=brand&static=1`（定格截图）查看。
+
 ### Agent 形象
 
 每个 Agent 有独立形象：Claude 是像素风 Clawd，Codex / Cursor 使用官方图标，ZCode 是天蓝渐变、白色斜体 Z 的官方方块形象，Gemini 是官方四角星 spark 渐变形象：

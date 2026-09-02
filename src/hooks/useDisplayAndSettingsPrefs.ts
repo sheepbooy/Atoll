@@ -44,8 +44,8 @@ export function useDisplayAndSettingsPrefs() {
   const [retentionMinutes, setRetentionMinutes] = useState<number>(() => readRetentionMinutes());
   const [subagentRetentionMinutes, setSubagentRetentionMinutes] = useState<number>(() => readSubagentRetentionMinutes());
   const [maxSubagentDisplay, setMaxSubagentDisplay] = useState<number>(() => readMaxSubagentDisplay());
-  const [idleIntervalSec, setIdleIntervalSec] = useState<number>(() => readIdleInterval());
-  const [idleDurationSec, setIdleDurationSec] = useState<number>(() => readIdleDuration());
+  const [idleIntervalMin, setIdleIntervalMin] = useState<number>(() => readIdleInterval());
+  const [idleDurationMin, setIdleDurationMin] = useState<number>(() => readIdleDuration());
   const [foldedCounterDisplay, setFoldedCounterDisplay] = useState<UsageDisplayMode>(() =>
     readDisplayMode(FOLDED_COUNTER_DISPLAY_KEY),
   );
@@ -123,12 +123,12 @@ export function useDisplayAndSettingsPrefs() {
   }, [maxSubagentDisplay]);
 
   useEffect(() => {
-    try { window.localStorage.setItem(IDLE_INTERVAL_SETTING_KEY, String(idleIntervalSec)); } catch {}
-  }, [idleIntervalSec]);
+    try { window.localStorage.setItem(IDLE_INTERVAL_SETTING_KEY, String(idleIntervalMin)); } catch {}
+  }, [idleIntervalMin]);
 
   useEffect(() => {
-    try { window.localStorage.setItem(IDLE_DURATION_SETTING_KEY, String(idleDurationSec)); } catch {}
-  }, [idleDurationSec]);
+    try { window.localStorage.setItem(IDLE_DURATION_SETTING_KEY, String(idleDurationMin)); } catch {}
+  }, [idleDurationMin]);
 
   useEffect(() => {
     isAutostartEnabled()
@@ -171,10 +171,10 @@ export function useDisplayAndSettingsPrefs() {
     setSubagentRetentionMinutes,
     maxSubagentDisplay,
     setMaxSubagentDisplay,
-    idleIntervalSec,
-    setIdleIntervalSec,
-    idleDurationSec,
-    setIdleDurationSec,
+    idleIntervalMin,
+    setIdleIntervalMin,
+    idleDurationMin,
+    setIdleDurationMin,
     foldedCounterDisplay,
     setFoldedCounterDisplay,
     compactIndicator,

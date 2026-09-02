@@ -189,6 +189,7 @@ import {
   deriveAppLogoState,
   deriveAtollActivity,
 } from "./logoStates";
+import { useAtollReaction } from "./useAtollReaction";
 import {
   computeCollapsedWindowWidth,
   computeCompactHeaderLayout,
@@ -420,10 +421,10 @@ export function App() {
     setSubagentRetentionMinutes,
     maxSubagentDisplay,
     setMaxSubagentDisplay,
-    idleIntervalSec,
-    setIdleIntervalSec,
-    idleDurationSec,
-    setIdleDurationSec,
+    idleIntervalMin,
+    setIdleIntervalMin,
+    idleDurationMin,
+    setIdleDurationMin,
     foldedCounterDisplay,
     setFoldedCounterDisplay,
     compactIndicator,
@@ -645,6 +646,8 @@ export function App() {
       }),
     [snapshot.online, snapshot.pendingCount, sessions.length],
   );
+  const { reaction: atollReaction, reactionKey: atollReactionKey } =
+    useAtollReaction(appLogoState);
   const headerLogo = useMemo(
     () =>
       deriveHeaderLogoDisplay(hookHealthAnalysis, atollActivity, {
@@ -1793,10 +1796,10 @@ export function App() {
       if (panelView.page === "mascot") {
         return (
           <MascotSettingsView
-            idleIntervalSec={idleIntervalSec}
-            onChangeIdleInterval={(v) => setIdleIntervalSec(clampIdleInterval(v))}
-            idleDurationSec={idleDurationSec}
-            onChangeIdleDuration={(v) => setIdleDurationSec(clampIdleDuration(v))}
+            idleIntervalMin={idleIntervalMin}
+            onChangeIdleInterval={(v) => setIdleIntervalMin(clampIdleInterval(v))}
+            idleDurationMin={idleDurationMin}
+            onChangeIdleDuration={(v) => setIdleDurationMin(clampIdleDuration(v))}
           />
         );
       }
@@ -2037,9 +2040,11 @@ export function App() {
                   <HeaderLogo
                     display={collapsedHeaderLogo}
                     size={menuBarLogoSize}
-                    idleIntervalSec={idleIntervalSec * 60}
-                    idleDurationSec={idleDurationSec * 60}
+                    idleIntervalSec={idleIntervalMin * 60}
+                    idleDurationSec={idleDurationMin * 60}
                     motionPaused={isPresentationTransition}
+                    reaction={atollReaction}
+                    reactionKey={atollReactionKey}
                   />
                 </span>
               </span>

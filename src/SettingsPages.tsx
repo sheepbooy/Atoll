@@ -248,14 +248,14 @@ export function SessionSettingsView({
 }
 
 export function MascotSettingsView({
-  idleIntervalSec,
+  idleIntervalMin,
   onChangeIdleInterval,
-  idleDurationSec,
+  idleDurationMin,
   onChangeIdleDuration,
 }: {
-  idleIntervalSec: number;
+  idleIntervalMin: number;
   onChangeIdleInterval: (value: number) => void;
-  idleDurationSec: number;
+  idleDurationMin: number;
   onChangeIdleDuration: (value: number) => void;
 }) {
   const { t } = useTranslation("settings");
@@ -267,7 +267,7 @@ export function MascotSettingsView({
           <span className="settings-section-label">{t("section.mascot")}</span>
           <SettingsSlider
             label={t("mascot.activityIntervalLabel")}
-            value={idleIntervalSec}
+            value={idleIntervalMin}
             min={MIN_IDLE_INTERVAL_MIN}
             max={MAX_IDLE_INTERVAL_MIN}
             unit={t("display.unitMinutes")}
@@ -276,7 +276,7 @@ export function MascotSettingsView({
           />
           <SettingsSlider
             label={t("mascot.activityDurationLabel")}
-            value={idleDurationSec}
+            value={idleDurationMin}
             min={MIN_IDLE_DURATION_MIN}
             max={MAX_IDLE_DURATION_MIN}
             unit={t("display.unitMinutes")}

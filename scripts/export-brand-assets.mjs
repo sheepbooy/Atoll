@@ -14,10 +14,20 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
 const ASSETS = join(ROOT, "docs/assets");
 const PORT = 1421;
-const URL = `http://127.0.0.1:${PORT}/?export=brand`;
+// static=1：吉祥物姿态定格，保证截图帧确定
+const URL = `http://127.0.0.1:${PORT}/?export=brand&static=1`;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** 优先用 Playwright 自带浏览器；未安装时回退到系统 Chrome。 */
+async function launchChromium() {
+  try {
+    return await chromium.launch({ headless: true });
+  } catch {
+    return await chromium.launch({ headless: true, channel: "chrome" });
+  }
 }
 
 async function waitForServer(timeoutMs = 60_000) {
@@ -56,7 +66,7 @@ async function main() {
     await waitForServer();
     await sleep(500);
 
-    const browser = await chromium.launch({ headless: true });
+    const browser = await launchChromium();
     const page = await browser.newPage({
       viewport: { width: 1100, height: 720 },
       deviceScaleFactor: 2,
@@ -64,6 +74,10 @@ async function main() {
 
     await page.goto(URL, { waitUntil: "networkidle" });
     await page.waitForTimeout(400);
+
+    // 调试台加入后整页高于初始视口，先放大视口保证所有 clip 在画面内
+    await page.setViewportSize({ width: 1100, height: 2400 });
+    await page.waitForTimeout(200);
 
     const items = await page.$$("[data-export-item]");
     for (const item of items) {
@@ -83,7 +97,7 @@ async function main() {
       console.log(`Wrote docs/assets/${name}.png`);
     }
 
-    for (const group of ["atoll-states", "agent-mascots"]) {
+    for (const group of ["atoll-states", "atoll-activities", "agent-mascots"]) {
       const el = await page.$(`[data-export="${group}"]`);
       if (!el) continue;
       const box = await el.boundingBox();

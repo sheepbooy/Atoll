@@ -6,6 +6,7 @@ import {
 } from "../AgentMascot";
 import {
   AtollLogo,
+  type AtollReaction,
 } from "../AtollLogo";
 import {
   agentMascotAccent,
@@ -18,6 +19,9 @@ export interface HeaderLogoProps {
   idleIntervalSec: number;
   idleDurationSec: number;
   motionPaused: boolean;
+  /** 一次性状态反应（仅 atoll 形象使用）；重复触发时递增 reactionKey 重放。 */
+  reaction?: AtollReaction | null;
+  reactionKey?: number;
 }
 
 export function HeaderLogo({
@@ -26,6 +30,8 @@ export function HeaderLogo({
   idleIntervalSec,
   idleDurationSec,
   motionPaused,
+  reaction = null,
+  reactionKey = 0,
 }: HeaderLogoProps) {
   if (display.kind === "agent") {
     return (
@@ -47,6 +53,8 @@ export function HeaderLogo({
       idleIntervalSec={idleIntervalSec}
       idleDurationSec={idleDurationSec}
       motionPaused={motionPaused}
+      reaction={reaction}
+      reactionKey={reactionKey}
     />
   );
 }
