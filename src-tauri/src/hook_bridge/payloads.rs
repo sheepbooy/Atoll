@@ -50,7 +50,12 @@ pub(crate) fn permission_request_from_zcode_payload(
         return None;
     }
 
-    permission_request_from_tool_payload(id, payload, requested_at, AgentKind::Zcode, true)
+    let mut request =
+        permission_request_from_tool_payload(id, payload, requested_at, AgentKind::Zcode, false)?;
+    // Atoll's always-allow is session-local (auto_approve_sessions), so it works
+    // for ZCode even though its hook never sends permission_suggestions.
+    request.supports_always = true;
+    Some(request)
 }
 
 /// Gemini CLI fires `BeforeTool` for every tool call; only payloads forwarded by
@@ -238,6 +243,26 @@ mod payload_tests {
         .expect("cursor request");
         assert_eq!(request.session, "conv-123");
         assert!(matches!(request.agent, AgentKind::Cursor));
+    }
+
+    #[test]
+    fn zcode_payload_supports_always_without_suggestions() {
+        let payload = json!({
+            "hook_event_name": "PreToolUse",
+            "session_id": "session-zcode-1",
+            "cwd": "/tmp/project",
+            "tool_name": "Bash",
+            "tool_input": { "command": "echo hi" },
+            "tool_use_id": "tool-1"
+        });
+        let request = permission_request_from_zcode_payload(
+            "req-1".into(),
+            payload,
+            "2026-01-01T00:00:00Z".into(),
+        )
+        .expect("zcode request");
+        assert!(matches!(request.agent, AgentKind::Zcode));
+        assert!(request.supports_always);
     }
 
     #[test]
