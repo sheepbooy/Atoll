@@ -17,13 +17,34 @@ function baseProps() {
 }
 
 describe("ShortcutSettingsView", () => {
-  it("renders the three action bindings from the config", () => {
+  it("renders the four action bindings from the config", () => {
     render(<ShortcutSettingsView {...baseProps()} />);
 
     expect(screen.getByDisplayValue("Cmd+Shift+Space")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Cmd+Shift+Y")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Cmd+Shift+N")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Cmd+Shift+A")).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Global shortcuts" })).toBeChecked();
+  });
+
+  it("records a new always-allow accelerator on keydown", () => {
+    const onChangeAccelerator = vi.fn();
+    render(
+      <ShortcutSettingsView {...baseProps()} onChangeAccelerator={onChangeAccelerator} />,
+    );
+
+    const always = screen.getByDisplayValue("Cmd+Shift+A");
+    fireEvent.focus(always);
+    fireEvent.keyDown(always, {
+      code: "KeyP",
+      key: "p",
+      ctrlKey: false,
+      metaKey: true,
+      altKey: false,
+      shiftKey: true,
+    });
+
+    expect(onChangeAccelerator).toHaveBeenCalledWith("always", "Cmd+Shift+P");
   });
 
   it("reports master toggle changes through onChangeEnabled", () => {

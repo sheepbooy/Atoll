@@ -95,6 +95,7 @@ describe("normalizeAccelerator", () => {
       DEFAULT_GLOBAL_SHORTCUTS.summon,
       DEFAULT_GLOBAL_SHORTCUTS.approve,
       DEFAULT_GLOBAL_SHORTCUTS.deny,
+      DEFAULT_GLOBAL_SHORTCUTS.always,
     ]) {
       expect(normalizeAccelerator(value, "macos").ok).toBe(true);
       expect(normalizeAccelerator(value, "other").ok).toBe(true);

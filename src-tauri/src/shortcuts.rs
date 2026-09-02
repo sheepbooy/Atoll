@@ -28,6 +28,9 @@ const DEFAULT_SUMMON: &str = "CmdOrCtrl+Shift+Space";
 const DEFAULT_APPROVE: &str = "CmdOrCtrl+Shift+Y";
 /// N = no.
 const DEFAULT_DENY: &str = "CmdOrCtrl+Shift+N";
+/// A = always allow. Approves the pending request and auto-approves the rest
+/// of the session, mirroring the island's Always button.
+const DEFAULT_ALWAYS: &str = "CmdOrCtrl+Shift+A";
 
 /// What a registered global shortcut does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,13 +38,15 @@ pub(crate) enum ShortcutAction {
     Summon,
     Approve,
     Deny,
+    Always,
 }
 
 impl ShortcutAction {
-    pub(crate) const ALL: [ShortcutAction; 3] = [
+    pub(crate) const ALL: [ShortcutAction; 4] = [
         ShortcutAction::Summon,
         ShortcutAction::Approve,
         ShortcutAction::Deny,
+        ShortcutAction::Always,
     ];
 
     fn accel<'a>(self, config: &'a GlobalShortcutConfig) -> &'a str {
@@ -49,6 +54,7 @@ impl ShortcutAction {
             ShortcutAction::Summon => &config.summon,
             ShortcutAction::Approve => &config.approve,
             ShortcutAction::Deny => &config.deny,
+            ShortcutAction::Always => &config.always,
         }
     }
 
@@ -57,6 +63,7 @@ impl ShortcutAction {
             ShortcutAction::Summon => config.summon = value,
             ShortcutAction::Approve => config.approve = value,
             ShortcutAction::Deny => config.deny = value,
+            ShortcutAction::Always => config.always = value,
         }
     }
 }
@@ -68,6 +75,7 @@ pub(crate) struct GlobalShortcutConfig {
     pub summon: String,
     pub approve: String,
     pub deny: String,
+    pub always: String,
 }
 
 impl Default for GlobalShortcutConfig {
@@ -77,6 +85,7 @@ impl Default for GlobalShortcutConfig {
             summon: default_accel(DEFAULT_SUMMON),
             approve: default_accel(DEFAULT_APPROVE),
             deny: default_accel(DEFAULT_DENY),
+            always: default_accel(DEFAULT_ALWAYS),
         }
     }
 }
@@ -88,11 +97,15 @@ pub(crate) struct GlobalShortcutErrors {
     pub summon: Option<String>,
     pub approve: Option<String>,
     pub deny: Option<String>,
+    pub always: Option<String>,
 }
 
 impl GlobalShortcutErrors {
     pub(crate) fn has_errors(&self) -> bool {
-        self.summon.is_some() || self.approve.is_some() || self.deny.is_some()
+        self.summon.is_some()
+            || self.approve.is_some()
+            || self.deny.is_some()
+            || self.always.is_some()
     }
 
     fn slot(&mut self, action: ShortcutAction) -> &mut Option<String> {
@@ -100,6 +113,7 @@ impl GlobalShortcutErrors {
             ShortcutAction::Summon => &mut self.summon,
             ShortcutAction::Approve => &mut self.approve,
             ShortcutAction::Deny => &mut self.deny,
+            ShortcutAction::Always => &mut self.always,
         }
     }
 
@@ -340,6 +354,7 @@ fn load_config_from_path(path: &Path) -> GlobalShortcutConfig {
         summon: sanitized_accel(settings.get("summon"), &defaults.summon),
         approve: sanitized_accel(settings.get("approve"), &defaults.approve),
         deny: sanitized_accel(settings.get("deny"), &defaults.deny),
+        always: sanitized_accel(settings.get("always"), &defaults.always),
     }
 }
 
@@ -448,19 +463,36 @@ fn dispatch(app: &AppHandle, action: ShortcutAction) {
         ShortcutAction::Summon => {
             crate::show_main_window_with_focus(app, true, crate::IslandOpenSource::Summon)
         }
-        ShortcutAction::Approve => resolve_pending(app, crate::Decision::Approved),
-        ShortcutAction::Deny => resolve_pending(app, crate::Decision::Denied),
+        ShortcutAction::Approve => resolve_pending(app, crate::Decision::Approved, false),
+        ShortcutAction::Deny => resolve_pending(app, crate::Decision::Denied, false),
+        ShortcutAction::Always => resolve_pending(app, crate::Decision::Approved, true),
     }
 }
 
 /// Resolve the current pending request through the same command the island UI
-/// buttons invoke; a graceful no-op when nothing is pending.
+/// buttons invoke; a graceful no-op when nothing is pending. `always_approve`
+/// mirrors the island's Always button / Shift+Enter: the session is enrolled
+/// in auto-approve before the current request is resolved.
 #[cfg(desktop)]
-fn resolve_pending(app: &AppHandle, decision: crate::Decision) {
+fn resolve_pending(app: &AppHandle, decision: crate::Decision, always_approve: bool) {
     let state = app.state::<crate::AppState>();
     let Some(id) = pending_request_id(&state) else {
         return;
     };
+    if always_approve {
+        let session = {
+            let requests = crate::lock_state(&state.requests);
+            requests
+                .iter()
+                .find(|request| request.id == id)
+                .map(|request| request.session.clone())
+        };
+        if let Some(session) = session {
+            if let Ok(mut sessions) = state.auto_approve_sessions.lock() {
+                sessions.insert(session);
+            }
+        }
+    }
     let _ = crate::resolve_permission_request(app.clone(), state, id, decision, String::new());
 }
 
@@ -548,15 +580,18 @@ mod tests {
             let accel = action.accel(&config);
             assert!(normalize_accelerator(accel).is_ok(), "{accel}");
         }
+        assert_eq!(config.always, "Cmd+Shift+A");
     }
 
     #[test]
     fn canonicalize_reports_invalid_action_without_touching_others() {
         let (config, errors) = canonicalize_config(GlobalShortcutConfig {
             approve: "Bogus Key".to_string(),
+            always: "Bogus Key".to_string(),
             ..GlobalShortcutConfig::default()
         });
         assert!(errors.approve.is_some());
+        assert!(errors.always.is_some());
         assert!(errors.summon.is_none());
         assert!(errors.deny.is_none());
         assert_eq!(config.summon, GlobalShortcutConfig::default().summon);
@@ -586,6 +621,7 @@ mod tests {
             summon: "Ctrl+Alt+K".to_string(),
             approve: String::new(),
             deny: "Cmd+Shift+N".to_string(),
+            always: "Cmd+Alt+A".to_string(),
         };
         persist_config_to_path(&path, &config);
         let loaded = load_config_from_path(&path);
@@ -638,6 +674,8 @@ mod tests {
         assert_eq!(loaded.summon, "");
         assert_eq!(loaded.approve, defaults.approve);
         assert_eq!(loaded.deny, "Cmd+Shift+N");
+        // No "always" key in the file: fall back to the default binding.
+        assert_eq!(loaded.always, defaults.always);
         let _ = std::fs::remove_file(&path);
     }
 
