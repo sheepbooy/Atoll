@@ -367,6 +367,9 @@ pub(crate) struct AppState {
     pub(crate) approval_notice_mode: Mutex<String>,
     /// UI language used for notification copy ("en" or "zh-CN").
     pub(crate) notification_language: Mutex<String>,
+    /// Display the island pins to (`Monitor::name()`); None = follow the
+    /// primary display.
+    pub(crate) preferred_monitor: Mutex<Option<String>>,
     /// Global shortcut config plus the errors from the last registration
     /// attempt (startup or settings change).
     pub(crate) global_shortcuts: Mutex<shortcuts::GlobalShortcutsState>,

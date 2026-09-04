@@ -340,6 +340,17 @@ export function useIslandPresentation({
     }
   }
 
+  /** Re-fetch notch metrics after the island moves to a different display. */
+  async function refreshNotchMetrics() {
+    try {
+      const notch = await getNotchMetrics();
+      setNotchMetrics(notch);
+      applyWindowMetrics(notch);
+    } catch {
+      // keep the previous metrics when the backend is unreachable
+    }
+  }
+
   function syncNativeIslandPresentation(
     mode: "micro" | "compact" | "expanded" | "dormant",
     compactWidth?: number,
@@ -888,6 +899,7 @@ export function useIslandPresentation({
     promoteToCompact,
     shrinkToMicro,
     handleChangeFoldedIslandSize,
+    refreshNotchMetrics,
     ensureExpandedSettingsPresentation,
     syncNativeIslandPresentation,
     handlePointerEnter,

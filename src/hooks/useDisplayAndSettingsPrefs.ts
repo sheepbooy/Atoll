@@ -5,6 +5,7 @@ import {
   disableAutostart,
   setSessionRetention,
   setSubagentRetention,
+  getPreferredMonitor,
 } from "../tauri";
 import {
   COMPACT_ICON_SETTING_KEY,
@@ -63,6 +64,15 @@ export function useDisplayAndSettingsPrefs() {
   );
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
   const [launchAtLoginBusy, setLaunchAtLoginBusy] = useState(false);
+  const [preferredMonitorName, setPreferredMonitorNameState] = useState<
+    string | null
+  >(null);
+
+  useEffect(() => {
+    getPreferredMonitor()
+      .then(setPreferredMonitorNameState)
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     writeDisplayMode(FOLDED_COUNTER_DISPLAY_KEY, foldedCounterDisplay);
@@ -188,5 +198,7 @@ export function useDisplayAndSettingsPrefs() {
     launchAtLogin,
     launchAtLoginBusy,
     handleChangeLaunchAtLogin,
+    preferredMonitorName,
+    setPreferredMonitorNameState,
   };
 }

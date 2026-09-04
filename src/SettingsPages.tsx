@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ABSOLUTE_MAX_COMPACT_ICONS,
@@ -10,7 +10,9 @@ import type {
   GlobalShortcutConfig,
   GlobalShortcutErrors,
   ShortcutAction,
+  MonitorInfo,
 } from "./tauri";
+import { listMonitors } from "./tauri";
 import {
   SHORTCUT_ACTIONS,
   acceleratorFromKeyboardEvent,
@@ -44,6 +46,8 @@ export function IslandSettingsView({
   showCompactIndicator,
   compactIndicator,
   onChangeCompactIndicator,
+  preferredMonitorName,
+  onChangePreferredMonitor,
 }: {
   maxCompactIcons: number;
   maxCompactIconLimit: number;
@@ -56,8 +60,47 @@ export function IslandSettingsView({
   showCompactIndicator: boolean;
   compactIndicator: CompactIndicatorMode;
   onChangeCompactIndicator: (mode: CompactIndicatorMode) => void;
+  preferredMonitorName: string | null;
+  onChangePreferredMonitor: (name: string | null) => void;
 }) {
   const { t } = useTranslation("settings");
+  const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listMonitors()
+      .then((list) => {
+        if (!cancelled) {
+          setMonitors(list);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // A stored monitor that is no longer connected cannot be honored (the
+  // backend falls back to the primary display), so surface that as "auto".
+  const selectableMonitors = monitors.filter(
+    (monitor): monitor is MonitorInfo & { name: string } =>
+      Boolean(monitor.name),
+  );
+  const effectivePreferredMonitor = selectableMonitors.some(
+    (monitor) => monitor.name === preferredMonitorName,
+  )
+    ? (preferredMonitorName as string)
+    : "";
+
+  function monitorLabel(monitor: MonitorInfo): string {
+    const name = monitor.name ?? "";
+    const width = Math.round(monitor.width / monitor.scaleFactor);
+    const height = Math.round(monitor.height / monitor.scaleFactor);
+    const primary = monitor.isPrimary
+      ? ` · ${t("display.monitorPrimary")}`
+      : "";
+    return `${name} · ${width}×${height}${primary}`;
+  }
 
   return (
     <div className="settings-view" data-no-drag>
@@ -83,6 +126,30 @@ export function IslandSettingsView({
                 </div>
               </div>
               <span className="settings-card-desc">{t("display.compactIndicatorDesc")}</span>
+            </div>
+          ) : null}
+          {selectableMonitors.length > 1 ? (
+            <div className="settings-card">
+              <div className="settings-card-head">
+                <span className="settings-card-title">{t("display.monitorLabel")}</span>
+                <select
+                  className="settings-select"
+                  value={effectivePreferredMonitor}
+                  aria-label={t("display.monitorLabel")}
+                  onChange={(event) =>
+                    onChangePreferredMonitor(event.target.value || null)
+                  }
+                  data-no-drag
+                >
+                  <option value="">{t("display.monitorAuto")}</option>
+                  {selectableMonitors.map((monitor) => (
+                    <option key={monitor.name} value={monitor.name}>
+                      {monitorLabel(monitor)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <span className="settings-card-desc">{t("display.monitorDesc")}</span>
             </div>
           ) : null}
           {showFoldedIslandSizeSetting ? (

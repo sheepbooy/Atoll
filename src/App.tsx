@@ -94,6 +94,7 @@ import {
   uninstallGeminiHooks,
   setSessionRetention,
   setSubagentRetention,
+  setPreferredMonitor,
   openAgentApp,
   isAutostartEnabled,
   enableAutostart,
@@ -438,6 +439,8 @@ export function App() {
     launchAtLogin,
     launchAtLoginBusy,
     handleChangeLaunchAtLogin,
+    preferredMonitorName,
+    setPreferredMonitorNameState,
   } = useDisplayAndSettingsPrefs();
 
   const [hookHealthHydrated, setHookHealthHydrated] = useState(false);
@@ -533,6 +536,7 @@ export function App() {
     promoteToCompact,
     shrinkToMicro,
     handleChangeFoldedIslandSize,
+    refreshNotchMetrics,
     ensureExpandedSettingsPresentation,
     syncNativeIslandPresentation,
     handlePointerEnter,
@@ -561,6 +565,46 @@ export function App() {
     expandIsland,
     ensureExpandedSettingsPresentation,
   };
+
+  async function handleChangePreferredMonitor(name: string | null) {
+    const previous = preferredMonitorName;
+    setPreferredMonitorNameState(name);
+    try {
+      setPreferredMonitorNameState(await setPreferredMonitor(name));
+    } catch (error) {
+      console.error("[Atoll] set preferred monitor failed", error);
+      setPreferredMonitorNameState(previous);
+      return;
+    }
+    // The selector lives in the expanded settings panel: snap the island onto
+    // the newly chosen display instead of waiting for the next transition.
+    const settingsExpanded =
+      panelViewRef.current.kind === "settings" ||
+      panelViewRef.current.kind === "clipboard" ||
+      panelViewRef.current.kind === "history";
+    if (
+      settingsExpanded &&
+      (phaseRef.current === "expanded" || phaseRef.current === "opening")
+    ) {
+      const idleExpanded =
+        snapshotRef.current.pendingCount === 0 &&
+        snapshotRef.current.sessions.length === 0;
+      const planExpanded = snapshotHasPlanPending(snapshotRef.current);
+      await setIslandPresentation(
+        "expanded",
+        collapsedWindowWidthRef.current,
+        idleExpanded,
+        compactLeftPaneWidthRef.current,
+        false,
+        true,
+        planExpanded && !settingsExpanded,
+        settingsExpanded,
+      ).catch(() => undefined);
+      // The new display may have different notch metrics; the snap re-derived
+      // them on the backend, so mirror the refresh in the webview layout.
+      await refreshNotchMetrics();
+    }
+  }
 
 
 
@@ -1750,6 +1794,8 @@ export function App() {
             showCompactIndicator={IS_MACOS}
             compactIndicator={compactIndicator}
             onChangeCompactIndicator={setCompactIndicatorState}
+            preferredMonitorName={preferredMonitorName}
+            onChangePreferredMonitor={handleChangePreferredMonitor}
           />
         );
       }

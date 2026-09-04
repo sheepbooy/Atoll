@@ -89,3 +89,38 @@ export async function setSessionRetention(minutes: number): Promise<number> {
   }
   return minutes * 60;
 }
+
+/** One entry per connected display, from `list_monitors` in src-tauri. */
+export interface MonitorInfo {
+  name: string | null;
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+  scaleFactor: number;
+  isPrimary: boolean;
+}
+
+export async function listMonitors(): Promise<MonitorInfo[]> {
+  if (!isTauriRuntime()) {
+    return [];
+  }
+  return invoke<MonitorInfo[]>("list_monitors");
+}
+
+/** Display the island pins to (matched by `Monitor::name()`); null = auto. */
+export async function getPreferredMonitor(): Promise<string | null> {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+  return invoke<string | null>("get_preferred_monitor");
+}
+
+export async function setPreferredMonitor(
+  name: string | null,
+): Promise<string | null> {
+  if (!isTauriRuntime()) {
+    return name;
+  }
+  return invoke<string | null>("set_preferred_monitor", { name });
+}

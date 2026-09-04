@@ -56,6 +56,10 @@
     "agentHooksDesc": "Connect Claude Code, Codex, and future local agents."
   },
   "display": {
+    "monitorLabel": "Display",
+    "monitorAuto": "Auto (primary display)",
+    "monitorPrimary": "Primary",
+    "monitorDesc": "Choose which display the island lives on. If the chosen display disconnects, Atoll returns to the primary display.",
     "languageLabel": "Language",
     "languageDesc": "Choose the interface language.",
     "languageEnglish": "English",

@@ -72,6 +72,11 @@ pub(crate) async fn set_island_presentation(
             let expanded_plan = expanded_plan.unwrap_or(false);
             let expanded_settings = expanded_settings.unwrap_or(false);
             // apply_island_window_mode touches AppKit; must run on the main thread.
+            let preferred_monitor = state
+                .preferred_monitor
+                .lock()
+                .map_err(|error| error.to_string())?
+                .clone();
             let (sync_tx, sync_rx) =
                 std::sync::mpsc::sync_channel::<Result<Option<HomeWindowBounds>, String>>(0);
             let frame_window = window.clone();
@@ -79,6 +84,7 @@ pub(crate) async fn set_island_presentation(
                 .run_on_main_thread(move || {
                     let result = apply_island_window_mode(
                         &frame_window,
+                        preferred_monitor.as_deref(),
                         mode,
                         presentation_width,
                         compact_left_width,
@@ -96,6 +102,11 @@ pub(crate) async fn set_island_presentation(
             if let Some(home) = home {
                 if let Ok(mut home_bounds) = state.home_bounds.lock() {
                     *home_bounds = Some(home);
+                }
+                // A snap can land on a different display than startup did, so
+                // keep the notch metrics in sync with the new home.
+                if let Ok(mut notch_metrics) = state.notch_metrics.lock() {
+                    *notch_metrics = home.notch;
                 }
             }
             // The presentation has been applied synchronously; let the frontend
@@ -145,6 +156,67 @@ pub(crate) async fn set_island_presentation(
     .await
     .map_err(|error| error.to_string())?
 }
+
+/// Displays available to the island selector, in OS enumeration order.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MonitorInfo {
+    pub(crate) name: Option<String>,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) x: i32,
+    pub(crate) y: i32,
+    pub(crate) scale_factor: f64,
+    pub(crate) is_primary: bool,
+}
+
+#[tauri::command]
+pub(crate) fn list_monitors(window: tauri::WebviewWindow) -> Vec<MonitorInfo> {
+    let primary = window.primary_monitor().ok().flatten();
+    window
+        .available_monitors()
+        .unwrap_or_default()
+        .iter()
+        .map(|monitor| {
+            let is_primary = match &primary {
+                Some(primary) => {
+                    primary.name() == monitor.name()
+                        && primary.position() == monitor.position()
+                        && primary.size() == monitor.size()
+                }
+                None => false,
+            };
+            MonitorInfo {
+                name: monitor.name().cloned(),
+                width: monitor.size().width,
+                height: monitor.size().height,
+                x: monitor.position().x,
+                y: monitor.position().y,
+                scale_factor: monitor.scale_factor(),
+                is_primary,
+            }
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub(crate) fn get_preferred_monitor(state: State<'_, AppState>) -> Option<String> {
+    lock_state(&state.preferred_monitor).clone()
+}
+
+/// Persist the display preference; returns the normalized value (empty →
+/// None) so the UI mirrors what the backend will actually honor.
+#[tauri::command]
+pub(crate) fn set_preferred_monitor(
+    state: State<'_, AppState>,
+    name: Option<String>,
+) -> Option<String> {
+    let name = name.filter(|name| !name.is_empty());
+    *lock_state(&state.preferred_monitor) = name.clone();
+    persist_preferred_monitor_name(name.as_deref());
+    name
+}
+
 pub(crate) fn exit_atoll(app: &AppHandle) {
     let state = app.state::<AppState>();
     let _ = token_history::sync_today_to_history(&state);
@@ -299,8 +371,33 @@ pub(crate) fn start_island_hover_monitor(app: AppHandle) {
         }
     });
 }
+/// Pick the display the island anchors to: the user's preferred monitor when
+/// it is still connected (matched by `Monitor::name()`), otherwise the
+/// primary/current display as before.
+pub(crate) fn resolve_island_monitor(
+    window: &tauri::WebviewWindow,
+    preferred_name: Option<&str>,
+) -> Option<tauri::window::Monitor> {
+    if let Some(preferred) = preferred_name.filter(|name| !name.is_empty()) {
+        if let Ok(monitors) = window.available_monitors() {
+            if let Some(monitor) = monitors
+                .into_iter()
+                .find(|monitor| monitor.name().map(String::as_str) == Some(preferred))
+            {
+                return Some(monitor);
+            }
+        }
+    }
+    window
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.current_monitor().ok().flatten())
+}
+
 pub(crate) fn apply_island_window_mode(
     window: &tauri::WebviewWindow,
+    preferred_monitor: Option<&str>,
     mode: IslandWindowMode,
     compact_width: f64,
     compact_left_width: f64,
@@ -308,11 +405,7 @@ pub(crate) fn apply_island_window_mode(
     expanded_plan: bool,
     expanded_settings: bool,
 ) -> tauri::Result<Option<HomeWindowBounds>> {
-    let monitor = window
-        .primary_monitor()
-        .ok()
-        .flatten()
-        .or_else(|| window.current_monitor().ok().flatten());
+    let monitor = resolve_island_monitor(window, preferred_monitor);
     let Some(monitor) = monitor else {
         return Ok(None);
     };

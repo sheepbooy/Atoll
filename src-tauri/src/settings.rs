@@ -317,6 +317,54 @@ pub(crate) fn persist_clipboard_history_limit(limit: usize) {
     }
 }
 
+/// Display the island pins to, matched against Tauri `Monitor::name()`.
+/// `None` (key missing/empty, or the display no longer being connected)
+/// means "auto": fall back to the primary display.
+pub(crate) fn load_preferred_monitor_name() -> Option<String> {
+    let Some(path) = atoll_settings_path() else {
+        return None;
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return None;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+        return None;
+    };
+    value
+        .get("preferredMonitorName")
+        .and_then(Value::as_str)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+}
+
+pub(crate) fn persist_preferred_monitor_name(name: Option<&str>) {
+    let Some(path) = atoll_settings_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut config: Value = path
+        .exists()
+        .then(|| std::fs::read_to_string(&path).ok())
+        .flatten()
+        .and_then(|c| serde_json::from_str(&c).ok())
+        .unwrap_or_else(|| Value::Object(Default::default()));
+    if let Some(obj) = config.as_object_mut() {
+        match name.filter(|name| !name.is_empty()) {
+            Some(name) => {
+                obj.insert("preferredMonitorName".into(), Value::from(name));
+            }
+            None => {
+                obj.remove("preferredMonitorName");
+            }
+        }
+    }
+    if let Ok(formatted) = serde_json::to_string_pretty(&config) {
+        let _ = std::fs::write(path, formatted);
+    }
+}
+
 pub(crate) fn load_lyrics_enabled() -> bool {
     let Some(path) = atoll_settings_path() else {
         return false;

@@ -959,6 +959,7 @@ pub fn run() {
             lyrics_track_key: Mutex::new(String::new()),
             approval_notice_mode: Mutex::new(load_approval_notice_mode()),
             notification_language: Mutex::new(load_notification_language()),
+            preferred_monitor: Mutex::new(load_preferred_monitor_name()),
             global_shortcuts: Mutex::new(shortcuts::GlobalShortcutsState::default()),
         })
         .invoke_handler(tauri::generate_handler![
@@ -974,6 +975,9 @@ pub fn run() {
             archive_session,
             pin_session,
             set_island_presentation,
+            list_monitors,
+            get_preferred_monitor,
+            set_preferred_monitor,
             get_notch_metrics,
             set_ime_active,
             uses_micro_island,
@@ -1112,8 +1116,11 @@ pub fn run() {
                 } else {
                     IslandWindowMode::Compact
                 };
+                let state = app.state::<AppState>();
+                let preferred_monitor = lock_state(&state.preferred_monitor).clone();
                 if let Ok(Some(home)) = apply_island_window_mode(
                     &window,
+                    preferred_monitor.as_deref(),
                     initial_mode,
                     COMPACT_WINDOW_WIDTH,
                     0.0,
@@ -1122,7 +1129,6 @@ pub fn run() {
                     false,
                 ) {
                     eprintln!("[Atoll] step: island window mode applied");
-                    let state = app.state::<AppState>();
                     if let Ok(mut home_bounds) = state.home_bounds.lock() {
                         *home_bounds = Some(home);
                     };
@@ -1218,6 +1224,17 @@ fn approval_notification_copy(
     }
 }
 
+/// Cursor position within the island, in logical points. macOS reads both
+/// sides natively in AppKit points; tao's getters disagree across displays
+/// with different scale factors (see platform::global_cursor_point).
+#[cfg(target_os = "macos")]
+fn cursor_client_point(window: &tauri::WebviewWindow) -> Option<(f64, f64)> {
+    let (min_x, _min_y, _max_x, max_y) = platform::island_window_frame_points(window)?;
+    let (cursor_x, cursor_y) = platform::global_cursor_point()?;
+    Some((cursor_x - min_x, max_y - cursor_y))
+}
+
+#[cfg(not(target_os = "macos"))]
 fn cursor_client_point(window: &tauri::WebviewWindow) -> Option<(f64, f64)> {
     let scale = window.scale_factor().ok()?;
     let cursor = window.cursor_position().ok()?.to_logical::<f64>(scale);
@@ -1225,6 +1242,33 @@ fn cursor_client_point(window: &tauri::WebviewWindow) -> Option<(f64, f64)> {
     Some((cursor.x - origin.x, cursor.y - origin.y))
 }
 
+/// Hover hit-test in one consistent coordinate space. tao's `cursor_position`
+/// rescales global points by the PRIMARY display's scale factor while
+/// `outer_position`/`outer_size` use the window's own scale factor, so on a
+/// mixed-DPI multi-display setup (e.g. 2x Retina + 1x external) the rect and
+/// the cursor land in different spaces and hover never matches once the
+/// island sits on the lower-scale display. macOS therefore compares
+/// NSEvent mouseLocation against NSWindow frame directly; Windows reports
+/// physical pixels on both sides and keeps the tao path.
+#[cfg(target_os = "macos")]
+fn is_cursor_over_window(window: &tauri::WebviewWindow) -> tauri::Result<bool> {
+    if !window.is_visible()? {
+        return Ok(false);
+    }
+
+    let Some((min_x, min_y, max_x, max_y)) = platform::island_window_frame_points(window) else {
+        return Ok(false);
+    };
+    let (cursor_x, cursor_y) = platform::global_cursor_point().unwrap_or((f64::NAN, f64::NAN));
+    let padding = 8.0;
+
+    Ok(cursor_x >= min_x - padding
+        && cursor_x <= max_x + padding
+        && cursor_y >= min_y - padding
+        && cursor_y <= max_y + padding)
+}
+
+#[cfg(not(target_os = "macos"))]
 fn is_cursor_over_window(window: &tauri::WebviewWindow) -> tauri::Result<bool> {
     if !window.is_visible()? {
         return Ok(false);
@@ -3040,6 +3084,7 @@ mod core_tests {
             lyrics_track_key: Mutex::new(String::new()),
             approval_notice_mode: Mutex::new(APPROVAL_NOTICE_INTERRUPT.to_string()),
             notification_language: Mutex::new("en".to_string()),
+            preferred_monitor: Mutex::new(None),
             global_shortcuts: Mutex::new(shortcuts::GlobalShortcutsState::default()),
         }
     }
@@ -3879,6 +3924,7 @@ mod cursor_subagent_tests {
             lyrics_track_key: Mutex::new(String::new()),
             approval_notice_mode: Mutex::new(APPROVAL_NOTICE_INTERRUPT.to_string()),
             notification_language: Mutex::new("en".to_string()),
+            preferred_monitor: Mutex::new(None),
             global_shortcuts: Mutex::new(shortcuts::GlobalShortcutsState::default()),
         }
     }

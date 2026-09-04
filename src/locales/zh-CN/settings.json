@@ -56,6 +56,10 @@
     "agentHooksDesc": "连接 Claude Code、Codex 及未来的本地 Agent。"
   },
   "display": {
+    "monitorLabel": "显示器",
+    "monitorAuto": "自动（主显示器）",
+    "monitorPrimary": "主屏",
+    "monitorDesc": "选择岛屿所在的显示器。所选显示器断开时，Atoll 会自动回到主显示器。",
     "languageLabel": "语言",
     "languageDesc": "选择界面语言。",
     "languageEnglish": "English",

@@ -886,6 +886,40 @@ pub fn screen_geometry_for_monitor(
     })
 }
 
+/// Cursor position in AppKit global points (primary-display bottom-left
+/// origin), read straight from NSEvent so it stays comparable with
+/// `NSWindow::frame` on every display. tao's `cursor_position` instead
+/// rescales the point coordinates by the primary display's scale factor
+/// while `outer_position` uses the window's own scale factor, so the two
+/// cannot be compared on mixed-DPI multi-display setups.
+pub fn global_cursor_point_appkit() -> (f64, f64) {
+    let Some(class) = objc2::runtime::AnyClass::get(c"NSEvent") else {
+        return (f64::NAN, f64::NAN);
+    };
+    let point: objc2_foundation::NSPoint = unsafe { objc2::msg_send![class, mouseLocation] };
+    (point.x, point.y)
+}
+
+/// The island window's frame as `(min_x, min_y, max_x, max_y)` in AppKit
+/// global points — the same coordinate space as
+/// [`global_cursor_point_appkit`], on every display.
+pub fn island_window_frame_points(window: &WebviewWindow) -> Option<(f64, f64, f64, f64)> {
+    let ns_window_ptr = window.ns_window().ok()?;
+    if ns_window_ptr.is_null() {
+        return None;
+    }
+    unsafe {
+        let ns_window = &*(ns_window_ptr.cast::<objc2_app_kit::NSWindow>());
+        let frame = ns_window.frame();
+        Some((
+            frame.origin.x,
+            frame.origin.y,
+            frame.origin.x + frame.size.width,
+            frame.origin.y + frame.size.height,
+        ))
+    }
+}
+
 pub fn remember_frontmost_app(app: &AppHandle) {
     let own_pid = std::process::id() as i32;
     unsafe {

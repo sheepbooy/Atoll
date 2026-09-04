@@ -164,6 +164,35 @@ pub fn monitor_top_y(_window: &WebviewWindow, monitor: &Monitor) -> f64 {
     }
 }
 
+/// Cursor position for hover hit-testing, in the same space as
+/// [`island_window_frame_points`]. macOS returns AppKit screen points; other
+/// platforms have no tao-free source here and return None (callers keep their
+/// tao-based path, which is consistent on Windows' physical-pixel globals).
+pub fn global_cursor_point() -> Option<(f64, f64)> {
+    #[cfg(target_os = "macos")]
+    {
+        return Some(macos::global_cursor_point_appkit());
+    }
+    #[cfg(not(target_os = "macos"))]
+    None
+}
+
+/// The island window's frame as `(min_x, min_y, max_x, max_y)` in the same
+/// coordinate space as [`global_cursor_point`]. macOS-only; see
+/// [`macos::global_cursor_point_appkit`] for why tao's getters cannot be
+/// used for this comparison on mixed-DPI multi-display setups.
+pub fn island_window_frame_points(window: &WebviewWindow) -> Option<(f64, f64, f64, f64)> {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::island_window_frame_points(window);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = window;
+        None
+    }
+}
+
 pub fn set_island_cursor_events_ignored(window: &WebviewWindow, ignore: bool) {
     #[cfg(target_os = "macos")]
     {
