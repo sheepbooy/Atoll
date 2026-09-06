@@ -1519,6 +1519,9 @@ kbd {
 .agent-tab.lime.is-active {
   background: linear-gradient(130deg, #ccf39e, #8dd157);
 }
+.agent-tab.teal.is-active {
+  background: linear-gradient(130deg, #b0f0e4, #46bfae);
+}
 .agent-tab.violet.is-active {
   background: linear-gradient(130deg, #ddd4ff, #a78bfa);
 }

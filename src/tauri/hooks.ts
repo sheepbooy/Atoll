@@ -6,6 +6,7 @@ import {
   getDemoGeminiHookStatus,
   getDemoHookStatus,
   getDemoMode,
+  getDemoOpencodeHookStatus,
   getDemoZcodeHookStatus,
 } from "../demoSnapshot";
 import { EMPTY_HOOK_HEALTH, type HookHealthSnapshot, type HookStatus } from "./types";
@@ -69,6 +70,7 @@ export function normalizeHookHealth(raw: unknown): HookHealthSnapshot {
     cursor: normalizeHookStatus(record.cursor ?? EMPTY_HOOK_HEALTH.cursor),
     zcode: normalizeHookStatus(record.zcode ?? EMPTY_HOOK_HEALTH.zcode),
     gemini: normalizeHookStatus(record.gemini ?? EMPTY_HOOK_HEALTH.gemini),
+    opencode: normalizeHookStatus(record.opencode ?? EMPTY_HOOK_HEALTH.opencode),
   };
 }
 
@@ -225,6 +227,35 @@ export async function installGeminiHooks(): Promise<HookStatus> {
 export async function uninstallGeminiHooks(): Promise<HookStatus> {
   if (isTauriRuntime()) {
     return normalizeHookStatus(await invoke<HookStatus>("uninstall_gemini_hooks"));
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
+export async function getOpencodeHookStatus(): Promise<HookStatus> {
+  if (isTauriRuntime()) {
+    return normalizeHookStatus(await invoke<HookStatus>("get_opencode_hook_status"));
+  }
+
+  const demoMode = getDemoMode();
+  if (demoMode) {
+    return getDemoOpencodeHookStatus(demoMode);
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
+export async function installOpencodeHooks(): Promise<HookStatus> {
+  if (isTauriRuntime()) {
+    return normalizeHookStatus(await invoke<HookStatus>("install_opencode_hooks"));
+  }
+
+  return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };
+}
+
+export async function uninstallOpencodeHooks(): Promise<HookStatus> {
+  if (isTauriRuntime()) {
+    return normalizeHookStatus(await invoke<HookStatus>("uninstall_opencode_hooks"));
   }
 
   return { installed: false, scriptFound: false, settingsPath: "", scriptPath: "" };

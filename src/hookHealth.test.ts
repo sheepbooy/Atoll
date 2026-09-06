@@ -41,8 +41,9 @@ function hookHealth(
   cursor: typeof ready = ready,
   zcode: typeof ready = cursor,
   gemini: typeof ready = zcode,
+  opencode: typeof ready = missing,
 ): HookHealthSnapshot {
-  return { claude, codex, cursor, zcode, gemini };
+  return { claude, codex, cursor, zcode, gemini, opencode };
 }
 
 describe("hookHealth", () => {
@@ -157,7 +158,13 @@ describe("hookHealth", () => {
       hookHealth(ready, ready, ready),
       hookHealth(missing, missing, missing),
     );
-    expect(merged).toEqual(hookHealth(ready, ready, ready));
+    // opencode is uninstalled on both sides, so the merge's neither-ready
+    // branch rebuilds it and fills in the nodeFound default.
+    const expected = {
+      ...hookHealth(ready, ready, ready),
+      opencode: { ...missing, nodeFound: true },
+    };
+    expect(merged).toEqual(expected);
     const analysis = analyzeHookHealth(merged);
     expect(analysis.connectedCount).toBe(5);
     expect(analysis.disconnectedAgents).toEqual([]);
@@ -208,6 +215,7 @@ describe("hookHealth", () => {
       cursor: cursorDrifted,
       zcode: ready,
       gemini: ready,
+      opencode: missing,
     });
     expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["cursor"]);
     expect(deriveHeaderLogoDisplay(analysis, "idle")).toEqual({
@@ -226,6 +234,7 @@ describe("hookHealth", () => {
         cursor: missing,
         zcode: ready,
         gemini: ready,
+        opencode: missing,
       },
       { configuredAgents: configuredCursor },
     );
@@ -244,6 +253,7 @@ describe("hookHealth", () => {
       cursor: missing,
       zcode: ready,
       gemini: ready,
+      opencode: missing,
     });
     expect(analysis.disconnectedAgents).toEqual([]);
     expect(analysis.needsReconnect).toBe(false);
@@ -314,6 +324,7 @@ describe("hookHealth", () => {
         cursor: ready,
         zcode: ready,
         gemini: missing,
+        opencode: missing,
       },
       { configuredAgents: configuredGemini },
     );

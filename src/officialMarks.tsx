@@ -194,6 +194,72 @@ const CURSOR_CUBE_PATH_KEYS = Object.keys(
   CURSOR_CUBE_PATHS,
 ) as Array<keyof typeof CURSOR_CUBE_PATHS>;
 
+/** OpenCode mark: the pixel-block "o" from the official wordmark
+ * (logo-ornate in opencode.ai's bundle), rebuilt on a 24×24 grid — a square
+ * ring (block thickness 6) with the signature offset inner block that fills
+ * only the lower half of the ring's hole. */
+export const OPENCODE_RING_PATH = "M24 0H0V24H24V0ZM18 6H6V18H18V6Z";
+// Inner block fills the lower two-thirds of the ring's hole (the wordmark's
+// offset-block proportion).
+export const OPENCODE_BLOCK_PATH = "M6 10H18V18H6V10Z";
+
+export function opencodeRingGradientStops(
+  mood: ClawdMood,
+  accent?: string,
+  accentDark?: string,
+): { from: string; to: string } {
+  if (mood === "dead") return { from: "#55585e", to: "#3a3d42" };
+  if (mood === "worried") return { from: "#4a5a66", to: "#35434d" };
+  // Session rows tint the ring with the per-session palette color; agent tabs
+  // keep the brand gradient by not passing an accent.
+  if (accent) return { from: accent, to: accentDark || accent };
+  if (mood === "sleeping") return { from: "#46655f", to: "#2e4540" };
+  // The island's teal (matches the .teal agent-label / subagent tones).
+  return { from: "#70d8c8", to: "#2aa896" };
+}
+
+export function opencodeBlockFill(mood: ClawdMood): string {
+  if (mood === "dead") return "#c8ccd2";
+  if (mood === "worried") return "#7cb97c";
+  if (mood === "sleeping") return "#dbe7ee";
+  // White foreground, matching the ZCode tile's "colored base + white mark"
+  // formula — the wordmark's own near-black block vanishes on the dark island.
+  return "#ffffff";
+}
+
+export function OpencodeOfficialMark({
+  mood,
+  accent,
+  accentDark,
+  className,
+}: {
+  mood: ClawdMood;
+  accent?: string;
+  accentDark?: string;
+  className?: string;
+}) {
+  // Per-instance gradient id: several mascots with different moods (e.g. a dead
+  // header logo next to a live agent tab) must not share one gradient def.
+  const gradientId = `opencode-ring-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
+  const { from, to } = opencodeRingGradientStops(mood, accent, accentDark);
+
+  return (
+    <g className={className}>
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0.35" y2="1">
+          <stop offset="0" stopColor={from} />
+          <stop offset="1" stopColor={to} />
+        </linearGradient>
+      </defs>
+      {/* Same visual band as the Codex blossom / Cursor cube / ZCode tile / Gemini spark. */}
+      <g transform="translate(56 39) scale(3.15) translate(-12 -12)">
+        <path fill={`url(#${gradientId})`} fillRule="evenodd" clipRule="evenodd" d={OPENCODE_RING_PATH} />
+        <path fill={opencodeBlockFill(mood)} d={OPENCODE_BLOCK_PATH} />
+      </g>
+    </g>
+  );
+}
+
 export function CursorOfficialMark({
   palette,
   className,

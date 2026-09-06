@@ -2,6 +2,7 @@ import { ClawdMascot, type ClawdMood } from "./ClawdMascot";
 import { CodexMascot } from "./CodexMascot";
 import { CursorMascot } from "./CursorMascot";
 import { GeminiMascot } from "./GeminiMascot";
+import { OpencodeMascot } from "./OpencodeMascot";
 import { ZcodeMascot } from "./ZcodeMascot";
 import type { AgentKind } from "./tauri";
 
@@ -13,6 +14,7 @@ export const AGENT_ACCENT: Record<AgentKind, { accent?: string; accentDark?: str
   cursor: { accent: "#a78bfa", accentDark: "#7c5fd4" },
   zcode: { accent: "#7cc8f0", accentDark: "#2f88b8" },
   gemini: { accent: "#4796E3", accentDark: "#CA6673" },
+  opencode: { accent: "#70d8c8", accentDark: "#2aa896" },
   other: { accent: "#c9bcff", accentDark: "#9182d1" },
 };
 
@@ -77,6 +79,19 @@ export function AgentMascot({
   if (agent === "gemini") {
     return (
       <GeminiMascot
+        mood={mood}
+        size={size}
+        className={className}
+        accent={accent}
+        accentDark={accentDark}
+        animated={animated}
+      />
+    );
+  }
+
+  if (agent === "opencode") {
+    return (
+      <OpencodeMascot
         mood={mood}
         size={size}
         className={className}

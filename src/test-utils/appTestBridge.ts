@@ -66,6 +66,12 @@ export const connectedHookHealth = {
     settingsPath: "",
     scriptPath: "",
   },
+  opencode: {
+    installed: true,
+    scriptFound: true,
+    settingsPath: "",
+    scriptPath: "",
+  },
 };
 
 export const emptyHookHealth = {
@@ -94,6 +100,12 @@ export const emptyHookHealth = {
     scriptPath: "",
   },
   gemini: {
+    installed: false,
+    scriptFound: false,
+    settingsPath: "",
+    scriptPath: "",
+  },
+  opencode: {
     installed: false,
     scriptFound: false,
     settingsPath: "",

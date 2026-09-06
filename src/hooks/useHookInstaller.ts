@@ -13,6 +13,8 @@ import {
   uninstallZcodeHooks,
   installGeminiHooks,
   uninstallGeminiHooks,
+  installOpencodeHooks,
+  uninstallOpencodeHooks,
   type HookStatus,
   type HookHealthSnapshot,
 } from "../tauri";
@@ -58,7 +60,7 @@ export function useHookInstaller({
 
   function applyHookInstallSnapshot(
     statuses: Partial<
-      Record<"claude" | "codex" | "cursor" | "zcode" | "gemini", HookStatus>
+      Record<"claude" | "codex" | "cursor" | "zcode" | "gemini" | "opencode", HookStatus>
     >,
   ) {
     invalidatePendingSnapshotLoads();
@@ -68,6 +70,7 @@ export function useHookInstaller({
       cursor: statuses.cursor ?? snapshotRef.current.hookHealth.cursor,
       zcode: statuses.zcode ?? snapshotRef.current.hookHealth.zcode,
       gemini: statuses.gemini ?? snapshotRef.current.hookHealth.gemini,
+      opencode: statuses.opencode ?? snapshotRef.current.hookHealth.opencode,
     };
     const optimisticHookHealth = mergeHookHealthPreferReady(
       snapshotRef.current.hookHealth,
@@ -198,32 +201,66 @@ export function useHookInstaller({
     }
   }
 
+  async function handleInstallOpencodeHooks() {
+    setHookBusy(true);
+    setHookInstallError(null);
+    try {
+      const status = await installOpencodeHooks();
+      if (status.installed) {
+        setConfiguredHookAgents(markHookAgentConfigured("opencode"));
+      }
+      await applyHookInstallSnapshot({ opencode: status });
+      if (status.installed) {
+        collapseIsland(true);
+      }
+    } catch (error) {
+      setHookInstallError(
+        i18n.t("error.installFailed", {
+          ns: "hooks",
+          agentLabel: "OpenCode",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
   async function handleInstallAllHooks() {
     setHookBusy(true);
     setHookInstallError(null);
     try {
       setConfiguredHookAgents(markAllHookAgentsConfigured());
-      const [claudeStatus, codexStatus, cursorStatus, zcodeStatus, geminiStatus] =
-        await Promise.all([
-          installClaudeHooks(),
-          installCodexHooks(),
-          installCursorHooks(),
-          installZcodeHooks(),
-          installGeminiHooks(),
-        ]);
+      const [
+        claudeStatus,
+        codexStatus,
+        cursorStatus,
+        zcodeStatus,
+        geminiStatus,
+        opencodeStatus,
+      ] = await Promise.all([
+        installClaudeHooks(),
+        installCodexHooks(),
+        installCursorHooks(),
+        installZcodeHooks(),
+        installGeminiHooks(),
+        installOpencodeHooks(),
+      ]);
       await applyHookInstallSnapshot({
         claude: claudeStatus,
         codex: codexStatus,
         cursor: cursorStatus,
         zcode: zcodeStatus,
         gemini: geminiStatus,
+        opencode: opencodeStatus,
       });
       if (
         claudeStatus.installed ||
         codexStatus.installed ||
         cursorStatus.installed ||
         zcodeStatus.installed ||
-        geminiStatus.installed
+        geminiStatus.installed ||
+        opencodeStatus.installed
       ) {
         collapseIsland(true);
       }
@@ -233,6 +270,7 @@ export function useHookInstaller({
         !cursorStatus.installed ? "Cursor" : null,
         !zcodeStatus.installed ? "ZCode" : null,
         !geminiStatus.installed ? "Gemini CLI" : null,
+        !opencodeStatus.installed ? "OpenCode" : null,
       ].filter(Boolean);
       if (failures.length > 0) {
         setHookInstallError(
@@ -406,19 +444,56 @@ export function useHookInstaller({
     }
   }
 
+  async function handleUninstallOpencodeHooks() {
+    closeMenu();
+    setHookBusy(true);
+    try {
+      const status = await uninstallOpencodeHooks();
+      const nextSnapshot = await getSnapshot().catch(() => null);
+      if (nextSnapshot) {
+        applySnapshot(nextSnapshot);
+      } else {
+        applySnapshot({
+          ...snapshotRef.current,
+          hookHealth: {
+            ...snapshotRef.current.hookHealth,
+            opencode: status,
+          },
+        });
+      }
+    } catch (error) {
+      setHookInstallError(
+        i18n.t("error.uninstallFailed", {
+          ns: "hooks",
+          agentLabel: "OpenCode",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
   async function handleUninstallHooks() {
     closeMenu();
     setHookBusy(true);
     setHookInstallError(null);
     try {
-      const [claudeStatus, codexStatus, cursorStatus, zcodeStatus, geminiStatus] =
-        await Promise.all([
-          uninstallClaudeHooks(),
-          uninstallCodexHooks(),
-          uninstallCursorHooks(),
-          uninstallZcodeHooks(),
-          uninstallGeminiHooks(),
-        ]);
+      const [
+        claudeStatus,
+        codexStatus,
+        cursorStatus,
+        zcodeStatus,
+        geminiStatus,
+        opencodeStatus,
+      ] = await Promise.all([
+        uninstallClaudeHooks(),
+        uninstallCodexHooks(),
+        uninstallCursorHooks(),
+        uninstallZcodeHooks(),
+        uninstallGeminiHooks(),
+        uninstallOpencodeHooks(),
+      ]);
       const nextSnapshot = await getSnapshot().catch(() => null);
       if (nextSnapshot) {
         applySnapshot(nextSnapshot);
@@ -432,6 +507,7 @@ export function useHookInstaller({
             cursor: cursorStatus,
             zcode: zcodeStatus,
             gemini: geminiStatus,
+            opencode: opencodeStatus,
           },
         });
       }
@@ -518,12 +594,14 @@ export function useHookInstaller({
     handleInstallCodexHooks,
     handleInstallZcodeHooks,
     handleInstallGeminiHooks,
+    handleInstallOpencodeHooks,
     handleInstallCursorHooks,
     handleInstallAllHooks,
     handleUninstallClaudeHooks,
     handleUninstallCodexHooks,
     handleUninstallZcodeHooks,
     handleUninstallGeminiHooks,
+    handleUninstallOpencodeHooks,
     handleUninstallCursorHooks,
     handleUninstallHooks,
     handleRemoveCompetingClaudeHooks,

@@ -283,6 +283,24 @@ const demoGeminiHookMissing: HookStatus = {
   nodeFound: true,
 };
 
+const demoOpencodeHookInstalled: HookStatus = {
+  installed: true,
+  scriptFound: true,
+  settingsPath: "~/.config/opencode/plugins",
+  scriptPath: "/Applications/Atoll.app/.../atoll-opencode-bridge.mjs",
+  nodePath: "",
+  nodeFound: true,
+};
+
+const demoOpencodeHookMissing: HookStatus = {
+  installed: false,
+  scriptFound: true,
+  settingsPath: "~/.config/opencode/plugins",
+  scriptPath: "/Applications/Atoll.app/.../atoll-opencode-bridge.mjs",
+  nodePath: "",
+  nodeFound: true,
+};
+
 function refreshRequestTimestamp(request: PermissionRequest): PermissionRequest {
   return { ...request, requestedAt: new Date().toISOString() };
 }
@@ -338,6 +356,7 @@ export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {
       cursor: demoCursorHookInstalled,
       zcode: demoZcodeHookInstalled,
       gemini: demoGeminiHookInstalled,
+      opencode: demoOpencodeHookInstalled,
     },
   };
 
@@ -400,6 +419,10 @@ export function getDemoZcodeHookStatus(mode: DemoMode): HookStatus {
 
 export function getDemoGeminiHookStatus(mode: DemoMode): HookStatus {
   return mode === "idle" ? demoGeminiHookMissing : demoGeminiHookInstalled;
+}
+
+export function getDemoOpencodeHookStatus(mode: DemoMode): HookStatus {
+  return mode === "idle" ? demoOpencodeHookMissing : demoOpencodeHookInstalled;
 }
 
 export function shouldAutoExpandDemo(mode: DemoMode): boolean {

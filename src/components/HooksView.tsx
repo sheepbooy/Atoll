@@ -126,7 +126,7 @@ export function HooksView({
                     {agent.status.settingsPath}
                   </span>
                 ) : null}
-                {agent.note && (!installed || agent.key === "codex" || agent.key === "claude" || agent.key === "cursor" || agent.key === "zcode" || agent.key === "gemini") ? (
+                {agent.note && (!installed || agent.key !== "other") ? (
                   <span className="settings-card-desc">{agent.note}</span>
                 ) : null}
                 {agent.key === "claude" ? (
@@ -170,6 +170,15 @@ export function HooksView({
                       <li>{t("checklist.geminiTrust")}</li>
                       <li>{t("checklist.geminiRestart")}</li>
                       <li>{t("checklist.geminiVerify")}</li>
+                    </ul>
+                  </details>
+                ) : null}
+                {agent.key === "opencode" ? (
+                  <details className="settings-hook-desktop-note">
+                    <summary>{t("checklist.opencodeTitle")}</summary>
+                    <ul>
+                      <li>{t("checklist.opencodeRestart")}</li>
+                      <li>{t("checklist.opencodeVerify")}</li>
                     </ul>
                   </details>
                 ) : null}

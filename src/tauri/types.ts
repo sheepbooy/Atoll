@@ -5,6 +5,7 @@ export type AgentKind =
   | "cursor"
   | "zcode"
   | "gemini"
+  | "opencode"
   | "other";
 
 export interface TokenUsage {
@@ -120,6 +121,7 @@ export interface HookHealthSnapshot {
   cursor: HookStatus;
   zcode: HookStatus;
   gemini: HookStatus;
+  opencode: HookStatus;
 }
 
 export const EMPTY_HOOK_HEALTH: HookHealthSnapshot = {
@@ -160,6 +162,15 @@ export const EMPTY_HOOK_HEALTH: HookHealthSnapshot = {
     needsRetrust: false,
   },
   gemini: {
+    installed: false,
+    scriptFound: false,
+    settingsPath: "",
+    scriptPath: "",
+    nodePath: "",
+    nodeFound: true,
+    needsRetrust: false,
+  },
+  opencode: {
     installed: false,
     scriptFound: false,
     settingsPath: "",

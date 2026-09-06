@@ -11,6 +11,7 @@ export const agentLabels: Record<AgentKind, string> = {
   cursor: "Cursor",
   zcode: "ZCode",
   gemini: "Gemini",
+  opencode: "OpenCode",
   other: "Agent",
 };
 
@@ -20,6 +21,7 @@ export const agentTone: Record<AgentKind, string> = {
   cursor: "violet",
   zcode: "sky",
   gemini: "lime",
+  opencode: "teal",
   other: "neutral",
 };
 
@@ -29,6 +31,7 @@ export const agentSortRank: Record<AgentKind, number> = {
   cursor: 2,
   zcode: 2,
   gemini: 2,
+  opencode: 2,
   other: 3,
 };
 export const agentMascotAccent = (agent: AgentKind) => AGENT_ACCENT[agent]?.accent;
@@ -40,5 +43,6 @@ export const PANEL_GLOW: Record<AgentKind, string> = {
   cursor: "rgba(167, 139, 250, 0.18)",
   zcode: "rgba(56, 189, 248, 0.18)",
   gemini: "rgba(178, 229, 120, 0.18)",
+  opencode: "rgba(112, 216, 200, 0.15)",
   other: "rgba(201, 188, 255, 0.16)",
 };

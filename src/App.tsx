@@ -633,12 +633,14 @@ export function App() {
     handleInstallCodexHooks,
     handleInstallZcodeHooks,
     handleInstallGeminiHooks,
+    handleInstallOpencodeHooks,
     handleInstallCursorHooks,
     handleInstallAllHooks,
     handleUninstallClaudeHooks,
     handleUninstallCodexHooks,
     handleUninstallZcodeHooks,
     handleUninstallGeminiHooks,
+    handleUninstallOpencodeHooks,
     handleUninstallCursorHooks,
     handleUninstallHooks,
     handleRemoveCompetingClaudeHooks,
@@ -680,6 +682,7 @@ export function App() {
   const cursorHookStatus = snapshot.hookHealth?.cursor ?? null;
   const zcodeHookStatus = snapshot.hookHealth?.zcode ?? null;
   const geminiHookStatus = snapshot.hookHealth?.gemini ?? null;
+  const opencodeHookStatus = snapshot.hookHealth?.opencode ?? null;
   const hookAttention = hookAttentionTitle(
     hookHealthAnalysis,
     hookHealthHydrated,
@@ -983,6 +986,7 @@ export function App() {
       cursor: 0,
       zcode: 0,
       gemini: 0,
+      opencode: 0,
       other: 0,
     };
     for (const session of sessions) {
@@ -1516,6 +1520,23 @@ export function App() {
           }),
       onInstall: handleInstallGeminiHooks,
       onUninstall: handleUninstallGeminiHooks,
+    },
+    {
+      key: "opencode",
+      label: "OpenCode",
+      status: opencodeHookStatus,
+      note: opencodeHookStatus.settingsPath
+        ? i18n.t("register.withPath", {
+            ns: "hooks",
+            path: opencodeHookStatus.settingsPath,
+            note: hookAgentNote("opencode"),
+          })
+        : i18n.t("register.opencode", {
+            ns: "hooks",
+            note: hookAgentNote("opencode"),
+          }),
+      onInstall: handleInstallOpencodeHooks,
+      onUninstall: handleUninstallOpencodeHooks,
     },
   ];
 

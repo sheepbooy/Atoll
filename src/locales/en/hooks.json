@@ -39,7 +39,8 @@
     "codex": "Works with Codex CLI and Desktop. After install: trust the Atoll hook in Codex Desktop or via /hooks, restart Codex, then trigger one shell permission.",
     "cursor": "Works with Cursor IDE Agent and Ask modes. After install: confirm hooks in Cursor Settings, restart Cursor, then send a message in Agent or Ask mode to verify.",
     "zcode": "Works with the ZCode desktop app and CLI. After install: restart ZCode so the hook runner picks up the new config, then trigger one shell permission to verify.",
-    "gemini": "Works with the Gemini CLI. After install: run /hooks in Gemini and trust the Atoll hook, restart Gemini, then trigger one shell command to verify."
+    "gemini": "Works with the Gemini CLI. After install: run /hooks in Gemini and trust the Atoll hook, restart Gemini, then trigger one shell command to verify.",
+    "opencode": "Works with the OpenCode CLI. After install: restart OpenCode so the bridge plugin loads, then trigger one permission prompt to verify."
   },
   "register": {
     "withPath": "Registers hooks in {{path}}. {{note}}",
@@ -47,7 +48,8 @@
     "codex": "Registers Codex hooks for permission approval. {{note}}",
     "cursor": "Registers Cursor hooks for permission approval. {{note}}",
     "zcode": "Registers ZCode hooks for permission approval. {{note}}",
-    "gemini": "Registers Gemini CLI hooks for permission approval. {{note}}"
+    "gemini": "Registers Gemini CLI hooks for permission approval. {{note}}",
+    "opencode": "Installs the Atoll bridge plugin for permission approval. {{note}}"
   },
   "checklist": {
     "claudeTitle": "Claude Desktop checklist",
@@ -74,7 +76,10 @@
     "geminiNode": "Install Node.js on this machine before installing hooks.",
     "geminiTrust": "In Gemini CLI, open /hooks and trust the Atoll hook for your project.",
     "geminiRestart": "Restart Gemini CLI after installing hooks.",
-    "geminiVerify": "Trigger one shell command in a local session to verify; approve and deny once from Atoll."
+    "geminiVerify": "Trigger one shell command in a local session to verify; approve and deny once from Atoll.",
+    "opencodeTitle": "OpenCode checklist",
+    "opencodeRestart": "Quit and reopen OpenCode after installing the plugin so it loads at startup.",
+    "opencodeVerify": "Trigger one permission prompt in a local session to verify; approve and deny once from Atoll."
   },
   "warning": {
     "scriptMissing": "Hook script missing from the app bundle. Reinstall Atoll if install fails.",
@@ -94,6 +99,7 @@
     "cursor": "Atoll updated the Cursor hook script since it was last loaded. Reopen Cursor Settings → Hooks to reload it, then restart Cursor.",
     "zcode": "Atoll updated the ZCode hook script since it was last trusted. Click Reinstall hooks in Atoll, then restart ZCode.",
     "gemini": "Atoll updated the Gemini hook script since it was last trusted. Click Reinstall hooks in Atoll, re-trust the hook via /hooks in Gemini, then restart Gemini.",
+    "opencode": "Atoll updated the OpenCode bridge plugin since it was last loaded. Click Reinstall hooks in Atoll, then restart OpenCode.",
     "default": "Atoll updated this hook script since it was last trusted. Re-confirm it in the agent app, then restart."
   },
   "error": {
