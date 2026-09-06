@@ -11,6 +11,9 @@ export type RiskLevel = "danger" | "caution";
 
 export const DANGER_PATTERNS: RegExp[] = [
   /\brm\s+(-\w*\s+)*-?\w*[rf]\w*[rf]/i,
+  // Split short flags (`rm -r -f`) evade the combined-cluster pattern above.
+  /\brm\s+(?:-\w*\s+)*-\w*r\b[^\n]*\s-\w*f\b/i,
+  /\brm\s+(?:-\w*\s+)*-\w*f\b[^\n]*\s-\w*r\b/i,
   /\bsudo\b/i,
   /git\s+push\b[^\n]*(--force\b|\s-f\b|--force-with-lease\b)/i,
   /git\s+reset\s+--hard\b/i,
