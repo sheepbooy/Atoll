@@ -74,6 +74,32 @@ pub(crate) fn permission_request_from_gemini_payload(
     permission_request_from_tool_payload(id, payload, requested_at, AgentKind::Gemini, false)
 }
 
+/// The OpenCode bridge plugin (scripts/atoll-opencode-bridge.mjs) normalizes
+/// `permission.updated` bus events into Claude-style tool payloads before
+/// posting them. Always-allow is session-local on the Atoll side, exactly like
+/// the ZCode integration: the plugin answers the native prompt once and Atoll
+/// auto-approves later requests from the same session.
+pub(crate) fn permission_request_from_opencode_payload(
+    id: String,
+    payload: Value,
+    requested_at: String,
+) -> Option<PermissionRequest> {
+    let event_name = payload.get("hook_event_name")?.as_str()?;
+    if event_name != "PermissionRequest" {
+        return None;
+    }
+
+    let mut request = permission_request_from_tool_payload(
+        id,
+        payload,
+        requested_at,
+        AgentKind::Opencode,
+        false,
+    )?;
+    request.supports_always = true;
+    Some(request)
+}
+
 pub(crate) fn permission_request_from_cursor_payload(
     id: String,
     payload: Value,
@@ -130,6 +156,7 @@ pub(crate) fn permission_request_from_tool_payload(
         AgentKind::Cursor => "cursor",
         AgentKind::Zcode => "zcode",
         AgentKind::Gemini => "gemini",
+        AgentKind::Opencode => "opencode",
         _ => "claude-code",
     };
 
@@ -381,5 +408,58 @@ mod payload_tests {
             "Atoll approval timed out",
         );
         assert_eq!(response, json!({}));
+    }
+
+    #[test]
+    fn opencode_payload_builds_permission_request_with_always() {
+        let payload = json!({
+            "hook_event_name": "PermissionRequest",
+            "session_id": "ses_opencode_1",
+            "cwd": "/tmp/project",
+            "tool_name": "bash",
+            "tool_input": { "command": "echo hi" },
+            "tool_use_id": "perm-1"
+        });
+        let request = permission_request_from_opencode_payload(
+            "req-1".into(),
+            payload,
+            "2026-09-04T00:00:00Z".into(),
+        )
+        .expect("opencode request");
+        assert!(matches!(request.agent, AgentKind::Opencode));
+        assert_eq!(request.session, "ses_opencode_1");
+        assert_eq!(request.command, "Bash: echo hi");
+        assert_eq!(request.tool_use_id.as_deref(), Some("perm-1"));
+        assert!(request.supports_always);
+    }
+
+    #[test]
+    fn opencode_non_permission_payload_is_ignored() {
+        let payload = json!({
+            "hook_event_name": "SessionStart",
+            "session_id": "ses_opencode_1"
+        });
+        assert!(permission_request_from_opencode_payload(
+            "req-1".into(),
+            payload,
+            "2026-09-04T00:00:00Z".into(),
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn opencode_payload_without_session_falls_back_to_default() {
+        let payload = json!({
+            "hook_event_name": "PermissionRequest",
+            "tool_name": "edit",
+            "tool_input": { "path": "/tmp/a.txt" }
+        });
+        let request = permission_request_from_opencode_payload(
+            "req-1".into(),
+            payload,
+            "2026-09-04T00:00:00Z".into(),
+        )
+        .expect("opencode request");
+        assert_eq!(request.session, "opencode");
     }
 }

@@ -367,6 +367,7 @@ pub(crate) fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
             cursor: forced_uninstalled_status(app, &CURSOR_HOOK_PROFILE),
             zcode: forced_uninstalled_status(app, &ZCODE_HOOK_PROFILE),
             gemini: forced_uninstalled_status(app, &GEMINI_HOOK_PROFILE),
+            opencode: opencode_hook_status(app),
         };
     }
 
@@ -375,6 +376,7 @@ pub(crate) fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
     let cursor_status = cursor_hook_status(app);
     let zcode_status = zcode_hook_status(app);
     let gemini_status = gemini_hook_status(app);
+    let opencode_status = opencode_hook_status(app);
 
     // #region agent log (diagA)
     crate::debug_agent::log(
@@ -429,6 +431,7 @@ pub(crate) fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
         cursor: cursor_status,
         zcode: zcode_status,
         gemini: gemini_status,
+        opencode: opencode_status,
     }
 }
 

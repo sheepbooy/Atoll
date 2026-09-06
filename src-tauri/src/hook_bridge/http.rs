@@ -117,6 +117,8 @@ pub(crate) fn write_json_response(stream: &mut TcpStream, body: Value) -> std::i
 
 pub(crate) fn command_label(tool_name: &str, tool_input: &Value) -> String {
     if tool_name == "Bash"
+        // OpenCode permission events name the shell tool lowercase ("bash").
+        || tool_name == "bash"
         || tool_name == "Shell"
         || tool_name == "exec_command"
         || tool_name == "run_shell_command"

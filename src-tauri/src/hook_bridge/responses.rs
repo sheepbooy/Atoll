@@ -71,6 +71,7 @@ pub(crate) enum PermissionResponseStyle {
     #[allow(dead_code)]
     Cursor,
     Gemini,
+    Opencode,
 }
 
 pub(crate) fn cursor_permission_hook_response(
@@ -159,6 +160,27 @@ pub(crate) fn gemini_hook_defer_response() -> Value {
     json!({})
 }
 
+/// OpenCode bridge plugin contract (scripts/atoll-opencode-bridge.mjs): a
+/// flat decision the plugin maps onto the native
+/// `POST /session/{id}/permissions/{permissionID}` reply
+/// ("once"/"reject"). An empty object means "let OpenCode's own prompt win".
+pub(crate) fn opencode_permission_response(decision: Decision, note: &str) -> Value {
+    match decision {
+        Decision::Approved => json!({ "decision": "allow" }),
+        Decision::Denied => {
+            let reason = if note.is_empty() {
+                "Denied from Atoll".to_string()
+            } else {
+                format!("Denied from Atoll: {note}")
+            };
+            json!({
+                "decision": "deny",
+                "reason": reason
+            })
+        }
+    }
+}
+
 pub(crate) fn build_permission_response(
     style: PermissionResponseStyle,
     hook_event_name: &str,
@@ -176,6 +198,7 @@ pub(crate) fn build_permission_response(
         PermissionResponseStyle::Gemini => {
             gemini_permission_hook_response(decision, note, updated_input)
         }
+        PermissionResponseStyle::Opencode => opencode_permission_response(decision, note),
     }
 }
 
@@ -188,6 +211,7 @@ pub(crate) fn build_hook_defer_response(
         PermissionResponseStyle::ClaudeCodex => hook_defer_response(hook_event_name, reason),
         PermissionResponseStyle::Cursor => cursor_hook_defer_response(hook_event_name, reason),
         PermissionResponseStyle::Gemini => gemini_hook_defer_response(),
+        PermissionResponseStyle::Opencode => json!({}),
     }
 }
 

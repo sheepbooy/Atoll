@@ -8,11 +8,13 @@ use super::*;
 mod assets;
 mod launcher;
 mod node;
+mod opencode;
 mod repair;
 
 pub(crate) use assets::*;
 pub(crate) use launcher::*;
 pub(crate) use node::*;
+pub(crate) use opencode::*;
 pub(crate) use repair::*;
 
 /// A non-Atoll hook registered for the same Claude event as Atoll. When the
@@ -65,6 +67,8 @@ pub(crate) struct HookHealthSnapshot {
     pub(crate) cursor: HookStatus,
     pub(crate) zcode: HookStatus,
     pub(crate) gemini: HookStatus,
+    #[serde(default)]
+    pub(crate) opencode: HookStatus,
 }
 
 impl Default for HookStatus {

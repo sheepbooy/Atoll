@@ -364,6 +364,57 @@ pub(crate) fn process_gemini_observer_event(
     }
 }
 
+/// OpenCode never spawns Atoll as a hook process: the in-process bridge plugin
+/// (scripts/atoll-opencode-bridge.mjs) posts normalized `permission.updated`
+/// events here and blocks on the HTTP response, then relays the decision to
+/// OpenCode's native permission API. There are no observer events yet — the
+/// plugin only forwards permission prompts.
+pub(crate) fn route_opencode_request(
+    app: AppHandle,
+    request: HttpRequest,
+    stream: &TcpStream,
+) -> Result<Value, String> {
+    let payload: Value = serde_json::from_slice(strip_utf8_bom(&request.body))
+        .map_err(|error| format!("Invalid OpenCode hook payload: {error}"))?;
+
+    let hook_event_name = payload
+        .get("hook_event_name")
+        .and_then(Value::as_str)
+        .unwrap_or("PermissionRequest")
+        .to_string();
+
+    crate::debug_agent::log(
+        "H-C",
+        "hook_bridge.rs:route_opencode_request",
+        "opencode hook received",
+        json!({
+            "event": hook_event_name,
+            "toolName": payload.get("tool_name"),
+            "sessionId": payload.get("session_id"),
+            "cwd": payload.get("cwd"),
+        }),
+    );
+
+    match hook_event_name.as_str() {
+        "PermissionRequest" => submit_blocking_permission_request(
+            app,
+            payload,
+            stream,
+            |id, payload, at| permission_request_from_opencode_payload(id, payload, at),
+            &hook_event_name,
+            PermissionResponseStyle::Opencode,
+        )
+        .or_else(|error| {
+            Ok(build_hook_defer_response(
+                PermissionResponseStyle::Opencode,
+                &hook_event_name,
+                &error,
+            ))
+        }),
+        _ => Ok(json!({})),
+    }
+}
+
 /// Cursor fires `preToolUse` for *every* tool call (unlike Claude Code which
 /// only fires `PermissionRequest` for dangerous ones).  Since Cursor already
 /// has its own permission management UI (auto-approve / ask settings), Atoll

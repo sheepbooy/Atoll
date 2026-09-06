@@ -103,6 +103,7 @@ pub(crate) fn write_bridge_config(port: u16, token: &str) -> std::io::Result<()>
         "cursorUrl": format!("http://{HOOK_BIND_HOST}:{port}/cursor/hook"),
         "zcodeUrl": format!("http://{HOOK_BIND_HOST}:{port}/zcode/hook"),
         "geminiUrl": format!("http://{HOOK_BIND_HOST}:{port}/gemini/hook"),
+        "opencodeUrl": format!("http://{HOOK_BIND_HOST}:{port}/opencode/hook"),
         "token": token,
     });
     std::fs::write(path, serde_json::to_string_pretty(&config)?)
@@ -376,6 +377,10 @@ pub(crate) fn route_request(
             require_hook_auth(&app, &request)?;
             route_cursor_request(app, request, stream)
         }
+        "/opencode/hook" => {
+            require_hook_auth(&app, &request)?;
+            route_opencode_request(app, request, stream)
+        }
         _ => Err("Unsupported Atoll hook endpoint".into()),
     }
 }
@@ -465,6 +470,7 @@ mod bridge_bind_tests {
             "cursorUrl": format!("http://{HOOK_BIND_HOST}:{port}/cursor/hook"),
             "zcodeUrl": format!("http://{HOOK_BIND_HOST}:{port}/zcode/hook"),
             "geminiUrl": format!("http://{HOOK_BIND_HOST}:{port}/gemini/hook"),
+            "opencodeUrl": format!("http://{HOOK_BIND_HOST}:{port}/opencode/hook"),
             "token": token,
         });
         std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())

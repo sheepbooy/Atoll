@@ -200,6 +200,7 @@ pub(crate) enum AgentKind {
     Cursor,
     Zcode,
     Gemini,
+    Opencode,
     Other,
 }
 
