@@ -2301,8 +2301,8 @@ mod staged_drag {
     use objc2::runtime::{NSObject, NSObjectProtocol, ProtocolObject};
     use objc2::{define_class, msg_send, ClassType, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{
-        NSApplication, NSDraggingContext, NSDraggingItem, NSDraggingSession, NSDraggingSource,
-        NSDragOperation, NSEventType, NSPasteboardWriting, NSWindow, NSWorkspace,
+        NSApplication, NSDragOperation, NSDraggingContext, NSDraggingItem, NSDraggingSession,
+        NSDraggingSource, NSEventType, NSPasteboardWriting, NSWindow, NSWorkspace,
     };
     use objc2_foundation::{NSArray, NSPoint, NSRect, NSSize, NSString, NSURL};
     use tauri::WebviewWindow;
@@ -2403,7 +2403,8 @@ mod staged_drag {
         let items = NSArray::from_retained_slice(&items);
         // SAFETY: +new is a plain NSObject constructor; we are on the main
         // thread, which this MainThreadOnly class requires.
-        let source: Retained<StagedDragSource> = unsafe { msg_send![StagedDragSource::class(), new] };
+        let source: Retained<StagedDragSource> =
+            unsafe { msg_send![StagedDragSource::class(), new] };
         let source = ProtocolObject::from_retained(source);
         content_view.beginDraggingSessionWithItems_event_source(&items, &event, &source);
         true

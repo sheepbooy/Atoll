@@ -815,7 +815,10 @@ fn clear_staged_files(
     file_station::clear_entries(&mut entries);
     file_station::save_history(&entries);
     drop(entries);
-    let _ = app.emit("file-station-changed", Vec::<file_station::StagedFileView>::new());
+    let _ = app.emit(
+        "file-station-changed",
+        Vec::<file_station::StagedFileView>::new(),
+    );
     Vec::new()
 }
 

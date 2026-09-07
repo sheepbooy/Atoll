@@ -684,8 +684,9 @@ pub fn begin_staged_files_drag(window: &WebviewWindow, paths: &[String]) -> bool
                     array.BindToHandler::<Option<&IBindCtx>, IDataObject>(None, &BHID_DataObject)
                 {
                     let hwnd = window_hwnd(window).unwrap_or_default();
-                    started = SHDoDragDrop(hwnd, &data_object, None::<&IDropSource>, DROPEFFECT_COPY)
-                        .is_ok();
+                    started =
+                        SHDoDragDrop(hwnd, &data_object, None::<&IDropSource>, DROPEFFECT_COPY)
+                            .is_ok();
                 }
             }
         }

@@ -133,7 +133,11 @@ pub fn views(entries: &[StagedFile]) -> Vec<StagedFileView> {
 /// Stage dropped paths as references: skip blank/missing paths, canonicalize
 /// for dedup (re-staging refreshes `staged_at` and keeps the original id),
 /// insert newest-first, then evict the oldest entries beyond `limit`.
-pub fn stage_paths(entries: &mut Vec<StagedFile>, paths: &[String], limit: usize) -> StageFilesResult {
+pub fn stage_paths(
+    entries: &mut Vec<StagedFile>,
+    paths: &[String],
+    limit: usize,
+) -> StageFilesResult {
     let limit = limit.max(1);
     let mut added = 0usize;
     let mut skipped = 0usize;
@@ -227,7 +231,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("atoll-fs-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("file_station.json");
-        let entries = vec![staged("a", "/tmp/one.txt", 100), staged("b", "/tmp/two", 200)];
+        let entries = vec![
+            staged("a", "/tmp/one.txt", 100),
+            staged("b", "/tmp/two", 200),
+        ];
         save_list(&path, &entries);
         assert_eq!(load_list(&path), entries);
         std::fs::remove_dir_all(&dir).unwrap();
@@ -323,6 +330,9 @@ mod tests {
 
     /// A guaranteed-real file path: the test binary itself.
     fn env_exe_path() -> String {
-        std::env::current_exe().unwrap().to_string_lossy().into_owned()
+        std::env::current_exe()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()
     }
 }
