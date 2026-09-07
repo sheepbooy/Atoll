@@ -2293,3 +2293,124 @@ mod activation_observer {
 pub fn start_activation_observer(app: AppHandle) {
     activation_observer::start(app);
 }
+
+// ─── Native drag-out of staged files ───────────────────────────────────────
+
+mod staged_drag {
+    use objc2::rc::Retained;
+    use objc2::runtime::{NSObject, NSObjectProtocol, ProtocolObject};
+    use objc2::{define_class, msg_send, ClassType, MainThreadMarker, MainThreadOnly};
+    use objc2_app_kit::{
+        NSApplication, NSDraggingContext, NSDraggingItem, NSDraggingSession, NSDraggingSource,
+        NSDragOperation, NSEventType, NSPasteboardWriting, NSWindow, NSWorkspace,
+    };
+    use objc2_foundation::{NSArray, NSPoint, NSRect, NSSize, NSString, NSURL};
+    use tauri::WebviewWindow;
+
+    // Pasteboard-writing drag source: copies the staged file (never moves).
+    define_class!(
+        #[unsafe(super(NSObject))]
+        #[thread_kind = MainThreadOnly]
+        #[name = "AtollStagedDragSource"]
+        struct StagedDragSource;
+
+        unsafe impl NSObjectProtocol for StagedDragSource {}
+
+        unsafe impl NSDraggingSource for StagedDragSource {
+            #[unsafe(method(draggingSession:sourceOperationMaskForDraggingContext:))]
+            fn dragging_session_source_operation_mask_for_dragging_context(
+                &self,
+                _session: &NSDraggingSession,
+                _context: NSDraggingContext,
+            ) -> NSDragOperation {
+                NSDragOperation::Copy
+            }
+        }
+    );
+
+    /// Begin a native drag of `path` out of the island. Runs on the main
+    /// thread (sync commands do): the drag session hijacks the mouse-dragged
+    /// event stream that is still in flight from the row gesture, so the drop
+    /// must be requested while the left button is held. Returns false when no
+    /// usable event anchors the session — the frontend then stays silent and
+    /// the clipboard button remains the fallback.
+    pub fn begin_drag_out(window: &WebviewWindow, paths: &[String]) -> bool {
+        if paths.is_empty() {
+            return false;
+        }
+        let Some(mtm) = MainThreadMarker::new() else {
+            return false;
+        };
+        // The WKWebView lives in the floating NSPanel (promote_to_floating_panel
+        // moved it there); the Tauri NSWindow is a content-less shell that
+        // permanently ignores mouse events, so a drag session must anchor to
+        // the panel's content view or the system routes the drop wrong.
+        let panel_ptr = super::panel_store::get_raw();
+        let anchor: &NSWindow = if !panel_ptr.is_null() {
+            // SAFETY: panel_store holds the retained NSPanel created on the
+            // main thread at startup; it outlives every drag.
+            unsafe { &*(panel_ptr.cast::<NSWindow>()) }
+        } else {
+            let Ok(ns_window_ptr) = window.ns_window() else {
+                return false;
+            };
+            if ns_window_ptr.is_null() {
+                return false;
+            }
+            // SAFETY: ns_window is a valid Tauri-owned NSWindow pointer.
+            unsafe { &*(ns_window_ptr.cast::<NSWindow>()) }
+        };
+        let Some(content_view) = anchor.contentView() else {
+            return false;
+        };
+        let app = NSApplication::sharedApplication(mtm);
+        let Some(event) = app.currentEvent() else {
+            return false;
+        };
+        // A drag session must be anchored to the live mouse-down/dragged
+        // event; anything else (synthesized IPC events, key events) cannot
+        // carry it.
+        if !matches!(
+            event.r#type(),
+            NSEventType::LeftMouseDown | NSEventType::LeftMouseDragged
+        ) {
+            return false;
+        }
+
+        let location = event.locationInWindow();
+        let mut items = Vec::new();
+        for path in paths {
+            let path_ns = NSString::from_str(path);
+            let url = NSURL::fileURLWithPath(&path_ns);
+            // SAFETY: NSURL conforms to NSPasteboardWriting in AppKit.
+            let writer: Retained<ProtocolObject<dyn NSPasteboardWriting>> =
+                unsafe { Retained::cast_unchecked(url) };
+            let item =
+                NSDraggingItem::initWithPasteboardWriter(mtm.alloc::<NSDraggingItem>(), &writer);
+            let icon = NSWorkspace::sharedWorkspace().iconForFile(&path_ns);
+            // SAFETY: contents must be a valid image object; the workspace icon is.
+            unsafe {
+                item.setDraggingFrame_contents(
+                    NSRect::new(
+                        NSPoint::new(location.x - 16.0, location.y - 16.0),
+                        NSSize::new(32.0, 32.0),
+                    ),
+                    Some(&icon),
+                );
+            }
+            items.push(item);
+        }
+        let items = NSArray::from_retained_slice(&items);
+        // SAFETY: +new is a plain NSObject constructor; we are on the main
+        // thread, which this MainThreadOnly class requires.
+        let source: Retained<StagedDragSource> = unsafe { msg_send![StagedDragSource::class(), new] };
+        let source = ProtocolObject::from_retained(source);
+        content_view.beginDraggingSessionWithItems_event_source(&items, &event, &source);
+        true
+    }
+}
+
+/// Begin a native drag of staged files (see `staged_drag::begin_drag_out`).
+pub fn begin_staged_files_drag(window: &WebviewWindow, paths: &[String]) -> bool {
+    staged_drag::begin_drag_out(window, paths)
+}

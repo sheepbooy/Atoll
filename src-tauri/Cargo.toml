@@ -63,6 +63,20 @@ windows = { version = "0.58", features = [
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
-objc2-app-kit = { version = "0.3.2", features = ["NSColor", "NSScreen", "NSWindow", "NSPasteboard"] }
+objc2-app-kit = { version = "0.3.2", features = [
+  "NSApplication",
+  "NSColor",
+  "NSDragging",
+  "NSDraggingItem",
+  "NSDraggingSession",
+  "NSEvent",
+  "NSImage",
+  "NSPasteboard",
+  "NSResponder",
+  "NSScreen",
+  "NSView",
+  "NSWindow",
+  "NSWorkspace",
+] }
 objc2-foundation = { version = "0.3.2", features = ["NSString", "NSError", "NSData", "NSArray", "NSDictionary", "NSSet", "NSURL"] }
 objc2-service-management = { version = "0.3.2", features = ["SMAppService"] }

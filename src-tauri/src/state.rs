@@ -13,7 +13,8 @@ use serde_json::Value;
 use tauri::{LogicalPosition, PhysicalSize};
 
 use crate::{
-    clipboard_history, lyrics, platform, shortcuts, transcript, HookHealthSnapshot, TranscriptCache,
+    clipboard_history, file_station, lyrics, platform, shortcuts, transcript, HookHealthSnapshot,
+    TranscriptCache,
 };
 
 pub(crate) const COMPACT_WINDOW_WIDTH: f64 = 132.0;
@@ -356,6 +357,8 @@ pub(crate) struct AppState {
     pub(crate) clipboard_history_enabled: Mutex<bool>,
     /// Maximum number of clipboard entries kept (user setting).
     pub(crate) clipboard_history_limit: Mutex<usize>,
+    /// File staging station references (newest first, never expire).
+    pub(crate) file_station: Mutex<Vec<file_station::StagedFile>>,
     /// Whether the scrolling-lyrics marquee is enabled in the compact island.
     pub(crate) lyrics_enabled: Mutex<bool>,
     /// Current lyrics payload (None when no track or no synced lyrics).

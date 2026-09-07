@@ -632,3 +632,69 @@ fn window_hwnd(window: &WebviewWindow) -> Option<windows::Win32::Foundation::HWN
         _ => None,
     }
 }
+
+// ─── Native drag-out of staged files ───────────────────────────────────────
+
+/// Begin a native drag of staged files out of the island. `SHDoDragDrop`
+/// pumps its own modal loop on the calling (main) thread and blocks until the
+/// drag ends; copy-only, the staged files are never moved. Returns false when
+/// the shell refuses (no STA, bad paths) — the clipboard button stays as the
+/// fallback.
+pub fn begin_staged_files_drag(window: &WebviewWindow, paths: &[String]) -> bool {
+    use windows::core::{HSTRING, PCWSTR};
+    use windows::Win32::Foundation::S_OK;
+    use windows::Win32::System::Com::{
+        CoInitializeEx, CoUninitialize, IBindCtx, IDataObject, COINIT_APARTMENTTHREADED,
+    };
+    use windows::Win32::System::Ole::{IDropSource, DROPEFFECT_COPY};
+    use windows::Win32::UI::Shell::Common::ITEMIDLIST;
+    use windows::Win32::UI::Shell::{
+        BHID_DataObject, ILFree, SHCreateShellItemArrayFromIDLists, SHDoDragDrop,
+        SHParseDisplayName,
+    };
+
+    if paths.is_empty() {
+        return false;
+    }
+    // Drag sources need COM STA. The island event loop already initialized
+    // it (S_FALSE); balance only the refcount we took ourselves.
+    let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    if hr.is_err() {
+        return false;
+    }
+    let owned_init = hr == S_OK;
+
+    let mut started = false;
+    unsafe {
+        let mut pidls: Vec<*const ITEMIDLIST> = Vec::with_capacity(paths.len());
+        for path in paths {
+            let wide = HSTRING::from(path);
+            let mut pidl: *mut ITEMIDLIST = std::ptr::null_mut();
+            if SHParseDisplayName(PCWSTR(wide.as_ptr()), None, &mut pidl, 0, None).is_ok()
+                && !pidl.is_null()
+            {
+                pidls.push(pidl);
+            }
+        }
+        if !pidls.is_empty() {
+            // The item array copies the pidls, but freeing after the drag is
+            // the simplest lifetime that cannot race the modal loop.
+            if let Ok(array) = SHCreateShellItemArrayFromIDLists(&pidls) {
+                if let Ok(data_object) =
+                    array.BindToHandler::<Option<&IBindCtx>, IDataObject>(None, &BHID_DataObject)
+                {
+                    let hwnd = window_hwnd(window).unwrap_or_default();
+                    started = SHDoDragDrop(hwnd, &data_object, None::<&IDropSource>, DROPEFFECT_COPY)
+                        .is_ok();
+                }
+            }
+        }
+        for pidl in &pidls {
+            ILFree(Some(*pidl));
+        }
+        if owned_init {
+            CoUninitialize();
+        }
+    }
+    started
+}

@@ -208,6 +208,25 @@ pub fn set_island_cursor_events_ignored(window: &WebviewWindow, ignore: bool) {
     }
 }
 
+/// Begin a native drag of staged files out of the island (File Station).
+/// Returns false when the platform cannot anchor a drag session; the frontend
+/// then keeps the clipboard button as the only extraction path.
+pub fn begin_staged_files_drag(window: &WebviewWindow, paths: &[String]) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::begin_staged_files_drag(window, paths);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return windows::begin_staged_files_drag(window, paths);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = (window, paths);
+        false
+    }
+}
+
 /// Generation-guarded variant used at animation settle time: the toggle is
 /// skipped when a newer presentation has already superseded this animation,
 /// so a stale collapse cannot re-enable click pass-through over a fresh
