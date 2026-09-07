@@ -1,4 +1,4 @@
-import type { HookStatus, IslandSnapshot, PermissionRequest } from "./tauri";
+import type { HookStatus, IslandSnapshot, PermissionRequest, StagedFile } from "./tauri";
 
 export type DemoMode =
   | "compact"
@@ -7,7 +7,8 @@ export type DemoMode =
   | "sessions"
   | "gif"
   | "plan-question"
-  | "plan-approval";
+  | "plan-approval"
+  | "fileStation";
 
 export function getDemoMode(): DemoMode | null {
   if ("__TAURI_INTERNALS__" in window) return null;
@@ -19,11 +20,55 @@ export function getDemoMode(): DemoMode | null {
     mode === "sessions" ||
     mode === "gif" ||
     mode === "plan-question" ||
-    mode === "plan-approval"
+    mode === "plan-approval" ||
+    mode === "fileStation"
   ) {
     return mode;
   }
   return null;
+}
+
+/** File-station demo rows (one lost) for `?demo=fileStation` in the browser. */
+export function getDemoStagedFiles(): StagedFile[] {
+  const now = Date.now();
+  return [
+    {
+      id: "demo-1",
+      path: "/Users/demo/Desktop/design-v3.png",
+      fileName: "design-v3.png",
+      byteSize: 2_411_520,
+      isDir: false,
+      stagedAt: now - 42_000,
+      lost: false,
+    },
+    {
+      id: "demo-2",
+      path: "/Users/demo/Downloads/annual-report.pdf",
+      fileName: "annual-report.pdf",
+      byteSize: 18_644_992,
+      isDir: false,
+      stagedAt: now - 900_000,
+      lost: false,
+    },
+    {
+      id: "demo-3",
+      path: "/Users/demo/Documents/invoices",
+      fileName: "invoices",
+      byteSize: 0,
+      isDir: true,
+      stagedAt: now - 3_600_000,
+      lost: false,
+    },
+    {
+      id: "demo-4",
+      path: "/private/tmp/old-mock.sketch",
+      fileName: "old-mock.sketch",
+      byteSize: 8_388_608,
+      isDir: false,
+      stagedAt: now - 86_400_000,
+      lost: true,
+    },
+  ];
 }
 
 const pendingRequest: PermissionRequest = {
@@ -363,8 +408,13 @@ export function shouldAutoExpandDemo(mode: DemoMode): boolean {
     mode === "sessions" ||
     mode === "idle" ||
     mode === "plan-question" ||
-    mode === "plan-approval"
+    mode === "plan-approval" ||
+    mode === "fileStation"
   );
+}
+
+export function isFileStationDemoMode(): boolean {
+  return getDemoMode() === "fileStation";
 }
 
 export function isGifCaptureMode(): boolean {

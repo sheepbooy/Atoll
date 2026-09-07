@@ -12,6 +12,7 @@ export type PanelView =
   | { kind: "subagentList"; sessionId: string }
   | { kind: "settings"; page: SettingsPage }
   | { kind: "clipboard" }
+  | { kind: "fileStation" }
   | { kind: "history" };
 export type SettingsPage =
   | "main"

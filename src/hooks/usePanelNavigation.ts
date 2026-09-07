@@ -173,6 +173,17 @@ export function usePanelNavigation({
     openClipboardPage();
   }
 
+  function openFileStationPage() {
+    closeMenu();
+    setNavDirection("forward");
+    setPanelAnimKey((key) => key + 1);
+    setPanelView({ kind: "fileStation" });
+  }
+
+  function handleOpenFileStation() {
+    openFileStationPage();
+  }
+
   function openHistoryPage() {
     closeMenu();
     setNavDirection("forward");
@@ -289,6 +300,7 @@ export function usePanelNavigation({
     handleOpenUsageFromSettings,
     navigateBackFromUsage,
     handleOpenClipboard,
+    handleOpenFileStation,
     handleOpenHistory,
     handleOpenSettings,
     openSettingsSubpage,

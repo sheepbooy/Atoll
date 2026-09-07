@@ -531,6 +531,7 @@ export function useIslandPresentation({
     const settingsExpanded =
       panelViewRef.current.kind === "settings" ||
       panelViewRef.current.kind === "clipboard" ||
+      panelViewRef.current.kind === "fileStation" ||
       panelViewRef.current.kind === "history";
     lastNativePresentationKeyRef.current = expandedPresentationKey(
       idleExpanded,

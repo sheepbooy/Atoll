@@ -2945,6 +2945,353 @@ kbd {
   52%, 100% { opacity: 0; transform: scale(1.5); }
 }
 
+/* ── 文件中转站：鼓肚 / 张嘴待喂 / 吃掉 eat1–4 / 吐出 spit ──
+   时长与 atollTransitions.ts 的 ATOLL_REACTION_MS 手工同步（fileStationTiers.test.ts 断言）。 */
+.atoll-logo .atoll-mouth-open,
+.atoll-logo .atoll-cheeks,
+.atoll-logo .atoll-eat-file,
+.atoll-logo .atoll-spit-file,
+.atoll-logo .atoll-sweat,
+.atoll-logo .atoll-burp { opacity: 0; }
+
+/* 带 svg 提升优先级，压过全局 transform 管线的 transform-origin: center，
+   让肚子向下鼓而不是从中心缩放。 */
+.atoll-logo svg .atoll-belly-bump {
+  transform: scale(0);
+  transform-origin: center 10%;
+  transition: transform 420ms cubic-bezier(0.34, 1.45, 0.64, 1);
+}
+.atoll-logo.is-stash-1 .atoll-belly-bump { transform: scale(0.5); }
+.atoll-logo.is-stash-2 .atoll-belly-bump { transform: scale(0.78); }
+.atoll-logo.is-stash-3 .atoll-belly-bump { transform: scale(1); }
+
+.atoll-logo .atoll-cheek-l { transform-origin: right center; }
+.atoll-logo .atoll-cheek-r { transform-origin: left center; }
+
+/* 吃/吐期间与拖拽悬停时收起闭嘴，露出张大嘴。 */
+.atoll-logo:is(.is-reaction-eat1, .is-reaction-eat2, .is-reaction-eat3, .is-reaction-eat4, .is-reaction-spit, .is-mouth-open) .atoll-mouth { opacity: 0; }
+
+/* 张嘴待喂（文件拖到岛上悬停）：
+   外层组只管显隐过渡；开合的弹入/收合与待喂呼吸都在内层组 —— 与 eat/spit
+   反应 keyframes（作用于外层、按 view-box 原点缩放）互不干扰。 */
+.atoll-logo .atoll-mouth-open {
+  transition: opacity 150ms ease-out;
+}
+.atoll-logo.is-mouth-open .atoll-mouth-open {
+  opacity: 1;
+}
+
+/* 内层：o 嘴从中心弹入展开，拖走时反向收合。 */
+.atoll-logo .atoll-mouth-inner {
+  opacity: 0;
+  transform: translateY(1.5px) scale(0.4);
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  transition:
+    opacity 160ms ease-out,
+    transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.atoll-logo.is-mouth-open .atoll-mouth-inner {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  animation: atoll-mouth-gape 1.7s ease-in-out 0.36s infinite;
+}
+
+/* eat/spit 反应期间内层必须完全放开（外层 keyframes 负责全部表演）。 */
+.atoll-logo:is(.is-reaction-eat1, .is-reaction-eat2, .is-reaction-eat3, .is-reaction-eat4, .is-reaction-spit) .atoll-mouth-inner {
+  opacity: 1;
+  transform: none;
+  transition: none;
+  animation: none;
+}
+
+/* 待喂呼吸：竖向的不对称张合，比均匀缩放更像“盼着投喂”。 */
+@keyframes atoll-mouth-gape {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  35% { transform: translateY(0.3px) scale(1.04, 1.12); }
+  60% { transform: translateY(0.15px) scale(1.02, 1.06); }
+}
+
+/* 张嘴的伴随微动作：身体轻压前倾（eager 姿态）、眼睛睁大、腮帮微鼓。
+   活动循环（coding/thinking 等）的动画优先级更高，此时自动省略。 */
+.atoll-logo .atoll-body-group {
+  transition: transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.atoll-logo.is-mouth-open .atoll-body-group {
+  transform: translateY(1%) scale(0.995, 1.025);
+}
+.atoll-logo.is-mouth-open .atoll-eyes-base {
+  transform: scale(1.07);
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  transition: transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.atoll-logo .atoll-cheek-l,
+.atoll-logo .atoll-cheek-r {
+  transition:
+    opacity 240ms ease,
+    transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.atoll-logo.is-mouth-open .atoll-cheek-l,
+.atoll-logo.is-mouth-open .atoll-cheek-r {
+  opacity: 1;
+  transform: scale(0.55);
+}
+
+/* 文件飞入（从右上 / 左上抛物线入口，各档共用、按时长百分比自适应） */
+@keyframes atoll-eat-file-in-r {
+  0% { opacity: 0; transform: translate(22px, -34px) rotate(24deg) scale(1); }
+  6% { opacity: 1; }
+  26% { opacity: 1; transform: translate(0, 0) rotate(0deg) scale(0.85); }
+  32%, 100% { opacity: 0; transform: translate(0, 0) rotate(0deg) scale(0.5); }
+}
+
+@keyframes atoll-eat-file-in-l {
+  0% { opacity: 0; transform: translate(-24px, -30px) rotate(-20deg) scale(1); }
+  6% { opacity: 1; }
+  26% { opacity: 1; transform: translate(0, 0) rotate(0deg) scale(0.85); }
+  32%, 100% { opacity: 0; transform: translate(0, 0) rotate(0deg) scale(0.5); }
+}
+
+/* 吞咽时刻的整体小跳 */
+@keyframes atoll-eat-stage-hop {
+  0%, 58% { transform: translateY(0); }
+  66% { transform: translateY(-5%); }
+  74% { transform: translateY(1.5%); }
+  84%, 100% { transform: translateY(0); }
+}
+
+/* eat1：小口吃（1.4s）—— 一个文件、两次咀嚼、咕咚咽下 */
+.atoll-logo.is-reaction-eat1 .atoll-stage { animation: atoll-eat-stage-hop 1.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+.atoll-logo.is-reaction-eat1 .atoll-body-group { animation: atoll-eat1-chew 1.4s ease-in-out both; }
+.atoll-logo.is-reaction-eat1 .atoll-mouth-open { animation: atoll-eat1-mouth 1.4s linear both; }
+.atoll-logo.is-reaction-eat1 .atoll-eat-file.f1 { animation: atoll-eat-file-in-r 1.4s cubic-bezier(0.45, 0, 0.7, 1) both; }
+
+@keyframes atoll-eat1-chew {
+  0%, 6% { transform: translateY(0) scale(1, 1); }
+  10% { transform: translateY(1.5%) scale(1.04, 0.9); }
+  16% { transform: translateY(0) scale(1, 1); }
+  26% { transform: translateY(0.8%) scale(1, 0.93); }
+  34% { transform: translateY(0) scale(1, 1.03); }
+  42% { transform: translateY(0.8%) scale(1, 0.93); }
+  50% { transform: translateY(0) scale(1, 1.03); }
+  58% { transform: translateY(0) scale(1, 0.98); }
+  72% { transform: translateY(2%) scale(1.03, 1.1); }
+  84% { transform: translateY(0.5%) scale(1, 1); }
+  100% { transform: translateY(0) scale(1, 1); }
+}
+
+@keyframes atoll-eat1-mouth {
+  0% { opacity: 0; transform: scale(0.5); }
+  6% { opacity: 1; transform: scale(1); }
+  26% { transform: scale(1, 1.3); }
+  34% { transform: scale(1, 0.8); }
+  42% { transform: scale(1, 1.3); }
+  50% { transform: scale(1, 0.85); }
+  58% { transform: scale(1, 1.15); }
+  66% { opacity: 1; transform: scale(0.85, 0.6); }
+  74%, 100% { opacity: 0; transform: scale(0.5); }
+}
+
+/* eat2：大快朵颐（1.8s）—— 两个文件、三次咀嚼、左右回味 */
+.atoll-logo.is-reaction-eat2 .atoll-stage { animation: atoll-eat-stage-hop 1.8s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+.atoll-logo.is-reaction-eat2 .atoll-body-group { animation: atoll-eat2-chew 1.8s ease-in-out both; }
+.atoll-logo.is-reaction-eat2 .atoll-mouth-open { animation: atoll-eat2-mouth 1.8s linear both; }
+.atoll-logo.is-reaction-eat2 .atoll-eat-file.f1 { animation: atoll-eat-file-in-r 1.8s cubic-bezier(0.45, 0, 0.7, 1) both; }
+.atoll-logo.is-reaction-eat2 .atoll-eat-file.f2 { animation: atoll-eat-file-in-l 1.8s cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 160ms; }
+.atoll-logo.is-reaction-eat2 .atoll-spark { animation: atoll-eat2-spark 1.8s ease-out both; }
+
+@keyframes atoll-eat2-chew {
+  0%, 6% { transform: translateY(0) scale(1, 1) rotate(0deg); }
+  10% { transform: translateY(1.5%) scale(1.05, 0.9) rotate(0deg); }
+  18% { transform: translateY(0) scale(1, 1) rotate(2deg); }
+  26% { transform: translateY(0.8%) scale(1, 0.92) rotate(2deg); }
+  34% { transform: translateY(0) scale(1, 1.04) rotate(-2deg); }
+  42% { transform: translateY(0.8%) scale(1, 0.92) rotate(-2deg); }
+  50% { transform: translateY(0) scale(1, 1.04) rotate(2deg); }
+  58% { transform: translateY(0.8%) scale(1, 0.93) rotate(1deg); }
+  66% { transform: translateY(0) scale(1, 0.99) rotate(0deg); }
+  78% { transform: translateY(2.2%) scale(1.04, 1.12) rotate(-2deg); }
+  90% { transform: translateY(0.5%) scale(1, 1) rotate(0deg); }
+  100% { transform: translateY(0) scale(1, 1) rotate(0deg); }
+}
+
+@keyframes atoll-eat2-mouth {
+  0% { opacity: 0; transform: scale(0.5); }
+  6% { opacity: 1; transform: scale(1.1); }
+  18% { transform: scale(1.15, 1.3); }
+  26% { transform: scale(1.1, 0.85); }
+  34% { transform: scale(1.15, 1.3); }
+  42% { transform: scale(1.1, 0.85); }
+  50% { transform: scale(1.15, 1.3); }
+  58% { transform: scale(1.1, 0.9); }
+  66% { transform: scale(1, 1.15); }
+  74% { opacity: 1; transform: scale(0.9, 0.6); }
+  82%, 100% { opacity: 0; transform: scale(0.5); }
+}
+
+@keyframes atoll-eat2-spark {
+  0%, 34% { opacity: 0; transform: translate(0, 0) scale(1); }
+  40% { opacity: 1; }
+  58% { opacity: 0; transform: translate(var(--sx), var(--sy)) scale(0.4); }
+  100% { opacity: 0; transform: translate(0, 0) scale(1); }
+}
+
+/* eat3：吃撑（2.2s）—— 三个文件、费力慢嚼、冒冷汗、后仰咽下 */
+.atoll-logo.is-reaction-eat3 .atoll-stage { animation: atoll-eat-stage-hop 2.2s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+.atoll-logo.is-reaction-eat3 .atoll-body-group { animation: atoll-eat3-chew 2.2s ease-in-out both; }
+.atoll-logo.is-reaction-eat3 .atoll-mouth-open { animation: atoll-eat3-mouth 2.2s linear both; }
+.atoll-logo.is-reaction-eat3 .atoll-eat-file.f1 { animation: atoll-eat-file-in-r 2.2s cubic-bezier(0.45, 0, 0.7, 1) both; }
+.atoll-logo.is-reaction-eat3 .atoll-eat-file.f2 { animation: atoll-eat-file-in-l 2.2s cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 200ms; }
+.atoll-logo.is-reaction-eat3 .atoll-eat-file.f3 { animation: atoll-eat-file-in-r 2.2s cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 400ms; }
+.atoll-logo.is-reaction-eat3 .atoll-sweat { animation: atoll-eat-sweat 2.2s linear both; }
+
+@keyframes atoll-eat3-chew {
+  0%, 5% { transform: translateY(0) scale(1, 1) rotate(0deg); }
+  9% { transform: translateY(1.5%) scale(1.05, 0.9) rotate(0deg); }
+  17% { transform: translateY(0.8%) scale(1, 0.92) rotate(1deg); }
+  25% { transform: translateY(0) scale(1, 1.03) rotate(1deg); }
+  33% { transform: translateY(1%) scale(1, 0.9) rotate(-1deg); }
+  41% { transform: translateY(0) scale(1, 1.03) rotate(-1deg); }
+  49% { transform: translateY(1%) scale(1, 0.9) rotate(1deg); }
+  57% { transform: translateY(0) scale(1, 1.02) rotate(0deg); }
+  65% { transform: translateY(0.5%) scale(1, 0.96) rotate(0deg); }
+  78% { transform: translateY(2%) scale(1.06, 1.12) rotate(-4deg); }
+  90% { transform: translateY(0.5%) scale(1, 1) rotate(-1deg); }
+  100% { transform: translateY(0) scale(1, 1) rotate(0deg); }
+}
+
+@keyframes atoll-eat3-mouth {
+  0% { opacity: 0; transform: scale(0.5); }
+  5% { opacity: 1; transform: scale(1.15); }
+  17% { transform: scale(1.2, 1.25); }
+  25% { transform: scale(1.15, 0.9); }
+  33% { transform: scale(1.2, 1.25); }
+  41% { transform: scale(1.15, 0.9); }
+  49% { transform: scale(1.2, 1.2); }
+  57% { transform: scale(1.1, 0.95); }
+  65% { transform: scale(1, 1.05); }
+  73% { opacity: 1; transform: scale(0.9, 0.6); }
+  81%, 100% { opacity: 0; transform: scale(0.5); }
+}
+
+@keyframes atoll-eat-sweat {
+  0%, 48% { opacity: 0; transform: translate(0, -4px); }
+  56% { opacity: 1; }
+  88% { opacity: 1; transform: translate(3px, 13px); }
+  95%, 100% { opacity: 0; transform: translate(4px, 17px); }
+}
+
+/* eat4：饱嗝（2.6s）—— 囫囵吞下、打个激灵、BURP 云雾上飘 */
+.atoll-logo.is-reaction-eat4 .atoll-stage { animation: atoll-eat-stage-hop 2.6s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+.atoll-logo.is-reaction-eat4 .atoll-body-group { animation: atoll-eat4-chew 2.6s ease-in-out both; }
+.atoll-logo.is-reaction-eat4 .atoll-mouth-open { animation: atoll-eat4-mouth 2.6s linear both; }
+.atoll-logo.is-reaction-eat4 .atoll-eat-file.f1 { animation: atoll-eat-file-in-r 2.6s cubic-bezier(0.45, 0, 0.7, 1) both; }
+.atoll-logo.is-reaction-eat4 .atoll-eat-file.f2 { animation: atoll-eat-file-in-l 2.6s cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 160ms; }
+.atoll-logo.is-reaction-eat4 .atoll-eat-file.f3 { animation: atoll-eat-file-in-r 2.6s cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 320ms; }
+.atoll-logo.is-reaction-eat4 .atoll-sweat { animation: atoll-eat-sweat 2.6s linear both; }
+.atoll-logo.is-reaction-eat4 .atoll-burp-b { animation: atoll-eat-burp-b 2.6s ease-out both; }
+.atoll-logo.is-reaction-eat4 .atoll-burp-b.b2 { animation: atoll-eat-burp-b2 2.6s ease-out both; }
+.atoll-logo.is-reaction-eat4 .atoll-burp-b.b3 { animation: atoll-eat-burp-b3 2.6s ease-out both; }
+.atoll-logo.is-reaction-eat4 .atoll-burp-text { animation: atoll-eat-burp-text 2.6s ease-out both; }
+
+@keyframes atoll-eat4-chew {
+  0%, 5% { transform: translateY(0) scale(1, 1) rotate(0deg); }
+  9% { transform: translateY(1.5%) scale(1.05, 0.9) rotate(0deg); }
+  17% { transform: translateY(0.8%) scale(1, 0.92) rotate(0deg); }
+  25% { transform: translateY(0) scale(1, 1.02) rotate(0deg); }
+  33% { transform: translateY(0.8%) scale(1, 0.92) rotate(0deg); }
+  41% { transform: translateY(0) scale(1, 1.02) rotate(0deg); }
+  46% { transform: translateX(-2px) scale(1, 1) rotate(0deg); }
+  49% { transform: translateX(2px) scale(1, 1) rotate(0deg); }
+  52% { transform: translateX(-1.5px) scale(1, 1) rotate(0deg); }
+  55% { transform: translateX(0) scale(1, 1) rotate(0deg); }
+  64% { transform: translateY(1.5%) scale(1.05, 1.12) rotate(4deg); }
+  76% { transform: translateY(2.5%) scale(1.07, 1.13) rotate(3deg); }
+  88% { transform: translateY(0.5%) scale(1, 1) rotate(0deg); }
+  100% { transform: translateY(0) scale(1, 1) rotate(0deg); }
+}
+
+@keyframes atoll-eat4-mouth {
+  0% { opacity: 0; transform: scale(0.5); }
+  5% { opacity: 1; transform: scale(1.15); }
+  17% { transform: scale(1.2, 1.25); }
+  25% { transform: scale(1.15, 0.9); }
+  33% { transform: scale(1.2, 1.2); }
+  41% { transform: scale(1.1, 0.95); }
+  50% { transform: scale(0.95, 0.6); }
+  60% { opacity: 1; transform: scale(1.35, 1.15); }
+  80% { opacity: 1; transform: scale(1.2, 1); }
+  90%, 100% { opacity: 0; transform: scale(0.5); }
+}
+
+@keyframes atoll-eat-burp-b {
+  0%, 56% { opacity: 0; transform: translate(0, 4px) scale(0.5); }
+  64% { opacity: 0.9; transform: translate(2px, -2px) scale(0.9); }
+  92% { opacity: 0; transform: translate(6px, -15px) scale(1.2); }
+  100% { opacity: 0; transform: translate(6px, -15px) scale(1.2); }
+}
+
+@keyframes atoll-eat-burp-b2 {
+  0%, 60% { opacity: 0; transform: translate(0, 4px) scale(0.5); }
+  68% { opacity: 0.85; transform: translate(2px, -2px) scale(0.9); }
+  95% { opacity: 0; transform: translate(7px, -16px) scale(1.25); }
+  100% { opacity: 0; transform: translate(7px, -16px) scale(1.25); }
+}
+
+@keyframes atoll-eat-burp-b3 {
+  0%, 64% { opacity: 0; transform: translate(0, 4px) scale(0.5); }
+  72% { opacity: 0.8; transform: translate(2px, -2px) scale(0.9); }
+  98% { opacity: 0; transform: translate(8px, -17px) scale(1.3); }
+  100% { opacity: 0; transform: translate(8px, -17px) scale(1.3); }
+}
+
+@keyframes atoll-eat-burp-text {
+  0%, 62% { opacity: 0; transform: scale(0.4); }
+  70% { opacity: 1; transform: scale(1.15); }
+  76% { opacity: 1; transform: scale(1); }
+  92%, 100% { opacity: 0; transform: scale(0.8); }
+}
+
+/* spit：吐出（1.2s）—— 腮帮鼓起、文件抛物线吐出、身体后坐 */
+.atoll-logo.is-reaction-spit .atoll-body-group { animation: atoll-spit-body 1.2s ease-out both; }
+.atoll-logo.is-reaction-spit .atoll-mouth-open { animation: atoll-spit-mouth 1.2s linear both; }
+.atoll-logo.is-reaction-spit .atoll-cheek-l { animation: atoll-spit-cheek 1.2s ease-out both; }
+.atoll-logo.is-reaction-spit .atoll-cheek-r { animation: atoll-spit-cheek 1.2s ease-out both; }
+.atoll-logo.is-reaction-spit .atoll-spit-file { animation: atoll-spit-file 1.2s cubic-bezier(0.2, 0.6, 0.5, 1) both; }
+
+@keyframes atoll-spit-body {
+  0%, 8% { transform: translateY(0) scale(1, 1); }
+  20% { transform: translateY(1.5%) scale(1.05, 0.94); }
+  30% { transform: translateY(-1%) scale(0.96, 1.05); }
+  42% { transform: translateY(0.5%) scale(1.02, 0.97); }
+  100% { transform: translateY(0) scale(1, 1); }
+}
+
+@keyframes atoll-spit-mouth {
+  0%, 4% { opacity: 0; transform: scale(0.6); }
+  10%, 26% { opacity: 1; transform: scale(1.15, 0.9); }
+  32% { opacity: 1; transform: scale(1.3, 1.2); }
+  80% { opacity: 1; transform: scale(1.2, 1); }
+  90%, 100% { opacity: 0; transform: scale(0.6); }
+}
+
+@keyframes atoll-spit-cheek {
+  0%, 6% { opacity: 0; transform: scale(0.2); }
+  12% { opacity: 1; transform: scale(1); }
+  26% { opacity: 1; transform: scale(1.1); }
+  38% { opacity: 1; transform: scale(0.5); }
+  50%, 100% { opacity: 0; transform: scale(0.2); }
+}
+
+@keyframes atoll-spit-file {
+  0%, 26% { opacity: 0; transform: translate(0, 0) rotate(0deg) scale(0.4); }
+  32% { opacity: 1; transform: translate(6px, -9px) rotate(12deg) scale(0.8); }
+  55% { opacity: 1; transform: translate(18px, -26px) rotate(40deg) scale(1); }
+  78% { opacity: 1; transform: translate(26px, -22px) rotate(56deg) scale(0.95); }
+  92%, 100% { opacity: 0; transform: translate(30px, -18px) rotate(64deg) scale(0.9); }
+}
+
 /* ─── Clawd Mascot ────────────────────────────────────────────── */
 
 @keyframes clawd-float {
@@ -7362,6 +7709,367 @@ kbd {
   line-height: 1.4;
 }
 
+/* ─── File station view（文件中转站）─────────────────────────────────────── */
+
+.fs-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 10px;
+  flex-shrink: 0;
+}
+
+.fs-count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-dim, #9aa0a6);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  padding: 4px 10px;
+  flex-shrink: 0;
+}
+
+.clipboard-clear-btn.is-confirming {
+  background: rgba(255, 87, 87, 0.16);
+  color: rgba(255, 140, 140, 0.98);
+  border-color: rgba(255, 87, 87, 0.3);
+}
+
+.fs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding: 0 4px;
+}
+
+.fs-entry-row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.fs-entry-row .fs-entry {
+  flex: 1;
+  min-width: 0;
+}
+
+.fs-entry {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  text-align: left;
+  width: 100%;
+}
+
+.fs-entry:hover:not(:disabled) {
+  background: rgba(111, 220, 255, 0.08);
+  border-color: rgba(111, 220, 255, 0.15);
+}
+
+.fs-entry.is-copied {
+  background: rgba(120, 220, 150, 0.1);
+  border-color: rgba(120, 220, 150, 0.2);
+}
+
+/* Ctrl/Cmd 多选态（拖出时整批带走） */
+.fs-entry.is-selected {
+  background: rgba(111, 220, 255, 0.12);
+  border-color: rgba(111, 220, 255, 0.5);
+}
+
+.fs-entry.is-lost,
+.fs-entry-row.is-lost {
+  opacity: 0.45;
+}
+
+.fs-entry:disabled {
+  cursor: default;
+}
+
+.fs-entry-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+}
+
+.fs-entry-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.fs-entry-name {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--fg, #e8eaed);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-entry-meta {
+  font-size: 11px;
+  color: var(--fg-dim, #6b7280);
+  flex-shrink: 0;
+}
+
+.fs-entry-row.is-lost .fs-entry-meta {
+  color: rgba(255, 140, 140, 0.8);
+}
+
+.fs-row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--fg-dim, #6b7280);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.fs-row-action:hover:not(:disabled) {
+  background: rgba(111, 220, 255, 0.12);
+  border-color: rgba(111, 220, 255, 0.2);
+  color: rgba(111, 220, 255, 0.9);
+}
+
+.fs-row-action.fs-remove:hover:not(:disabled) {
+  background: rgba(255, 87, 87, 0.12);
+  border-color: rgba(255, 87, 87, 0.2);
+  color: rgba(255, 130, 130, 0.95);
+}
+
+.fs-row-action:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.fs-entry-row.is-copied .fs-row-action {
+  border-color: rgba(120, 220, 150, 0.2);
+}
+
+.fs-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 20px;
+  text-align: center;
+  flex: 1;
+}
+
+.fs-empty-icon {
+  opacity: 0.3;
+  color: var(--fg-dim, #9aa0a6);
+}
+
+.fs-empty p {
+  font-size: 13px;
+  color: var(--fg-dim, #9aa0a6);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.fs-empty .fs-empty-hint {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.fs-drag-hint {
+  font-size: 11px;
+  color: var(--fg-dim, #6b7280);
+  opacity: 0.65;
+  margin: 8px 4px 0;
+  text-align: center;
+}
+
+/* Header stash badge（展开态工具栏的存货徽标） */
+.header-stash-btn {
+  position: relative;
+}
+
+.header-stash-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #38bdd8;
+  color: #06222b;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* 拖入结果 toast（吃下/淘汰/跳过） */
+.stash-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 70; /* 高于 .atoll-takeover(60)：吃/吐接管时结果提示仍浮在上方 */
+  max-width: calc(100% - 32px);
+  padding: 7px 14px;
+  border: 1px solid rgba(111, 220, 255, 0.22);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(28, 31, 38, 0.97), rgba(16, 18, 22, 0.95));
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.42);
+  color: #dfeaf2;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  animation: stash-toast-in 260ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+
+.stash-toast-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes stash-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+/* ─── Atoll 吃/吐接管：logo 从左上角原位放大占满整岛 ─────────────── */
+.atoll-takeover {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background:
+    radial-gradient(120% 80% at 50% -20%, rgba(255, 255, 255, 0.09), transparent 62%),
+    linear-gradient(180deg, var(--surface-2), var(--surface-base));
+  animation: atoll-takeover-shade 200ms ease-out both;
+}
+
+.atoll-takeover-logo {
+  height: 58%;
+  aspect-ratio: 96 / 108;
+  animation: atoll-takeover-grow 380ms cubic-bezier(0.26, 0.9, 0.36, 1) both;
+}
+
+.atoll-takeover-logo .atoll-logo {
+  width: 100%;
+  height: 100%;
+}
+
+/* 接管放大时收起鼓肚：大尺寸下底部椭圆会读成第二张嘴。 */
+.atoll-takeover .atoll-belly-bump {
+  transform: scale(0) !important;
+}
+
+/* 退出：向 header logo 原位缩回（位移/缩放来自 JS 实测写入的 CSS 变量；
+   320ms 须与 App.tsx takeover 退出定时 340ms 匹配）。 */
+.atoll-takeover.is-exiting {
+  animation: atoll-takeover-shade-out 320ms ease-in both;
+}
+.atoll-takeover.is-exiting .atoll-takeover-logo {
+  animation: atoll-takeover-vanish 320ms cubic-bezier(0.55, 0, 0.8, 0.4) both;
+}
+
+@keyframes atoll-takeover-shade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes atoll-takeover-shade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes atoll-takeover-grow {
+  0% {
+    opacity: 0;
+    transform: translate(var(--takeover-dx, -180px), var(--takeover-dy, -110px))
+      scale(var(--takeover-scale, 0.18));
+  }
+  55% {
+    opacity: 1;
+  }
+  80% {
+    transform: translate(0, 0) scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+}
+@keyframes atoll-takeover-vanish {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--takeover-dx, -180px), var(--takeover-dy, -110px))
+      scale(var(--takeover-scale, 0.18));
+  }
+}
+
+/* 拖拽悬停待喂提示（张嘴状态下方的青色胶囊） */
+.stash-feed-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 40;
+  max-width: calc(100% - 32px);
+  padding: 7px 14px;
+  border: 1px solid rgba(111, 220, 255, 0.35);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(20, 42, 52, 0.97), rgba(12, 26, 33, 0.95));
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.42);
+  color: var(--accent-cyan, #6fdcff);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  animation: stash-toast-in 260ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+
 /* ─── Approval history view ──────────────────────────────────────────────── */
 
 .history-toolbar {
@@ -8581,7 +9289,9 @@ kbd {
 
   .lyrics-marquee__line,
   .lyrics-marquee__gap,
-  .island-header.has-lyrics .compact-session-dot {
+  .island-header.has-lyrics .compact-session-dot,
+  .atoll-takeover,
+  .atoll-takeover-logo {
     animation: none !important;
   }
   .lyrics-marquee {

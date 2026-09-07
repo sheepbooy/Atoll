@@ -196,5 +196,25 @@
     "cleared": "Approval history cleared",
     "revealInFolder": "Show in folder",
     "dismiss": "Dismiss"
+  },
+  "fileStation": {
+    "title": "File station",
+    "searchPlaceholder": "Search…",
+    "empty": "Nothing staged yet",
+    "emptyHint": "Drag files onto the island to feed Atoll",
+    "noResults": "No matching files",
+    "copied": "Copied to clipboard",
+    "lost": "File no longer exists",
+    "folder": "Folder",
+    "reveal": "Show in file manager",
+    "remove": "Remove",
+    "clear": "Release all",
+    "clearConfirm": "Click again to confirm",
+    "dragHint": "Click a file to copy it, or show it in the file manager",
+    "multiSelectHint": "Cmd/Ctrl+click to select several, then drag them out together",
+    "feedHint": "Release to feed Atoll",
+    "evicted": "Station full — released {{count}} oldest",
+    "skipped": "{{count}} dropped file(s) no longer exist",
+    "stagedToast": "Atoll ate {{count}} file(s)"
   }
 }

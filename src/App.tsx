@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -20,6 +21,7 @@ import {
   Ellipsis,
   Bell,
   History,
+  Inbox,
   Layers,
   Music,
   Power,
@@ -62,6 +64,9 @@ import {
   getClipboardHistoryLimit,
   onClipboardHistoryChanged,
   copyClipboardEntry,
+  copyStagedFilesToClipboard,
+  beginStagedFilesDrag,
+  revealPath,
   clearClipboardHistory,
   setClipboardHistoryEnabled,
   setClipboardHistoryLimit,
@@ -166,6 +171,9 @@ import {
   ClipboardHistoryView,
 } from "./ClipboardHistoryView";
 import {
+  FileStationView,
+} from "./FileStationView";
+import {
   ApprovalHistoryView,
 } from "./ApprovalHistoryView";
 import {
@@ -191,6 +199,9 @@ import {
   deriveAtollActivity,
 } from "./logoStates";
 import { useAtollReaction } from "./useAtollReaction";
+import { useFileStation } from "./hooks/useFileStation";
+import { AtollLogo, type AtollReaction } from "./AtollLogo";
+import { stashBellyLevel } from "./fileStationTiers";
 import {
   computeCollapsedWindowWidth,
   computeCompactHeaderLayout,
@@ -233,6 +244,7 @@ import {
 } from "./UsageSettingsView";
 import {
   getDemoMode,
+  isFileStationDemoMode,
   isGifCaptureMode,
   shouldAutoExpandDemo,
 } from "./demoSnapshot";
@@ -490,6 +502,7 @@ export function App() {
     handleOpenUsageFromSettings,
     navigateBackFromUsage,
     handleOpenClipboard,
+    handleOpenFileStation,
     handleOpenHistory,
     handleOpenSettings,
     openSettingsSubpage,
@@ -581,6 +594,7 @@ export function App() {
     const settingsExpanded =
       panelViewRef.current.kind === "settings" ||
       panelViewRef.current.kind === "clipboard" ||
+      panelViewRef.current.kind === "fileStation" ||
       panelViewRef.current.kind === "history";
     if (
       settingsExpanded &&
@@ -692,6 +706,109 @@ export function App() {
   );
   const { reaction: atollReaction, reactionKey: atollReactionKey } =
     useAtollReaction(appLogoState);
+  const {
+    stagedFiles,
+    stagedCount,
+    dragOverIsland,
+    stashReaction,
+    stashReactionKey,
+    playStashReaction,
+    removeStaged,
+    clearStaged,
+    lastStageResult,
+  } = useFileStation();
+  // 文件中转站反应（吃/吐）优先于状态跃迁反应；二者共用 reactionKey 重放机制。
+  const logoReaction = stashReaction ?? atollReaction;
+  const logoReactionKey = stashReaction ? stashReactionKey : atollReactionKey;
+  const logoStashLevel = stashBellyLevel(stagedCount);
+
+  // ── Atoll 吃/吐接管时刻：logo 从左上角原位放大占满整岛，播完缩回原位 ──
+  // 拖入文件 → 分档 eat 反应；从面板行拖出文件 → spit。takeover 期间盖住
+  // header 与面板；退出时向 header logo 原位缩回（位移/缩放由测量写入
+  // CSS 变量，退出动画时长 340ms 须与 styles.css atoll-takeover-vanish 同步）。
+  const [takeover, setTakeover] = useState<{ reaction: AtollReaction; key: number } | null>(null);
+  const [takeoverExiting, setTakeoverExiting] = useState(false);
+  const takeoverTimerRef = useRef(0);
+  const takeoverMountedRef = useRef(false);
+  const islandRef = useRef<HTMLElement | null>(null);
+  const atollIndicatorRef = useRef<HTMLSpanElement | null>(null);
+  const takeoverElRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (stashReaction) {
+      // 减少动态效果：不做整岛接管（logo 的反应动画同样被关闭）。
+      if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+        return;
+      }
+      window.clearTimeout(takeoverTimerRef.current);
+      takeoverMountedRef.current = true;
+      setTakeoverExiting(false);
+      setTakeover({ reaction: stashReaction, key: stashReactionKey });
+      return;
+    }
+    if (!takeoverMountedRef.current) {
+      return;
+    }
+    takeoverMountedRef.current = false;
+    setTakeoverExiting(true);
+    takeoverTimerRef.current = window.setTimeout(() => {
+      setTakeoverExiting(false);
+      setTakeover(null);
+    }, 340);
+  }, [stashReaction, stashReactionKey]);
+  useEffect(() => () => window.clearTimeout(takeoverTimerRef.current), []);
+  // 每次接管开始时实测 header logo 相对整岛的位置，写入 CSS 变量：任何岛
+  // 尺寸（会话 560x320 / 设置页 680x680）下都能精确“从角落长出/缩回角落”。
+  useLayoutEffect(() => {
+    if (!takeover) {
+      return;
+    }
+    const takeoverEl = takeoverElRef.current;
+    const islandEl = islandRef.current;
+    const logoEl = atollIndicatorRef.current;
+    if (!takeoverEl || !islandEl || !logoEl) {
+      return;
+    }
+    const islandRect = islandEl.getBoundingClientRect();
+    const logoRect = logoEl.getBoundingClientRect();
+    // 布局尺寸（offsetHeight）不受进场 scale 动画影响；rect 会。
+    const takeoverLogo = takeoverEl.querySelector<HTMLElement>(".atoll-takeover-logo");
+    const bigHeight = takeoverLogo ? takeoverLogo.offsetHeight : 0;
+    const dx = logoRect.left + logoRect.width / 2 - (islandRect.left + islandRect.width / 2);
+    const dy = logoRect.top + logoRect.height / 2 - (islandRect.top + islandRect.height / 2);
+    const scale = bigHeight > 0 ? Math.max(0.08, logoRect.height / bigHeight) : 0.18;
+    takeoverEl.style.setProperty("--takeover-dx", `${dx.toFixed(1)}px`);
+    takeoverEl.style.setProperty("--takeover-dy", `${dy.toFixed(1)}px`);
+    takeoverEl.style.setProperty("--takeover-scale", scale.toFixed(3));
+  }, [takeover]);
+
+  const [stashToast, setStashToast] = useState<{ text: string; key: number } | null>(null);
+  const stashToastTimerRef = useRef(0);
+  useEffect(() => {
+    if (!lastStageResult) {
+      return;
+    }
+    const result = lastStageResult;
+    const parts: string[] = [];
+    if (result.added > 0) {
+      parts.push(t("fileStation.stagedToast", { count: result.added }));
+    }
+    if (result.evicted > 0) {
+      parts.push(t("fileStation.evicted", { count: result.evicted }));
+    }
+    if (result.skipped > 0) {
+      parts.push(t("fileStation.skipped", { count: result.skipped }));
+    }
+    if (parts.length === 0) {
+      return;
+    }
+    setStashToast({ text: parts.join(" · "), key: Date.now() });
+    window.clearTimeout(stashToastTimerRef.current);
+    stashToastTimerRef.current = window.setTimeout(() => {
+      setStashToast(null);
+    }, 2800);
+    return () => window.clearTimeout(stashToastTimerRef.current);
+  }, [lastStageResult]);
+  useEffect(() => () => window.clearTimeout(stashToastTimerRef.current), []);
   const headerLogo = useMemo(
     () =>
       deriveHeaderLogoDisplay(hookHealthAnalysis, atollActivity, {
@@ -1077,6 +1194,7 @@ export function App() {
           const settingsExpanded =
             panelViewRef.current.kind === "settings" ||
             panelViewRef.current.kind === "clipboard" ||
+            panelViewRef.current.kind === "fileStation" ||
             panelViewRef.current.kind === "history";
           await setIslandPresentation(
             "expanded",
@@ -1126,6 +1244,16 @@ export function App() {
       expandIsland();
     }, 120);
     return () => window.clearTimeout(timer);
+  }, []);
+
+  // Browser demo: land directly on the file station panel (`?demo=fileStation`).
+  useEffect(() => {
+    if (!isFileStationDemoMode()) return;
+    const timer = window.setTimeout(() => {
+      handleOpenFileStation();
+    }, 260);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -1532,6 +1660,7 @@ export function App() {
     isExpandedChrome &&
     (panelView.kind === "settings" ||
       panelView.kind === "clipboard" ||
+      panelView.kind === "fileStation" ||
       panelView.kind === "history");
   const nativeExpandedPlan = isPlanExpanded && !isSettingsExpanded;
   const nativeExpandedSettings = isSettingsExpanded;
@@ -1726,6 +1855,26 @@ export function App() {
                 return getClipboardHistory().then(setClipboardHistory);
               })
               .catch(() => undefined);
+          }}
+        />
+      );
+    }
+
+    if (panelView.kind === "fileStation") {
+      return (
+        <FileStationView
+          files={stagedFiles}
+          onCopy={(id) => {
+            copyStagedFilesToClipboard([id]).catch(() => undefined);
+          }}
+          onReveal={(path) => {
+            revealPath(path).catch(() => undefined);
+          }}
+          onRemove={removeStaged}
+          onClear={clearStaged}
+          onDragOut={(ids) => {
+            playStashReaction("spit");
+            beginStagedFilesDrag(ids).catch(() => undefined);
           }}
         />
       );
@@ -1995,6 +2144,7 @@ export function App() {
   return (
     <main className="stage">
       <section
+        ref={islandRef}
         className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isPlanExpanded ? "is-plan" : ""} ${isSettingsExpanded ? "is-settings" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList" ? "is-session-subview" : ""}${panelExiting ? " is-panel-exiting" : ""}`}
         style={{ "--panel-glow": panelGlow } as CSSProperties}
         aria-label={t("app.name")}
@@ -2051,7 +2201,7 @@ export function App() {
           <div
             className={`header-main ${showPanelAgentTabs ? "has-agent-tabs" : ""}${isSubview ? " has-subview-nav" : ""}`}
           >
-            <span className="atoll-indicator-wrap">
+            <span className="atoll-indicator-wrap" ref={atollIndicatorRef}>
               <span
                 className={`atoll-indicator is-app-${appLogoState} ${snapshot.online ? "is-online" : "is-offline"}${hooksNeedAttention ? " is-hook-attention" : ""}`}
                 title={
@@ -2089,8 +2239,10 @@ export function App() {
                     idleIntervalSec={idleIntervalMin * 60}
                     idleDurationSec={idleDurationMin * 60}
                     motionPaused={isPresentationTransition}
-                    reaction={atollReaction}
-                    reactionKey={atollReactionKey}
+                    reaction={logoReaction}
+                    reactionKey={logoReactionKey}
+                    stashLevel={logoStashLevel}
+                    mouthOpen={dragOverIsland}
                   />
                 </span>
               </span>
@@ -2164,6 +2316,13 @@ export function App() {
                 backLabel={t("nav.back")}
                 icon={<ClipboardList size={14} />}
                 title={t("clipboard.title")}
+              />
+            ) : panelView.kind === "fileStation" ? (
+              <SettingsPageNav
+                onBack={navigateBack}
+                backLabel={t("nav.back")}
+                icon={<Inbox size={14} />}
+                title={t("fileStation.title")}
               />
             ) : panelView.kind === "history" ? (
               <SettingsPageNav
@@ -2346,6 +2505,20 @@ export function App() {
               />
             ) : null}
             <button
+              className={`icon-button header-stash-btn${stagedCount > 0 ? " has-stash" : ""}`}
+              type="button"
+              onClick={handleOpenFileStation}
+              aria-label={t("fileStation.title")}
+              tabIndex={isExpandedChrome ? 0 : -1}
+            >
+              <Inbox size={16} />
+              {stagedCount > 0 ? (
+                <span className="header-stash-badge">
+                  {stagedCount > 99 ? "99+" : stagedCount}
+                </span>
+              ) : null}
+            </button>
+            <button
               className="icon-button"
               type="button"
               onClick={handleOpenClipboard}
@@ -2476,6 +2649,33 @@ export function App() {
         ) : null}
         {updateNotice ? (
           <UpdateNotice version={updateNotice} onDismiss={dismissUpdateNotice} />
+        ) : null}
+        {takeover ? (
+          <div
+            ref={takeoverElRef}
+            className={`atoll-takeover${takeoverExiting ? " is-exiting" : ""}`}
+            aria-hidden="true"
+          >
+            <div className="atoll-takeover-logo">
+              <AtollLogo
+                activity="idle"
+                size={0}
+                reaction={takeover.reaction}
+                reactionKey={takeover.key}
+                stashLevel={logoStashLevel}
+                motionPaused={isPresentationTransition}
+              />
+            </div>
+          </div>
+        ) : null}
+        {stashToast ? (
+          <div key={stashToast.key} className="stash-toast" role="status" data-no-drag>
+            <span className="stash-toast-text">{stashToast.text}</span>
+          </div>
+        ) : dragOverIsland ? (
+          <div className="stash-feed-hint" role="status" data-no-drag>
+            <span className="stash-toast-text">{t("fileStation.feedHint")}</span>
+          </div>
         ) : null}
       </section>
     </main>

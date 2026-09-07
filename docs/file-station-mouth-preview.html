@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atoll 张嘴备选方案 · File Station</title>
+<style>
+  :root {
+    --surface-2: #232830;
+    --surface-base: #14171c;
+    --ink: #9aa0a6;
+    --accent: #6fdcff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 24px 64px;
+    background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(111, 220, 255, 0.08), transparent), #0a0b0d;
+    color: #e8eaed; font: 14px/1.6 system-ui, -apple-system, "PingFang SC", sans-serif;
+  }
+  header { max-width: 1080px; margin: 0 auto 20px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  header p { margin: 0; color: var(--ink); font-size: 13px; }
+  .controls {
+    max-width: 1080px; margin: 0 auto 26px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding: 12px 16px; border: 1px solid rgba(111, 220, 255, 0.16); border-radius: 14px;
+    background: linear-gradient(180deg, rgba(28, 31, 38, 0.9), rgba(16, 18, 22, 0.85));
+  }
+  .controls span.lbl { color: var(--ink); font-size: 12px; margin-right: 2px; }
+  button {
+    border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 999px; background: rgba(255, 255, 255, 0.05);
+    color: #dfeaf2; font-size: 12px; padding: 5px 14px; cursor: pointer;
+  }
+  button:hover { background: rgba(255, 255, 255, 0.1); }
+  button.active { border-color: rgba(111, 220, 255, 0.55); color: var(--accent); background: rgba(111, 220, 255, 0.1); }
+  label.toggle { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: #dfeaf2; cursor: pointer; margin-left: 8px; }
+  .grid { max-width: 1080px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 18px; }
+  .card {
+    border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 18px; padding: 18px 14px 14px; text-align: center;
+    background:
+      radial-gradient(120% 80% at 50% -20%, rgba(255, 255, 255, 0.07), transparent 62%),
+      linear-gradient(180deg, var(--surface-2), var(--surface-base));
+  }
+  .card .stage { display: flex; justify-content: center; align-items: flex-end; height: 300px; }
+  .card svg { display: block; }
+  .card h3 { margin: 12px 0 2px; font-size: 14px; }
+  .card p { margin: 0; color: var(--ink); font-size: 12px; }
+  .card .tag {
+    display: inline-block; margin-top: 8px; font-size: 11px; color: var(--accent);
+    border: 1px solid rgba(111, 220, 255, 0.4); border-radius: 999px; padding: 1px 10px;
+  }
+  .size-s .card svg { width: 46px; height: 52px; }
+  .size-m .card svg { width: 96px; height: 108px; }
+  .size-l .card svg { width: 170px; height: 191px; }
+  .size-s .card .stage { height: 120px; }
+  .size-m .card .stage { height: 170px; }
+  .size-l .card .stage { height: 240px; }
+  .anim .mouth { transform-box: fill-box; transform-origin: 50% 50%; animation: preview-gape 1.15s ease-in-out infinite; }
+  @keyframes preview-gape {
+    0%, 100% { transform: scale(1, 1); }
+    50% { transform: scale(1.1, 1.22); }
+  }
+  .ref .stage { align-items: center; }
+</style>
+</head>
+<body class="size-m">
+<header>
+  <h1>Atoll 张嘴备选方案</h1>
+  <p>文件中转站「张嘴待喂 / 吃掉」的嘴型候选。每种嘴都渲染在完整脸部上；上方可切换 小（header 角标）/ 中 / 大（整岛接管）三种尺寸，勾选后预览呼吸张合动画。选定后告诉我编号即可。</p>
+</header>
+
+<div class="controls">
+  <span class="lbl">尺寸</span>
+  <button data-size="size-s">小 · header</button>
+  <button data-size="size-m" class="active">中</button>
+  <button data-size="size-l">大 · 接管</button>
+  <label class="toggle"><input type="checkbox" id="animToggle"> 呼吸动画预览</label>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<script>
+const BODY = `
+  <rect x="8" y="18" width="48" height="26" fill="#38BDD8"/>
+  <rect x="8" y="18" width="48" height="5" fill="#5FD8EC"/>
+  <ellipse cx="17" cy="34" rx="4" ry="2" fill="#ffb4b4"/>
+  <ellipse cx="47" cy="34" rx="4" ry="2" fill="#ffb4b4"/>
+  <rect x="19" y="24" width="5" height="11" fill="#1a1a1a"/>
+  <rect x="38" y="24" width="5" height="11" fill="#1a1a1a"/>
+  <ellipse cx="32" cy="35.5" rx="5" ry="4.5" fill="#15323c"/>
+  <ellipse cx="32" cy="37" rx="3" ry="2" fill="#c46a6a"/>`;
+
+const DARK = "#15323c";
+const TONGUE = "#d97f83";
+
+/* 每个候选：mouths 数组（可含 clipPath 引用），clip 为可选裁剪定义 */
+const VARIANTS = [
+  {
+    name: "0 · 原版椭圆+舌",
+    desc: "现状基线（两个椭圆）",
+    mouths: `<ellipse cx="32" cy="36" rx="6.5" ry="6" fill="${DARK}"/>
+             <ellipse cx="32" cy="39.2" rx="3.4" ry="1.9" fill="#c46a6a"/>`,
+  },
+  {
+    name: "1 · 横胶囊",
+    desc: "圆角 stadium，最贴矩形几何语言",
+    mouths: `<rect x="26" y="33.2" width="12" height="6" rx="3" fill="${DARK}"/>`,
+    tag: "推荐",
+  },
+  {
+    name: "2 · D 形半圆",
+    desc: "平上唇 + 深圆底，经典张嘴",
+    mouths: `<path d="M24.9 32.6 H39.1 C39.9 35.4 38.3 40.4 32 40.4 C25.7 40.4 24.1 35.4 24.9 32.6 Z" fill="${DARK}"/>`,
+  },
+  {
+    name: "3 · D 形半圆 · 舌",
+    desc: "半圆口腔 + 内藏舌（Kirby 式）",
+    clip: `<clipPath id="clip-d"><path d="M24.9 32.6 H39.1 C39.9 35.4 38.3 40.4 32 40.4 C25.7 40.4 24.1 35.4 24.9 32.6 Z"/></clipPath>`,
+    mouths: `<path d="M24.9 32.6 H39.1 C39.9 35.4 38.3 40.4 32 40.4 C25.7 40.4 24.1 35.4 24.9 32.6 Z" fill="${DARK}"/>
+             <ellipse cx="32" cy="39.9" rx="3.4" ry="1.9" fill="${TONGUE}" clip-path="url(#clip-d)"/>`,
+    tag: "推荐",
+  },
+  {
+    name: "4 · 竖椭圆",
+    desc: "惊讶期待的小 o 嘴",
+    mouths: `<ellipse cx="32" cy="36.2" rx="4.4" ry="5.6" fill="${DARK}"/>`,
+  },
+  {
+    name: "5 · 圆角三角",
+    desc: "喵式下张嘴",
+    mouths: `<path d="M26.4 32.6 H37.6 Q39.6 32.6 38.6 34.4 L33.6 40.2 Q32 42 30.4 40.2 L25.4 34.4 Q24.4 32.6 26.4 32.6 Z" fill="${DARK}"/>`,
+  },
+  {
+    name: "6 · 正圆",
+    desc: "大口等待，存在感最强",
+    mouths: `<circle cx="32" cy="36.4" r="6.2" fill="${DARK}"/>`,
+  },
+];
+
+const grid = document.getElementById("grid");
+
+grid.innerHTML = `
+  <div class="card ref">
+    <div class="stage">
+      <svg viewBox="-16 -36 96 108" width="96" height="108">${BODY}</svg>
+    </div>
+    <h3>参考 · 闭嘴（现状）</h3>
+    <p>正常状态的小嘴，供对比</p>
+  </div>
+` + VARIANTS.map((v) => `
+  <div class="card">
+    <div class="stage">
+      <svg viewBox="-16 -36 96 108">
+        ${v.clip ? `<defs>${v.clip}</defs>` : ""}
+        <rect x="8" y="18" width="48" height="26" fill="#38BDD8"/>
+        <rect x="8" y="18" width="48" height="5" fill="#5FD8EC"/>
+        <ellipse cx="17" cy="34" rx="4" ry="2" fill="#ffb4b4"/>
+        <ellipse cx="47" cy="34" rx="4" ry="2" fill="#ffb4b4"/>
+        <rect x="19" y="24" width="5" height="11" fill="#1a1a1a"/>
+        <rect x="38" y="24" width="5" height="11" fill="#1a1a1a"/>
+        <g class="mouth">${v.mouths}</g>
+      </svg>
+    </div>
+    <h3>${v.name}</h3>
+    <p>${v.desc}</p>
+    ${v.tag ? `<span class="tag">${v.tag}</span>` : ""}
+  </div>
+`).join("");
+
+document.querySelectorAll("button[data-size]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("button[data-size]").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.body.classList.remove("size-s", "size-m", "size-l");
+    document.body.classList.add(btn.dataset.size);
+  });
+});
+
+document.getElementById("animToggle").addEventListener("change", (event) => {
+  document.body.classList.toggle("anim", event.target.checked);
+});
+</script>
+</body>
+</html>

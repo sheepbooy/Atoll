@@ -196,5 +196,25 @@
     "cleared": "审批历史已清空",
     "revealInFolder": "在文件夹中显示",
     "dismiss": "关闭"
+  },
+  "fileStation": {
+    "title": "文件中转站",
+    "searchPlaceholder": "搜索…",
+    "empty": "还没有吃下的文件",
+    "emptyHint": "把文件拖到岛上喂 Atoll 吧",
+    "noResults": "没有匹配的文件",
+    "copied": "已复制到剪贴板",
+    "lost": "文件已不存在",
+    "folder": "文件夹",
+    "reveal": "在文件管理器中显示",
+    "remove": "移除",
+    "clear": "全部吐出",
+    "clearConfirm": "再点一次确认",
+    "dragHint": "点击文件复制到剪贴板，或在文件管理器中显示",
+    "multiSelectHint": "Cmd/Ctrl+点击可多选，按住选中项整批拖出",
+    "feedHint": "松手投喂 Atoll",
+    "evicted": "中转站已满，吐出了最旧的 {{count}} 个",
+    "skipped": "{{count}} 个拖入的文件已不存在",
+    "stagedToast": "Atoll 吃掉了 {{count}} 个文件"
   }
 }
