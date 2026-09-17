@@ -74,11 +74,10 @@
   --duration-normal: 280ms;
   --duration-settle: 260ms;
   --duration-soft: 300ms;
-  --duration-expand: 420ms;
   --duration-slow: 560ms;
   --stagger-step: 45ms;
-  --panel-exit-ms: 120ms;
-  --resolve-feedback-ms: 240ms;
+  /* --duration-expand / --panel-exit-ms / --resolve-feedback-ms 与 JS 定时器
+     共享数值，由 animationTiming.ts 启动时注入，这里不再重复定义。 */
 
   /* Radii */
   --radius-sm: 8px;

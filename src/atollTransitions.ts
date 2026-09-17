@@ -1,12 +1,12 @@
 export type AtollPhase = "enter" | "loop" | "exit";
 
-/** Duration of idle → activity enter choreography (ms). Keep in sync with CSS. */
+/** Duration of idle → activity enter choreography (ms). Injected as --atoll-enter-ms. */
 export const ATOLL_ENTER_MS = 880;
 
-/** Duration of activity → idle exit choreography (ms). Keep in sync with CSS. */
+/** Duration of activity → idle exit choreography (ms). Injected as --atoll-exit-ms. */
 export const ATOLL_EXIT_MS = 680;
 
-/** One-shot state-transition reactions (ms). Keep in sync with CSS. */
+/** One-shot state-transition reactions (ms). Injected as --reaction-*-ms. */
 export const ATOLL_REACTION_MS = {
   cheer: 1000,
   collapse: 1400,

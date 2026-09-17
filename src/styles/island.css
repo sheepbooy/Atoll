@@ -700,12 +700,12 @@
 
 .is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle.is-phase-enter,
 .is-dormant .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle.is-phase-enter {
-  animation: atoll-from-idle-rest-menu-open 0.88s ease-out both;
+  animation: atoll-from-idle-rest-menu-open var(--atoll-enter-ms) ease-out both;
 }
 
 .is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle.is-phase-exit,
 .is-dormant .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle.is-phase-exit {
-  animation: atoll-to-idle-rest-menu-open 0.68s ease-in both;
+  animation: atoll-to-idle-rest-menu-open var(--atoll-exit-ms) ease-in both;
 }
 
 /* Napping pose: reveal sleep cap + rising zzz above the head in compact clip */
@@ -789,11 +789,11 @@
 }
 
 .is-compact:not(.is-dormant) .atoll-indicator .atoll-logo.is-idle.is-phase-enter {
-  animation: atoll-from-idle-rest-menu 0.88s ease-out both;
+  animation: atoll-from-idle-rest-menu var(--atoll-enter-ms) ease-out both;
 }
 
 .is-compact:not(.is-dormant) .atoll-indicator .atoll-logo.is-idle.is-phase-exit {
-  animation: atoll-to-idle-rest-menu 0.68s ease-in both;
+  animation: atoll-to-idle-rest-menu var(--atoll-exit-ms) ease-in both;
 }
 
 @keyframes atoll-idle-float-menu {

@@ -7,7 +7,11 @@ import { BrandExportPage, getBrandExportMode } from "./BrandExport";
 import { CursorMascotPreviewPage, getCursorPreviewMode } from "./CursorMascotPreview";
 import { getDemoMode } from "./demoSnapshot";
 import i18n from "./i18n";
+import { injectAnimationTimingVars } from "./animationTiming";
 import "./styles.css";
+
+// TS/CSS 共享的动效时长先于首次 render 注入，CSS 侧 var() 才有值。
+injectAnimationTimingVars();
 
 if ("__TAURI_INTERNALS__" in window) {
   document.documentElement.classList.add("tauri-runtime");

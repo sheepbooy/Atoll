@@ -96,7 +96,8 @@
   to   { transform: translateY(-12px); opacity: 0; }
 }
 
-/* ── enter / exit body poses（0.88s / 0.68s 与 JS 状态机对齐，atollTiming.test.ts 断言）── */
+/* ── enter / exit body poses（时长引用 --atoll-enter-ms / --atoll-exit-ms，
+   由 animationTiming.ts 注入，atollTiming.test.ts 断言 var 对应关系）── */
 @keyframes atoll-enter-coding-body {
   from { transform: translateY(6%) rotate(0deg); }
   55%  { transform: translateY(2%) rotate(5deg); }
@@ -200,12 +201,12 @@
 
 /* ── idle ── */
 .atoll-logo.is-idle.is-phase-loop { animation: atoll-idle-float-pos 2.2s ease-in-out infinite; }
-.atoll-logo.is-idle.is-phase-enter { animation: atoll-from-idle-rest 0.88s ease-out both; }
-.atoll-logo.is-idle.is-phase-exit  { animation: atoll-to-idle-rest 0.68s ease-in both; }
+.atoll-logo.is-idle.is-phase-enter { animation: atoll-from-idle-rest var(--atoll-enter-ms) ease-out both; }
+.atoll-logo.is-idle.is-phase-exit  { animation: atoll-to-idle-rest var(--atoll-exit-ms) ease-in both; }
 
 /* ── coding：打字(40%) → 停顿后仰思考(20%) → 代码高亮(10%) → 回位(30%) ── */
-.atoll-logo.is-coding.is-phase-enter { animation: atoll-enter-coding-body 0.88s cubic-bezier(0.34, 1.1, 0.64, 1) both; }
-.atoll-logo.is-coding.is-phase-exit  { animation: atoll-exit-coding-body 0.68s ease-in both; }
+.atoll-logo.is-coding.is-phase-enter { animation: atoll-enter-coding-body var(--atoll-enter-ms) cubic-bezier(0.34, 1.1, 0.64, 1) both; }
+.atoll-logo.is-coding.is-phase-exit  { animation: atoll-exit-coding-body var(--atoll-exit-ms) ease-in both; }
 .atoll-logo.is-coding.is-phase-loop  { animation: atoll-desk-shake 0.48s linear infinite; }
 
 .atoll-logo.is-coding.is-phase-enter .atoll-desk { animation: atoll-prop-rise 0.55s ease-out 0.18s both; }
@@ -332,8 +333,8 @@
 }
 
 /* ── reading：阅读(50%) → 翻页(12%) → 抬头揉眼远眺(18%) → 继续(20%) ── */
-.atoll-logo.is-reading.is-phase-enter { animation: atoll-enter-reading-body 0.88s ease-out both; }
-.atoll-logo.is-reading.is-phase-exit  { animation: atoll-exit-reading-body 0.68s ease-in both; }
+.atoll-logo.is-reading.is-phase-enter { animation: atoll-enter-reading-body var(--atoll-enter-ms) ease-out both; }
+.atoll-logo.is-reading.is-phase-exit  { animation: atoll-exit-reading-body var(--atoll-exit-ms) ease-in both; }
 .atoll-logo.is-reading.is-phase-loop  { animation: atoll-reading-body 12s ease-in-out infinite; }
 
 .atoll-logo.is-reading.is-phase-enter .atoll-book { animation: atoll-prop-rise 0.58s ease-out 0.25s both; }
@@ -398,8 +399,8 @@
 }
 
 /* ── thinking：托腮苦想(40%) → 灵光 ! (20%) → 得意小跳(10%) → 续想(30%) ── */
-.atoll-logo.is-thinking.is-phase-enter { animation: atoll-enter-thinking-body 0.88s cubic-bezier(0.34, 1.1, 0.64, 1) both; }
-.atoll-logo.is-thinking.is-phase-exit  { animation: atoll-exit-thinking-body 0.68s ease-in both; }
+.atoll-logo.is-thinking.is-phase-enter { animation: atoll-enter-thinking-body var(--atoll-enter-ms) cubic-bezier(0.34, 1.1, 0.64, 1) both; }
+.atoll-logo.is-thinking.is-phase-exit  { animation: atoll-exit-thinking-body var(--atoll-exit-ms) ease-in both; }
 
 .atoll-logo.is-thinking.is-phase-enter .atoll-thought { animation: atoll-prop-pop 0.52s cubic-bezier(0.34, 1.2, 0.64, 1) 0.2s both; }
 .atoll-logo.is-thinking.is-phase-exit  .atoll-thought { animation: atoll-prop-vanish 0.45s ease-in both; }
@@ -464,8 +465,8 @@
 @keyframes atoll-think-eyes-h { 0%, 58% { opacity: 0; } 62%, 72% { opacity: 1; } 78%, 100% { opacity: 0; } }
 
 /* ── coffee：端杯(20%) → 啜饮(25%) → 满足吐气(20%) → 放下歇(35%) ── */
-.atoll-logo.is-coffee.is-phase-enter { animation: atoll-enter-coffee-body 0.88s ease-out both; }
-.atoll-logo.is-coffee.is-phase-exit  { animation: atoll-exit-coffee-body 0.68s ease-in both; }
+.atoll-logo.is-coffee.is-phase-enter { animation: atoll-enter-coffee-body var(--atoll-enter-ms) ease-out both; }
+.atoll-logo.is-coffee.is-phase-exit  { animation: atoll-exit-coffee-body var(--atoll-exit-ms) ease-in both; }
 
 .atoll-logo.is-coffee.is-phase-enter .atoll-coffee-stand { animation: atoll-prop-slide-right-in 0.58s ease-out 0.22s both; }
 .atoll-logo.is-coffee.is-phase-exit  .atoll-coffee-stand { animation: atoll-prop-slide-right-out 0.48s ease-in both; }
@@ -513,8 +514,8 @@
 @keyframes atoll-coffee-eyes-n { 0%, 22% { opacity: 0; } 26%, 46% { opacity: 1; } 52%, 100% { opacity: 0; } }
 
 /* ── idea：兴奋蹦跳 → 沉浸琢磨(happy) → 再蹦一下 ── */
-.atoll-logo.is-idea.is-phase-enter { animation: atoll-enter-idea-body 0.88s cubic-bezier(0.34, 1.1, 0.64, 1) both; }
-.atoll-logo.is-idea.is-phase-exit  { animation: atoll-exit-idea-body 0.68s ease-in both; }
+.atoll-logo.is-idea.is-phase-enter { animation: atoll-enter-idea-body var(--atoll-enter-ms) cubic-bezier(0.34, 1.1, 0.64, 1) both; }
+.atoll-logo.is-idea.is-phase-exit  { animation: atoll-exit-idea-body var(--atoll-exit-ms) ease-in both; }
 
 .atoll-logo.is-idea.is-phase-enter .atoll-bulb { animation: atoll-prop-pop 0.58s cubic-bezier(0.34, 1.3, 0.64, 1) 0.16s both; }
 .atoll-logo.is-idea.is-phase-exit  .atoll-bulb { animation: atoll-prop-vanish 0.48s ease-in both; }
@@ -564,8 +565,8 @@
 @keyframes atoll-idea-eyes-h { 0%, 34% { opacity: 0; } 38%, 58% { opacity: 1; } 64%, 100% { opacity: 0; } }
 
 /* ── slacking：举手机刷 → 笑出声抖动 → 换个姿势继续瘫 ── */
-.atoll-logo.is-slacking.is-phase-enter { animation: atoll-enter-slacking-body 0.88s ease-out both; }
-.atoll-logo.is-slacking.is-phase-exit  { animation: atoll-exit-slacking-body 0.68s ease-in both; }
+.atoll-logo.is-slacking.is-phase-enter { animation: atoll-enter-slacking-body var(--atoll-enter-ms) ease-out both; }
+.atoll-logo.is-slacking.is-phase-exit  { animation: atoll-exit-slacking-body var(--atoll-exit-ms) ease-in both; }
 
 .atoll-logo.is-slacking.is-phase-enter .atoll-sunglasses { animation: atoll-prop-drop-in 0.48s ease-out 0.12s both; }
 .atoll-logo.is-slacking.is-phase-enter .atoll-phone { animation: atoll-prop-rise 0.52s ease-out 0.28s both; }
@@ -618,8 +619,8 @@
 @keyframes atoll-slack-eyes-h { 0%, 38% { opacity: 0; } 42%, 54% { opacity: 1; } 60%, 100% { opacity: 0; } }
 
 /* ── napping：浅睡(30%) → 翻身(15%) → 深睡(40%) → 回浅睡(15%) ── */
-.atoll-logo.is-napping.is-phase-enter { animation: atoll-enter-nap-body 0.88s ease-out both; }
-.atoll-logo.is-napping.is-phase-exit  { animation: atoll-exit-nap-body 0.68s ease-in both; }
+.atoll-logo.is-napping.is-phase-enter { animation: atoll-enter-nap-body var(--atoll-enter-ms) ease-out both; }
+.atoll-logo.is-napping.is-phase-exit  { animation: atoll-exit-nap-body var(--atoll-exit-ms) ease-in both; }
 
 .atoll-logo.is-napping.is-phase-enter .atoll-sleep-cap { animation: atoll-prop-drop-in 0.55s cubic-bezier(0.34, 1.1, 0.64, 1) 0.1s both; }
 .atoll-logo.is-napping.is-phase-exit  .atoll-sleep-cap { animation: atoll-prop-lift-out 0.48s ease-in both; }
@@ -685,8 +686,8 @@
 }
 
 /* ── fishing：静候(35%) → 咬钩 !(10%) → 起竿(17%) → 得意(18%) → 收杆(20%) ── */
-.atoll-logo.is-fishing.is-phase-enter { animation: atoll-enter-fishing-body 0.88s ease-out both; }
-.atoll-logo.is-fishing.is-phase-exit  { animation: atoll-exit-fishing-body 0.68s ease-in both; }
+.atoll-logo.is-fishing.is-phase-enter { animation: atoll-enter-fishing-body var(--atoll-enter-ms) ease-out both; }
+.atoll-logo.is-fishing.is-phase-exit  { animation: atoll-exit-fishing-body var(--atoll-exit-ms) ease-in both; }
 
 .atoll-logo.is-fishing.is-phase-enter .atoll-water { animation: atoll-prop-rise 0.6s ease-out 0.1s both; }
 .atoll-logo.is-fishing.is-phase-enter .atoll-rod { animation: atoll-prop-drop-in 0.5s ease-out 0.2s both; }
@@ -788,8 +789,8 @@
 @keyframes atoll-fishing-eyes-h { 0%, 60% { opacity: 0; } 64%, 76% { opacity: 1; } 82%, 100% { opacity: 0; } }
 
 /* ── stargazing：仰望(30%) → 流星(15%) → 许愿(20%) → 回望(35%) ── */
-.atoll-logo.is-stargazing.is-phase-enter { animation: atoll-enter-stargazing-body 0.88s ease-out both; }
-.atoll-logo.is-stargazing.is-phase-exit  { animation: atoll-exit-stargazing-body 0.68s ease-in both; }
+.atoll-logo.is-stargazing.is-phase-enter { animation: atoll-enter-stargazing-body var(--atoll-enter-ms) ease-out both; }
+.atoll-logo.is-stargazing.is-phase-exit  { animation: atoll-exit-stargazing-body var(--atoll-exit-ms) ease-in both; }
 
 .atoll-logo.is-stargazing.is-phase-enter .atoll-sky { animation: atoll-prop-pop 0.6s cubic-bezier(0.34, 1.2, 0.64, 1) 0.15s both; }
 .atoll-logo.is-stargazing.is-phase-exit  .atoll-sky { animation: atoll-prop-vanish 0.48s ease-in both; }
@@ -847,8 +848,8 @@
 @keyframes atoll-stargazing-eyes-h { 0%, 46% { opacity: 0; } 50%, 62% { opacity: 1; } 68%, 100% { opacity: 0; } }
 
 /* ── garden：举壶(15%) → 浇水(30%) → 发芽(10%) → 开心(20%) → 放下(25%) ── */
-.atoll-logo.is-garden.is-phase-enter { animation: atoll-enter-garden-body 0.88s ease-out both; }
-.atoll-logo.is-garden.is-phase-exit  { animation: atoll-exit-garden-body 0.68s ease-in both; }
+.atoll-logo.is-garden.is-phase-enter { animation: atoll-enter-garden-body var(--atoll-enter-ms) ease-out both; }
+.atoll-logo.is-garden.is-phase-exit  { animation: atoll-exit-garden-body var(--atoll-exit-ms) ease-in both; }
 
 .atoll-logo.is-garden.is-phase-enter .atoll-plant { animation: atoll-prop-rise 0.6s ease-out 0.1s both; }
 .atoll-logo.is-garden.is-phase-enter .atoll-can { animation: atoll-prop-rise 0.55s ease-out 0.22s both; }
@@ -930,8 +931,8 @@
 @keyframes atoll-garden-eyes-h { 0%, 46% { opacity: 0; } 50%, 70% { opacity: 1; } 76%, 100% { opacity: 0; } }
 
 /* ── music：随拍摇摆 + 副歌大音符（预留 NowPlaying 联动钩子）── */
-.atoll-logo.is-music.is-phase-enter { animation: atoll-enter-music-body 0.88s ease-out both; }
-.atoll-logo.is-music.is-phase-exit  { animation: atoll-exit-music-body 0.68s ease-in both; }
+.atoll-logo.is-music.is-phase-enter { animation: atoll-enter-music-body var(--atoll-enter-ms) ease-out both; }
+.atoll-logo.is-music.is-phase-exit  { animation: atoll-exit-music-body var(--atoll-exit-ms) ease-in both; }
 
 .atoll-logo.is-music.is-phase-enter .atoll-phones { animation: atoll-prop-drop-in 0.5s ease-out 0.15s both; }
 .atoll-logo.is-music.is-phase-exit  .atoll-phones { animation: atoll-prop-lift-out 0.42s ease-in both; }
@@ -982,8 +983,8 @@
 }
 
 /* ── gaming：悠闲(22%) → 激战(33%) → 击落胜利(13%) → 瘫坐(17%) → 回血(15%) ── */
-.atoll-logo.is-gaming.is-phase-enter { animation: atoll-enter-gaming-body 0.88s ease-out both; }
-.atoll-logo.is-gaming.is-phase-exit  { animation: atoll-exit-gaming-body 0.68s ease-in both; }
+.atoll-logo.is-gaming.is-phase-enter { animation: atoll-enter-gaming-body var(--atoll-enter-ms) ease-out both; }
+.atoll-logo.is-gaming.is-phase-exit  { animation: atoll-exit-gaming-body var(--atoll-exit-ms) ease-in both; }
 
 .atoll-logo.is-gaming.is-phase-enter .atoll-console { animation: atoll-prop-rise 0.55s ease-out 0.18s both; }
 .atoll-logo.is-gaming.is-phase-enter .atoll-thumbs { animation: atoll-prop-fade-in 0.4s ease-out 0.5s both; }
@@ -1242,11 +1243,11 @@
 .atoll-logo .atoll-spark.s5 { --sx: -18px; --sy: 4px; }
 
 /* cheer：起跳 + ✓ + 星火（1s） */
-.atoll-logo.is-reaction-cheer .atoll-stage { animation: atoll-reaction-cheer-stage 1s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
-.atoll-logo.is-reaction-cheer .atoll-check { animation: atoll-reaction-check 1s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
-.atoll-logo.is-reaction-cheer .atoll-spark { animation: atoll-reaction-spark 1s ease-out both; }
-.atoll-logo.is-reaction-cheer .atoll-eyes-base { animation: atoll-reaction-cheer-eyes-n 1s linear both; }
-.atoll-logo.is-reaction-cheer .atoll-eyes-happy { animation: atoll-reaction-cheer-eyes-h 1s linear both; }
+.atoll-logo.is-reaction-cheer .atoll-stage { animation: atoll-reaction-cheer-stage var(--reaction-cheer-ms) cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+.atoll-logo.is-reaction-cheer .atoll-check { animation: atoll-reaction-check var(--reaction-cheer-ms) cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.atoll-logo.is-reaction-cheer .atoll-spark { animation: atoll-reaction-spark var(--reaction-cheer-ms) ease-out both; }
+.atoll-logo.is-reaction-cheer .atoll-eyes-base { animation: atoll-reaction-cheer-eyes-n var(--reaction-cheer-ms) linear both; }
+.atoll-logo.is-reaction-cheer .atoll-eyes-happy { animation: atoll-reaction-cheer-eyes-h var(--reaction-cheer-ms) linear both; }
 
 @keyframes atoll-reaction-cheer-stage {
   0%, 6% { transform: translateY(0) scaleY(1); }
@@ -1284,12 +1285,12 @@
 }
 
 /* collapse：挣扎抖动 → 灰化 X 眼瘫倒（1.4s） */
-.atoll-logo.is-reaction-collapse .atoll-stage { animation: atoll-reaction-coll-shake 1.4s linear both; }
-.atoll-logo.is-reaction-collapse .atoll-body-group { animation: atoll-reaction-coll-body 1.4s ease-in both; }
-.atoll-logo.is-reaction-collapse .pal-color { animation: atoll-reaction-coll-pc 1.4s linear both; }
-.atoll-logo.is-reaction-collapse .pal-gray { animation: atoll-reaction-coll-pg 1.4s linear both; }
-.atoll-logo.is-reaction-collapse .atoll-eyes-base { animation: atoll-reaction-coll-eyes-n 1.4s linear both; }
-.atoll-logo.is-reaction-collapse .atoll-eyes-wide { animation: atoll-reaction-coll-eyes-w 1.4s linear both; }
+.atoll-logo.is-reaction-collapse .atoll-stage { animation: atoll-reaction-coll-shake var(--reaction-collapse-ms) linear both; }
+.atoll-logo.is-reaction-collapse .atoll-body-group { animation: atoll-reaction-coll-body var(--reaction-collapse-ms) ease-in both; }
+.atoll-logo.is-reaction-collapse .pal-color { animation: atoll-reaction-coll-pc var(--reaction-collapse-ms) linear both; }
+.atoll-logo.is-reaction-collapse .pal-gray { animation: atoll-reaction-coll-pg var(--reaction-collapse-ms) linear both; }
+.atoll-logo.is-reaction-collapse .atoll-eyes-base { animation: atoll-reaction-coll-eyes-n var(--reaction-collapse-ms) linear both; }
+.atoll-logo.is-reaction-collapse .atoll-eyes-wide { animation: atoll-reaction-coll-eyes-w var(--reaction-collapse-ms) linear both; }
 
 @keyframes atoll-reaction-coll-shake {
   0% { transform: translateX(0); }
@@ -1329,11 +1330,11 @@
 }
 
 /* revive：灰阶苏醒 → 回色 → 甩头抖灰（1.2s） */
-.atoll-logo.is-reaction-revive .pal-gray { animation: atoll-reaction-rev-pg 1.2s linear both; }
-.atoll-logo.is-reaction-revive .pal-color { animation: atoll-reaction-rev-pc 1.2s linear both; }
-.atoll-logo.is-reaction-revive .atoll-body-group { animation: atoll-reaction-rev-body 1.2s ease-in-out both; }
-.atoll-logo.is-reaction-revive .atoll-eyes-base { animation: atoll-reaction-rev-eyes 1.2s linear both; }
-.atoll-logo.is-reaction-revive .atoll-puff { animation: atoll-reaction-rev-puff 1.2s ease-out both; }
+.atoll-logo.is-reaction-revive .pal-gray { animation: atoll-reaction-rev-pg var(--reaction-revive-ms) linear both; }
+.atoll-logo.is-reaction-revive .pal-color { animation: atoll-reaction-rev-pc var(--reaction-revive-ms) linear both; }
+.atoll-logo.is-reaction-revive .atoll-body-group { animation: atoll-reaction-rev-body var(--reaction-revive-ms) ease-in-out both; }
+.atoll-logo.is-reaction-revive .atoll-eyes-base { animation: atoll-reaction-rev-eyes var(--reaction-revive-ms) linear both; }
+.atoll-logo.is-reaction-revive .atoll-puff { animation: atoll-reaction-rev-puff var(--reaction-revive-ms) ease-out both; }
 
 @keyframes atoll-reaction-rev-pg {
   0%, 22% { opacity: 1; }
@@ -1485,10 +1486,10 @@
 }
 
 /* eat1：小口吃（1.4s）—— 一个文件、两次咀嚼、咕咚咽下 */
-.atoll-logo.is-reaction-eat1 .atoll-stage { animation: atoll-eat-stage-hop 1.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
-.atoll-logo.is-reaction-eat1 .atoll-body-group { animation: atoll-eat1-chew 1.4s ease-in-out both; }
-.atoll-logo.is-reaction-eat1 .atoll-mouth-open { animation: atoll-eat1-mouth 1.4s linear both; }
-.atoll-logo.is-reaction-eat1 .atoll-eat-file.f1 { animation: atoll-eat-file-in-r 1.4s cubic-bezier(0.45, 0, 0.7, 1) both; }
+.atoll-logo.is-reaction-eat1 .atoll-stage { animation: atoll-eat-stage-hop var(--reaction-eat1-ms) cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+.atoll-logo.is-reaction-eat1 .atoll-body-group { animation: atoll-eat1-chew var(--reaction-eat1-ms) ease-in-out both; }
+.atoll-logo.is-reaction-eat1 .atoll-mouth-open { animation: atoll-eat1-mouth var(--reaction-eat1-ms) linear both; }
+.atoll-logo.is-reaction-eat1 .atoll-eat-file.f1 { animation: atoll-eat-file-in-r var(--reaction-eat1-ms) cubic-bezier(0.45, 0, 0.7, 1) both; }
 
 @keyframes atoll-eat1-chew {
   0%, 6% { transform: translateY(0) scale(1, 1); }
@@ -1517,12 +1518,12 @@
 }
 
 /* eat2：大快朵颐（1.8s）—— 两个文件、三次咀嚼、左右回味 */
-.atoll-logo.is-reaction-eat2 .atoll-stage { animation: atoll-eat-stage-hop 1.8s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
-.atoll-logo.is-reaction-eat2 .atoll-body-group { animation: atoll-eat2-chew 1.8s ease-in-out both; }
-.atoll-logo.is-reaction-eat2 .atoll-mouth-open { animation: atoll-eat2-mouth 1.8s linear both; }
-.atoll-logo.is-reaction-eat2 .atoll-eat-file.f1 { animation: atoll-eat-file-in-r 1.8s cubic-bezier(0.45, 0, 0.7, 1) both; }
-.atoll-logo.is-reaction-eat2 .atoll-eat-file.f2 { animation: atoll-eat-file-in-l 1.8s cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 160ms; }
-.atoll-logo.is-reaction-eat2 .atoll-spark { animation: atoll-eat2-spark 1.8s ease-out both; }
+.atoll-logo.is-reaction-eat2 .atoll-stage { animation: atoll-eat-stage-hop var(--reaction-eat2-ms) cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+.atoll-logo.is-reaction-eat2 .atoll-body-group { animation: atoll-eat2-chew var(--reaction-eat2-ms) ease-in-out both; }
+.atoll-logo.is-reaction-eat2 .atoll-mouth-open { animation: atoll-eat2-mouth var(--reaction-eat2-ms) linear both; }
+.atoll-logo.is-reaction-eat2 .atoll-eat-file.f1 { animation: atoll-eat-file-in-r var(--reaction-eat2-ms) cubic-bezier(0.45, 0, 0.7, 1) both; }
+.atoll-logo.is-reaction-eat2 .atoll-eat-file.f2 { animation: atoll-eat-file-in-l var(--reaction-eat2-ms) cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 160ms; }
+.atoll-logo.is-reaction-eat2 .atoll-spark { animation: atoll-eat2-spark var(--reaction-eat2-ms) ease-out both; }
 
 @keyframes atoll-eat2-chew {
   0%, 6% { transform: translateY(0) scale(1, 1) rotate(0deg); }
@@ -1561,13 +1562,13 @@
 }
 
 /* eat3：吃撑（2.2s）—— 三个文件、费力慢嚼、冒冷汗、后仰咽下 */
-.atoll-logo.is-reaction-eat3 .atoll-stage { animation: atoll-eat-stage-hop 2.2s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
-.atoll-logo.is-reaction-eat3 .atoll-body-group { animation: atoll-eat3-chew 2.2s ease-in-out both; }
-.atoll-logo.is-reaction-eat3 .atoll-mouth-open { animation: atoll-eat3-mouth 2.2s linear both; }
-.atoll-logo.is-reaction-eat3 .atoll-eat-file.f1 { animation: atoll-eat-file-in-r 2.2s cubic-bezier(0.45, 0, 0.7, 1) both; }
-.atoll-logo.is-reaction-eat3 .atoll-eat-file.f2 { animation: atoll-eat-file-in-l 2.2s cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 200ms; }
-.atoll-logo.is-reaction-eat3 .atoll-eat-file.f3 { animation: atoll-eat-file-in-r 2.2s cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 400ms; }
-.atoll-logo.is-reaction-eat3 .atoll-sweat { animation: atoll-eat-sweat 2.2s linear both; }
+.atoll-logo.is-reaction-eat3 .atoll-stage { animation: atoll-eat-stage-hop var(--reaction-eat3-ms) cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+.atoll-logo.is-reaction-eat3 .atoll-body-group { animation: atoll-eat3-chew var(--reaction-eat3-ms) ease-in-out both; }
+.atoll-logo.is-reaction-eat3 .atoll-mouth-open { animation: atoll-eat3-mouth var(--reaction-eat3-ms) linear both; }
+.atoll-logo.is-reaction-eat3 .atoll-eat-file.f1 { animation: atoll-eat-file-in-r var(--reaction-eat3-ms) cubic-bezier(0.45, 0, 0.7, 1) both; }
+.atoll-logo.is-reaction-eat3 .atoll-eat-file.f2 { animation: atoll-eat-file-in-l var(--reaction-eat3-ms) cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 200ms; }
+.atoll-logo.is-reaction-eat3 .atoll-eat-file.f3 { animation: atoll-eat-file-in-r var(--reaction-eat3-ms) cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 400ms; }
+.atoll-logo.is-reaction-eat3 .atoll-sweat { animation: atoll-eat-sweat var(--reaction-eat3-ms) linear both; }
 
 @keyframes atoll-eat3-chew {
   0%, 5% { transform: translateY(0) scale(1, 1) rotate(0deg); }
@@ -1606,17 +1607,17 @@
 }
 
 /* eat4：饱嗝（2.6s）—— 囫囵吞下、打个激灵、BURP 云雾上飘 */
-.atoll-logo.is-reaction-eat4 .atoll-stage { animation: atoll-eat-stage-hop 2.6s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
-.atoll-logo.is-reaction-eat4 .atoll-body-group { animation: atoll-eat4-chew 2.6s ease-in-out both; }
-.atoll-logo.is-reaction-eat4 .atoll-mouth-open { animation: atoll-eat4-mouth 2.6s linear both; }
-.atoll-logo.is-reaction-eat4 .atoll-eat-file.f1 { animation: atoll-eat-file-in-r 2.6s cubic-bezier(0.45, 0, 0.7, 1) both; }
-.atoll-logo.is-reaction-eat4 .atoll-eat-file.f2 { animation: atoll-eat-file-in-l 2.6s cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 160ms; }
-.atoll-logo.is-reaction-eat4 .atoll-eat-file.f3 { animation: atoll-eat-file-in-r 2.6s cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 320ms; }
-.atoll-logo.is-reaction-eat4 .atoll-sweat { animation: atoll-eat-sweat 2.6s linear both; }
-.atoll-logo.is-reaction-eat4 .atoll-burp-b { animation: atoll-eat-burp-b 2.6s ease-out both; }
-.atoll-logo.is-reaction-eat4 .atoll-burp-b.b2 { animation: atoll-eat-burp-b2 2.6s ease-out both; }
-.atoll-logo.is-reaction-eat4 .atoll-burp-b.b3 { animation: atoll-eat-burp-b3 2.6s ease-out both; }
-.atoll-logo.is-reaction-eat4 .atoll-burp-text { animation: atoll-eat-burp-text 2.6s ease-out both; }
+.atoll-logo.is-reaction-eat4 .atoll-stage { animation: atoll-eat-stage-hop var(--reaction-eat4-ms) cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+.atoll-logo.is-reaction-eat4 .atoll-body-group { animation: atoll-eat4-chew var(--reaction-eat4-ms) ease-in-out both; }
+.atoll-logo.is-reaction-eat4 .atoll-mouth-open { animation: atoll-eat4-mouth var(--reaction-eat4-ms) linear both; }
+.atoll-logo.is-reaction-eat4 .atoll-eat-file.f1 { animation: atoll-eat-file-in-r var(--reaction-eat4-ms) cubic-bezier(0.45, 0, 0.7, 1) both; }
+.atoll-logo.is-reaction-eat4 .atoll-eat-file.f2 { animation: atoll-eat-file-in-l var(--reaction-eat4-ms) cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 160ms; }
+.atoll-logo.is-reaction-eat4 .atoll-eat-file.f3 { animation: atoll-eat-file-in-r var(--reaction-eat4-ms) cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 320ms; }
+.atoll-logo.is-reaction-eat4 .atoll-sweat { animation: atoll-eat-sweat var(--reaction-eat4-ms) linear both; }
+.atoll-logo.is-reaction-eat4 .atoll-burp-b { animation: atoll-eat-burp-b var(--reaction-eat4-ms) ease-out both; }
+.atoll-logo.is-reaction-eat4 .atoll-burp-b.b2 { animation: atoll-eat-burp-b2 var(--reaction-eat4-ms) ease-out both; }
+.atoll-logo.is-reaction-eat4 .atoll-burp-b.b3 { animation: atoll-eat-burp-b3 var(--reaction-eat4-ms) ease-out both; }
+.atoll-logo.is-reaction-eat4 .atoll-burp-text { animation: atoll-eat-burp-text var(--reaction-eat4-ms) ease-out both; }
 
 @keyframes atoll-eat4-chew {
   0%, 5% { transform: translateY(0) scale(1, 1) rotate(0deg); }
@@ -1677,11 +1678,11 @@
 }
 
 /* spit：吐出（1.2s）—— 腮帮鼓起、文件抛物线吐出、身体后坐 */
-.atoll-logo.is-reaction-spit .atoll-body-group { animation: atoll-spit-body 1.2s ease-out both; }
-.atoll-logo.is-reaction-spit .atoll-mouth-open { animation: atoll-spit-mouth 1.2s linear both; }
-.atoll-logo.is-reaction-spit .atoll-cheek-l { animation: atoll-spit-cheek 1.2s ease-out both; }
-.atoll-logo.is-reaction-spit .atoll-cheek-r { animation: atoll-spit-cheek 1.2s ease-out both; }
-.atoll-logo.is-reaction-spit .atoll-spit-file { animation: atoll-spit-file 1.2s cubic-bezier(0.2, 0.6, 0.5, 1) both; }
+.atoll-logo.is-reaction-spit .atoll-body-group { animation: atoll-spit-body var(--reaction-spit-ms) ease-out both; }
+.atoll-logo.is-reaction-spit .atoll-mouth-open { animation: atoll-spit-mouth var(--reaction-spit-ms) linear both; }
+.atoll-logo.is-reaction-spit .atoll-cheek-l { animation: atoll-spit-cheek var(--reaction-spit-ms) ease-out both; }
+.atoll-logo.is-reaction-spit .atoll-cheek-r { animation: atoll-spit-cheek var(--reaction-spit-ms) ease-out both; }
+.atoll-logo.is-reaction-spit .atoll-spit-file { animation: atoll-spit-file var(--reaction-spit-ms) cubic-bezier(0.2, 0.6, 0.5, 1) both; }
 
 @keyframes atoll-spit-body {
   0%, 8% { transform: translateY(0) scale(1, 1); }
