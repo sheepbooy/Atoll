@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
-// @ts-expect-error 项目未安装 @types/node；vitest 运行于 node，运行时可用
-import { readFileSync } from "node:fs";
 import { ATOLL_REACTION_MS } from "./atollTransitions";
 import { eatReactionForCount, stashBellyLevel } from "./fileStationTiers";
+import { readStylesSource } from "./test-utils/stylesSource";
 
-const css = readFileSync("./src/styles.css", "utf8");
+const css = readStylesSource();
 
 describe("file station eat tiers", () => {
   it("maps staged counts to eat reactions", () => {

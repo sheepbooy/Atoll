@@ -1,0 +1,225 @@
+/* ─── panel.css — island panel shell + notch adaptation ───────────────────────────── */
+/* ─── Island Panel ────────────────────────────────────────────── */
+
+.island-panel {
+  position: relative;
+  height: calc(100% - 36px);
+  padding: 12px 16px 16px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transform: translate3d(0, -8px, 0);
+  backface-visibility: hidden;
+  will-change: opacity, transform;
+  display: flex;
+  flex-direction: column;
+  transition:
+    opacity var(--duration-normal) var(--ease-window),
+    transform var(--duration-expand) var(--ease-window);
+}
+
+.island-panel-content {
+  flex: 1;
+  min-height: 0;
+}
+
+.island-panel-footer {
+  flex-shrink: 0;
+  width: 100%;
+  padding-top: 8px;
+  opacity: 0;
+  transform: translate3d(0, 12px, 0);
+  transition:
+    opacity var(--duration-normal) var(--ease-out) 80ms,
+    transform var(--duration-normal) var(--ease-out) 80ms;
+}
+
+/* The footer slides in once the panel is visible (not during transitions). */
+.is-expanded:not(.is-opening):not(.is-closing) .island-panel-footer {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+/* Soft film grain — static CSS noise (no SVG feTurbulence; that filter
+   re-rasterizes every frame during native window resize and causes jank). */
+.island-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.04;
+  z-index: 0;
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 1px,
+      rgba(255, 255, 255, 0.015) 1px,
+      rgba(255, 255, 255, 0.015) 2px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 1px,
+      rgba(0, 0, 0, 0.02) 1px,
+      rgba(0, 0, 0, 0.02) 2px
+    );
+  background-size: 3px 3px;
+  mix-blend-mode: overlay;
+}
+
+.island-panel-content {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+}
+
+.island-panel[data-nav="forward"] .island-panel-content {
+  animation: slide-in-right var(--duration-snappy) var(--ease-out) both;
+}
+
+.island-panel[data-nav="back"] .island-panel-content {
+  animation: slide-in-left var(--duration-snappy) var(--ease-out) both;
+}
+
+.island.is-panel-exiting .island-panel {
+  animation: panel-exit var(--panel-exit-ms) var(--ease-out) forwards;
+  pointer-events: none;
+}
+
+/* Staggered cascade for direct panel children / marked blocks */
+.stagger-child {
+  animation: stagger-in var(--duration-normal) var(--ease-out) both;
+  animation-delay: calc(var(--stagger-i, 0) * var(--stagger-step));
+}
+
+.tauri-runtime .island-panel {
+  position: absolute;
+  top: 36px;
+  left: 50%;
+  width: 560px;
+  height: calc(100% - 36px);
+  contain: paint;
+  transform: translate3d(-50%, -8px, 0);
+}
+
+.is-expanded .island-panel {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate3d(0, 0, 0);
+  transition-delay: 80ms;
+}
+
+.tauri-runtime .is-expanded .island-panel {
+  transform: translate3d(-50%, 0, 0);
+}
+
+.tauri-runtime .is-expanded.is-settings .island-panel {
+  width: var(--expanded-settings-width);
+}
+
+/* Keep panel out of layout while the native window width animates. */
+.island.is-opening .island-panel,
+.island.is-closing .island-panel {
+  display: none;
+  opacity: 0;
+  pointer-events: none;
+  transition: none;
+  animation: none;
+}
+
+.is-closing .island-panel {
+  transform: translate3d(0, -8px, 0);
+  transition-delay: 0ms;
+}
+
+.tauri-runtime .is-closing .island-panel {
+  transform: translate3d(-50%, -8px, 0);
+}
+
+/* Subview: panel content sits below the menu-bar row (same as home) */
+.is-subview .island-panel {
+  height: calc(100% - var(--compact-height));
+}
+
+.tauri-runtime .is-subview .island-panel {
+  top: var(--compact-height);
+  height: calc(100% - var(--compact-height));
+}
+
+/* ─── Notch adaptation (MacBook camera housing) ───────────────── */
+/* On notched displays the window spans at least the notch width and is flush
+   with the physical top edge. The black band covers the camera-housing area
+   so the capsule visually fuses with the notch (Dynamic-Island style). Content
+   is pushed below the housing. Driven by --notch-height / --notch-width set
+   from NSScreen safe-area metrics; absent on non-notched screens. */
+
+.tauri-runtime.has-notch .island.is-opening,
+.tauri-runtime.has-notch .island.is-expanded {
+  background: #000;
+}
+
+/* Collapsed capsule: solid black so the transparent window reads as opaque
+   against the menu bar / notch band. */
+.tauri-runtime .island:not(.is-expanded) {
+  background: #000;
+}
+
+.tauri-runtime .island:not(.is-expanded)::before {
+  display: none;
+}
+
+/* Notch margin removed for expanded header — menu bar shares the top band with
+   the logo; only panel content is pushed below the housing. */
+.tauri-runtime.has-notch .island-panel {
+  top: max(var(--compact-height), var(--notch-height, 0px));
+  height: calc(100% - max(var(--compact-height), var(--notch-height, 0px)));
+}
+
+/* Dormant/compact pill on notched displays: both sit within the menu-bar band
+   (no extra_top in Rust). The pill appears as a dark extension of the notch. */
+.tauri-runtime.has-notch .island.is-dormant {
+  background: #000;
+}
+
+/* Compact pill on notched displays: split content to both visible sides of the
+ * notch. The first column is pinned to the budgeted left-pane width so the
+ * middle notch-avoidance column lands exactly under the camera housing
+ * regardless of rendered content widths — the window's X position is computed
+ * from the same budget in Rust. Falls back to `auto` before metrics arrive. */
+.tauri-runtime.has-notch .is-compact:not(.is-dormant) .island-header,
+.tauri-runtime.has-notch .is-closing:not(.is-dormant) .island-header {
+  grid-template-columns:
+    var(--compact-left-pane-width, auto) var(--notch-width, 0px) auto;
+  gap: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.tauri-runtime.has-notch .is-compact:not(.is-dormant) .header-main,
+.tauri-runtime.has-notch .is-closing:not(.is-dormant) .header-main {
+  grid-column: 1;
+  justify-content: flex-start;
+  min-width: 0;
+  padding-left: 0;
+  padding-right: var(--compact-notch-inner-gap, 4px);
+  /* Clip so no left-wing content can ever spill under the camera housing. */
+  overflow: hidden;
+}
+
+.tauri-runtime.has-notch .is-compact:not(.is-dormant) .header-notch-spacer,
+.tauri-runtime.has-notch .is-closing:not(.is-dormant) .header-notch-spacer {
+  grid-column: 2;
+}
+
+.tauri-runtime.has-notch .is-compact:not(.is-dormant) .header-metrics,
+.tauri-runtime.has-notch .is-closing:not(.is-dormant) .header-metrics {
+  grid-column: 3;
+  min-width: max-content;
+  padding-right: 8px;
+  padding-left: var(--compact-notch-inner-gap, 4px);
+  /* Clip so no right-wing content can ever spill under the camera housing. */
+  overflow: hidden;
+}
+

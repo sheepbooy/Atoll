@@ -1,0 +1,102 @@
+/* ─── keyframes.css — shared keyframe animations ───────────────────────────── */
+/* ─── Keyframe Animations ─────────────────────────────────────── */
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.85); opacity: 0.55; }
+  70% { transform: scale(1.45); opacity: 0; }
+  100% { transform: scale(1.45); opacity: 0; }
+}
+
+@keyframes badge-pop {
+  0% { transform: translateZ(0) scale(0); opacity: 0; }
+  60% { transform: translateZ(0) scale(1.15); }
+  100% { transform: translateZ(0) scale(1); opacity: 1; }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
+@keyframes float-subtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 0 var(--breathe-color, rgba(248, 221, 160, 0.45)); }
+  50% { box-shadow: 0 0 0 5px var(--breathe-color-end, rgba(248, 221, 160, 0)); }
+}
+
+@keyframes edge-glow {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.9; }
+}
+
+@keyframes danger-flash {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translate3d(8px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translate3d(-8px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes sheen-sweep {
+  0% { transform: translateX(-120%) skewX(-18deg); opacity: 0; }
+  20% { opacity: 0.55; }
+  100% { transform: translateX(160%) skewX(-18deg); opacity: 0; }
+}
+
+@keyframes approval-glow-pulse {
+  0% { box-shadow: 0 0 0 0 var(--approval-glow, rgba(111, 220, 255, 0.35)); }
+  70% { box-shadow: 0 0 0 10px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+@keyframes approval-resolve-out {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 0; transform: translate3d(0, -10px, 0); }
+}
+
+@keyframes panel-exit {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 0; transform: translate3d(0, 6px, 0); }
+}
+
+@keyframes stagger-in {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes heatmap-cell-in {
+  from { opacity: 0; transform: scale(0.7); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes trend-draw {
+  from { stroke-dashoffset: var(--trend-length, 1000); }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes menu-scale-in {
+  from { opacity: 0; transform: scale(0.94) translate3d(0, -4px, 0); }
+  to { opacity: 1; transform: scale(1) translate3d(0, 0, 0); }
+}
+

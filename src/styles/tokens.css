@@ -1,0 +1,251 @@
+/* ─── tokens.css — design tokens: palette, easing, durations, radii, GIF-capture chrome ───────────────────────────── */
+/* ─── Design Tokens ────────────────────────────────────────────── */
+
+:root {
+  /* Surface palette — deep, slightly warm near-black with cool undertone */
+  --surface-base: #0a0b0d;
+  --surface-1: #111317;
+  --surface-2: #16181d;
+  --surface-raised: rgba(255, 255, 255, 0.035);
+  --surface-overlay: rgba(255, 255, 255, 0.06);
+  --surface-strong: rgba(255, 255, 255, 0.09);
+  --surface-glass: rgba(20, 22, 26, 0.86);
+
+  /* Border palette */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-medium: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --border-focus: rgba(255, 224, 150, 0.9);
+
+  /* Text palette */
+  --text-primary: #f7f4ee;
+  --text-secondary: #b7b4ac;
+  --text-tertiary: #8d8a82;
+  --text-muted: #6d6b64;
+  --text-faint: #565550;
+
+  /* Agent accent colors */
+  --accent-coral: #ff8175;
+  --accent-coral-glow: rgba(255, 129, 117, 0.35);
+  --accent-cyan: #6fdcff;
+  --accent-cyan-glow: rgba(111, 220, 255, 0.35);
+  --accent-lime: #b2ea7e;
+  --accent-lime-glow: rgba(178, 234, 126, 0.35);
+  --accent-violet: #cdc1ff;
+  --accent-violet-glow: rgba(205, 193, 255, 0.35);
+
+  /* Semantic colors */
+  --color-approve: #9ee9b8;
+  --color-approve-strong: #b6f0c9;
+  --color-approve-ink: #06160c;
+  --color-deny-bg: rgba(120, 46, 41, 0.45);
+  --color-deny-border: rgba(255, 129, 117, 0.22);
+  --color-deny-text: #ffcbc5;
+  --color-always-a: #7fd7f2;
+  --color-always-b: #5cc1e6;
+  --color-warning: #f8dda0;
+  --color-online: #6fe0a4;
+  --color-online-glow: rgba(111, 224, 164, 0.5);
+  --color-danger: #ff8a7e;
+
+  /* Risk colors */
+  --risk-danger: #ff7a6e;
+  --risk-danger-bg: rgba(255, 92, 78, 0.13);
+  --risk-danger-border: rgba(255, 92, 78, 0.34);
+  --risk-danger-glow: rgba(255, 80, 64, 0.28);
+  --risk-caution: #f5c876;
+  --risk-caution-bg: rgba(245, 200, 118, 0.12);
+  --risk-caution-border: rgba(245, 200, 118, 0.3);
+
+  /* Timing */
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Expand mirrors Rust ease_out_spring (damped harmonic oscillator, ~2%
+     overshoot). Collapse stays cubic. This bezier is a visual approximation
+     of the spring step; native Tauri resize uses the real oscillator. */
+  --ease-window: cubic-bezier(0.34, 1.2, 0.64, 1);
+  --ease-window-collapse: cubic-bezier(0.33, 1, 0.68, 1);
+  --duration-instant: 100ms;
+  --duration-fast: 150ms;
+  --duration-quick: 180ms;
+  --duration-snappy: 220ms;
+  --duration-normal: 280ms;
+  --duration-settle: 260ms;
+  --duration-soft: 300ms;
+  --duration-expand: 420ms;
+  --duration-slow: 560ms;
+  --stagger-step: 45ms;
+  --panel-exit-ms: 120ms;
+  --resolve-feedback-ms: 240ms;
+
+  /* Radii */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  /* Depth */
+  --shadow-1: 0 4px 14px rgba(0, 0, 0, 0.28);
+  --shadow-2: 0 6px 22px rgba(0, 0, 0, 0.32);
+  --shadow-3: 0 18px 50px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-menu: var(--shadow-3);
+  --shadow-card: var(--shadow-2);
+
+  /* Panel ambient glow — overridden per-agent from App */
+  --panel-glow: rgba(111, 220, 255, 0.14);
+
+  /* Type */
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+
+  /* Collapsed island capsule height — the notch band height; overridden at
+   * runtime from live notch metrics (applyWindowMetrics). Keep in sync with
+   * NOTCH_BAND_HEIGHT in src-tauri/src/state.rs. */
+  /* Micro pill height — keep in sync with MICRO_WINDOW_HEIGHT in lib.rs */
+  /* Collapsed capsule bottom radius — matches the physical notch curvature;
+   * overridden at runtime from notch metrics. 10px matches
+   * FALLBACK_NOTCH_CORNER_RADIUS in state.rs. */
+  --compact-height: 32px;
+  --collapsed-radius: 10px;
+  --expanded-header-height: 36px;
+  /* Expanded idle panel — keep in sync with EXPANDED_IDLE_WINDOW_HEIGHT in lib.rs */
+  --expanded-idle-height: 240px;
+  /* Expanded plan panel — keep in sync with EXPANDED_PLAN_WINDOW_* in lib.rs */
+  --expanded-plan-width: 680px;
+  --expanded-plan-height: 680px;
+  /* Expanded settings panel — keep in sync with EXPANDED_SETTINGS_WINDOW_* in lib.rs */
+  --expanded-settings-width: 680px;
+  --expanded-settings-height: 680px;
+  /* Token counter extends left of header-actions; reserve space in the menu bar */
+  --header-token-inset: 88px;
+
+  color: var(--text-primary);
+  background: transparent;
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+html.readme-demo,
+html.readme-demo body,
+html.readme-demo #root {
+  background: #0a0b0d;
+}
+
+html.readme-demo .stage {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 48px;
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 0%, rgba(56, 189, 216, 0.12), transparent),
+    #0a0b0d;
+}
+
+html.readme-demo .stage::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  background: rgba(0, 0, 0, 0.55);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+  z-index: 0;
+}
+
+html.readme-demo .island {
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+}
+
+/* GIF capture — mirrors Tauri window sizing + menu bar chrome */
+html.gif-capture,
+html.gif-capture body,
+html.gif-capture #root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: #0a0b0d;
+  overflow: hidden;
+}
+
+html.gif-capture body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 28px;
+  background: rgba(0, 0, 0, 0.72);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  z-index: 0;
+  pointer-events: none;
+}
+
+html.gif-capture body::after {
+  content: "";
+  position: fixed;
+  top: 9px;
+  left: 14px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff5f57;
+  box-shadow: 18px 0 0 #febc2e, 36px 0 0 #28c840;
+  z-index: 1;
+  pointer-events: none;
+}
+
+html.gif-capture .stage {
+  position: fixed;
+  top: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: block;
+  width: var(--gif-window-w, 132px);
+  height: var(--gif-window-h, 38px);
+  margin: 0;
+  padding: 0;
+  pointer-events: auto;
+  z-index: 2;
+}
+
+html.gif-capture.tauri-runtime .island {
+  border-radius: 0 0 var(--collapsed-radius, 10px) var(--collapsed-radius, 10px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+html.gif-capture.tauri-runtime .island.is-expanded,
+html.gif-capture.tauri-runtime .island.is-opening {
+  border-radius: 0 0 22px 22px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+button {
+  border: 0;
+  font: inherit;
+}
+
+kbd {
+  font-family: var(--font-sans);
+}
+

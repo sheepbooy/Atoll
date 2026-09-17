@@ -1,0 +1,362 @@
+/* ─── file-station.css — file station view + Atoll eat/spit takeover ───────────────────────────── */
+/* ─── File station view（文件中转站）─────────────────────────────────────── */
+
+.fs-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 10px;
+  flex-shrink: 0;
+}
+
+.fs-count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-dim, #9aa0a6);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  padding: 4px 10px;
+  flex-shrink: 0;
+}
+
+.clipboard-clear-btn.is-confirming {
+  background: rgba(255, 87, 87, 0.16);
+  color: rgba(255, 140, 140, 0.98);
+  border-color: rgba(255, 87, 87, 0.3);
+}
+
+.fs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding: 0 4px;
+}
+
+.fs-entry-row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.fs-entry-row .fs-entry {
+  flex: 1;
+  min-width: 0;
+}
+
+.fs-entry {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  text-align: left;
+  width: 100%;
+}
+
+.fs-entry:hover:not(:disabled) {
+  background: rgba(111, 220, 255, 0.08);
+  border-color: rgba(111, 220, 255, 0.15);
+}
+
+.fs-entry.is-copied {
+  background: rgba(120, 220, 150, 0.1);
+  border-color: rgba(120, 220, 150, 0.2);
+}
+
+/* Ctrl/Cmd 多选态（拖出时整批带走） */
+.fs-entry.is-selected {
+  background: rgba(111, 220, 255, 0.12);
+  border-color: rgba(111, 220, 255, 0.5);
+}
+
+.fs-entry.is-lost,
+.fs-entry-row.is-lost {
+  opacity: 0.45;
+}
+
+.fs-entry:disabled {
+  cursor: default;
+}
+
+.fs-entry-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+}
+
+.fs-entry-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.fs-entry-name {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--fg, #e8eaed);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-entry-meta {
+  font-size: 11px;
+  color: var(--fg-dim, #6b7280);
+  flex-shrink: 0;
+}
+
+.fs-entry-row.is-lost .fs-entry-meta {
+  color: rgba(255, 140, 140, 0.8);
+}
+
+.fs-row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--fg-dim, #6b7280);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.fs-row-action:hover:not(:disabled) {
+  background: rgba(111, 220, 255, 0.12);
+  border-color: rgba(111, 220, 255, 0.2);
+  color: rgba(111, 220, 255, 0.9);
+}
+
+.fs-row-action.fs-remove:hover:not(:disabled) {
+  background: rgba(255, 87, 87, 0.12);
+  border-color: rgba(255, 87, 87, 0.2);
+  color: rgba(255, 130, 130, 0.95);
+}
+
+.fs-row-action:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.fs-entry-row.is-copied .fs-row-action {
+  border-color: rgba(120, 220, 150, 0.2);
+}
+
+.fs-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 20px;
+  text-align: center;
+  flex: 1;
+}
+
+.fs-empty-icon {
+  opacity: 0.3;
+  color: var(--fg-dim, #9aa0a6);
+}
+
+.fs-empty p {
+  font-size: 13px;
+  color: var(--fg-dim, #9aa0a6);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.fs-empty .fs-empty-hint {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.fs-drag-hint {
+  font-size: 11px;
+  color: var(--fg-dim, #6b7280);
+  opacity: 0.65;
+  margin: 8px 4px 0;
+  text-align: center;
+}
+
+/* Header stash badge（展开态工具栏的存货徽标） */
+.header-stash-btn {
+  position: relative;
+}
+
+.header-stash-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #38bdd8;
+  color: #06222b;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* 拖入结果 toast（吃下/淘汰/跳过） */
+.stash-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 70; /* 高于 .atoll-takeover(60)：吃/吐接管时结果提示仍浮在上方 */
+  max-width: calc(100% - 32px);
+  padding: 7px 14px;
+  border: 1px solid rgba(111, 220, 255, 0.22);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(28, 31, 38, 0.97), rgba(16, 18, 22, 0.95));
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.42);
+  color: #dfeaf2;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  animation: stash-toast-in 260ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+
+.stash-toast-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes stash-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+/* ─── Atoll 吃/吐接管：logo 从左上角原位放大占满整岛 ─────────────── */
+.atoll-takeover {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background:
+    radial-gradient(120% 80% at 50% -20%, rgba(255, 255, 255, 0.09), transparent 62%),
+    linear-gradient(180deg, var(--surface-2), var(--surface-base));
+  animation: atoll-takeover-shade 200ms ease-out both;
+}
+
+.atoll-takeover-logo {
+  height: 58%;
+  aspect-ratio: 96 / 108;
+  animation: atoll-takeover-grow 380ms cubic-bezier(0.26, 0.9, 0.36, 1) both;
+}
+
+.atoll-takeover-logo .atoll-logo {
+  width: 100%;
+  height: 100%;
+}
+
+/* 接管放大时收起鼓肚：大尺寸下底部椭圆会读成第二张嘴。 */
+.atoll-takeover .atoll-belly-bump {
+  transform: scale(0) !important;
+}
+
+/* 退出：向 header logo 原位缩回（位移/缩放来自 JS 实测写入的 CSS 变量；
+   320ms 须与 App.tsx takeover 退出定时 340ms 匹配）。 */
+.atoll-takeover.is-exiting {
+  animation: atoll-takeover-shade-out 320ms ease-in both;
+}
+.atoll-takeover.is-exiting .atoll-takeover-logo {
+  animation: atoll-takeover-vanish 320ms cubic-bezier(0.55, 0, 0.8, 0.4) both;
+}
+
+@keyframes atoll-takeover-shade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes atoll-takeover-shade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes atoll-takeover-grow {
+  0% {
+    opacity: 0;
+    transform: translate(var(--takeover-dx, -180px), var(--takeover-dy, -110px))
+      scale(var(--takeover-scale, 0.18));
+  }
+  55% {
+    opacity: 1;
+  }
+  80% {
+    transform: translate(0, 0) scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+}
+@keyframes atoll-takeover-vanish {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--takeover-dx, -180px), var(--takeover-dy, -110px))
+      scale(var(--takeover-scale, 0.18));
+  }
+}
+
+/* 拖拽悬停待喂提示（张嘴状态下方的青色胶囊） */
+.stash-feed-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 40;
+  max-width: calc(100% - 32px);
+  padding: 7px 14px;
+  border: 1px solid rgba(111, 220, 255, 0.35);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(20, 42, 52, 0.97), rgba(12, 26, 33, 0.95));
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.42);
+  color: var(--accent-cyan, #6fdcff);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  animation: stash-toast-in 260ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+

@@ -1,10 +1,8 @@
-// @ts-expect-error 项目未安装 @types/node；vitest 运行于 node，运行时可用
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { ATOLL_ENTER_MS, ATOLL_EXIT_MS } from "./atollTransitions";
+import { readStylesSource } from "./test-utils/stylesSource";
 
-// vitest 始终以仓库根目录为 CWD 运行
-const css = readFileSync("./src/styles.css", "utf8");
+const css = readStylesSource();
 
 interface PhaseRule {
   activity: string;

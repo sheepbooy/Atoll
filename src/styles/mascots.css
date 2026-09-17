@@ -1,0 +1,360 @@
+/* ─── mascots.css — Clawd mascot + folded/session-list avatars ───────────────────────────── */
+/* ─── Clawd Mascot ────────────────────────────────────────────── */
+
+@keyframes clawd-float {
+  0%, 100% { transform: translateY(6%); }
+  50% { transform: translateY(-6%); }
+}
+@keyframes clawd-float-slow {
+  0%, 100% { transform: translateY(2%); }
+  50% { transform: translateY(9%); }
+}
+@keyframes clawd-alert-hop {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  30% { transform: translateY(-13%) scaleY(1.04); }
+  60% { transform: translateY(0) scaleY(0.94); }
+}
+@keyframes clawd-bounce {
+  0%, 100% { transform: translateY(9%) scale(1, 1); }
+  40% { transform: translateY(-16%) scale(1.04, 1.06); }
+  70% { transform: translateY(0) scale(0.99, 0.94); }
+}
+@keyframes clawd-tremble {
+  0%, 100% { transform: translate(-3%, 2%); }
+  50% { transform: translate(3%, 2%); }
+}
+@keyframes clawd-claw-wave-l { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-24deg); } }
+@keyframes clawd-claw-wave-r { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(24deg); } }
+@keyframes clawd-leg-step { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-16%); } }
+@keyframes clawd-twinkle { 0%, 100% { opacity: 0; transform: scale(0.3); } 50% { opacity: 1; transform: scale(1); } }
+@keyframes clawd-heart-rise { 0% { opacity: 0; transform: translateY(10%) scale(0.6); } 25% { opacity: 1; } 100% { opacity: 0; transform: translateY(-45%) scale(1.1); } }
+@keyframes clawd-zzz-rise { 0% { opacity: 0; transform: translate(0, 10%); } 40% { opacity: 1; } 100% { opacity: 0; transform: translate(30%, -70%); } }
+@keyframes clawd-sweat-fall { 0% { opacity: 0; transform: translateY(-40%); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(160%); } }
+@keyframes clawd-bang-pop { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-14%) scale(1.14); } }
+@keyframes official-mark-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.78; }
+}
+@keyframes cursor-cube-tilt {
+  0%, 60%, 100% { transform: rotate(0deg); }
+  30% { transform: rotate(-2deg); }
+  45% { transform: rotate(2deg); }
+}
+
+.clawd,
+.codex,
+.cursor-mascot,
+.zcode,
+.gemini {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  will-change: transform;
+}
+
+.clawd-svg,
+.codex-svg,
+.cursor-mascot-svg,
+.zcode-svg,
+.gemini-svg {
+  overflow: visible;
+}
+
+.clawd-body,
+.codex-body,
+.cursor-mascot-body,
+.zcode-body,
+.gemini-body {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}
+
+.clawd-claw,
+.clawd-leg,
+.clawd-star,
+.clawd-heart,
+.clawd-z,
+.clawd-sweat,
+.clawd-bang,
+.codex-star,
+.codex-heart,
+.codex-z,
+.codex-sweat,
+.codex-bang,
+.codex-mark,
+.zcode-star,
+.zcode-heart,
+.zcode-z,
+.zcode-sweat,
+.zcode-bang,
+.zcode-mark,
+.gemini-star,
+.gemini-heart,
+.gemini-z,
+.gemini-sweat,
+.gemini-bang,
+.gemini-mark,
+.cursor-mascot-star,
+.cursor-mascot-heart,
+.cursor-mascot-z,
+.cursor-mascot-sweat,
+.cursor-mascot-bang,
+.cursor-mascot-cube,
+.cursor-mascot-mark {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.clawd.is-calm .clawd-body,
+.codex.is-calm .codex-body,
+.cursor-mascot.is-calm .cursor-mascot-body,
+.zcode.is-calm .zcode-body,
+.gemini.is-calm .gemini-body {
+  animation: clawd-float 2.8s ease-in-out infinite;
+}
+.clawd.is-sleeping .clawd-body,
+.codex.is-sleeping .codex-body,
+.cursor-mascot.is-sleeping .cursor-mascot-body,
+.zcode.is-sleeping .zcode-body,
+.gemini.is-sleeping .gemini-body {
+  animation: clawd-float-slow 3.6s ease-in-out infinite;
+}
+.clawd.is-alert .clawd-body,
+.codex.is-alert .codex-body,
+.cursor-mascot.is-alert .cursor-mascot-body,
+.zcode.is-alert .zcode-body,
+.gemini.is-alert .gemini-body {
+  animation: clawd-alert-hop 0.85s ease-in-out infinite;
+}
+.clawd.is-happy .clawd-body,
+.codex.is-happy .codex-body,
+.cursor-mascot.is-happy .cursor-mascot-body,
+.zcode.is-happy .zcode-body {
+  animation: clawd-bounce 0.6s ease-in-out infinite;
+}
+.clawd.is-worried .clawd-body,
+.codex.is-worried .codex-body,
+.cursor-mascot.is-worried .cursor-mascot-body,
+.zcode.is-worried .zcode-body {
+  animation: clawd-tremble 0.5s ease-in-out infinite;
+}
+.clawd.is-sad .clawd-body,
+.codex.is-sad .codex-body,
+.cursor-mascot.is-sad .cursor-mascot-body,
+.zcode.is-sad .zcode-body {
+  transform: translateY(8%);
+}
+
+@keyframes mascot-dead-slump {
+  0%, 100% { transform: translateY(6%) rotate(-1deg); }
+  50%      { transform: translateY(10%) rotate(1deg); }
+}
+
+.atoll-indicator .clawd.is-dead,
+.atoll-indicator .codex.is-dead,
+.atoll-indicator .cursor-mascot.is-dead,
+.atoll-indicator .zcode.is-dead {
+  animation: mascot-dead-slump 4.5s ease-in-out infinite;
+}
+
+.clawd.is-alert .clawd-claw-left,
+.clawd.is-happy .clawd-claw-left {
+  transform-origin: right center;
+  animation: clawd-claw-wave-l 0.5s ease-in-out infinite;
+}
+.clawd.is-alert .clawd-claw-right,
+.clawd.is-happy .clawd-claw-right {
+  transform-origin: left center;
+  animation: clawd-claw-wave-r 0.5s ease-in-out infinite;
+}
+
+.clawd.is-happy .clawd-leg-0 {
+  animation: clawd-leg-step 0.3s ease-in-out infinite;
+}
+.clawd.is-happy .clawd-leg-1 {
+  animation: clawd-leg-step 0.3s ease-in-out infinite 0.07s;
+}
+.clawd.is-happy .clawd-leg-2 {
+  animation: clawd-leg-step 0.3s ease-in-out infinite 0.14s;
+}
+.clawd.is-happy .clawd-leg-3 {
+  animation: clawd-leg-step 0.3s ease-in-out infinite 0.21s;
+}
+
+.clawd-star,
+.codex-star,
+.cursor-mascot-star,
+.zcode-star { opacity: 0; }
+.clawd-star-0,
+.codex-star-0,
+.cursor-mascot-star-0,
+.zcode-star-0 { animation: clawd-twinkle 1.2s ease-in-out infinite; }
+.clawd-star-1,
+.codex-star-1,
+.cursor-mascot-star-1,
+.zcode-star-1 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.4s; }
+.clawd-star-2,
+.codex-star-2,
+.cursor-mascot-star-2,
+.zcode-star-2 { animation: clawd-twinkle 1.2s ease-in-out infinite 0.8s; }
+.clawd-heart,
+.codex-heart,
+.cursor-mascot-heart,
+.zcode-heart { animation: clawd-heart-rise 1.8s ease-out infinite; }
+.clawd-z,
+.codex-z,
+.cursor-mascot-z,
+.zcode-z { opacity: 0; }
+.clawd-z-0,
+.codex-z-0,
+.cursor-mascot-z-0,
+.zcode-z-0 { animation: clawd-zzz-rise 2.4s ease-in-out infinite; }
+.clawd-z-1,
+.codex-z-1,
+.cursor-mascot-z-1,
+.zcode-z-1 { animation: clawd-zzz-rise 2.4s ease-in-out infinite 0.5s; }
+.clawd-z-2,
+.codex-z-2,
+.cursor-mascot-z-2,
+.zcode-z-2 { animation: clawd-zzz-rise 2.4s ease-in-out infinite 1s; }
+.clawd-sweat,
+.codex-sweat,
+.cursor-mascot-sweat,
+.zcode-sweat { animation: clawd-sweat-fall 1.3s ease-in-out infinite; }
+.clawd-bang,
+.codex-bang,
+.cursor-mascot-bang,
+.zcode-bang { animation: clawd-bang-pop 0.7s ease-in-out infinite; }
+
+.codex.is-alert .codex-mark,
+.zcode.is-alert .zcode-mark {
+  animation: official-mark-pulse 0.85s ease-in-out infinite;
+}
+
+.codex.is-sleeping .codex-mark,
+.cursor-mascot.is-sleeping .cursor-mascot-mark,
+.zcode.is-sleeping .zcode-mark {
+  opacity: 0.72;
+}
+
+.cursor-mascot {
+  --cursor-outline: #f4f0e8;
+  color: var(--cursor-outline);
+  overflow: visible;
+}
+
+.cursor-mascot-cube {
+  transform-origin: center bottom;
+}
+
+.cursor-mascot-outline {
+  pointer-events: none;
+}
+
+.cursor-mascot-outline path {
+  fill: none;
+  stroke: var(--cursor-outline, #f4f0e8);
+}
+
+.cursor-mascot.is-alert .cursor-mascot-cube {
+  animation: cursor-cube-tilt 0.85s ease-in-out infinite;
+}
+
+.clawd.is-static,
+.clawd.is-static *,
+.codex.is-static,
+.codex.is-static *,
+.gemini.is-static,
+.gemini.is-static *,
+.cursor-mascot.is-static,
+.cursor-mascot.is-static *,
+.zcode.is-static,
+.zcode.is-static * {
+  animation: none !important;
+  will-change: auto;
+}
+
+.agent-slot .clawd,
+.agent-slot .codex,
+.agent-slot .cursor-mascot,
+.agent-slot .zcode {
+  width: 21px;
+  height: 18px;
+  transition:
+    width var(--duration-expand) var(--ease-window),
+    height var(--duration-expand) var(--ease-window);
+}
+
+.is-expanded .agent-slot .clawd,
+.is-expanded .agent-slot .codex,
+.is-expanded .agent-slot .cursor-mascot,
+.is-expanded .agent-slot .zcode {
+  width: 40px;
+  height: 35px;
+}
+
+.idle-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ─── Clawd Stack (folded multi-session avatars) ──────────────── */
+
+.clawd-stack {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clawd-stack-item {
+  display: inline-flex;
+  width: 20px;
+  height: 18px;
+  margin-left: -5px;
+}
+
+.clawd-stack-item:first-child {
+  margin-left: 0;
+}
+
+.clawd-stack-item .clawd,
+.clawd-stack-item .codex,
+.clawd-stack-item .cursor-mascot {
+  width: 20px;
+  height: 18px;
+}
+
+.clawd-stack-more {
+  margin-left: 3px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* Folded header with sessions: avatar column auto-sizes to the stack */
+.island-header.compact-stack {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+/* ─── Session List Clawd ──────────────────────────────────────── */
+
+.session-clawd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 30px;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.session-clawd .clawd,
+.session-clawd .codex,
+.session-clawd .cursor-mascot {
+  width: 34px;
+  height: 30px;
+}
+

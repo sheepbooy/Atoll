@@ -1,0 +1,1237 @@
+/* ─── island.css — stage, island shell, artwork backdrop, header rows, micro/dormant pills ───────────────────────────── */
+/* ─── Stage ───────────────────────────────────────────────────── */
+
+.stage {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  align-items: flex-start;
+  justify-content: center;
+  background: transparent;
+  pointer-events: none;
+}
+
+/* ─── Island Shell ────────────────────────────────────────────── */
+
+.island {
+  position: relative;
+  width: 132px;
+  height: var(--compact-height);
+  border: 0;
+  border-radius: 0 0 var(--collapsed-radius, 10px) var(--collapsed-radius, 10px);
+  background:
+    radial-gradient(120% 80% at 50% -20%, rgba(255, 255, 255, 0.09), transparent 62%),
+    linear-gradient(180deg, var(--surface-2), var(--surface-base));
+  box-shadow: none;
+  overflow: hidden;
+  pointer-events: auto;
+  transition:
+    width var(--duration-expand) var(--ease-window),
+    height var(--duration-expand) var(--ease-window),
+    border-radius var(--duration-expand) var(--ease-window),
+    box-shadow var(--duration-soft) ease;
+  will-change: width, height, border-radius;
+}
+
+/* Gradient hairline border — bright top edge, soft bottom */
+.island::after {
+  content: "";
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-soft) ease;
+  z-index: 2;
+}
+
+.is-compact:not(.is-dormant) .island {
+  overflow: visible;
+}
+
+/* Hairline top highlight + ambient agent glow */
+.island::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(60% 40% at 30% 120%, rgba(155, 232, 180, 0.05), transparent 60%),
+    radial-gradient(60% 40% at 70% 120%, rgba(122, 212, 240, 0.05), transparent 60%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.02);
+  opacity: 0;
+  transition: opacity 400ms ease;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.island.has-pending::after {
+  opacity: 0.6;
+  background: linear-gradient(90deg, transparent, var(--color-warning), transparent);
+  animation: edge-glow 2.4s ease-in-out infinite;
+}
+
+.tauri-runtime .island {
+  width: 100%;
+  height: 100%;
+  will-change: border-radius;
+  transition:
+    border-radius var(--duration-expand) var(--ease-window),
+    box-shadow var(--duration-soft) ease;
+}
+
+.tauri-runtime .island.is-opening {
+  border-radius: 0 0 22px 22px;
+  overflow: hidden;
+  background: #000;
+}
+
+.tauri-runtime .island.is-opening,
+.tauri-runtime .island.is-closing {
+  /* Native code already animates size; CSS transitions here double-work each frame. */
+  transition: none;
+}
+
+.tauri-runtime .island.is-closing {
+  border-radius: 0 0 var(--collapsed-radius, 10px) var(--collapsed-radius, 10px);
+}
+
+.island.is-expanded {
+  width: min(560px, 100vw);
+  height: min(360px, 100vh);
+  border-radius: 0 0 22px 22px;
+  background:
+    radial-gradient(90% 55% at 50% 110%, var(--panel-glow), transparent 62%),
+    #000;
+  overflow: hidden;
+}
+
+.island.is-expanded::after {
+  /* Keep pending edge glow above the noise layer when expanded */
+  z-index: 3;
+}
+
+.island.is-expanded::before {
+  display: none;
+}
+
+.island.is-expanded.is-idle {
+  height: min(var(--expanded-idle-height), 100vh);
+}
+
+.island.is-expanded.is-plan {
+  width: min(var(--expanded-plan-width), 100vw);
+  height: min(var(--expanded-plan-height), 100vh);
+}
+
+.island.is-expanded.is-settings {
+  width: min(var(--expanded-settings-width), 100vw);
+  height: min(var(--expanded-settings-height), 100vh);
+}
+
+.tauri-runtime .island.is-expanded {
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(90% 55% at 50% 110%, var(--panel-glow), transparent 62%),
+    #000;
+}
+
+.tauri-runtime .island.is-expanded::before {
+  display: none;
+}
+
+/* ─── Frosted artwork backdrop (expanded island) ─────────────────── */
+/* The wrapper always fills the window, so it tracks the native resize
+   frame-by-frame; the inner scale layer animates between the full-bleed
+   rect and the compact thumb rect expressed as PERCENTAGES of the live
+   window. Percentage targets recompute as the native window shrinks, so
+   the backdrop rides proportionally toward the thumb and converges on the
+   exact 18×18 rect at the final frame — pixel targets measured before the
+   expand would be expressed in the compact window's coordinate space and
+   visibly snap into place only at the last moment. */
+
+.island-artwork-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: 0 0 22px 22px;
+  pointer-events: none;
+  contain: paint;
+  opacity: 0;
+  transition: opacity 240ms ease;
+  /* Glass edge treatment lives here, not on the bleeding scrim layers. */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* Growing from a measured thumb rect: fully opaque from the first frame. */
+.island-artwork-backdrop.has-origin {
+  opacity: 1;
+  transition: none;
+}
+
+.island-artwork-backdrop.is-revealed {
+  opacity: 1;
+}
+
+/* Dormant collapse: the whole island vanishes, fade instead of shrinking. */
+.island-artwork-backdrop.is-exit-fade {
+  opacity: 0;
+  transition: opacity var(--duration-expand) ease;
+}
+
+/* Percent geometry defaults to full-bleed, so a missing origin (fade-in
+   path) collapses to a no-op instead of a degenerate rect. */
+.island-artwork-backdrop-scale {
+  position: absolute;
+  left: var(--ab-left, 0%);
+  top: var(--ab-top, 0%);
+  width: var(--ab-w, 100%);
+  height: var(--ab-h, 100%);
+  transition:
+    left var(--duration-expand) var(--ease-window),
+    top var(--duration-expand) var(--ease-window),
+    width var(--duration-expand) var(--ease-window),
+    height var(--duration-expand) var(--ease-window);
+}
+
+.island-artwork-backdrop.is-revealed .island-artwork-backdrop-scale {
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.island.is-closing .island-artwork-backdrop-scale {
+  transition-timing-function: var(--ease-window-collapse);
+}
+
+.island-artwork-backdrop.is-exit-fade .island-artwork-backdrop-scale {
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  transition: none;
+}
+
+/* Ambient color wash — heavy blur with extra saturation so the artwork's
+   color survives the blur instead of averaging into gray. */
+.island-artwork-backdrop-img {
+  position: absolute;
+  inset: -64px;
+  background-size: cover;
+  background-position: center;
+  filter: blur(52px) saturate(1.4) brightness(0.78);
+}
+
+/* Faint sharper ghost of the artwork over the wash — the depth cue that
+   makes the backdrop read as frosted glass rather than a gradient. The
+   square art is kept at full height and anchored to the right edge (where
+   the compact thumbnail lives), feathered out to the left so it blooms
+   from the right instead of reading as a cropped rectangle. */
+.island-artwork-backdrop-ghost {
+  position: absolute;
+  inset: -48px;
+  background-size: auto 100%;
+  background-position: right center;
+  filter: blur(9px) brightness(0.9);
+  opacity: 0.26;
+  -webkit-mask-image: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.9) 40%);
+  mask-image: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.9) 40%);
+}
+
+/* Scrim keeps panel text readable over arbitrary artwork and preserves the
+   per-agent glow; bleeds past the wrapper like the layers it covers. */
+.island-artwork-backdrop-scrim {
+  position: absolute;
+  inset: -64px;
+  background:
+    radial-gradient(90% 55% at 50% 110%, var(--panel-glow), transparent 62%),
+    radial-gradient(150% 115% at 50% 42%, transparent 58%, rgba(4, 5, 8, 0.38) 100%),
+    linear-gradient(180deg, rgba(9, 11, 15, 0.18), rgba(8, 10, 14, 0.3));
+}
+
+/* Dark covers: lift the wash, ease the vignette, lean on the ghost layer so
+   the backdrop keeps structure instead of collapsing into a black slab. */
+.island-artwork-backdrop.is-dark-art .island-artwork-backdrop-img {
+  filter: blur(52px) saturate(1.45) brightness(0.85);
+}
+
+.island-artwork-backdrop.is-dark-art .island-artwork-backdrop-ghost {
+  opacity: 0.3;
+}
+
+.island-artwork-backdrop.is-dark-art .island-artwork-backdrop-scrim {
+  background:
+    radial-gradient(90% 55% at 50% 110%, var(--panel-glow), transparent 62%),
+    radial-gradient(150% 115% at 50% 42%, transparent 62%, rgba(4, 5, 8, 0.28) 100%),
+    linear-gradient(180deg, rgba(9, 11, 15, 0.14), rgba(8, 10, 14, 0.24));
+}
+
+.island:focus {
+  outline: none;
+}
+
+/* ─── Island Header ───────────────────────────────────────────── */
+
+.island-header {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: var(--compact-height);
+  grid-template-columns: auto auto;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 8px;
+  color: inherit;
+  cursor: pointer;
+  user-select: none;
+  overflow: visible;
+  transition:
+    height var(--duration-expand) var(--ease-window),
+    margin-top var(--duration-expand) var(--ease-window),
+    padding var(--duration-expand) var(--ease-window),
+    gap var(--duration-expand) var(--ease-window);
+}
+
+/* Expanded menu bar: logo + tabs + actions share one 36px band. The first
+   grid column must be elastic (1fr) so header-main fills the row and the
+   absolutely-positioned agent-tabs container can span from the logo to the
+   right edge. Using `auto` here shrinks header-main to logo width and
+   clips the tabs. */
+.is-expanded .island-header {
+  height: var(--compact-height);
+  grid-template-columns: minmax(0, 1fr) auto;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 12px 0 14px;
+  cursor: grab;
+}
+
+/* Expanded menu bar: logo (absolute), tabs, and actions share one 36px band at
+   the physical top — same row as .atoll-indicator. Do NOT push the header down
+   with notch margin; panel content starts below --notch-height instead. */
+.is-expanded:not(.is-subview) .island-header,
+.is-opening:not(.is-subview) .island-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  margin-top: 0;
+  align-items: center;
+  overflow: visible;
+}
+
+.is-expanded.is-subview .island-header,
+.is-opening.is-subview .island-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  height: var(--compact-height);
+  padding: 0 12px 0 14px;
+  margin-top: 0;
+  align-items: center;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.is-expanded.is-subview .header-main,
+.is-expanded.is-subview .header-actions {
+  pointer-events: auto;
+}
+
+.is-expanded .header-actions {
+  align-self: center;
+  grid-column: -1;
+}
+
+.is-expanded:not(.is-subview) .header-main {
+  padding-right: var(--header-token-inset);
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Idle expand: center copy in the full body below the notch; menu bar stays
+   at the top for dragging (same row as the logo). */
+.is-expanded.is-idle .island-header {
+  background: transparent;
+  pointer-events: auto;
+}
+
+.is-expanded.is-idle .island-panel {
+  position: absolute;
+  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  transform: none;
+  z-index: 1;
+}
+
+.tauri-runtime .is-expanded.is-idle .island-panel {
+  left: 0;
+  transform: none;
+}
+
+.tauri-runtime.has-notch .is-expanded.is-idle .island-panel {
+  top: var(--notch-height, 0px);
+  height: calc(100% - var(--notch-height, 0px));
+}
+
+.is-expanded.is-idle .island-panel-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.is-expanded.is-idle .idle-view {
+  height: auto;
+  width: 100%;
+  padding: 0;
+}
+
+.is-expanded.is-idle .idle-stack {
+  width: min(100%, 440px);
+}
+
+.is-expanded.is-idle .setup-view {
+  padding: 0;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.island-header:active {
+  cursor: grabbing;
+}
+
+/* ─── Header Main / Compact Stack / Tabs ─────────────────────── */
+
+.header-main {
+  display: inline-flex;
+  min-width: 0;
+  gap: 8px;
+  align-items: center;
+  height: var(--compact-height);
+}
+
+/* ─── Windows micro pill (super-collapsed) ─────────────────────── */
+.island.is-micro {
+  width: min(560px, 100vw);
+  height: var(--micro-height, 24px);
+  border-radius: 0 0 9px 9px;
+  overflow: hidden;
+}
+
+.tauri-runtime .island.is-micro {
+  width: 100%;
+  height: 100%;
+}
+
+.is-micro .island-header {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: space-between;
+  align-items: center;
+  gap: 3px;
+  height: 100%;
+  padding: 0 5px;
+}
+
+.is-micro .header-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.is-micro .atoll-indicator-wrap,
+.is-micro .atoll-indicator {
+  flex: 0 0 auto;
+}
+
+.is-micro .atoll-indicator {
+  width: 24px;
+  height: 23px;
+  margin-top: 0;
+  overflow: hidden;
+}
+
+.is-micro .atoll-indicator-inner {
+  width: 24px;
+  height: 24px;
+  transform: translateY(-2px);
+}
+
+.is-micro .atoll-indicator:has(.atoll-logo.is-idle) {
+  height: 24px;
+  margin-top: 0;
+}
+
+.is-micro .atoll-indicator:has(.atoll-logo.is-idle) .atoll-indicator-inner {
+  transform: translateY(-1px);
+}
+
+.is-micro .atoll-indicator .atoll-logo,
+.is-micro .atoll-indicator .header-agent-logo {
+  transform: none;
+  transform-origin: center center;
+}
+
+.is-micro .listener-dot {
+  flex: 0 0 auto;
+}
+
+.is-micro .compact-session-stack {
+  gap: 1px;
+}
+
+.is-micro .compact-session-dot {
+  width: 14px;
+  height: 13px;
+}
+
+.is-micro .compact-session-dot .clawd,
+.is-micro .compact-session-dot .codex,
+.is-micro .compact-session-dot .cursor-mascot {
+  transform: scale(0.6);
+  transform-origin: center center;
+}
+
+.is-micro .compact-session-overflow {
+  font-size: 8px;
+  min-width: 13px;
+  height: 13px;
+}
+
+.is-micro .header-actions,
+.is-micro .header-notch-spacer {
+  display: none;
+}
+
+.is-micro .header-metrics.is-micro-metrics {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-width: 0;
+  gap: 2px;
+  height: 100%;
+}
+
+.is-micro .pending-badge-slot {
+  display: none;
+}
+
+.is-micro::after {
+  opacity: 0;
+}
+
+.is-micro.has-pending::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--color-warning);
+  box-shadow: 0 0 6px rgba(248, 181, 0, 0.55);
+  pointer-events: none;
+}
+
+/* ─── Dormant pill (no active sessions) ────────────────────────── */
+.island.is-dormant {
+  width: 48px;
+  height: var(--compact-height);
+  border-radius: 0 0 var(--collapsed-radius, 10px) var(--collapsed-radius, 10px);
+}
+
+.tauri-runtime .island.is-dormant {
+  width: 100%;
+  height: 100%;
+}
+
+.is-dormant .island-header {
+  height: 100%;
+  padding: 0;
+  gap: 0;
+  grid-template-columns: 1fr;
+}
+
+.is-dormant .header-main {
+  width: 100%;
+  height: 100%;
+  justify-content: flex-start;
+  padding-left: 7px;
+}
+
+/* Dormant collapse: pin the header to the menu-bar band while window height
+   animates — height:100% otherwise vertically centers the logo mid-window. */
+.is-dormant.is-closing .island-header,
+.is-dormant.is-closing .header-main {
+  height: var(--compact-height);
+}
+
+.is-opening.is-dormant .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle,
+.is-closing.is-dormant .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle,
+.island.is-opening .atoll-logo,
+.island.is-closing .atoll-logo,
+.island.is-opening .atoll-logo *,
+.island.is-closing .atoll-logo * {
+  animation: none !important;
+}
+
+.is-dormant .header-actions,
+.is-dormant .header-metrics,
+.is-dormant .pending-badge-slot {
+  display: none;
+}
+
+/* Collapse/more buttons are only relevant when expanded. */
+.is-compact:not(.is-dormant) .header-actions {
+  display: none;
+}
+
+/* Atoll logo — inline in header row, aligned with session mascots. */
+.atoll-indicator-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.icon-button.has-update {
+  position: relative;
+}
+
+.icon-button.has-update::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-amber, #f0c060);
+  box-shadow: 0 0 6px rgba(240, 192, 96, 0.5);
+  pointer-events: none;
+}
+
+.atoll-indicator {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 34px;
+  height: var(--compact-height);
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  align-self: center;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.38));
+  transition: opacity 200ms ease, filter 300ms ease;
+}
+
+.atoll-indicator-inner {
+  display: inline-flex;
+  line-height: 0;
+}
+
+/* 折叠态：上移 + 裁切，避免腿/道具探出岛底；idle 浮沉改为向上 */
+.is-compact:not(.is-dormant) .atoll-indicator,
+.is-closing:not(.is-dormant) .atoll-indicator {
+  height: 33px;
+  margin-top: -1px;
+  overflow: hidden;
+}
+
+/* Cube outline must paint outside the 34×33 clip used for crab legs. */
+.is-compact:not(.is-dormant) .atoll-indicator:has(.cursor-mascot),
+.is-closing:not(.is-dormant) .atoll-indicator:has(.cursor-mascot) {
+  overflow: visible;
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator-inner,
+.is-closing:not(.is-dormant) .atoll-indicator-inner {
+  transform: translateY(-3px);
+}
+
+/* 空闲 pose：与 preview 一致，裁切框内露出双眼（保持 overflow:hidden，避免 hit area 溢出） */
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle),
+.is-closing:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) {
+  height: 34px;
+  margin-top: 0;
+  overflow: hidden;
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) .atoll-indicator-inner,
+.is-closing:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) .atoll-indicator-inner {
+  transform: translateY(-2px);
+}
+
+.is-dormant .atoll-indicator:has(.atoll-logo.is-idle) .atoll-indicator-inner {
+  transform: translateY(-2px);
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle.is-phase-loop,
+.is-dormant .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle.is-phase-loop {
+  animation: atoll-idle-float-menu-open 2.2s ease-in-out infinite;
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle.is-phase-enter,
+.is-dormant .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle.is-phase-enter {
+  animation: atoll-from-idle-rest-menu-open 0.88s ease-out both;
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle.is-phase-exit,
+.is-dormant .atoll-indicator:has(.atoll-logo.is-idle) .atoll-logo.is-idle.is-phase-exit {
+  animation: atoll-to-idle-rest-menu-open 0.68s ease-in both;
+}
+
+/* Napping pose: reveal sleep cap + rising zzz above the head in compact clip */
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-napping),
+.is-closing:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-napping) {
+  height: 34px;
+  margin-top: -4px;
+  overflow: hidden;
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-napping) .atoll-indicator-inner,
+.is-closing:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-napping) .atoll-indicator-inner {
+  transform: translateY(2px);
+}
+
+.is-dormant .atoll-indicator:has(.atoll-logo.is-napping) .atoll-indicator-inner {
+  transform: translateY(0);
+}
+
+/* Dead pose: slump within compact clip (hook disconnect) */
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-dead),
+.is-closing:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-dead),
+.is-compact:not(.is-dormant) .atoll-indicator:has(.header-agent-logo.is-dead),
+.is-closing:not(.is-dormant) .atoll-indicator:has(.header-agent-logo.is-dead) {
+  height: 32px;
+  margin-top: -1px;
+  overflow: hidden;
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-dead) .atoll-indicator-inner,
+.is-closing:not(.is-dormant) .atoll-indicator:has(.atoll-logo.is-dead) .atoll-indicator-inner,
+.is-compact:not(.is-dormant) .atoll-indicator:has(.header-agent-logo.is-dead) .atoll-indicator-inner,
+.is-closing:not(.is-dormant) .atoll-indicator:has(.header-agent-logo.is-dead) .atoll-indicator-inner {
+  transform: translateY(-2px);
+}
+
+.is-dormant .atoll-indicator:has(.atoll-logo.is-dead) .atoll-indicator-inner,
+.is-dormant .atoll-indicator:has(.header-agent-logo.is-dead) .atoll-indicator-inner {
+  transform: translateY(-1px);
+}
+
+.header-agent-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.header-agent-logo.clawd,
+.header-agent-logo.codex,
+.header-agent-logo.cursor-mascot {
+  height: 100%;
+}
+
+.header-agent-logo.cursor-mascot {
+  overflow: visible;
+}
+
+.atoll-indicator.is-hook-attention {
+  cursor: pointer;
+}
+
+@keyframes atoll-idle-float-menu-open {
+  0%, 100% { transform: translate3d(0, -2%, 0); }
+  50%      { transform: translate3d(0, -8%, 0); }
+}
+
+@keyframes atoll-from-idle-rest-menu-open {
+  from { transform: translateY(2%); }
+  to   { transform: translateY(-2%); }
+}
+
+@keyframes atoll-to-idle-rest-menu-open {
+  from { transform: translateY(-2%); }
+  to   { transform: translateY(2%); }
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator .atoll-logo.is-idle.is-phase-loop {
+  animation: atoll-idle-float-menu 2.2s ease-in-out infinite;
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator .atoll-logo.is-idle.is-phase-enter {
+  animation: atoll-from-idle-rest-menu 0.88s ease-out both;
+}
+
+.is-compact:not(.is-dormant) .atoll-indicator .atoll-logo.is-idle.is-phase-exit {
+  animation: atoll-to-idle-rest-menu 0.68s ease-in both;
+}
+
+@keyframes atoll-idle-float-menu {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(0, -6%, 0); }
+}
+
+@keyframes atoll-from-idle-rest-menu {
+  from { transform: translateY(4%); }
+  to   { transform: translateY(0); }
+}
+
+@keyframes atoll-to-idle-rest-menu {
+  from { transform: translateY(0); }
+  to   { transform: translateY(4%); }
+}
+
+.is-expanded .atoll-indicator {
+  width: 38px;
+}
+
+.is-expanded .atoll-indicator-inner {
+  transform: translateY(-1px) scale(1.02);
+  transform-origin: center bottom;
+}
+
+.atoll-indicator .atoll-logo-svg {
+  shape-rendering: auto;
+}
+
+.atoll-indicator.is-offline {
+  opacity: 0.72;
+  filter: grayscale(0.35) brightness(0.92)
+    drop-shadow(0 1px 2px rgba(0, 0, 0, 0.32));
+}
+
+.atoll-indicator.is-offline:has(.atoll-logo.is-dead),
+.atoll-indicator.is-offline:has(.header-agent-logo.is-dead) {
+  opacity: 0.88;
+  filter: grayscale(0.55) brightness(0.9)
+    drop-shadow(0 1px 3px rgba(0, 0, 0, 0.38));
+}
+
+.clawd-body line,
+.codex-body line,
+.cursor-mascot-body line {
+  shape-rendering: geometricPrecision;
+}
+
+.is-dormant .atoll-indicator {
+  opacity: 0.95;
+}
+
+.island.is-dormant:hover .atoll-indicator {
+  opacity: 1;
+  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.45))
+    drop-shadow(0 1px 2px rgba(0, 0, 0, 0.38));
+}
+
+.is-expanded .header-main {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* Tabs sit in the menu-bar row, immediately to the right of the logo. */
+.is-expanded .header-main.has-agent-tabs {
+  position: relative;
+  height: var(--compact-height);
+}
+
+.is-expanded .header-main.has-agent-tabs .atoll-indicator-wrap {
+  position: relative;
+  z-index: 5;
+  flex-shrink: 0;
+}
+
+.is-expanded .header-agent-tabs {
+  position: absolute;
+  z-index: 4;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 42px;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  box-sizing: border-box;
+  pointer-events: auto;
+}
+
+.header-agent-tabs {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+}
+
+.header-agent-tabs .agent-tabbar {
+  width: 100%;
+}
+
+/* Smooth content crossfade during phase transitions so content doesn't
+   flash inside a still-growing window (especially dormant → expanded). */
+.is-opening.is-dormant .header-main,
+.is-opening:not(.is-compact):not(.is-dormant) .header-main {
+  animation: none;
+}
+
+/* Same crossfade for the compact stack → expanded tabs transition */
+.is-opening .compact-session-stack,
+.is-opening .header-agent-tabs,
+.is-closing .compact-session-stack {
+  animation: none;
+  transition: none;
+}
+
+@keyframes header-content-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes header-content-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(3px); }
+}
+
+.compact-session-stack {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-width: max-content;
+  align-items: center;
+  gap: 4px;
+  overflow: visible;
+  transition: gap var(--duration-expand) var(--ease-window);
+}
+
+/* Folded: logo + listener + session mascots share one flex row. */
+.is-compact:not(.is-dormant) .header-main,
+.is-closing:not(.is-dormant) .header-main {
+  width: auto;
+  min-width: 0;
+  flex: 0 1 auto;
+  justify-content: flex-start;
+  overflow: visible;
+  gap: 4px;
+}
+
+.is-compact:not(.is-dormant) .island-header,
+.is-closing:not(.is-dormant) .island-header {
+  grid-template-columns: auto auto;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--compact-header-gap, 8px);
+  padding: 1px 8px 2px;
+  height: var(--compact-height);
+}
+
+.is-compact:not(.is-dormant) .header-main,
+.is-closing:not(.is-dormant) .header-main {
+  height: var(--compact-height);
+}
+
+/* No-notch compact: pack logos with the same 4px gap as the rest of the row.
+   Do not stretch the pill or use space-evenly — that made 2–4 icons look sparse. */
+
+.compact-session-stack--right {
+  margin-right: 0;
+}
+
+.header-notch-spacer {
+  width: 0;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.compact-session-stack.is-empty {
+  overflow: visible;
+}
+
+.compact-session-dot {
+  display: inline-flex;
+  width: 24px;
+  height: 22px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  overflow: visible;
+  animation: session-dot-in 400ms var(--ease-out) both;
+}
+
+.compact-session-dot:nth-child(2) { animation-delay: 60ms; }
+.compact-session-dot:nth-child(3) { animation-delay: 120ms; }
+.compact-session-dot:nth-child(4) { animation-delay: 180ms; }
+.compact-session-dot:nth-child(5) { animation-delay: 240ms; }
+.compact-session-dot:nth-child(6) { animation-delay: 300ms; }
+.compact-session-dot:nth-child(7) { animation-delay: 360ms; }
+.compact-session-dot:nth-child(8) { animation-delay: 420ms; }
+
+.compact-session-dot.coral {
+  --dot-glow: rgba(255, 129, 117, 0.4);
+  --cursor-outline: #ff8175;
+  background: none;
+}
+.compact-session-dot.cyan {
+  --dot-glow: rgba(111, 220, 255, 0.4);
+  --cursor-outline: #6fdcff;
+  background: none;
+}
+.compact-session-dot.lime {
+  --dot-glow: rgba(178, 234, 126, 0.4);
+  --cursor-outline: #b2ea7e;
+  background: none;
+}
+.compact-session-dot.neutral {
+  --dot-glow: rgba(205, 193, 255, 0.4);
+  --cursor-outline: #cdc1ff;
+  background: none;
+}
+.compact-session-dot.amber {
+  --dot-glow: rgba(240, 192, 96, 0.4);
+  --cursor-outline: #f0c060;
+  background: none;
+}
+.compact-session-dot.pink {
+  --dot-glow: rgba(247, 160, 200, 0.4);
+  --cursor-outline: #f7a0c8;
+  background: none;
+}
+.compact-session-dot.teal {
+  --dot-glow: rgba(112, 216, 200, 0.4);
+  --cursor-outline: #70d8c8;
+  background: none;
+}
+.compact-session-dot.blue {
+  --dot-glow: rgba(128, 176, 248, 0.4);
+  --cursor-outline: #80b0f8;
+  background: none;
+}
+
+/* Breathing glow for compact session dots — mirrors atoll-breathe */
+.compact-session-dot .clawd.is-calm,
+.compact-session-dot .codex.is-calm,
+.compact-session-dot .cursor-mascot.is-calm {
+  animation: session-dot-breathe 3.2s ease-in-out infinite;
+}
+
+.compact-session-dot .clawd.is-sleeping,
+.compact-session-dot .codex.is-sleeping,
+.compact-session-dot .cursor-mascot.is-sleeping {
+  animation: session-dot-breathe 3.6s ease-in-out infinite;
+}
+
+.compact-session-dot .clawd.is-calm .clawd-body,
+.compact-session-dot .codex.is-calm .codex-body,
+.compact-session-dot .cursor-mascot.is-calm .cursor-mascot-body,
+.compact-session-dot .clawd.is-sleeping .clawd-body,
+.compact-session-dot .codex.is-sleeping .codex-body,
+.compact-session-dot .cursor-mascot.is-sleeping .cursor-mascot-body {
+  animation: none;
+}
+
+.compact-session-dot .clawd.is-alert,
+.compact-session-dot .codex.is-alert,
+.compact-session-dot .cursor-mascot.is-alert,
+.compact-session-dot .clawd.is-happy,
+.compact-session-dot .codex.is-happy,
+.compact-session-dot .cursor-mascot.is-happy,
+.compact-session-dot .clawd.is-worried,
+.compact-session-dot .codex.is-worried,
+.compact-session-dot .cursor-mascot.is-worried {
+  animation: none;
+}
+
+@keyframes session-dot-breathe {
+  0%, 100% {
+    transform: scale(0.96) translateY(2%);
+    filter: drop-shadow(0 0 2px transparent);
+  }
+  50% {
+    transform: scale(1.04) translateY(-2%);
+    filter: drop-shadow(0 0 5px var(--dot-glow, rgba(56, 189, 248, 0.35)));
+  }
+}
+
+.compact-session-dot.has-pending {
+  background: rgba(248, 221, 160, 0.15);
+  box-shadow: 0 0 0 1px rgba(248, 221, 160, 0.6);
+}
+
+@keyframes session-dot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6) translateY(2px);
+    filter: blur(1px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+}
+
+.compact-session-overflow {
+  margin-left: 2px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.agent-tabs-empty {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.agent-tabbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.agent-tabbar::-webkit-scrollbar {
+  display: none;
+}
+
+.agent-tab {
+  display: inline-flex;
+  min-width: 0;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  border-radius: 10px;
+  padding: 0 10px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease, transform var(--duration-fast) ease;
+}
+
+.agent-tab > span {
+  white-space: nowrap;
+}
+
+.agent-tab.is-static {
+  cursor: default;
+}
+
+.agent-tab:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.agent-tab.is-active {
+  color: #0c0d0b;
+}
+
+.agent-tab.coral.is-active {
+  background: linear-gradient(130deg, #ff9b8f, #e26b5f);
+}
+.agent-tab.cyan.is-active {
+  background: linear-gradient(130deg, #8ee6ff, #43c3ed);
+}
+.agent-tab.sky.is-active {
+  background: linear-gradient(130deg, #b8e4ff, #38a8e8);
+}
+.agent-tab.lime.is-active {
+  background: linear-gradient(130deg, #ccf39e, #8dd157);
+}
+.agent-tab.teal.is-active {
+  background: linear-gradient(130deg, #b0f0e4, #46bfae);
+}
+.agent-tab.violet.is-active {
+  background: linear-gradient(130deg, #ddd4ff, #a78bfa);
+}
+.agent-tab.neutral.is-active {
+  background: linear-gradient(130deg, #ddd4ff, #ad9eff);
+}
+
+.agent-tab-pending {
+  display: inline-flex;
+  min-width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0 4px;
+  color: #201808;
+  background: #f2cc76;
+  font-size: 9px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-tab.is-compact {
+  height: 24px;
+  gap: 4px;
+  padding: 0 6px;
+  border-radius: 8px;
+}
+
+.agent-tabbar.is-compact {
+  gap: 4px;
+}
+
+.header-agent-tabs--compact {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.header-agent-tabs--compact .agent-tabbar {
+  width: auto;
+}
+
+/* Expanded agent tabs: stay in the left safe area on notched MacBooks. */
+.tauri-runtime.has-notch .is-expanded .header-main.has-agent-tabs .header-agent-tabs {
+  max-width: min(
+    100%,
+    calc(var(--notch-left-area-width, 280px) - 42px - var(--compact-notch-inner-gap, 6px))
+  );
+  padding-right: 6px;
+  box-sizing: border-box;
+}
+
+.tauri-runtime.has-notch .is-expanded .header-main.has-agent-tabs .agent-tabbar {
+  max-width: 100%;
+}
+
