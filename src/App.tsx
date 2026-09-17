@@ -1,247 +1,46 @@
 import {
-  useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   CSSProperties,
-  FocusEvent,
-  MouseEvent,
 } from "react";
-import {
-  Archive,
-  ArrowUpCircle,
-  Activity,
-  ChevronUp,
-  CircleDollarSign,
-  ClipboardList,
-  Clock,
-  Download,
-  Ellipsis,
-  Bell,
-  History,
-  Inbox,
-  Layers,
-  Music,
-  Power,
-  RefreshCw,
-  Settings2,
-  Sparkles,
-} from "lucide-react";
 import {
   useTranslation,
 } from "react-i18next";
 import {
-  getCurrentWindow,
-} from "@tauri-apps/api/window";
-import {
-  toPng,
-} from "html-to-image";
-import {
   getSnapshot,
-  normalizeSnapshot,
-  getSessionRequests,
-  onIslandHoverChanged,
-  onIslandOpenRequested,
-  onIslandPresentationSettled,
-  onCaptureCollapseRequested,
-  onCaptureOpenHooksRequested,
-  onCaptureScreenshotRequested,
-  captureProvideScreenshot,
-  onSnapshotChanged,
-  getMediaCardEnabled,
-  getArtworkBackdropEnabled,
-  getApprovalNoticeMode,
-  setApprovalNoticeMode,
-  setNotificationLanguage,
-  onNowPlayingChanged,
   sendMediaCommand,
-  setMediaCardEnabled,
-  setArtworkBackdropEnabled,
   getClipboardHistory,
-  getClipboardHistoryEnabled,
-  getClipboardHistoryLimit,
-  onClipboardHistoryChanged,
-  copyClipboardEntry,
-  copyStagedFilesToClipboard,
-  beginStagedFilesDrag,
-  revealPath,
-  clearClipboardHistory,
-  setClipboardHistoryEnabled,
-  setClipboardHistoryLimit,
-  toggleClipboardFavorite,
-  archiveAllResolved,
-  archiveSession,
-  archiveSubagent,
-  archiveCompletedSubagents,
-  pinSession,
-  deactivateAtoll,
-  quitAtoll,
-  resolvePermissionRequest,
   setIslandPresentation,
-  setImeActive,
-  setCompactLayout,
-  usesMicroIsland,
-  usesMicroIslandSync,
-  setSessionAutoApprove,
-  getNotchMetrics,
-  installClaudeHooks,
-  uninstallClaudeHooks,
-  removeCompetingClaudeHooks,
-  installCodexHooks,
-  uninstallCodexHooks,
-  installCursorHooks,
-  uninstallCursorHooks,
-  installZcodeHooks,
-  uninstallZcodeHooks,
-  installGeminiHooks,
-  uninstallGeminiHooks,
-  setSessionRetention,
-  setSubagentRetention,
   setPreferredMonitor,
   openAgentApp,
-  isAutostartEnabled,
-  enableAutostart,
-  disableAutostart,
-  getLyricsEnabled,
-  setLyricsEnabled,
-  onLyricsChanged,
-  onLyricsPosition,
-  getCurrentLyrics,
-  getGlobalShortcutConfig,
-  setGlobalShortcutConfig,
   type IslandSnapshot,
   type PermissionRequest,
-  type HookStatus,
-  type HookHealthSnapshot,
-  type NowPlayingTrack,
-  type ApprovalNoticeMode,
-  type ClipboardEntry,
-  type NotchMetrics,
-  type LyricPayload,
-  type GlobalShortcutConfig,
-  type GlobalShortcutView,
-  type ShortcutAction,
 } from "./tauri";
-import {
-  checkAppUpdate,
-  getAppVersion,
-  installAppUpdate,
-  UPDATE_INITIAL_DELAY_MS,
-  UPDATE_RECHECK_MS,
-  type AppUpdateState,
-} from "./appUpdate";
 import {
   analyzeHookHealth,
   deriveHeaderLogoDisplay,
-  hookAgentNote,
   hookAttentionTitle,
-  mergeHookHealthPreferReady,
   type HeaderLogoDisplay,
 } from "./hookHealth";
-import i18n from "./i18n";
 import {
-  changeAppLanguage,
-  readLanguage,
-  type AppLanguage,
-} from "./i18n";
-import {
-  markAllHookAgentsConfigured,
-  markHookAgentConfigured,
-  readConfiguredHookAgents,
   seedConfiguredFromHookHealth,
 } from "./hookAgentsConfigured";
 import {
-  beginCollapse,
-  beginExpand,
-  COLLAPSE_ANIMATION_MS,
-  finishExpand,
-  IDLE_COLLAPSE_DELAY_MS,
-  MICRO_SHRINK_DELAY_MS,
-  PANEL_EXIT_MS,
-  PRESENTATION_SETTLE_FALLBACK_MS,
-  RESOLVE_FEEDBACK_MS,
-  type PresentationPhase,
-} from "./islandPresentation";
-import {
   NowPlayingCard,
 } from "./NowPlayingCard";
-import {
-  ClipboardHistoryView,
-} from "./ClipboardHistoryView";
-import {
-  FileStationView,
-} from "./FileStationView";
-import {
-  ApprovalHistoryView,
-} from "./ApprovalHistoryView";
-import {
-  LyricsMarquee,
-  lyricsMatchTrack,
-} from "./LyricsMarquee";
-import {
-  ClipboardSettingsView,
-  IslandSettingsView,
-  MascotSettingsView,
-  NotificationSettingsView,
-  ShortcutSettingsView,
-  MAX_CLIPBOARD_LIMIT,
-  MediaSettingsView,
-  MIN_CLIPBOARD_LIMIT,
-  SessionSettingsView,
-} from "./SettingsPages";
-import {
-  SettingsView,
-} from "./SettingsView";
 import {
   deriveAppLogoState,
   deriveAtollActivity,
 } from "./logoStates";
 import { useAtollReaction } from "./useAtollReaction";
 import { useFileStation } from "./hooks/useFileStation";
-import { AtollLogo, type AtollReaction } from "./AtollLogo";
+import { AtollLogo } from "./AtollLogo";
 import { stashBellyLevel } from "./fileStationTiers";
 import {
-  computeCollapsedWindowWidth,
-  computeCompactHeaderLayout,
-  computeCompactLeftPaneWidth,
-  computeMaxCompactIconLimit,
   computeMicroWindowWidth,
 } from "./compactLayout";
-import {
-  TokenCounter,
-} from "./TokenCounter";
-import {
-  TokenHeatmapView,
-} from "./TokenHeatmapView";
-import {
-  formatCompactTokenCount,
-} from "./tokenCounterFormat";
-import {
-  formatCompactCost,
-} from "./costFormat";
-import {
-  EXPANDED_COUNTER_DISPLAY_KEY,
-  FOLDED_COUNTER_DISPLAY_KEY,
-  HEATMAP_DISPLAY_KEY,
-  readCompactIndicator,
-  readDisplayMode,
-  SETTINGS_BADGE_DISPLAY_KEY,
-  writeCompactIndicator,
-  writeDisplayMode,
-  type CompactIndicatorMode,
-  type UsageDisplayMode,
-} from "./displayPrefs";
-import {
-  byModelCostUsd,
-  getPricing,
-  pricingRateMap,
-  type ModelPricingEntry,
-} from "./pricing";
-import {
-  UsageSettingsView,
-} from "./UsageSettingsView";
 import {
   getDemoMode,
   isFileStationDemoMode,
@@ -249,76 +48,21 @@ import {
   shouldAutoExpandDemo,
 } from "./demoSnapshot";
 import {
-  manageAsyncUnlisten,
-} from "./asyncUnlisten";
-import {
-  DEFAULT_GLOBAL_SHORTCUTS,
-  withShortcutAction,
-} from "./shortcuts";
-import {
-  type Decision,
   type AgentKind,
-  type PanelView,
-  type SettingsPage,
-  type FoldedIslandSize,
-  type ArtworkBackdropOrigin,
 } from "./appTypes";
 import {
-  sampleArtworkIsDark,
-} from "./artwork";
-import {
-  COMPACT_ICON_SETTING_KEY,
-  FOLDED_ISLAND_SIZE_SETTING_KEY,
-  RETENTION_SETTING_KEY,
-  SUBAGENT_RETENTION_SETTING_KEY,
-  MAX_SUBAGENT_DISPLAY_SETTING_KEY,
-  IDLE_INTERVAL_SETTING_KEY,
-  IDLE_DURATION_SETTING_KEY,
-  markSettingsInitialized,
   clampCompactIconLimit,
-  readCompactIconLimit,
-  readFoldedIslandSize,
-  clampRetentionMinutes,
-  readRetentionMinutes,
-  readSubagentRetentionMinutes,
-  clampMaxSubagentDisplay,
-  readMaxSubagentDisplay,
-  clampIdleInterval,
-  readIdleInterval,
-  clampIdleDuration,
-  readIdleDuration,
 } from "./settingsStorage";
 import {
-  ZERO_TOKEN_USAGE,
-  EMPTY_NOTCH_METRICS,
   initialSnapshot,
 } from "./snapshotDefaults";
 import {
-  agentSortRank,
-  PANEL_GLOW,
-} from "./agents";
-import {
-  applyWindowMetrics,
   collapsedBandHeight,
-  compactPresentationKey,
-  microPresentationWidth,
-  shouldRestInMicro,
-  shouldUseMicroIsland,
-  resolveCollapsedMode,
-  expandedPresentationKey,
 } from "./islandLayout";
 import {
   isPlanModeCommand,
   snapshotHasPlanPending,
-  getPlanModeType,
 } from "./planMode";
-import {
-  isImeTextTarget,
-  isTextEntryActive,
-} from "./imeHelpers";
-import {
-  IS_MACOS,
-} from "./platform";
 import {
   UpdateNotice,
 } from "./components/UpdateNotice";
@@ -331,59 +75,25 @@ import { useHookInstaller } from "./hooks/useHookInstaller";
 import { useApprovals } from "./hooks/useApprovals";
 import { usePanelNavigation } from "./hooks/usePanelNavigation";
 import { useIslandPresentation } from "./hooks/useIslandPresentation";
-import {
-  CompactSessionStack,
-} from "./components/CompactSessionStack";
-import {
-  AgentTabBar,
-} from "./components/AgentTabBar";
-import {
-  SessionListView,
-} from "./components/SessionListView";
-import {
-  PlanQuestionCard,
-} from "./components/PlanQuestionCard";
-import {
-  PlanApprovalCard,
-} from "./components/PlanApprovalCard";
-import {
-  ApprovalCard,
-} from "./components/ApprovalCard";
-import {
-  SessionSubviewNav,
-} from "./components/SessionSubviewNav";
-import {
-  SettingsPageNav,
-  SettingsSubviewNav,
-} from "./components/SettingsNavs";
-import {
-  SessionChatView,
-} from "./components/SessionChatView";
-import {
-  SubagentListView,
-} from "./components/SubagentListView";
-import {
-  SubagentDetailView,
-} from "./components/SubagentDetailView";
-import {
-  HooksView,
-  formatHookInstallErrorMessage,
-  type HookMenuAgent,
-} from "./components/HooksView";
-import {
-  HeaderLogo,
-} from "./components/HeaderLogo";
-import {
-  IdleView,
-} from "./components/IdleView";
+import { useSnapshotStream } from "./hooks/useSnapshotStream";
+import { useSessionActions } from "./hooks/useSessionActions";
+import { usePricingData } from "./hooks/usePricingData";
+import { useAppSettings } from "./hooks/useAppSettings";
+import { useCompactLayout } from "./hooks/useCompactLayout";
+import { useUsageSummary } from "./hooks/useUsageSummary";
+import { useStashTakeover } from "./hooks/useStashTakeover";
+import { useImeSync } from "./hooks/useImeSync";
+import { useNativePresentationSync } from "./hooks/useNativePresentationSync";
+import { deriveIslandChromeFlags } from "./islandChromeFlags";
+import { IslandHeader } from "./components/IslandHeader";
+import { ArtworkBackdrop } from "./components/ArtworkBackdrop";
+import { IslandPanelRouter } from "./components/IslandPanelRouter";
 
 export function App() {
   const { t, i18n: i18nInstance } = useTranslation();
   const { t: tSettings } = useTranslation("settings");
-  const [language, setLanguage] = useState<AppLanguage>(() => readLanguage());
   const [snapshot, setSnapshot] = useState<IslandSnapshot>(initialSnapshot);
   const snapshotRef = useRef(initialSnapshot);
-  const snapshotLoadSeqRef = useRef(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuOpenRef = useRef(false);
@@ -400,13 +110,17 @@ export function App() {
     handleInstallUpdate,
   } = useUpdater({ closeMenu: () => setMenuOpen(false) });
 
+  const {
+    language,
+    approvalNoticeMode,
+    globalShortcutView,
+    handleChangeLanguage,
+    handleChangeApprovalNoticeMode,
+    handleChangeGlobalShortcutConfig,
+  } = useAppSettings();
+
   const [sessionRequests, setSessionRequests] = useState<PermissionRequest[]>([]);
 
-  const [selectedAgent, setSelectedAgent] = useState<AgentKind | null>(null);
-  const [pricingModels, setPricingModels] = useState<ModelPricingEntry[]>([]);
-  const [approvalNoticeMode, setApprovalNoticeModeState] =
-    useState<ApprovalNoticeMode>("interrupt");
-  const [globalShortcutView, setGlobalShortcutView] = useState<GlobalShortcutView | null>(null);
   const { lyricsData, playbackPosition, lyricsEnabled, handleChangeLyricsEnabled } =
     useLyrics();
   const {
@@ -456,11 +170,7 @@ export function App() {
   } = useDisplayAndSettingsPrefs();
 
   const [hookHealthHydrated, setHookHealthHydrated] = useState(false);
-  const lastSyncedRequestIdRef = useRef<string | null>(null);
-  const selectedAgentRef = useRef<AgentKind | null>(null);
-  selectedAgentRef.current = selectedAgent;
   const sessions = snapshot.sessions;
-
 
   function refreshClipboardHistory() {
     getClipboardHistory()
@@ -579,6 +289,37 @@ export function App() {
     ensureExpandedSettingsPresentation,
   };
 
+  const { applySnapshot, invalidatePendingSnapshotLoads } = useSnapshotStream({
+    snapshotRef,
+    setSnapshot,
+    phaseRef,
+    expandIsland,
+    scheduleIdleCollapse,
+    frozenCollapseWidthRef,
+    collapseIsland,
+    openHooksPage,
+    suppressHoverExpandRef,
+    panelViewRef,
+    collapsedModeRef,
+    collapsedWindowWidthRef,
+    compactLeftPaneWidthRef,
+    setHookHealthHydrated,
+  });
+
+  const {
+    handleQuit,
+    handleArchiveAll,
+    handleArchiveSession,
+    handlePinSession,
+    handleArchiveCompletedSubagents,
+  } = useSessionActions({
+    setMenuOpen,
+    applySnapshot,
+    panelViewRef,
+    navigationSeqRef,
+    setPanelView,
+  });
+
   async function handleChangePreferredMonitor(name: string | null) {
     const previous = preferredMonitorName;
     setPreferredMonitorNameState(name);
@@ -620,8 +361,6 @@ export function App() {
     }
   }
 
-
-
   const {
     hookBusy,
     hookInstallError,
@@ -653,6 +392,23 @@ export function App() {
     closeMenu: () => setMenuOpen(false),
   });
 
+  const {
+    selectedAgent,
+    setSelectedAgent,
+    selectedAgentRef,
+    pricingModels,
+    setPricingModels,
+    pricingRates,
+    tabAgents,
+    handleSelectAgent,
+  } = usePricingData({
+    snapshot,
+    activeRequest: snapshot.activeRequest,
+    panelView,
+    navigationSeqRef,
+    setPanelView,
+  });
+
   const { busyDecision, justResolved, resolveActive, resolveRequest } = useApprovals({
     snapshot,
     snapshotRef,
@@ -666,9 +422,7 @@ export function App() {
     setSessionRequests,
   });
 
-
   const activeRequest = snapshot.activeRequest;
-
 
   const hookHealthAnalysis = useMemo(
     () =>
@@ -729,89 +483,21 @@ export function App() {
   // 拖入文件 → 分档 eat 反应；从面板行拖出文件 → spit。takeover 期间盖住
   // header 与面板；退出时向 header logo 原位缩回（位移/缩放由测量写入
   // CSS 变量，退出动画时长 340ms 须与 styles.css atoll-takeover-vanish 同步）。
-  const [takeover, setTakeover] = useState<{ reaction: AtollReaction; key: number } | null>(null);
-  const [takeoverExiting, setTakeoverExiting] = useState(false);
-  const takeoverTimerRef = useRef(0);
-  const takeoverMountedRef = useRef(false);
   const islandRef = useRef<HTMLElement | null>(null);
   const atollIndicatorRef = useRef<HTMLSpanElement | null>(null);
-  const takeoverElRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (stashReaction) {
-      // 减少动态效果：不做整岛接管（logo 的反应动画同样被关闭）。
-      if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-        return;
-      }
-      window.clearTimeout(takeoverTimerRef.current);
-      takeoverMountedRef.current = true;
-      setTakeoverExiting(false);
-      setTakeover({ reaction: stashReaction, key: stashReactionKey });
-      return;
-    }
-    if (!takeoverMountedRef.current) {
-      return;
-    }
-    takeoverMountedRef.current = false;
-    setTakeoverExiting(true);
-    takeoverTimerRef.current = window.setTimeout(() => {
-      setTakeoverExiting(false);
-      setTakeover(null);
-    }, 340);
-  }, [stashReaction, stashReactionKey]);
-  useEffect(() => () => window.clearTimeout(takeoverTimerRef.current), []);
-  // 每次接管开始时实测 header logo 相对整岛的位置，写入 CSS 变量：任何岛
-  // 尺寸（会话 560x320 / 设置页 680x680）下都能精确“从角落长出/缩回角落”。
-  useLayoutEffect(() => {
-    if (!takeover) {
-      return;
-    }
-    const takeoverEl = takeoverElRef.current;
-    const islandEl = islandRef.current;
-    const logoEl = atollIndicatorRef.current;
-    if (!takeoverEl || !islandEl || !logoEl) {
-      return;
-    }
-    const islandRect = islandEl.getBoundingClientRect();
-    const logoRect = logoEl.getBoundingClientRect();
-    // 布局尺寸（offsetHeight）不受进场 scale 动画影响；rect 会。
-    const takeoverLogo = takeoverEl.querySelector<HTMLElement>(".atoll-takeover-logo");
-    const bigHeight = takeoverLogo ? takeoverLogo.offsetHeight : 0;
-    const dx = logoRect.left + logoRect.width / 2 - (islandRect.left + islandRect.width / 2);
-    const dy = logoRect.top + logoRect.height / 2 - (islandRect.top + islandRect.height / 2);
-    const scale = bigHeight > 0 ? Math.max(0.08, logoRect.height / bigHeight) : 0.18;
-    takeoverEl.style.setProperty("--takeover-dx", `${dx.toFixed(1)}px`);
-    takeoverEl.style.setProperty("--takeover-dy", `${dy.toFixed(1)}px`);
-    takeoverEl.style.setProperty("--takeover-scale", scale.toFixed(3));
-  }, [takeover]);
-
-  const [stashToast, setStashToast] = useState<{ text: string; key: number } | null>(null);
-  const stashToastTimerRef = useRef(0);
-  useEffect(() => {
-    if (!lastStageResult) {
-      return;
-    }
-    const result = lastStageResult;
-    const parts: string[] = [];
-    if (result.added > 0) {
-      parts.push(t("fileStation.stagedToast", { count: result.added }));
-    }
-    if (result.evicted > 0) {
-      parts.push(t("fileStation.evicted", { count: result.evicted }));
-    }
-    if (result.skipped > 0) {
-      parts.push(t("fileStation.skipped", { count: result.skipped }));
-    }
-    if (parts.length === 0) {
-      return;
-    }
-    setStashToast({ text: parts.join(" · "), key: Date.now() });
-    window.clearTimeout(stashToastTimerRef.current);
-    stashToastTimerRef.current = window.setTimeout(() => {
-      setStashToast(null);
-    }, 2800);
-    return () => window.clearTimeout(stashToastTimerRef.current);
-  }, [lastStageResult]);
-  useEffect(() => () => window.clearTimeout(stashToastTimerRef.current), []);
+  const {
+    takeover,
+    takeoverExiting,
+    takeoverElRef,
+    stashToast,
+  } = useStashTakeover({
+    stashReaction,
+    stashReactionKey,
+    lastStageResult,
+    islandRef,
+    atollIndicatorRef,
+    t,
+  });
   const headerLogo = useMemo(
     () =>
       deriveHeaderLogoDisplay(hookHealthAnalysis, atollActivity, {
@@ -825,139 +511,23 @@ export function App() {
     }
     return { kind: "atoll", activity: "dead" };
   }, [headerLogo, phase]);
-  const dailyTokens = snapshot.dailyTokens ?? ZERO_TOKEN_USAGE;
-  const dailyTokenTotal = dailyTokens.inputTokens + dailyTokens.outputTokens;
-  const activeSessionTokens = snapshot.activeSessionTokens ?? ZERO_TOKEN_USAGE;
-  const activeSessionTokenTotal =
-    activeSessionTokens.inputTokens + activeSessionTokens.outputTokens;
-  const pricingRates = useMemo(() => pricingRateMap(pricingModels), [pricingModels]);
-  const dailyCostTotal = useMemo(
-    () => byModelCostUsd(snapshot.dailyTokensByModel, pricingRates),
-    [snapshot.dailyTokensByModel, pricingRates],
-  );
-  const activeSessionCostTotal = useMemo(
-    () => byModelCostUsd(snapshot.activeSessionTokensByModel, pricingRates),
-    [snapshot.activeSessionTokensByModel, pricingRates],
-  );
-  const usageDisplaySummary = useMemo(() => {
-    const modes = [
-      foldedCounterDisplay,
-      expandedCounterDisplay,
-      settingsBadgeDisplay,
-      heatmapDisplay,
-    ];
-    const costCount = modes.filter((mode) => mode === "cost").length;
-    if (costCount === 0) return tSettings("usage.summaryTokens");
-    if (costCount === modes.length) return tSettings("usage.summaryCost");
-    return tSettings("usage.summaryMixedCost", { count: costCount });
-  }, [
+  const {
+    dailyTokens,
+    dailyTokenTotal,
+    activeSessionTokens,
+    activeSessionTokenTotal,
+    dailyCostTotal,
+    activeSessionCostTotal,
+    usageDisplaySummary,
+    settingsTodayLabel,
+  } = useUsageSummary({
+    snapshot,
+    pricingRates,
     foldedCounterDisplay,
     expandedCounterDisplay,
     settingsBadgeDisplay,
     heatmapDisplay,
-    tSettings,
-    i18nInstance.language,
-  ]);
-  const settingsTodayLabel = useMemo(
-    () =>
-      settingsBadgeDisplay === "cost"
-        ? dailyCostTotal > 0
-          ? tSettings("usage.todayCost", {
-              amount: formatCompactCost(dailyCostTotal, 0, dailyCostTotal),
-            })
-          : tSettings("usage.noPricedUsage")
-        : dailyTokenTotal > 0
-          ? tSettings("usage.todayTokens", {
-              amount: formatCompactTokenCount(
-                dailyTokenTotal,
-                dailyTokenTotal >= 1_000 ? 1 : 0,
-                dailyTokenTotal,
-              ),
-            })
-          : tSettings("usage.noUsageYet"),
-    [
-      settingsBadgeDisplay,
-      dailyCostTotal,
-      dailyTokenTotal,
-      tSettings,
-      i18nInstance.language,
-    ],
-  );
-  const maxCompactIconLimit = useMemo(
-    () => computeMaxCompactIconLimit(notchMetrics),
-    [notchMetrics],
-  );
-  const computedCollapsedWidth = useMemo(
-    () =>
-      computeCollapsedWindowWidth(
-        notchMetrics,
-        sessions.length,
-        maxCompactIcons,
-        activeSessionTokenTotal,
-        snapshot.pendingCount,
-        nowPlayingTrack?.artworkBase64 != null,
-        compactIndicator === "media" || compactIndicator === "both",
-        lyricsEnabled && lyricsData != null && lyricsData.lines.length > 0,
-      ),
-    [
-      notchMetrics,
-      sessions.length,
-      maxCompactIcons,
-      activeSessionTokenTotal,
-      snapshot.pendingCount,
-      nowPlayingTrack?.artworkBase64,
-      compactIndicator,
-      lyricsEnabled,
-      lyricsData,
-    ],
-  );
-  const stableWidthRef = useRef(computedCollapsedWidth);
-  const hasActiveSessions = sessions.length > 0;
-  const collapsedWindowWidth = useMemo(() => {
-    if (!hasActiveSessions) {
-      if (
-        phaseRef.current === "expanded" ||
-        phaseRef.current === "opening" ||
-        phaseRef.current === "closing" ||
-        suppressPostCollapseSyncRef.current
-      ) {
-        return stableWidthRef.current;
-      }
-      stableWidthRef.current = computedCollapsedWidth;
-      return computedCollapsedWidth;
-    }
-    if (computedCollapsedWidth > stableWidthRef.current) {
-      stableWidthRef.current = computedCollapsedWidth;
-    }
-    return stableWidthRef.current;
-  }, [computedCollapsedWidth, hasActiveSessions]);
-  const rawCollapsedMode = resolveCollapsedMode(
-    usesMicroIslandRef.current,
-    supportsMicroIsland,
-    sessions.length,
-    snapshot.pendingCount,
-    phase,
-    // When lyrics are active, stay in compact mode (not dormant) so the
-    // header has room for the lyrics column. Dormant mode is too narrow.
-    lyricsEnabled && lyricsData != null && lyricsData.lines.length > 0 && !notchMetrics.hasNotch,
-  );
-  const collapsedMode: "micro" | "compact" | "dormant" =
-    (suppressPostCollapseSyncRef.current ||
-      holdCompactAfterSubviewOpenRef.current) &&
-    (rawCollapsedMode === "dormant" || rawCollapsedMode === "micro")
-      ? "compact"
-      : rawCollapsedMode;
-  const tabAgents = useMemo(() => {
-    const seen = new Set<AgentKind>();
-    sessions.forEach((session) => seen.add(session.agent));
-    if (activeRequest) {
-      seen.add(activeRequest.agent);
-    }
-    return Array.from(seen).sort(
-      (a, b) => agentSortRank[a] - agentSortRank[b],
-    );
-  }, [sessions, activeRequest]);
-
+  });
   const selectedAgentRequest = useMemo(() => {
     if (!selectedAgent) return activeRequest;
     const fromRecent = snapshot.recent.find(
@@ -995,251 +565,40 @@ export function App() {
     return counts;
   }, [sessions]);
 
-  const stableHeaderLayoutRef = useRef(
-    computeCompactHeaderLayout(
-      notchMetrics,
-      sessions.length,
-      maxCompactIcons,
-      activeSessionTokenTotal,
-      snapshot.pendingCount,
-    ),
-  );
-  const compactHeaderLayout = useMemo(() => {
-    const computed = computeCompactHeaderLayout(
-      notchMetrics,
-      sessions.length,
-      maxCompactIcons,
-      activeSessionTokenTotal,
-      snapshot.pendingCount,
-    );
-    // Hold the pre-transition layout during opening/closing so a session
-    // resolving or pending count changing mid-animation cannot reflow the
-    // header icons. Mirrors the stableLeftWidthRef freeze below.
-    if (
-      phaseRef.current === "opening" ||
-      phaseRef.current === "closing"
-    ) {
-      return stableHeaderLayoutRef.current;
-    }
-    stableHeaderLayoutRef.current = computed;
-    return computed;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
+  const {
+    maxCompactIconLimit,
+    collapsedWindowWidth,
+    collapsedMode,
+    compactHeaderLayout,
+    compactLeftPaneWidth,
+  } = useCompactLayout({
     notchMetrics,
-    sessions.length,
+    sessions,
     maxCompactIcons,
     activeSessionTokenTotal,
-    snapshot.pendingCount,
-  ]);
-
-  const computedLeftPaneWidth = useMemo(
-    () => computeCompactLeftPaneWidth(compactHeaderLayout),
-    [compactHeaderLayout],
-  );
-  const stableLeftWidthRef = useRef(computedLeftPaneWidth);
-  const compactLeftPaneWidth = useMemo(() => {
-    if (!hasActiveSessions) {
-      if (
-        phaseRef.current === "expanded" ||
-        phaseRef.current === "opening" ||
-        phaseRef.current === "closing" ||
-        suppressPostCollapseSyncRef.current
-      ) {
-        return stableLeftWidthRef.current;
-      }
-      stableLeftWidthRef.current = computedLeftPaneWidth;
-      return computedLeftPaneWidth;
-    }
-    if (computedLeftPaneWidth > stableLeftWidthRef.current) {
-      stableLeftWidthRef.current = computedLeftPaneWidth;
-    }
-    return stableLeftWidthRef.current;
-  }, [computedLeftPaneWidth, hasActiveSessions]);
-
-  collapsedModeRef.current = collapsedMode;
-  collapsedWindowWidthRef.current = collapsedWindowWidth;
-  compactLeftPaneWidthRef.current = compactLeftPaneWidth;
-  microPresentationWidthRef.current = microPresentationWidth(
-    sessions.length,
-    activeSessionTokenTotal,
-    compactHeaderLayout.tokenCompactLevel,
-  );
-
+    pendingCount: snapshot.pendingCount,
+    nowPlayingTrack,
+    compactIndicator,
+    lyricsEnabled,
+    lyricsData,
+    phase,
+    phaseRef,
+    usesMicroIslandRef,
+    supportsMicroIsland,
+    suppressPostCollapseSyncRef,
+    holdCompactAfterSubviewOpenRef,
+    collapsedModeRef,
+    collapsedWindowWidthRef,
+    compactLeftPaneWidthRef,
+    microPresentationWidthRef,
+  });
 
   useEffect(() => {
     if (!hookHealthHydrated) return;
     setConfiguredHookAgents(seedConfiguredFromHookHealth(snapshot.hookHealth));
   }, [hookHealthHydrated, snapshot.hookHealth]);
 
-  useEffect(() => {
-    let composing = false;
-
-    const syncIme = (active: boolean) => {
-      void setImeActive(active);
-    };
-
-    const onFocusIn = (event: Event) => {
-      if (isImeTextTarget(event.target)) {
-        syncIme(true);
-      }
-    };
-    const onFocusOut = (event: globalThis.FocusEvent) => {
-      if (!isImeTextTarget(event.target) || composing) {
-        return;
-      }
-      if (isImeTextTarget(event.relatedTarget)) {
-        return;
-      }
-      syncIme(false);
-    };
-    const onCompositionStart = () => {
-      composing = true;
-      syncIme(true);
-    };
-    const onCompositionEnd = () => {
-      composing = false;
-      syncIme(isTextEntryActive());
-    };
-
-    document.addEventListener("focusin", onFocusIn);
-    document.addEventListener("focusout", onFocusOut);
-    document.addEventListener("compositionstart", onCompositionStart);
-    document.addEventListener("compositionend", onCompositionEnd);
-    return () => {
-      document.removeEventListener("focusin", onFocusIn);
-      document.removeEventListener("focusout", onFocusOut);
-      document.removeEventListener("compositionstart", onCompositionStart);
-      document.removeEventListener("compositionend", onCompositionEnd);
-      syncIme(false);
-    };
-  }, []);
-
-  useEffect(() => {
-    getPricing()
-      .then((response) => setPricingModels(response.models))
-      .catch(() => undefined);
-  }, []);
-
-
-  useEffect(() => {
-    const loadSnapshot = () => {
-      const seq = snapshotLoadSeqRef.current;
-      getSnapshot()
-        .then((nextSnapshot) => {
-          if (seq !== snapshotLoadSeqRef.current) return;
-          applySnapshot(nextSnapshot, { mergeHookHealth: true });
-          setHookHealthHydrated(true);
-        })
-        .catch(() => undefined);
-    };
-
-    const refreshHookHealth = () => {
-      getSnapshot()
-        .then((nextSnapshot) => {
-          applySnapshot(nextSnapshot, { mergeHookHealth: true });
-          setHookHealthHydrated(true);
-        })
-        .catch(() => undefined);
-    };
-
-    loadSnapshot();
-    const retryTimer = window.setTimeout(refreshHookHealth, 750);
-    setSessionRetention(readRetentionMinutes()).catch(() => undefined);
-    getApprovalNoticeMode()
-      .then(setApprovalNoticeModeState)
-      .catch(() => undefined);
-    getGlobalShortcutConfig()
-      .then(setGlobalShortcutView)
-      .catch(() => undefined);
-    setNotificationLanguage(readLanguage()).catch(() => undefined);
-    const unsubscribe = manageAsyncUnlisten(
-      onSnapshotChanged((nextSnapshot) => {
-        applySnapshot(nextSnapshot, { mergeHookHealth: true });
-        setHookHealthHydrated(true);
-      }),
-    );
-    const unsubscribeCapture = manageAsyncUnlisten(
-      onCaptureCollapseRequested(() => {
-        collapseIsland(true);
-      }),
-    );
-    const unsubscribeCaptureHooks = manageAsyncUnlisten(
-      onCaptureOpenHooksRequested(() => {
-        getSnapshot()
-          .then(applySnapshot)
-          .catch(() => undefined)
-          .finally(() => {
-            openHooksPage("home");
-            suppressHoverExpandRef.current = false;
-            expandIsland();
-          });
-      }),
-    );
-    const unsubscribeScreenshot = manageAsyncUnlisten(
-      onCaptureScreenshotRequested(async () => {
-        const stage = document.querySelector<HTMLElement>(".stage");
-        if (!stage) return;
-
-        const phase = phaseRef.current;
-        if (phase === "compact" && collapsedModeRef.current !== "dormant") {
-          await setIslandPresentation(
-            "compact",
-            collapsedWindowWidthRef.current,
-            undefined,
-            compactLeftPaneWidthRef.current,
-            false,
-            true,
-          );
-        } else if (phase === "expanded") {
-          const idleExpanded =
-            snapshotRef.current.pendingCount === 0 &&
-            snapshotRef.current.sessions.length === 0;
-          const planExpanded = snapshotHasPlanPending(snapshotRef.current);
-          const settingsExpanded =
-            panelViewRef.current.kind === "settings" ||
-            panelViewRef.current.kind === "clipboard" ||
-            panelViewRef.current.kind === "fileStation" ||
-            panelViewRef.current.kind === "history";
-          await setIslandPresentation(
-            "expanded",
-            collapsedWindowWidthRef.current,
-            idleExpanded,
-            compactLeftPaneWidthRef.current,
-            false,
-            true,
-            planExpanded && !settingsExpanded,
-            settingsExpanded,
-          );
-        }
-
-        await new Promise<void>((resolve) => {
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-        });
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 120));
-
-        try {
-          const dataUrl = await toPng(stage, {
-            pixelRatio: window.devicePixelRatio || 2,
-            backgroundColor: "#0a0b0d",
-            cacheBust: true,
-          });
-          const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
-          await captureProvideScreenshot(base64);
-        } catch (error) {
-          console.error("[Atoll] capture screenshot failed", error);
-        }
-      }),
-    );
-
-    return () => {
-      snapshotLoadSeqRef.current += 1;
-      window.clearTimeout(retryTimer);
-      unsubscribe();
-      unsubscribeCapture();
-      unsubscribeCaptureHooks();
-      unsubscribeScreenshot();
-    };
-  }, []);
+  useImeSync();
 
   useEffect(() => {
     const demoMode = getDemoMode();
@@ -1298,42 +657,11 @@ export function App() {
     };
   }, [menuOpen]);
 
-
-  useEffect(() => {
-    if (tabAgents.length === 0) {
-      setSelectedAgent(null);
-      lastSyncedRequestIdRef.current = null;
-      return;
-    }
-
-    // New pending request: force-select its agent and return to home so the
-    // approval card is visible (not stuck on another agent's tab/subview).
-    if (activeRequest?.id && activeRequest.id !== lastSyncedRequestIdRef.current) {
-      lastSyncedRequestIdRef.current = activeRequest.id;
-      setSelectedAgent(activeRequest.agent);
-      if (panelView.kind !== "home") {
-        ++navigationSeqRef.current;
-        setPanelView({ kind: "home" });
-      }
-      return;
-    }
-
-    if (!activeRequest) {
-      lastSyncedRequestIdRef.current = null;
-    }
-
-    if (selectedAgent && tabAgents.includes(selectedAgent)) {
-      return;
-    }
-    setSelectedAgent(activeRequest?.agent ?? tabAgents[0]);
-  }, [tabAgents, selectedAgent, activeRequest?.id, activeRequest?.agent, panelView.kind]);
-
   useEffect(() => {
     setMaxCompactIcons((current) =>
       clampCompactIconLimit(current, maxCompactIconLimit),
     );
   }, [maxCompactIconLimit]);
-
 
   const hasIncompleteSubagents = useMemo(
     () =>
@@ -1357,190 +685,6 @@ export function App() {
     return () => window.clearInterval(interval);
   }, [phase, hasIncompleteSubagents]);
 
-  function applySnapshot(
-    nextSnapshot: IslandSnapshot,
-    options?: { mergeHookHealth?: boolean },
-  ) {
-    const normalized = normalizeSnapshot(nextSnapshot);
-    const hookHealth = options?.mergeHookHealth
-      ? mergeHookHealthPreferReady(
-          snapshotRef.current.hookHealth,
-          normalized.hookHealth,
-        )
-      : normalized.hookHealth;
-    const merged = { ...normalized, hookHealth };
-    snapshotRef.current = merged;
-    if (phaseRef.current === "opening" || phaseRef.current === "closing") {
-      // Hook health must update immediately after install — waiting for the
-      // presentation transition leaves the header logo stuck in the dead state.
-      setSnapshot((previous) => ({
-        ...previous,
-        hookHealth: merged.hookHealth,
-        online: merged.online,
-        sessions: merged.sessions,
-        dailyTokens: merged.dailyTokens,
-        activeSessionTokens: merged.activeSessionTokens,
-        pendingCount: merged.pendingCount,
-        archivedCount: merged.archivedCount,
-        recent: merged.recent,
-        activeRequest: merged.activeRequest,
-      }));
-      return;
-    }
-    setSnapshot(merged);
-
-    if (merged.pendingCount > 0) {
-      expandIsland();
-    } else {
-      const collapseInFlight = frozenCollapseWidthRef.current !== null;
-      if (!collapseInFlight) {
-        scheduleIdleCollapse();
-      }
-    }
-  }
-
-
-
-
-
-
-
-
-
-  function invalidatePendingSnapshotLoads() {
-    snapshotLoadSeqRef.current += 1;
-  }
-
-  async function handleChangeLanguage(nextLanguage: AppLanguage) {
-    setLanguage(nextLanguage);
-    setNotificationLanguage(nextLanguage).catch(() => undefined);
-    await changeAppLanguage(nextLanguage);
-  }
-
-  const handleChangeApprovalNoticeMode = useCallback((mode: ApprovalNoticeMode) => {
-    setApprovalNoticeModeState(mode);
-    setApprovalNoticeMode(mode).catch(() => undefined);
-  }, []);
-
-  // Optimistically apply the edit, then adopt the backend view: it carries the
-  // per-action registration errors (hotkey taken, invalid accelerator) that the
-  // settings rows render.
-  const handleChangeGlobalShortcutConfig = useCallback(
-    (next: GlobalShortcutConfig) => {
-      setGlobalShortcutView((prev) => (prev ? { ...prev, config: next, errors: {} } : prev));
-      setGlobalShortcutConfig(next)
-        .then(setGlobalShortcutView)
-        .catch(() => undefined);
-    },
-    [],
-  );
-
-  const hookMenuAgents: HookMenuAgent[] = [
-    {
-      key: "claude",
-      label: "Claude Code",
-      status: claudeHookStatus,
-      note: claudeHookStatus.settingsPath
-        ? i18n.t("register.withPath", {
-            ns: "hooks",
-            path: claudeHookStatus.settingsPath,
-            note: hookAgentNote("claude"),
-          })
-        : i18n.t("register.claude", {
-            ns: "hooks",
-            note: hookAgentNote("claude"),
-          }),
-      onInstall: handleInstallClaudeHooks,
-      onUninstall: handleUninstallClaudeHooks,
-      onRemoveCompetingHooks: handleRemoveCompetingClaudeHooks,
-    },
-    {
-      key: "codex",
-      label: "Codex",
-      status: codexHookStatus,
-      note: codexHookStatus.settingsPath
-        ? i18n.t("register.withPath", {
-            ns: "hooks",
-            path: codexHookStatus.settingsPath,
-            note: hookAgentNote("codex"),
-          })
-        : i18n.t("register.codex", {
-            ns: "hooks",
-            note: hookAgentNote("codex"),
-          }),
-      onInstall: handleInstallCodexHooks,
-      onUninstall: handleUninstallCodexHooks,
-    },
-    {
-      key: "cursor",
-      label: "Cursor",
-      status: cursorHookStatus,
-      note: cursorHookStatus.settingsPath
-        ? i18n.t("register.withPath", {
-            ns: "hooks",
-            path: cursorHookStatus.settingsPath,
-            note: hookAgentNote("cursor"),
-          })
-        : i18n.t("register.cursor", {
-            ns: "hooks",
-            note: hookAgentNote("cursor"),
-          }),
-      onInstall: handleInstallCursorHooks,
-      onUninstall: handleUninstallCursorHooks,
-    },
-    {
-      key: "zcode",
-      label: "ZCode",
-      status: zcodeHookStatus,
-      note: zcodeHookStatus.settingsPath
-        ? i18n.t("register.withPath", {
-            ns: "hooks",
-            path: zcodeHookStatus.settingsPath,
-            note: hookAgentNote("zcode"),
-          })
-        : i18n.t("register.zcode", {
-            ns: "hooks",
-            note: hookAgentNote("zcode"),
-          }),
-      onInstall: handleInstallZcodeHooks,
-      onUninstall: handleUninstallZcodeHooks,
-    },
-    {
-      key: "gemini",
-      label: "Gemini CLI",
-      status: geminiHookStatus,
-      note: geminiHookStatus.settingsPath
-        ? i18n.t("register.withPath", {
-            ns: "hooks",
-            path: geminiHookStatus.settingsPath,
-            note: hookAgentNote("gemini"),
-          })
-        : i18n.t("register.gemini", {
-            ns: "hooks",
-            note: hookAgentNote("gemini"),
-          }),
-      onInstall: handleInstallGeminiHooks,
-      onUninstall: handleUninstallGeminiHooks,
-    },
-    {
-      key: "opencode",
-      label: "OpenCode",
-      status: opencodeHookStatus,
-      note: opencodeHookStatus.settingsPath
-        ? i18n.t("register.withPath", {
-            ns: "hooks",
-            path: opencodeHookStatus.settingsPath,
-            note: hookAgentNote("opencode"),
-          })
-        : i18n.t("register.opencode", {
-            ns: "hooks",
-            note: hookAgentNote("opencode"),
-          }),
-      onInstall: handleInstallOpencodeHooks,
-      onUninstall: handleUninstallOpencodeHooks,
-    },
-  ];
-
   const hooksNeedSetup =
     hookHealthHydrated && hookHealthAnalysis.needsFirstTimeSetup;
   const hooksNeedAttention =
@@ -1548,626 +692,79 @@ export function App() {
     (hookHealthAnalysis.needsFirstTimeSetup || hookHealthAnalysis.needsReconnect);
   const hooksSetupSummary = hookHealthAnalysis.summary;
 
-  async function handleQuit() {
-    setMenuOpen(false);
-    await quitAtoll().catch(() => undefined);
-  }
-
-  async function handleArchiveAll() {
-    setMenuOpen(false);
-    const nextSnapshot = await archiveAllResolved().catch(() => null);
-    if (nextSnapshot) {
-      applySnapshot(nextSnapshot);
-    }
-  }
-
-  async function handleArchiveSession(sessionId: string) {
-    const nextSnapshot = await archiveSession(sessionId).catch(() => null);
-    if (nextSnapshot) {
-      applySnapshot(nextSnapshot);
-    }
-  }
-
-  async function handlePinSession(sessionId: string, pinned: boolean) {
-    const nextSnapshot = await pinSession(sessionId, pinned).catch(() => null);
-    if (nextSnapshot) {
-      applySnapshot(nextSnapshot);
-    }
-  }
-
-  async function handleArchiveCompletedSubagents(sessionId: string) {
-    const nextSnapshot = await archiveCompletedSubagents(sessionId).catch(() => null);
-    if (!nextSnapshot) {
-      return;
-    }
-    applySnapshot(nextSnapshot);
-    const currentView = panelViewRef.current;
-    if (
-      currentView.kind === "subagent"
-      && currentView.sessionId === sessionId
-      && !nextSnapshot.sessions
-        .find((session) => session.sessionId === sessionId)
-        ?.activeSubagents?.some((sub) => sub.agentId === currentView.agentId)
-    ) {
-      ++navigationSeqRef.current;
-      setPanelView({ kind: "home" });
-    }
-  }
-
-  function handleSelectAgent(agent: AgentKind) {
-    setSelectedAgent(agent);
-    if (panelView.kind !== "home") {
-      ++navigationSeqRef.current;
-      setPanelView({ kind: "home" });
-    }
-  }
-
-  const isOpening = phase === "opening";
-  const isClosing = phase === "closing";
-  const isPresentationTransition = isOpening || isClosing;
-  const isExpanded = phase === "opening" || phase === "expanded";
-  const isExpandedChrome = phase === "expanded";
-  const showAgentTabs = isExpandedChrome && tabAgents.length > 1;
-  const showPanelAgentTabs =
-    isExpandedChrome && panelView.kind === "home" && tabAgents.length > 1;
-  const isMicro = phase === "micro";
-  const isDormant =
-    !isExpanded &&
-    !isMicro &&
-    !suppressPostCollapseSyncRef.current &&
-    !holdCompactAfterSubviewOpenRef.current &&
-    (collapsedMode === "dormant" ||
-      (usesMicroIslandRef.current &&
-        phase === "compact" &&
-        sessions.length === 0 &&
-        snapshot.pendingCount === 0));
-  const showCompactHeaderMetrics =
-    !isMicro && !isDormant && !isExpanded && !isPresentationTransition;
-  const showMicroTokenCounter =
-    isMicro && !isPresentationTransition && sessions.length > 0 &&
-    (compactIndicator === "tokens" || compactIndicator === "both");
-  const showCompactTokenCounter =
-    sessions.length > 0 &&
-    (compactIndicator === "tokens" || compactIndicator === "both");
-  const showCompactMediaIndicator =
-    (showCompactHeaderMetrics || isMicro) &&
-    !isPresentationTransition &&
-    (compactIndicator === "media" || compactIndicator === "both") &&
-    nowPlayingTrack?.artworkBase64 != null;
-  const showArtworkBackdrop =
-    artworkBackdropEnabled &&
-    nowPlayingTrack?.artworkBase64 != null &&
-    (isExpanded || phase === "closing");
-  const showExpandedTokenCounter = true;
-  // Lyrics occupy a dedicated middle grid column — only on non-notched
-  // displays (the notch area is physically invisible, so lyrics there would
-  // be hidden). Show in both compact and dormant idle states so the user
-  // sees lyrics even with no active agent sessions.
-  const showLyricsMarquee =
-    lyricsEnabled &&
-    lyricsData != null &&
-    lyricsData.lines.length > 0 &&
-    !isMicro &&
-    !isExpanded &&
-    !isPresentationTransition &&
-    !notchMetrics.hasNotch;
-  const showCollapsedActivityStrip =
-    !isDormant &&
-    !isExpanded &&
-    !isPresentationTransition &&
-    (sessions.length > 0 || snapshot.pendingCount > 0);
-  const showCompactNotchSpacer =
-    collapsedMode === "compact" && !isExpanded && notchMetrics.hasNotch;
-  const compactLeftSessions = sessions.slice(0, compactHeaderLayout.leftIconCount);
-  const compactRightSessions = sessions.slice(
-    compactHeaderLayout.leftIconCount,
-    compactHeaderLayout.leftIconCount + compactHeaderLayout.rightIconCount,
-  );
-  const compactLeftOverflow =
-    compactHeaderLayout.overflowCount > 0 &&
-    compactHeaderLayout.rightIconCount === 0
-      ? compactHeaderLayout.overflowCount
-      : 0;
-  const compactRightOverflow =
-    compactHeaderLayout.overflowCount > 0 &&
-    compactHeaderLayout.rightIconCount > 0
-      ? compactHeaderLayout.overflowCount
-      : 0;
-  const isIdleExpanded =
-    isExpandedChrome &&
-    panelView.kind === "home" &&
-    sessions.length === 0 &&
-    snapshot.pendingCount === 0;
-  const isSettingsExpanded =
-    isExpandedChrome &&
-    (panelView.kind === "settings" ||
-      panelView.kind === "clipboard" ||
-      panelView.kind === "fileStation" ||
-      panelView.kind === "history");
-  const nativeExpandedPlan = isPlanExpanded && !isSettingsExpanded;
-  const nativeExpandedSettings = isSettingsExpanded;
-  const isSubview = isExpandedChrome && panelView.kind !== "home";
-  const panelGlowAgent =
-    selectedAgentRequest?.agent ?? selectedAgent ?? sessions[0]?.agent ?? null;
-  const panelGlow = panelGlowAgent
-    ? PANEL_GLOW[panelGlowAgent]
-    : "rgba(111, 220, 255, 0.14)";
-  // Logo shrinks on short menu-bar bands (e.g. 24pt on non-notched displays)
-  // so it never clips vertically inside the collapsed capsule.
-  const menuBarLogoSize = isExpanded
-    ? 36
-    : isMicro
-      ? 24
-      : Math.min(34, Math.max(18, Math.round(collapsedBandHeight(notchMetrics)) - 4));
-  const subviewSession =
-    panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList"
-      ? sessions.find((session) => session.sessionId === panelView.sessionId)
-      : undefined;
-  const subviewSubagent =
-    panelView.kind === "subagent"
-      ? subviewSession?.activeSubagents?.find((sub) => sub.agentId === panelView.agentId)
-      : undefined;
+  const {
+    showAgentTabs,
+    showPanelAgentTabs,
+    isOpening,
+    isClosing,
+    isPresentationTransition,
+    isExpanded,
+    isExpandedChrome,
+    isMicro,
+    isDormant,
+    showCompactHeaderMetrics,
+    showMicroTokenCounter,
+    showCompactTokenCounter,
+    showCompactMediaIndicator,
+    showArtworkBackdrop,
+    showLyricsMarquee,
+    showCollapsedActivityStrip,
+    showCompactNotchSpacer,
+    compactLeftSessions,
+    compactRightSessions,
+    compactLeftOverflow,
+    compactRightOverflow,
+    isIdleExpanded,
+    isSettingsExpanded,
+    nativeExpandedPlan,
+    nativeExpandedSettings,
+    isSubview,
+    panelGlow,
+    menuBarLogoSize,
+    subviewSession,
+    subviewSubagent,
+  } = deriveIslandChromeFlags({
+    phase,
+    panelView,
+    collapsedMode,
+    usesMicroIsland: usesMicroIslandRef.current,
+    suppressPostCollapseSync: suppressPostCollapseSyncRef.current,
+    holdCompactAfterSubviewOpen: holdCompactAfterSubviewOpenRef.current,
+    sessions,
+    pendingCount: snapshot.pendingCount,
+    isPlanExpanded,
+    notchMetrics,
+    compactIndicator,
+    nowPlayingTrack,
+    artworkBackdropEnabled,
+    lyricsEnabled,
+    lyricsData,
+    selectedAgentRequest,
+    selectedAgent,
+    compactHeaderLayout,
+    tabAgents,
+  });
 
   // Keep Rust-side compact metrics current while expanded so collapse targets
   // the latest width without a follow-up resize animation.
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    document.documentElement.style.setProperty(
-      "--compact-left-pane-width",
-      `${compactLeftPaneWidth}px`,
-    );
-  }, [compactLeftPaneWidth]);
 
-  useEffect(() => {
-    if (collapsedMode === "dormant" || phase === "micro") return;
-    if (phase === "expanded" || phase === "opening" || phase === "closing") {
-      return;
-    }
-    setCompactLayout(collapsedWindowWidth, compactLeftPaneWidth).catch(
-      () => undefined,
-    );
-  }, [collapsedMode, collapsedWindowWidth, compactLeftPaneWidth, phase]);
-
-  // Keep the native window in sync when compact/expanded layout inputs change.
-  // collapseIsland / expandIsland pre-mark the matching key so we do not replay
-  // the same native animation right after a user-driven transition finishes.
-  useEffect(() => {
-    if (
-      phaseRef.current === "opening" ||
-      phaseRef.current === "closing" ||
-      phase === "opening" ||
-      phase === "closing"
-    ) {
-      return;
-    }
-
-    if (suppressPostCollapseSyncRef.current) {
-      suppressPostCollapseSyncRef.current = false;
-      return;
-    }
-
-    if (phase === "micro") {
-      const microWidth = microPresentationWidthRef.current;
-      const key = compactPresentationKey("micro", microWidth, 0);
-      if (lastNativePresentationKeyRef.current === key) return;
-      lastNativePresentationKeyRef.current = key;
-      syncNativeIslandPresentation("micro", microWidth).catch(
-        () => undefined,
-      );
-      return;
-    }
-
-    if (phase === "compact") {
-      const key = compactPresentationKey(
-        collapsedMode,
-        collapsedWindowWidth,
-        compactLeftPaneWidth,
-      );
-      if (lastNativePresentationKeyRef.current === key) return;
-      lastNativePresentationKeyRef.current = key;
-      if (collapsedMode === "dormant") {
-        syncNativeIslandPresentation("dormant").catch(() => undefined);
-      } else {
-        syncNativeIslandPresentation(
-          "compact",
-          collapsedWindowWidth,
-          undefined,
-          compactLeftPaneWidth,
-        ).catch(() => undefined);
-      }
-      return;
-    }
-
-    if (phase === "expanded") {
-      const key = expandedPresentationKey(
-        isIdleExpanded,
-        nativeExpandedPlan,
-        nativeExpandedSettings,
-      );
-      if (lastNativePresentationKeyRef.current === key) return;
-      const previousKey = lastNativePresentationKeyRef.current;
-      lastNativePresentationKeyRef.current = key;
-      syncNativeIslandPresentation(
-        "expanded",
-        undefined,
-        isIdleExpanded,
-        undefined,
-        nativeExpandedPlan,
-        nativeExpandedSettings,
-      ).catch(() => {
-        lastNativePresentationKeyRef.current = previousKey;
-      });
-    }
-  }, [
+  useNativePresentationSync({
     phase,
+    phaseRef,
+    suppressPostCollapseSyncRef,
+    microPresentationWidthRef,
+    lastNativePresentationKeyRef,
+    syncNativeIslandPresentation,
+    collapsedMode,
     collapsedWindowWidth,
     compactLeftPaneWidth,
-    collapsedMode,
     isIdleExpanded,
     isPlanExpanded,
     isSettingsExpanded,
     nativeExpandedPlan,
     nativeExpandedSettings,
     notchMetricsHydrated,
-  ]);
-
-  function renderPanel() {
-    if (panelView.kind === "subagent") {
-      if (!subviewSubagent) {
-        return null;
-      }
-      return (
-        <SubagentDetailView
-          agentId={subviewSubagent.agentId}
-          agent={subviewSession?.agent ?? "other"}
-          agentType={subviewSubagent.agentType}
-          startedAt={subviewSubagent.startedAt}
-          completedAt={subviewSubagent.completedAt ?? null}
-          lastMessage={subviewSubagent.lastMessage ?? null}
-          transcriptPath={subviewSubagent.agentTranscriptPath ?? null}
-          onArchive={async () => {
-            const next = await archiveSubagent(subviewSubagent.agentId).catch(() => null);
-            if (next) {
-              applySnapshot(next);
-              ++navigationSeqRef.current;
-              setPanelView({ kind: "home" });
-            }
-          }}
-        />
-      );
-    }
-
-    if (panelView.kind === "subagentList") {
-      const session = sessions.find((s) => s.sessionId === panelView.sessionId);
-      if (!session) return null;
-      return (
-        <SubagentListView
-          subagents={session.activeSubagents ?? []}
-          agent={session.agent}
-          onSelectSubagent={(agentId) => navigateToSubagent(panelView.sessionId, agentId)}
-          onArchiveCompletedSubagents={() => handleArchiveCompletedSubagents(panelView.sessionId)}
-        />
-      );
-    }
-
-    if (panelView.kind === "session") {
-      const session = sessions.find((s) => s.sessionId === panelView.sessionId);
-      return (
-        <SessionChatView
-          sessionId={panelView.sessionId}
-          transcriptPath={session?.transcriptPath ?? null}
-          requests={sessionRequests}
-          agent={session?.agent ?? "cursor"}
-        />
-      );
-    }
-
-    if (panelView.kind === "clipboard") {
-      return (
-        <ClipboardHistoryView
-          entries={clipboardHistory}
-          enabled={clipboardEnabled}
-          onCopy={(id) => {
-            copyClipboardEntry(id).catch(() => undefined);
-          }}
-          onClear={() => {
-            clearClipboardHistory()
-              .then(() => getClipboardHistory())
-              .then(setClipboardHistory)
-              .catch(() => undefined);
-          }}
-          onToggleFavorite={(id) => {
-            toggleClipboardFavorite(id)
-              .then((changed) => {
-                if (!changed) return;
-                return getClipboardHistory().then(setClipboardHistory);
-              })
-              .catch(() => undefined);
-          }}
-        />
-      );
-    }
-
-    if (panelView.kind === "fileStation") {
-      return (
-        <FileStationView
-          files={stagedFiles}
-          onCopy={(id) => {
-            copyStagedFilesToClipboard([id]).catch(() => undefined);
-          }}
-          onReveal={(path) => {
-            revealPath(path).catch(() => undefined);
-          }}
-          onRemove={removeStaged}
-          onClear={clearStaged}
-          onDragOut={(ids) => {
-            playStashReaction("spit");
-            beginStagedFilesDrag(ids).catch(() => undefined);
-          }}
-        />
-      );
-    }
-
-    if (panelView.kind === "history") {
-      return <ApprovalHistoryView />;
-    }
-
-    if (panelView.kind === "settings") {
-      if (panelView.page === "hooks") {
-        return (
-          <HooksView
-            agents={hookMenuAgents}
-            hookBusy={hookBusy}
-            hookInstallError={hookInstallError}
-            onInstallAll={handleInstallAllHooks}
-            onUninstallAll={handleUninstallHooks}
-          />
-        );
-      }
-
-      if (panelView.page === "tokens") {
-        return (
-          <TokenHeatmapView
-            todayTokens={dailyTokens}
-            todayTokensByModel={snapshot.dailyTokensByModel}
-            displayMode={heatmapDisplay}
-            pricingRates={pricingRates}
-          />
-        );
-      }
-
-      if (panelView.page === "usage") {
-        return (
-          <UsageSettingsView
-            foldedCounterDisplay={foldedCounterDisplay}
-            expandedCounterDisplay={expandedCounterDisplay}
-            settingsBadgeDisplay={settingsBadgeDisplay}
-            heatmapDisplay={heatmapDisplay}
-            onChangeFoldedCounterDisplay={setFoldedCounterDisplay}
-            onChangeExpandedCounterDisplay={setExpandedCounterDisplay}
-            onChangeSettingsBadgeDisplay={setSettingsBadgeDisplay}
-            onChangeHeatmapDisplay={setHeatmapDisplay}
-            pricingModels={pricingModels}
-            onPricingModelsChange={setPricingModels}
-          />
-        );
-      }
-
-      if (panelView.page === "island") {
-        return (
-          <IslandSettingsView
-            maxCompactIcons={maxCompactIcons}
-            maxCompactIconLimit={maxCompactIconLimit}
-            onChangeMaxCompactIcons={(nextValue) =>
-              setMaxCompactIcons(clampCompactIconLimit(nextValue, maxCompactIconLimit))
-            }
-            showFoldedIslandSizeSetting={supportsMicroIsland}
-            foldedIslandSize={foldedIslandSize}
-            onChangeFoldedIslandSize={handleChangeFoldedIslandSize}
-            maxSubagentDisplay={maxSubagentDisplay}
-            onChangeMaxSubagentDisplay={(nextValue) =>
-              setMaxSubagentDisplay(clampMaxSubagentDisplay(nextValue))
-            }
-            showCompactIndicator={IS_MACOS}
-            compactIndicator={compactIndicator}
-            onChangeCompactIndicator={setCompactIndicatorState}
-            preferredMonitorName={preferredMonitorName}
-            onChangePreferredMonitor={handleChangePreferredMonitor}
-          />
-        );
-      }
-
-      if (panelView.page === "media") {
-        return (
-          <MediaSettingsView
-            mediaCardEnabled={mediaCardEnabled}
-            onChangeMediaCardEnabled={handleChangeMediaCardEnabled}
-            artworkBackdropEnabled={artworkBackdropEnabled}
-            onChangeArtworkBackdropEnabled={handleChangeArtworkBackdropEnabled}
-            lyricsEnabled={lyricsEnabled}
-            onChangeLyricsEnabled={handleChangeLyricsEnabled}
-          />
-        );
-      }
-
-      if (panelView.page === "clipboard") {
-        return (
-          <ClipboardSettingsView
-            clipboardHistoryEnabled={clipboardEnabled}
-            onChangeClipboardHistoryEnabled={handleChangeClipboardEnabled}
-            clipboardLimit={clipboardLimit}
-            onChangeClipboardLimit={handleChangeClipboardLimit}
-          />
-        );
-      }
-
-      if (panelView.page === "sessions") {
-        return (
-          <SessionSettingsView
-            retentionMinutes={retentionMinutes}
-            onChangeRetentionMinutes={(nextValue) =>
-              setRetentionMinutes(clampRetentionMinutes(nextValue))
-            }
-            subagentRetentionMinutes={subagentRetentionMinutes}
-            onChangeSubagentRetentionMinutes={(nextValue) =>
-              setSubagentRetentionMinutes(clampRetentionMinutes(nextValue))
-            }
-          />
-        );
-      }
-
-      if (panelView.page === "mascot") {
-        return (
-          <MascotSettingsView
-            idleIntervalMin={idleIntervalMin}
-            onChangeIdleInterval={(v) => setIdleIntervalMin(clampIdleInterval(v))}
-            idleDurationMin={idleDurationMin}
-            onChangeIdleDuration={(v) => setIdleDurationMin(clampIdleDuration(v))}
-          />
-        );
-      }
-
-      if (panelView.page === "notifications") {
-        return (
-          <NotificationSettingsView
-            mode={approvalNoticeMode}
-            onChangeMode={handleChangeApprovalNoticeMode}
-          />
-        );
-      }
-
-      if (panelView.page === "shortcuts") {
-        return (
-          <ShortcutSettingsView
-            config={globalShortcutView?.config ?? DEFAULT_GLOBAL_SHORTCUTS}
-            errors={globalShortcutView?.errors}
-            onChangeEnabled={(enabled) =>
-              handleChangeGlobalShortcutConfig({
-                ...(globalShortcutView?.config ?? DEFAULT_GLOBAL_SHORTCUTS),
-                enabled,
-              })
-            }
-            onChangeAccelerator={(action: ShortcutAction, value: string) =>
-              handleChangeGlobalShortcutConfig(
-                withShortcutAction(
-                  globalShortcutView?.config ?? DEFAULT_GLOBAL_SHORTCUTS,
-                  action,
-                  value,
-                ),
-              )
-            }
-          />
-        );
-      }
-
-      return (
-        <SettingsView
-          launchAtLogin={launchAtLogin}
-          launchAtLoginBusy={launchAtLoginBusy}
-          onChangeLaunchAtLogin={handleChangeLaunchAtLogin}
-          language={language}
-          onChangeLanguage={handleChangeLanguage}
-          onOpenHooks={handleOpenHooksFromSettings}
-          onOpenTokens={handleOpenTokensFromSettings}
-          onOpenUsage={handleOpenUsageFromSettings}
-          onOpenIsland={() => openSettingsSubpage("island")}
-          onOpenMedia={() => openSettingsSubpage("media")}
-          onOpenClipboard={() => openSettingsSubpage("clipboard")}
-          onOpenSessions={() => openSettingsSubpage("sessions")}
-          onOpenMascot={() => openSettingsSubpage("mascot")}
-          onOpenNotifications={() => openSettingsSubpage("notifications")}
-          onOpenShortcuts={() => openSettingsSubpage("shortcuts")}
-          noticeModeLabel={tSettings(
-            approvalNoticeMode === "notify"
-              ? "notice.modeNotify"
-              : "notice.modeInterrupt",
-          )}
-          todayLabel={settingsTodayLabel}
-          usageDisplaySummary={usageDisplaySummary}
-          hooksSummary={hooksSetupSummary}
-          hooksNeedAttention={hooksNeedAttention}
-          hooksAllConnected={hookHealthAnalysis.allConnected}
-          showMediaSettings={IS_MACOS}
-          mediaCardEnabled={mediaCardEnabled}
-          clipboardHistoryEnabled={clipboardEnabled}
-          shortcutsEnabled={globalShortcutView?.config.enabled ?? true}
-        />
-      );
-    }
-
-    if (selectedAgentRequest) {
-      const planModeType = getPlanModeType(selectedAgentRequest);
-      const handlePlanResolve = (nextSnapshot: IslandSnapshot) => {
-        applySnapshot(nextSnapshot);
-        if (nextSnapshot.pendingCount === 0) {
-          collapseIsland(true);
-          deactivateAtoll(
-            selectedAgentRequest.agent,
-            selectedAgentRequest.session,
-            selectedAgentRequest.cwd,
-          ).catch(() => undefined);
-        }
-      };
-
-      if (planModeType === "question") {
-        return (
-          <PlanQuestionCard
-            request={selectedAgentRequest}
-            onResolve={handlePlanResolve}
-          />
-        );
-      }
-
-      if (planModeType === "exitPlan") {
-        return (
-          <PlanApprovalCard
-            request={selectedAgentRequest}
-            onResolve={handlePlanResolve}
-          />
-        );
-      }
-
-      return (
-        <ApprovalCard
-          request={selectedAgentRequest}
-          busyDecision={busyDecision}
-          sessions={filteredSessions}
-          onApprove={() => resolveActive(selectedAgentRequest, "approved")}
-          onDeny={() => resolveActive(selectedAgentRequest, "denied")}
-          onAlwaysApprove={() => resolveActive(selectedAgentRequest, "approved", true)}
-          onViewSession={navigateToSession}
-        />
-      );
-    }
-
-    if (filteredSessions.length > 0) {
-      return (
-        <SessionListView
-          sessions={filteredSessions}
-          activeRequest={selectedAgentRequest}
-          justResolved={justResolved}
-          isExpanded={isExpandedChrome}
-          maxSubagentDisplay={maxSubagentDisplay}
-          onSelectSession={navigateToSession}
-          onSelectSubagent={navigateToSubagent}
-          onArchiveSession={handleArchiveSession}
-          onArchiveCompletedSubagents={handleArchiveCompletedSubagents}
-          onPinSession={handlePinSession}
-          onViewSubagentList={navigateToSubagentList}
-        />
-      );
-    }
-
-    return (
-      <IdleView
-        needsHookSetup={hooksNeedSetup}
-        needsReconnect={hookHealthAnalysis.needsReconnect}
-        disconnectedAgents={hookHealthAnalysis.disconnectedAgents}
-        retrustAgents={hookHealthAnalysis.retrustAgents}
-        onOpenHooks={handleOpenHooks}
-      />
-    );
-  }
+  });
 
   return (
     <main className="stage">
@@ -2184,475 +781,107 @@ export function App() {
         onBlurCapture={handleIslandBlur}
       >
         {showArtworkBackdrop && nowPlayingTrack?.artworkBase64 ? (
-          <div
-            className={`island-artwork-backdrop${artworkBackdropOrigin ? " has-origin" : ""}${
-              artworkBackdropRevealed ? " is-revealed" : ""
-            }${artworkBackdropExitFade ? " is-exit-fade" : ""}${artworkIsDark ? " is-dark-art" : ""}`}
-            style={
-              artworkBackdropOrigin
-                ? ({
-                    // Percent geometry relative to the live window: as the
-                    // native window shrinks during collapse, the backdrop
-                    // rides proportionally toward the thumb instead of
-                    // snapping to pixel coordinates measured pre-expand.
-                    "--ab-left": `${(artworkBackdropOrigin.x / artworkBackdropOrigin.winW) * 100}%`,
-                    "--ab-top": `${(artworkBackdropOrigin.y / artworkBackdropOrigin.winH) * 100}%`,
-                    "--ab-w": `${(artworkBackdropOrigin.w / artworkBackdropOrigin.winW) * 100}%`,
-                    "--ab-h": `${(artworkBackdropOrigin.h / artworkBackdropOrigin.winH) * 100}%`,
-                  } as CSSProperties)
-                : undefined
-            }
-            aria-hidden
-          >
-            <div className="island-artwork-backdrop-scale">
-              <div
-                className="island-artwork-backdrop-img"
-                style={{
-                  backgroundImage: `url(data:image/jpeg;base64,${nowPlayingTrack.artworkBase64})`,
-                }}
-              />
-              <div
-                className="island-artwork-backdrop-ghost"
-                style={{
-                  backgroundImage: `url(data:image/jpeg;base64,${nowPlayingTrack.artworkBase64})`,
-                }}
-              />
-              <div className="island-artwork-backdrop-scrim" />
-            </div>
-          </div>
+          <ArtworkBackdrop
+            nowPlayingTrack={nowPlayingTrack}
+            artworkBackdropOrigin={artworkBackdropOrigin}
+            artworkBackdropRevealed={artworkBackdropRevealed}
+            artworkBackdropExitFade={artworkBackdropExitFade}
+            artworkIsDark={artworkIsDark}
+          />
         ) : null}
-        <header
-          className={`island-header${showLyricsMarquee ? " has-lyrics" : ""}`}
-          onMouseDown={startWindowDrag}
-          title={isExpanded ? t("header.dragWindow") : t("header.hoverToOpen")}
-        >
-          <div
-            className={`header-main ${showPanelAgentTabs ? "has-agent-tabs" : ""}${isSubview ? " has-subview-nav" : ""}`}
-          >
-            <span className="atoll-indicator-wrap" ref={atollIndicatorRef}>
-              <span
-                className={`atoll-indicator is-app-${appLogoState} ${snapshot.online ? "is-online" : "is-offline"}${hooksNeedAttention ? " is-hook-attention" : ""}`}
-                title={
-                  updateAvailable
-                    ? t("update.available", { version: updateVersion })
-                    : hookAttention
-                }
-                role={hooksNeedAttention ? "button" : undefined}
-                tabIndex={hooksNeedAttention ? 0 : undefined}
-                onClick={
-                  hooksNeedAttention
-                    ? (event) => {
-                        event.stopPropagation();
-                        handleOpenHooks();
-                      }
-                    : undefined
-                }
-                onKeyDown={
-                  hooksNeedAttention
-                    ? (event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          handleOpenHooks();
-                        }
-                      }
-                    : undefined
-                }
-                data-no-drag
-              >
-                <span className="atoll-indicator-inner">
-                  <HeaderLogo
-                    display={collapsedHeaderLogo}
-                    size={menuBarLogoSize}
-                    idleIntervalSec={idleIntervalMin * 60}
-                    idleDurationSec={idleDurationMin * 60}
-                    motionPaused={isPresentationTransition}
-                    reaction={logoReaction}
-                    reactionKey={logoReactionKey}
-                    stashLevel={logoStashLevel}
-                    mouthOpen={dragOverIsland}
-                  />
-                </span>
-              </span>
-            </span>
-            {showCollapsedActivityStrip ? (
-              <>
-                <span
-                  className={`listener-dot ${snapshot.online ? "online" : ""}`}
-                  title={snapshot.online ? t("header.listening") : t("header.offline")}
-                />
-                {!isMicro ? (
-                  <CompactSessionStack
-                    sessions={compactLeftSessions}
-                    overflowCount={compactLeftOverflow}
-                    activeRequest={activeRequest}
-                    justResolved={justResolved}
-                  />
-                ) : null}
-              </>
-            ) : panelView.kind === "subagent" ? (
-              <SessionSubviewNav
-                cwd={subviewSubagent?.agentType ?? ""}
-                agent={subviewSession?.agent}
-                sessionId={subviewSession?.sessionId}
-                sessionHost={subviewSession?.sessionHost}
-                onBack={navigateBack}
-                onOpenExternal={() => {
-                  collapseIsland(true);
-                  void openAgentApp(
-                    subviewSession?.agent ?? "other",
-                    subviewSession?.cwd ?? "",
-                    subviewSession?.sessionId,
-                  );
-                }}
-              />
-            ) : panelView.kind === "subagentList" ? (
-              <SessionSubviewNav
-                cwd="Subagents"
-                agent={subviewSession?.agent}
-                sessionId={subviewSession?.sessionId}
-                sessionHost={subviewSession?.sessionHost}
-                onBack={navigateBack}
-                onOpenExternal={() => {
-                  collapseIsland(true);
-                  void openAgentApp(
-                    subviewSession?.agent ?? "other",
-                    subviewSession?.cwd ?? "",
-                    subviewSession?.sessionId,
-                  );
-                }}
-              />
-            ) : panelView.kind === "session" ? (
-              <SessionSubviewNav
-                cwd={subviewSession?.cwd ?? ""}
-                agent={subviewSession?.agent}
-                sessionId={subviewSession?.sessionId}
-                sessionHost={subviewSession?.sessionHost}
-                onBack={navigateBack}
-                onOpenExternal={() => {
-                  collapseIsland(true);
-                  void openAgentApp(
-                    subviewSession?.agent ?? "other",
-                    subviewSession?.cwd ?? "",
-                    subviewSession?.sessionId,
-                  );
-                }}
-              />
-            ) : panelView.kind === "clipboard" ? (
-              <SettingsPageNav
-                onBack={navigateBack}
-                backLabel={t("nav.back")}
-                icon={<ClipboardList size={14} />}
-                title={t("clipboard.title")}
-              />
-            ) : panelView.kind === "fileStation" ? (
-              <SettingsPageNav
-                onBack={navigateBack}
-                backLabel={t("nav.back")}
-                icon={<Inbox size={14} />}
-                title={t("fileStation.title")}
-              />
-            ) : panelView.kind === "history" ? (
-              <SettingsPageNav
-                onBack={navigateBack}
-                backLabel={t("nav.back")}
-                icon={<History size={14} />}
-                title={t("history.title")}
-              />
-            ) : panelView.kind === "settings" && panelView.page === "hooks" ? (
-              <SettingsPageNav
-                onBack={navigateBackFromHooks}
-                backLabel={hooksBackTarget === "settings-main" ? t("nav.settings") : t("nav.back")}
-                icon={<Download size={14} />}
-                title={t("title", { ns: "hooks" })}
-              />
-            ) : panelView.kind === "settings" && panelView.page === "tokens" ? (
-              <SettingsPageNav
-                onBack={navigateBackFromTokens}
-                backLabel={tokensBackTarget === "settings-main" ? t("nav.settings") : t("nav.back")}
-                icon={<Activity size={14} />}
-                title={t("nav.tokenActivity")}
-              />
-            ) : panelView.kind === "settings" && panelView.page === "usage" ? (
-              <SettingsPageNav
-                onBack={navigateBackFromUsage}
-                backLabel={usageBackTarget === "settings-main" ? t("nav.settings") : t("nav.back")}
-                icon={<CircleDollarSign size={14} />}
-                title={t("nav.displayPricing")}
-              />
-            ) : panelView.kind === "settings" && panelView.page === "island" ? (
-              <SettingsPageNav
-                onBack={navigateBackToSettingsMain}
-                backLabel={t("nav.settings")}
-                icon={<Layers size={14} />}
-                title={t("nav.island")}
-              />
-            ) : panelView.kind === "settings" && panelView.page === "media" ? (
-              <SettingsPageNav
-                onBack={navigateBackToSettingsMain}
-                backLabel={t("nav.settings")}
-                icon={<Music size={14} />}
-                title={t("nav.media")}
-              />
-            ) : panelView.kind === "settings" && panelView.page === "clipboard" ? (
-              <SettingsPageNav
-                onBack={navigateBackToSettingsMain}
-                backLabel={t("nav.settings")}
-                icon={<ClipboardList size={14} />}
-                title={t("nav.clipboard")}
-              />
-            ) : panelView.kind === "settings" && panelView.page === "sessions" ? (
-              <SettingsPageNav
-                onBack={navigateBackToSettingsMain}
-                backLabel={t("nav.settings")}
-                icon={<Clock size={14} />}
-                title={t("nav.sessions")}
-              />
-            ) : panelView.kind === "settings" && panelView.page === "mascot" ? (
-              <SettingsPageNav
-                onBack={navigateBackToSettingsMain}
-                backLabel={t("nav.settings")}
-                icon={<Sparkles size={14} />}
-                title={t("nav.mascot")}
-              />
-            ) : panelView.kind === "settings" && panelView.page === "notifications" ? (
-              <SettingsPageNav
-                onBack={navigateBackToSettingsMain}
-                backLabel={t("nav.settings")}
-                icon={<Bell size={14} />}
-                title={t("nav.notifications")}
-              />
-            ) : panelView.kind === "settings" ? (
-              <SettingsSubviewNav onBack={navigateBack} />
-            ) : showPanelAgentTabs ? (
-              <div
-                className={`header-agent-tabs${notchMetrics.hasNotch ? " header-agent-tabs--compact" : ""}`}
-                data-no-drag
-              >
-                <AgentTabBar
-                  agents={tabAgents}
-                  selectedAgent={selectedAgent}
-                  pendingCountByAgent={pendingCountByAgent}
-                  showTabs={showAgentTabs}
-                  compact={notchMetrics.hasNotch}
-                  online={snapshot.online}
-                  onSelectAgent={handleSelectAgent}
-                />
-              </div>
-            ) : null}
-          </div>
-
-          {showCompactNotchSpacer ? (
-            <span className="header-notch-spacer" aria-hidden="true" />
-          ) : null}
-
-          {showLyricsMarquee ? (
-            <LyricsMarquee
-              // Until the payload for the *current* track arrives (fetched
-              // on track change), render no lines — the marquee keeps its
-              // column-mounted placeholder instead of showing the previous
-              // track's lyrics against this track's position.
-              lines={lyricsMatchTrack(lyricsData, nowPlayingTrack) ? lyricsData!.lines : []}
-              position={playbackPosition?.position ?? null}
-              playing={playbackPosition?.playing ?? false}
-            />
-          ) : null}
-
-          {showCompactHeaderMetrics || showMicroTokenCounter ? (
-            <div
-              className={`header-metrics${
-                isMicro ? " is-micro-metrics" : ""
-              }${isPresentationTransition ? ` is-${phase}` : ""}`}
-            >
-              {showCompactHeaderMetrics && compactRightSessions.length > 0 ? (
-                <CompactSessionStack
-                  placement="right"
-                  sessions={compactRightSessions}
-                  overflowCount={compactRightOverflow}
-                  activeRequest={activeRequest}
-                  justResolved={justResolved}
-                />
-              ) : null}
-              {showCompactTokenCounter ? (
-                <TokenCounter
-                  value={
-                    foldedCounterDisplay === "cost"
-                      ? activeSessionCostTotal
-                      : activeSessionTokenTotal
-                  }
-                  usage={activeSessionTokens}
-                  variant={isMicro ? "micro" : "compact"}
-                  displayMode={foldedCounterDisplay}
-                  suppressAnimations={isPresentationTransition}
-                  sessionCount={sessions.length}
-                  maxCompactIcons={maxCompactIcons}
-                  compactTokenLevel={compactHeaderLayout.tokenCompactLevel}
-                />
-              ) : null}
-              {showCompactMediaIndicator && nowPlayingTrack?.artworkBase64 ? (
-                <img
-                  ref={compactMediaThumbRef}
-                  className="compact-media-thumb"
-                  src={`data:image/jpeg;base64,${nowPlayingTrack.artworkBase64}`}
-                  alt=""
-                  draggable={false}
-                />
-              ) : null}
-              {showCompactHeaderMetrics && snapshot.pendingCount > 0 ? (
-                <span className="pending-badge-slot">
-                  <span
-                    className="pending-badge"
-                    aria-label={t("header.pendingAria", { count: snapshot.pendingCount })}
-                  >
-                    {snapshot.pendingCount}
-                  </span>
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-
-          {isExpandedChrome &&
-          panelView.kind !== "session" &&
-          panelView.kind !== "subagent" &&
-          panelView.kind !== "subagentList" ? (
-          <div
-            className="header-actions"
-            data-no-drag
-            ref={menuRef}
-            onMouseDown={handleControlMouseDown}
-          >
-            {showExpandedTokenCounter && !isDormant ? (
-              <TokenCounter
-                value={
-                  expandedCounterDisplay === "cost" ? dailyCostTotal : dailyTokenTotal
-                }
-                usage={dailyTokens}
-                variant="expanded"
-                displayMode={expandedCounterDisplay}
-                onClick={handleOpenTokensFromCounter}
-              />
-            ) : null}
-            <button
-              className={`icon-button header-stash-btn${stagedCount > 0 ? " has-stash" : ""}`}
-              type="button"
-              onClick={handleOpenFileStation}
-              aria-label={t("fileStation.title")}
-              tabIndex={isExpandedChrome ? 0 : -1}
-            >
-              <Inbox size={16} />
-              {stagedCount > 0 ? (
-                <span className="header-stash-badge">
-                  {stagedCount > 99 ? "99+" : stagedCount}
-                </span>
-              ) : null}
-            </button>
-            <button
-              className="icon-button"
-              type="button"
-              onClick={handleOpenClipboard}
-              aria-label={t("clipboard.title")}
-              tabIndex={isExpandedChrome ? 0 : -1}
-            >
-              <ClipboardList size={16} />
-            </button>
-            <button
-              className="icon-button"
-              type="button"
-              onClick={handleOpenHistory}
-              aria-label={t("history.title")}
-              tabIndex={isExpandedChrome ? 0 : -1}
-            >
-              <History size={16} />
-            </button>
-            <button
-              className="icon-button"
-              type="button"
-              onClick={() => collapseIsland(true)}
-              aria-label={t("header.collapse")}
-              tabIndex={isExpandedChrome ? 0 : -1}
-            >
-              <ChevronUp size={16} />
-            </button>
-            <button
-              className={`icon-button${updateAvailable ? " has-update" : ""}`}
-              type="button"
-              onClick={() => setMenuOpen((open) => !open)}
-              aria-label={t("header.moreOptions")}
-              aria-expanded={menuOpen}
-              tabIndex={isExpandedChrome ? 0 : -1}
-            >
-              <Ellipsis size={17} />
-            </button>
-            {menuOpen ? (
-              <div className="more-menu" role="menu">
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleOpenHooks}
-                >
-                  <Download size={14} />
-                  {t("menu.agentHooks")}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleArchiveAll}
-                >
-                  <Archive size={14} />
-                  {t("menu.archiveAll")}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleOpenSettings}
-                >
-                  <Settings2 size={14} />
-                  {t("menu.settings")}
-                </button>
-                {updateDownloading ? (
-                  <button type="button" role="menuitem" disabled>
-                    <RefreshCw size={14} />
-                    {t("update.downloading", {
-                      percent: Math.round(updateDownloadProgress * 100),
-                    })}
-                  </button>
-                ) : updateAvailable ? (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="accent"
-                    onClick={handleInstallUpdate}
-                  >
-                    <ArrowUpCircle size={14} />
-                    {t("update.updateTo", { version: updateVersion })}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={handleCheckForUpdates}
-                    disabled={updateChecking}
-                  >
-                    <RefreshCw size={14} />
-                    {updateChecking ? t("update.checking") : t("update.checkForUpdates")}
-                  </button>
-                )}
-                <div className="menu-separator" />
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="danger"
-                  onClick={handleQuit}
-                >
-                  <Power size={14} />
-                  {t("menu.quit")}
-                </button>
-              </div>
-            ) : null}
-          </div>
-          ) : null}
-
-        </header>
+        <IslandHeader
+    t={t}
+    phase={phase}
+    panelView={panelView}
+    isExpanded={isExpanded}
+    isExpandedChrome={isExpandedChrome}
+    isPresentationTransition={isPresentationTransition}
+    isMicro={isMicro}
+    isDormant={isDormant}
+    isSubview={isSubview}
+    showPanelAgentTabs={showPanelAgentTabs}
+    showAgentTabs={showAgentTabs}
+    showCollapsedActivityStrip={showCollapsedActivityStrip}
+    showCompactHeaderMetrics={showCompactHeaderMetrics}
+    showMicroTokenCounter={showMicroTokenCounter}
+    showCompactTokenCounter={showCompactTokenCounter}
+    showCompactMediaIndicator={showCompactMediaIndicator}
+    showCompactNotchSpacer={showCompactNotchSpacer}
+    showLyricsMarquee={showLyricsMarquee}
+    startWindowDrag={startWindowDrag}
+    atollIndicatorRef={atollIndicatorRef}
+    menuRef={menuRef}
+    compactMediaThumbRef={compactMediaThumbRef}
+    appLogoState={appLogoState}
+    hooksNeedAttention={hooksNeedAttention}
+    hookAttention={hookAttention}
+    updateAvailable={updateAvailable}
+    updateVersion={updateVersion}
+    handleOpenHooks={handleOpenHooks}
+    collapsedHeaderLogo={collapsedHeaderLogo}
+    menuBarLogoSize={menuBarLogoSize}
+    idleIntervalMin={idleIntervalMin}
+    idleDurationMin={idleDurationMin}
+    logoReaction={logoReaction}
+    logoReactionKey={logoReactionKey}
+    logoStashLevel={logoStashLevel}
+    dragOverIsland={dragOverIsland}
+    compactLeftSessions={compactLeftSessions}
+    compactRightSessions={compactRightSessions}
+    compactLeftOverflow={compactLeftOverflow}
+    compactRightOverflow={compactRightOverflow}
+    activeRequest={activeRequest}
+    justResolved={justResolved}
+    subviewSession={subviewSession}
+    subviewSubagent={subviewSubagent}
+    navigateBack={navigateBack}
+    navigateBackFromHooks={navigateBackFromHooks}
+    navigateBackFromTokens={navigateBackFromTokens}
+    navigateBackFromUsage={navigateBackFromUsage}
+    navigateBackToSettingsMain={navigateBackToSettingsMain}
+    hooksBackTarget={hooksBackTarget}
+    tokensBackTarget={tokensBackTarget}
+    usageBackTarget={usageBackTarget}
+    collapseIsland={collapseIsland}
+    openAgentApp={openAgentApp}
+    notchMetrics={notchMetrics}
+    tabAgents={tabAgents}
+    selectedAgent={selectedAgent}
+    pendingCountByAgent={pendingCountByAgent}
+    handleSelectAgent={handleSelectAgent}
+    lyricsData={lyricsData}
+    nowPlayingTrack={nowPlayingTrack}
+    playbackPosition={playbackPosition}
+    compactHeaderLayout={compactHeaderLayout}
+    activeSessionTokens={activeSessionTokens}
+    activeSessionTokenTotal={activeSessionTokenTotal}
+    activeSessionCostTotal={activeSessionCostTotal}
+    dailyTokens={dailyTokens}
+    dailyTokenTotal={dailyTokenTotal}
+    dailyCostTotal={dailyCostTotal}
+    foldedCounterDisplay={foldedCounterDisplay}
+    expandedCounterDisplay={expandedCounterDisplay}
+    maxCompactIcons={maxCompactIcons}
+    handleControlMouseDown={handleControlMouseDown}
+    handleOpenTokensFromCounter={handleOpenTokensFromCounter}
+    stagedCount={stagedCount}
+    handleOpenFileStation={handleOpenFileStation}
+    handleOpenClipboard={handleOpenClipboard}
+    handleOpenHistory={handleOpenHistory}
+    menuOpen={menuOpen}
+    setMenuOpen={setMenuOpen}
+    handleArchiveAll={handleArchiveAll}
+    handleOpenSettings={handleOpenSettings}
+    updateDownloading={updateDownloading}
+    updateDownloadProgress={updateDownloadProgress}
+    updateChecking={updateChecking}
+    handleInstallUpdate={handleInstallUpdate}
+    handleCheckForUpdates={handleCheckForUpdates}
+    handleQuit={handleQuit}
+    online={snapshot.online}
+    pendingCount={snapshot.pendingCount}
+    sessionsCount={sessions.length}
+        />
 
         {!isPresentationTransition ? (
           <div
@@ -2660,7 +889,114 @@ export function App() {
             data-nav={navDirection ?? undefined}
           >
             <div key={panelAnimKey} className="island-panel-content">
-              {renderPanel()}
+                          <IslandPanelRouter
+              panelView={panelView}
+              sessions={sessions}
+              sessionRequests={sessionRequests}
+              navigationSeqRef={navigationSeqRef}
+              setPanelView={setPanelView}
+              applySnapshot={applySnapshot}
+              hookHealth={snapshot.hookHealth}
+              hookBusy={hookBusy}
+              hookInstallError={hookInstallError}
+              handleInstallClaudeHooks={handleInstallClaudeHooks}
+              handleInstallCodexHooks={handleInstallCodexHooks}
+              handleInstallZcodeHooks={handleInstallZcodeHooks}
+              handleInstallGeminiHooks={handleInstallGeminiHooks}
+              handleInstallOpencodeHooks={handleInstallOpencodeHooks}
+              handleInstallCursorHooks={handleInstallCursorHooks}
+              handleInstallAllHooks={handleInstallAllHooks}
+              handleUninstallClaudeHooks={handleUninstallClaudeHooks}
+              handleUninstallCodexHooks={handleUninstallCodexHooks}
+              handleUninstallZcodeHooks={handleUninstallZcodeHooks}
+              handleUninstallGeminiHooks={handleUninstallGeminiHooks}
+              handleUninstallOpencodeHooks={handleUninstallOpencodeHooks}
+              handleUninstallCursorHooks={handleUninstallCursorHooks}
+              handleUninstallHooks={handleUninstallHooks}
+              handleRemoveCompetingClaudeHooks={handleRemoveCompetingClaudeHooks}
+              selectedAgentRequest={selectedAgentRequest}
+              busyDecision={busyDecision}
+              filteredSessions={filteredSessions}
+              resolveActive={resolveActive}
+              collapseIsland={collapseIsland}
+              justResolved={justResolved}
+              isExpandedChrome={isExpandedChrome}
+              navigateToSession={navigateToSession}
+              navigateToSubagent={navigateToSubagent}
+              navigateToSubagentList={navigateToSubagentList}
+              handleArchiveSession={handleArchiveSession}
+              handleArchiveCompletedSubagents={handleArchiveCompletedSubagents}
+              handlePinSession={handlePinSession}
+              maxSubagentDisplay={maxSubagentDisplay}
+              setMaxSubagentDisplay={setMaxSubagentDisplay}
+              clipboardHistory={clipboardHistory}
+              clipboardEnabled={clipboardEnabled}
+              setClipboardHistory={setClipboardHistory}
+              stagedFiles={stagedFiles}
+              removeStaged={removeStaged}
+              clearStaged={clearStaged}
+              playStashReaction={playStashReaction}
+              dailyTokens={dailyTokens}
+              dailyTokensByModel={snapshot.dailyTokensByModel}
+              heatmapDisplay={heatmapDisplay}
+              pricingRates={pricingRates}
+              pricingModels={pricingModels}
+              setPricingModels={setPricingModels}
+              foldedCounterDisplay={foldedCounterDisplay}
+              expandedCounterDisplay={expandedCounterDisplay}
+              settingsBadgeDisplay={settingsBadgeDisplay}
+              setFoldedCounterDisplay={setFoldedCounterDisplay}
+              setExpandedCounterDisplay={setExpandedCounterDisplay}
+              setSettingsBadgeDisplay={setSettingsBadgeDisplay}
+              setHeatmapDisplay={setHeatmapDisplay}
+              maxCompactIcons={maxCompactIcons}
+              maxCompactIconLimit={maxCompactIconLimit}
+              setMaxCompactIcons={setMaxCompactIcons}
+              supportsMicroIsland={supportsMicroIsland}
+              foldedIslandSize={foldedIslandSize}
+              handleChangeFoldedIslandSize={handleChangeFoldedIslandSize}
+              compactIndicator={compactIndicator}
+              setCompactIndicatorState={setCompactIndicatorState}
+              preferredMonitorName={preferredMonitorName}
+              handleChangePreferredMonitor={handleChangePreferredMonitor}
+              mediaCardEnabled={mediaCardEnabled}
+              handleChangeMediaCardEnabled={handleChangeMediaCardEnabled}
+              artworkBackdropEnabled={artworkBackdropEnabled}
+              handleChangeArtworkBackdropEnabled={handleChangeArtworkBackdropEnabled}
+              lyricsEnabled={lyricsEnabled}
+              handleChangeLyricsEnabled={handleChangeLyricsEnabled}
+              clipboardLimit={clipboardLimit}
+              handleChangeClipboardEnabled={handleChangeClipboardEnabled}
+              handleChangeClipboardLimit={handleChangeClipboardLimit}
+              retentionMinutes={retentionMinutes}
+              setRetentionMinutes={setRetentionMinutes}
+              subagentRetentionMinutes={subagentRetentionMinutes}
+              setSubagentRetentionMinutes={setSubagentRetentionMinutes}
+              idleIntervalMin={idleIntervalMin}
+              setIdleIntervalMin={setIdleIntervalMin}
+              idleDurationMin={idleDurationMin}
+              setIdleDurationMin={setIdleDurationMin}
+              approvalNoticeMode={approvalNoticeMode}
+              handleChangeApprovalNoticeMode={handleChangeApprovalNoticeMode}
+              globalShortcutView={globalShortcutView}
+              handleChangeGlobalShortcutConfig={handleChangeGlobalShortcutConfig}
+              language={language}
+              handleChangeLanguage={handleChangeLanguage}
+              handleOpenHooksFromSettings={handleOpenHooksFromSettings}
+              handleOpenTokensFromSettings={handleOpenTokensFromSettings}
+              handleOpenUsageFromSettings={handleOpenUsageFromSettings}
+              openSettingsSubpage={openSettingsSubpage}
+              settingsTodayLabel={settingsTodayLabel}
+              usageDisplaySummary={usageDisplaySummary}
+              hooksSetupSummary={hooksSetupSummary}
+              hooksNeedAttention={hooksNeedAttention}
+              hooksNeedSetup={hooksNeedSetup}
+              hookHealthAnalysis={hookHealthAnalysis}
+              handleOpenHooks={handleOpenHooks}
+              launchAtLogin={launchAtLogin}
+              launchAtLoginBusy={launchAtLoginBusy}
+              handleChangeLaunchAtLogin={handleChangeLaunchAtLogin}
+            />
             </div>
             {isExpandedChrome && mediaCardEnabled && nowPlayingTrack ? (
               <div className="island-panel-footer">
