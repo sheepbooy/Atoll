@@ -512,85 +512,25 @@
   flex-shrink: 0;
 }
 
+/* ─── Reduced motion ──────────────────────────────────────────── */
+/* 全局降级：所有动画/过渡压缩到 1ms 且只播一遍——保留 both/forwards
+   终态（enter 类动画直接落在最终帧），无限循环的装饰动画随之停止，
+   新增动画组件无需再手动维护 selector 清单。
+   JS 编排定时器经 animationTiming.motionDelay() 同步归零；原生窗口
+   动画由 Rust 端 prefers_reduced_motion() 直接 snap。
+   需要保留的例外在下方显式声明。 */
 @media (prefers-reduced-motion: reduce) {
-  .island,
-  .island-panel,
-  .island-panel-content,
-  .island-header,
-  .agent-slot,
-  .agent-dot,
-  .header-meta,
-  .header-metrics,
-  .pending-badge-slot,
-  .pending-badge,
-  .token-odo,
-  .stagger-child,
-  .session-item,
-  .decision-button,
-  .approval-view {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
     transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
   }
 
-  .pending-badge,
-  .session-pending-badge,
-  .listener-dot.online::after,
-  .agent-dot::after,
-  .island.has-pending::after,
-  .risk-pill.danger > svg,
-  .idle-icon,
-  .install-button::before,
-  .atoll-logo,
-  .atoll-logo *,
-  .compact-session-dot,
-  .compact-session-dot .clawd,
-  .compact-session-dot .codex,
-  .compact-session-dot .cursor-mascot,
-  .token-counter-tooltip,
-  .token-counter-wrap--compact.token-counter-wrap--live .token-counter,
-  .token-counter-wrap--compact.token-counter-wrap--settle .token-counter,
-  .token-counter-wrap--micro.token-counter-wrap--live .token-counter,
-  .token-counter-wrap--micro.token-counter-wrap--settle .token-counter,
-  .token-counter-wrap--expanded.token-counter-wrap--settle .pixel-display,
-  .token-odo-reel-strip,
-  .token-odo-roll-out,
-  .token-odo-roll-in,
-  .token-odo-roll-enter,
-  .token-counter-delta,
-  .token-counter-mark--compact,
-  .token-counter-mark--micro,
-  .clawd,
-  .clawd *,
-  .codex,
-  .codex *,
-  .cursor-mascot,
-  .cursor-mascot *,
-  .more-menu,
-  .island-panel-content,
-  .stagger-child,
-  .session-item,
-  .approval-view,
-  .approval-view.is-arrive,
-  .approval-view.is-resolving-approve,
-  .approval-view.is-resolving-deny,
-  .decision-button::after,
-  .token-heatmap-cell,
-  .token-heatmap-view.is-settled .token-heatmap-cell,
-  .token-heatmap-trend-line,
-  .token-heatmap-view.is-settled .token-heatmap-trend-line,
-  .token-heatmap-trend-area,
-  .token-heatmap-view.is-settled .token-heatmap-trend-area,
-  .island.is-panel-exiting .island-panel {
-    animation: none !important;
-  }
-
-  .lyrics-marquee__line,
-  .lyrics-marquee__gap,
-  .island-header.has-lyrics .compact-session-dot,
-  .atoll-takeover,
-  .atoll-takeover-logo {
-    animation: none !important;
-  }
+  /* 歌词行瞬时切换，整体调暗提示“仍在播放”。 */
   .lyrics-marquee {
     opacity: 0.55;
   }

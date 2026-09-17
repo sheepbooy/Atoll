@@ -43,7 +43,9 @@ describe("atoll logo CSS/TS timing sync", () => {
     }
   });
 
-  it("reduced-motion block covers the atoll logo", () => {
-    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]{0,600}\.atoll-logo/s);
+  it("reduced-motion coverage is global (no curated selector list)", () => {
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\*,\s*\*::before,\s*\*::after\s*\{/,
+    );
   });
 });

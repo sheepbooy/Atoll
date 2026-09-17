@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ATOLL_ENTER_MS, ATOLL_EXIT_MS, ATOLL_REACTION_MS } from "./atollTransitions";
+import { prefersReducedMotion } from "./animationTiming";
 import { IDLE_EASTER_EGG_ACTIVITIES } from "./logoStates";
 import { useAtollPhase } from "./useAtollPhase";
 
@@ -94,11 +95,6 @@ const ACTIVITY_EYES: Record<AtollActivity, { base: EyeVariant; alt: EyeVariant[]
   music: { base: "happy", alt: ["wide"] },
   gaming: { base: "normal", alt: ["wide", "happy", "closed"] },
 };
-
-function prefersReducedMotion(): boolean {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
 
 function EyeSet({ variant, blinking, offsetX }: { variant: EyeVariant; blinking: boolean; offsetX: number }) {
   const closed = variant === "closed" || blinking;

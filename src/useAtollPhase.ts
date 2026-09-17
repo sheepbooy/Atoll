@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { AtollActivity } from "./AtollLogo";
 import { isAppStatePose } from "./logoStates";
 import { ATOLL_ENTER_MS, ATOLL_EXIT_MS, type AtollPhase } from "./atollTransitions";
+import { motionDelay } from "./animationTiming";
 
 function initialPhase(targetAct: AtollActivity): AtollPhase {
   if (targetAct === "idle" || isAppStatePose(targetAct)) return "loop";
@@ -37,7 +38,7 @@ export function useAtollPhase(targetAct: AtollActivity) {
     enterTimerRef.current = window.setTimeout(() => {
       enterTimerRef.current = null;
       setPhase("loop");
-    }, ATOLL_ENTER_MS);
+    }, motionDelay(ATOLL_ENTER_MS));
     return clearEnterTimer;
   }, [phase]);
 
@@ -58,7 +59,7 @@ export function useAtollPhase(targetAct: AtollActivity) {
         transitionTimerRef.current = null;
         setRenderAct("idle");
         setPhase("loop");
-      }, ATOLL_EXIT_MS);
+      }, motionDelay(ATOLL_EXIT_MS));
       return;
     }
 
@@ -68,7 +69,7 @@ export function useAtollPhase(targetAct: AtollActivity) {
         transitionTimerRef.current = null;
         setRenderAct(targetAct);
         setPhase("enter");
-      }, ATOLL_EXIT_MS);
+      }, motionDelay(ATOLL_EXIT_MS));
       return;
     }
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ATOLL_REACTION_MS } from "../atollTransitions";
+import { motionDelay } from "../animationTiming";
 import { eatReactionForCount } from "../fileStationTiers";
 import type { AtollReaction } from "../AtollLogo";
 import { manageAsyncUnlisten } from "../asyncUnlisten";
@@ -51,7 +52,7 @@ export function useFileStation(): FileStationApi {
     window.clearTimeout(reactionTimerRef.current);
     reactionTimerRef.current = window.setTimeout(() => {
       setStashReaction(null);
-    }, ATOLL_REACTION_MS[reaction]);
+    }, motionDelay(ATOLL_REACTION_MS[reaction]));
   }, []);
 
   useEffect(() => () => window.clearTimeout(reactionTimerRef.current), []);
