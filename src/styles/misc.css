@@ -714,6 +714,7 @@
   max-height: 2.3em;
   overflow: hidden;
   animation: lyrics-fade-up 400ms var(--ease-out) both;
+  will-change: transform, opacity;
 }
 
 /* Instrumental gaps (intro/interlude): keeps the middle column occupied

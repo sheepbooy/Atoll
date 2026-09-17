@@ -776,6 +776,7 @@
 }
 
 .pending-badge {
+  position: relative;
   display: inline-flex;
   min-width: 24px;
   height: 24px;
@@ -795,8 +796,18 @@
   will-change: transform;
   transition: transform var(--duration-expand) var(--ease-window);
   --breathe-color: rgba(248, 221, 160, 0.5);
-  --breathe-color-end: rgba(248, 221, 160, 0);
-  animation: breathe 2.2s ease-in-out infinite;
+}
+
+/* 雷达环呼吸：静态阴影在 ::after 上，动画只动 transform/opacity。 */
+.pending-badge::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 4px var(--breathe-color);
+  animation: breathe-ring 2.2s ease-in-out infinite;
+  will-change: transform, opacity;
+  pointer-events: none;
 }
 
 .is-expanded .pending-badge {

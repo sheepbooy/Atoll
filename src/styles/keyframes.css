@@ -28,9 +28,11 @@
   to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 
-@keyframes breathe {
-  0%, 100% { box-shadow: 0 0 0 0 var(--breathe-color, rgba(248, 221, 160, 0.45)); }
-  50% { box-shadow: 0 0 0 5px var(--breathe-color-end, rgba(248, 221, 160, 0)); }
+/* 待审批雷达环：静态 box-shadow 挂在 ::after 上，靠 transform/opacity
+   走合成器（动画 box-shadow 会每帧触发重绘）。 */
+@keyframes breathe-ring {
+  0%, 100% { transform: scale(0.92); opacity: 0.85; }
+  55% { transform: scale(1.28); opacity: 0; }
 }
 
 @keyframes edge-glow {

@@ -710,6 +710,7 @@
 }
 
 .session-pending-badge {
+  position: relative;
   display: inline-flex;
   min-width: 20px;
   height: 20px;
@@ -723,7 +724,17 @@
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   --breathe-color: rgba(248, 221, 160, 0.5);
-  --breathe-color-end: rgba(248, 221, 160, 0);
-  animation: breathe 2.2s ease-in-out infinite;
+}
+
+/* 雷达环呼吸：同 .pending-badge，静态阴影 + transform/opacity 合成层动画。 */
+.session-pending-badge::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 4px var(--breathe-color);
+  animation: breathe-ring 2.2s ease-in-out infinite;
+  will-change: transform, opacity;
+  pointer-events: none;
 }
 

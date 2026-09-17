@@ -25,6 +25,9 @@
   box-shadow: none;
   overflow: hidden;
   pointer-events: auto;
+  /* width/height/left/top 属布局属性，通常应避免过渡；这里与原生窗口
+     resize 编排耦合（窗口本体在动，CSS 必须逐帧跟上），属有意保留。
+     内部装饰动画一律走 transform/opacity 合成层。 */
   transition:
     width var(--duration-expand) var(--ease-window),
     height var(--duration-expand) var(--ease-window),
