@@ -18,7 +18,11 @@ use crate::{
 };
 
 pub(crate) const COMPACT_WINDOW_WIDTH: f64 = 132.0;
-pub(crate) const COMPACT_WINDOW_HEIGHT: f64 = 36.0;
+// Collapsed/dormant capsule height in logical points — the standard camera-
+// housing (notch) height, applied uniformly whether or not the current
+// display reports a detectable notch. Real notched displays override this
+// with their live notch height.
+pub(crate) const NOTCH_BAND_HEIGHT: f64 = 32.0;
 /// Windows-only super-collapsed strip; macOS never selects this mode.
 pub(crate) const MICRO_WINDOW_WIDTH: f64 = 72.0;
 pub(crate) const MICRO_WINDOW_HEIGHT: f64 = 24.0;
@@ -30,9 +34,7 @@ pub(crate) const EXPANDED_PLAN_WINDOW_HEIGHT: f64 = 680.0;
 pub(crate) const EXPANDED_SETTINGS_WINDOW_WIDTH: f64 = 680.0;
 pub(crate) const EXPANDED_SETTINGS_WINDOW_HEIGHT: f64 = 680.0;
 pub(crate) const MIN_COMPACT_WINDOW_WIDTH: f64 = 72.0;
-// Dormant pill height (width spans the notch + side padding on notched displays).
-pub(crate) const DORMANT_WINDOW_HEIGHT: f64 = 36.0;
-// Extra width beyond the notch on each side so edges are visible.
+// Dormant pill width spans the notch + side padding on notched displays.
 pub(crate) const DORMANT_NOTCH_PADDING: f64 = 30.0;
 pub(crate) const MAX_ACTIVE_SUBAGENTS: usize = 512;
 pub(crate) const WINDOW_ANIMATION_DURATION: Duration = Duration::from_millis(420);
@@ -60,6 +62,13 @@ pub(crate) const FALLBACK_NOTCH_HEIGHT: f64 = 38.0;
 // Extra logical points added above the reported safe-area inset so the
 // collapsed capsule fully covers the physical camera housing.
 pub(crate) const NOTCH_COVER_PADDING: f64 = 16.0;
+// Bottom corner radius of the physical camera housing (logical points).
+// Apple does not publish this value; 10pt matches community measurements of
+// the MacBook Pro notch curvature and is applied uniformly so the capsule
+// silhouette reads as a notch extension on every display.
+pub(crate) const FALLBACK_NOTCH_CORNER_RADIUS: f64 = 10.0;
+// Bottom corner radius of the expanded island panel (logical points).
+pub(crate) const EXPANDED_WINDOW_CORNER_RADIUS: f64 = 22.0;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PermissionRequest {
@@ -404,4 +413,31 @@ pub(crate) struct NotchMetrics {
     pub(crate) left_area_width: f64,
     #[serde(default)]
     pub(crate) right_area_width: f64,
+    /// Bottom corner radius of the physical camera housing (logical points),
+    /// calibrated against the real notch so the collapsed capsule silhouette
+    /// matches it.
+    #[serde(default)]
+    pub(crate) corner_radius: f64,
+}
+
+/// Collapsed/dormant band height in logical points: the notch height. On
+/// notched panels the live camera-housing height is used so the capsule's
+/// bottom edge sits flush with the notch bottom; everywhere else the
+/// standard notch band height keeps the same silhouette.
+pub(crate) fn collapsed_band_height(notch: &NotchMetrics) -> f64 {
+    if notch.has_notch && notch.height > 0.0 {
+        notch.height
+    } else {
+        NOTCH_BAND_HEIGHT
+    }
+}
+
+/// Bottom corner radius for the collapsed capsule (logical points), matched
+/// to the physical notch curvature.
+pub(crate) fn collapsed_corner_radius(notch: &NotchMetrics) -> f64 {
+    if notch.corner_radius > 0.0 {
+        notch.corner_radius
+    } else {
+        FALLBACK_NOTCH_CORNER_RADIUS
+    }
 }

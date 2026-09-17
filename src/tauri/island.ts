@@ -79,6 +79,8 @@ export interface NotchMetrics {
   height: number;
   leftAreaWidth?: number;
   rightAreaWidth?: number;
+  /** Notch bottom corner radius (logical px) for the collapsed capsule. */
+  cornerRadius?: number;
 }
 
 export async function getNotchMetrics(): Promise<NotchMetrics> {
@@ -87,7 +89,14 @@ export async function getNotchMetrics(): Promise<NotchMetrics> {
   }
 
   if (getDemoMode() === "compact" || getDemoMode() === "gif") {
-    return { hasNotch: true, width: 180, height: 32, leftAreaWidth: 120, rightAreaWidth: 120 };
+    return {
+      hasNotch: true,
+      width: 220,
+      height: 38,
+      leftAreaWidth: 120,
+      rightAreaWidth: 120,
+      cornerRadius: 10,
+    };
   }
 
   return { hasNotch: false, width: 0, height: 0 };

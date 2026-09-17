@@ -298,8 +298,8 @@ import {
   PANEL_GLOW,
 } from "./agents";
 import {
-  COMPACT_WINDOW_HEIGHT,
   applyWindowMetrics,
+  collapsedBandHeight,
   compactPresentationKey,
   microPresentationWidth,
   shouldRestInMicro,
@@ -1262,17 +1262,18 @@ export function App() {
 
   useEffect(() => {
     if (!isGifCaptureMode()) return;
+    const compactHeight = collapsedBandHeight(notchMetrics);
     document.documentElement.style.setProperty(
       "--gif-window-w",
       `${collapsedWindowWidth}px`,
     );
     document.documentElement.style.setProperty(
       "--gif-window-h",
-      `${COMPACT_WINDOW_HEIGHT}px`,
+      `${compactHeight}px`,
     );
     document.documentElement.dataset.gifCompactWidth = String(collapsedWindowWidth);
-    document.documentElement.dataset.gifCompactHeight = String(COMPACT_WINDOW_HEIGHT);
-  }, [collapsedWindowWidth]);
+    document.documentElement.dataset.gifCompactHeight = String(compactHeight);
+  }, [collapsedWindowWidth, notchMetrics]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -1691,7 +1692,13 @@ export function App() {
   const panelGlow = panelGlowAgent
     ? PANEL_GLOW[panelGlowAgent]
     : "rgba(111, 220, 255, 0.14)";
-  const menuBarLogoSize = isExpanded ? 36 : isMicro ? 24 : 34;
+  // Logo shrinks on short menu-bar bands (e.g. 24pt on non-notched displays)
+  // so it never clips vertically inside the collapsed capsule.
+  const menuBarLogoSize = isExpanded
+    ? 36
+    : isMicro
+      ? 24
+      : Math.min(34, Math.max(18, Math.round(collapsedBandHeight(notchMetrics)) - 4));
   const subviewSession =
     panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList"
       ? sessions.find((session) => session.sessionId === panelView.sessionId)

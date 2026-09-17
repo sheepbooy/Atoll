@@ -464,7 +464,7 @@ pub(crate) fn apply_island_window_mode(
         // that island_window_logical_size applies does not distort the ratio.
         compact_size: PhysicalSize::new(
             (COMPACT_WINDOW_WIDTH * scale_factor).round() as u32,
-            (COMPACT_WINDOW_HEIGHT * scale_factor).round() as u32,
+            (collapsed_band_height(&notch) * scale_factor).round() as u32,
         ),
         monitor_top_y: monitor_top,
         monitor_center_x: monitor_position.x + monitor_size.width / 2.0,
@@ -570,7 +570,7 @@ pub(crate) fn animate_island_window_mode(
         // already-expanded sizes (idle → settings/tokens) stays cubic so AppKit
         // never has to grow past the target and shrink back — that path felt
         // stuttery under heavy WebView content.
-        let from_collapsed = start_logical_size.height <= COMPACT_WINDOW_HEIGHT + 1.0;
+        let from_collapsed = start_logical_size.height <= collapsed_band_height(&notch) + 1.0;
         let expanding = target_logical_size.width > start_logical_size.width
             || target_logical_size.height > start_logical_size.height;
         let eased = if expanding && from_collapsed {
@@ -724,18 +724,19 @@ pub(crate) fn island_window_logical_size(
                 FALLBACK_NOTCH_WIDTH
             };
             let w = reference_notch + 2.0 * DORMANT_NOTCH_PADDING;
-            LogicalSize::new(w, DORMANT_WINDOW_HEIGHT)
+            LogicalSize::new(w, collapsed_band_height(&notch))
         }
         IslandWindowMode::Compact => {
             // Compact sits in the menu-bar band (same as dormant) — no extra_top.
             // On notched displays the capsule must be at least as wide as the
-            // camera housing so it visually fuses with it (Dynamic-Island style).
+            // camera housing so it visually fuses with it (Dynamic-Island style),
+            // and exactly as tall so its bottom edge is flush with the notch.
             let w = if notch.has_notch {
                 compact_width.max(notch.width)
             } else {
                 compact_width
             };
-            LogicalSize::new(w, COMPACT_WINDOW_HEIGHT)
+            LogicalSize::new(w, collapsed_band_height(&notch))
         }
         IslandWindowMode::Expanded => {
             let w = expanded_window_width(expanded_plan, expanded_settings).max(min_notch_width);

@@ -14,12 +14,16 @@ import {
   type FoldedIslandSize,
 } from "./appTypes";
 
-// Keep in sync with COMPACT_WINDOW_HEIGHT in src-tauri/src/lib.rs.
-export const COMPACT_WINDOW_HEIGHT = 36;
+// Keep in sync with NOTCH_BAND_HEIGHT in src-tauri/src/state.rs.
+export const NOTCH_BAND_HEIGHT = 32;
 // Keep in sync with MICRO_WINDOW_HEIGHT in src-tauri/src/lib.rs.
 export const MICRO_WINDOW_HEIGHT = 24;
 // Keep in sync with NOTCH_COVER_PADDING in src-tauri/src/lib.rs.
 export const NOTCH_COVER_PADDING = 16;
+// Notch-matched corner radius (community-measured; refine via
+// scripts/calibrate_notch_radius.py). Keep in sync with
+// FALLBACK_NOTCH_CORNER_RADIUS in src-tauri/src/state.rs.
+export const FALLBACK_NOTCH_CORNER_RADIUS = 10;
 
 // Keep in sync with EXPANDED_IDLE_WINDOW_HEIGHT in src-tauri/src/lib.rs.
 export const EXPANDED_IDLE_WINDOW_HEIGHT = 240;
@@ -32,10 +36,30 @@ export const EXPANDED_SETTINGS_WINDOW_WIDTH = 680;
 // Keep in sync with EXPANDED_SETTINGS_WINDOW_HEIGHT in src-tauri/src/lib.rs.
 export const EXPANDED_SETTINGS_WINDOW_HEIGHT = 680;
 
+/** Mirrors collapsed_band_height in src-tauri: the live notch height on
+ * notched displays (pill bottom flush with the housing), otherwise the
+ * standard notch band height — same silhouette everywhere. */
+export function collapsedBandHeight(notch: NotchMetrics): number {
+  if (notch.hasNotch && notch.height > 0) return notch.height;
+  return NOTCH_BAND_HEIGHT;
+}
+
+/** Mirrors collapsed_corner_radius in src-tauri: notch-matched bottom
+ * corner radius for the collapsed capsule. */
+export function collapsedCornerRadius(notch: NotchMetrics): number {
+  return notch.cornerRadius && notch.cornerRadius > 0
+    ? notch.cornerRadius
+    : FALLBACK_NOTCH_CORNER_RADIUS;
+}
+
 export function applyWindowMetrics(notch: NotchMetrics) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
-  root.style.setProperty("--compact-height", `${COMPACT_WINDOW_HEIGHT}px`);
+  root.style.setProperty("--compact-height", `${collapsedBandHeight(notch)}px`);
+  root.style.setProperty(
+    "--collapsed-radius",
+    `${collapsedCornerRadius(notch)}px`,
+  );
   root.style.setProperty("--micro-height", `${MICRO_WINDOW_HEIGHT}px`);
   root.style.setProperty(
     "--expanded-idle-height",

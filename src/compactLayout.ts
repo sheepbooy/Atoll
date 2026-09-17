@@ -182,10 +182,14 @@ export function computeCompactHeaderLayout(
       if (rightWidth + COMPACT_NOTCH_INNER_GAP > paneBudgets.right + 0.5) continue;
     }
 
-    // Notch bars split icons around the camera housing. No-notch bars keep
-    // every session on the left so CSS can space them evenly in one row.
+    // Notch bars balance the rendered wing widths around the camera housing
+    // (the logo/listener live in the left wing, the token counter in the
+    // right, so equal icon counts alone are not visually symmetric).
+    // No-notch bars keep every session on the left so CSS can space them
+    // evenly in one row. The width penalty stays below one token-compression
+    // tier so readability still wins over perfect symmetry.
     const sidePreference = notchMetrics.hasNotch
-      ? -Math.abs(left - right) * 1_000 + left
+      ? -Math.abs(leftWidth - rightWidth) * 20 - Math.abs(left - right)
       : left * 1_000 + right * 100;
     const score =
       (left + right) * 1_000_000 -

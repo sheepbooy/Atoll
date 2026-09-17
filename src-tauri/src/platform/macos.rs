@@ -5,7 +5,8 @@ use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewWindow};
 
 use super::ScreenGeometry;
 use crate::{
-    AppState, HomeWindowBounds, NotchMetrics, COMPACT_WINDOW_HEIGHT, EXPANDED_WINDOW_HEIGHT,
+    collapsed_band_height, collapsed_corner_radius, AppState, HomeWindowBounds, NotchMetrics,
+    EXPANDED_WINDOW_CORNER_RADIUS, EXPANDED_WINDOW_HEIGHT, FALLBACK_NOTCH_CORNER_RADIUS,
     FALLBACK_NOTCH_HEIGHT, FALLBACK_NOTCH_WIDTH,
 };
 
@@ -359,6 +360,7 @@ pub fn detect_notch_metrics(
             },
             left_area_width: aux_left_width,
             right_area_width: aux_right_width,
+            corner_radius: FALLBACK_NOTCH_CORNER_RADIUS,
         }
     })
     .unwrap_or_default()
@@ -459,10 +461,13 @@ pub fn set_island_window_frame_now(
 
         ns_window.setFrame_display(frame, true);
 
-        let height_progress = ((logical_size.height - COMPACT_WINDOW_HEIGHT)
-            / (EXPANDED_WINDOW_HEIGHT - COMPACT_WINDOW_HEIGHT))
+        let collapsed_height = collapsed_band_height(&home.notch);
+        let height_progress = ((logical_size.height - collapsed_height)
+            / (EXPANDED_WINDOW_HEIGHT - collapsed_height))
             .clamp(0.0, 1.0);
-        let corner_radius = 15.0 + 7.0 * height_progress;
+        let collapsed_radius = collapsed_corner_radius(&home.notch);
+        let corner_radius =
+            collapsed_radius + (EXPANDED_WINDOW_CORNER_RADIUS - collapsed_radius) * height_progress;
 
         let panel_ptr = panel_store::get_raw();
         if !panel_ptr.is_null() {
@@ -597,12 +602,17 @@ pub fn apply_island_window_style(window: &tauri::WebviewWindow) {
         eprintln!("[Atoll] step: window properties set");
 
         // Corner mask goes on the panel (where the WKWebView lives)
-        // if it exists, otherwise on the Tauri window as fallback.
+        // if it exists, otherwise on the Tauri window as fallback. The
+        // placeholder radius is replaced with the notch-calibrated value as
+        // soon as the first frame application runs.
         let panel_ptr = panel_store::get_raw();
         if !panel_ptr.is_null() {
-            apply_content_view_corner_mask(&*(panel_ptr as *const NSWindow), 15.0);
+            apply_content_view_corner_mask(
+                &*(panel_ptr as *const NSWindow),
+                FALLBACK_NOTCH_CORNER_RADIUS,
+            );
         } else {
-            apply_content_view_corner_mask(ns_window, 15.0);
+            apply_content_view_corner_mask(ns_window, FALLBACK_NOTCH_CORNER_RADIUS);
         }
         eprintln!("[Atoll] step: apply_macos_island_window_style complete");
     }

@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { NotchMetrics } from "./tauri";
 import {
+  estimateTokenDisplayWidth,
+  formatCompactTokenCount,
+} from "./tokenCounterFormat";
+import {
   ABSOLUTE_MAX_COMPACT_ICONS,
+  COMPACT_ATOLL_LOGO_SLOT,
   COMPACT_HEADER_GAP,
+  COMPACT_LISTENER_SLOT,
   COMPACT_MAX_WINDOW_WIDTH,
   COMPACT_METRICS_GAP,
   COMPACT_NOTCH_INNER_GAP,
+  COMPACT_OUTER_PADDING,
+  COMPACT_OVERFLOW_SLOT,
+  COMPACT_PENDING_BADGE_SLOT,
   COMPACT_SIDE_MIN,
   compactMetricsSessionTokenGap,
   computeCollapsedWindowWidth,
@@ -15,6 +24,7 @@ import {
   computeCompactSideColumnBudget,
   computeMaxCompactIconLimit,
   computeMicroWindowWidth,
+  iconRowWidth,
   MICRO_WINDOW_MIN_WIDTH,
   type CompactHeaderLayout,
 } from "./compactLayout";
@@ -209,10 +219,12 @@ describe("compactLayout session counts (icon limit = 4, notch)", () => {
     { sessions: 2, left: 1, right: 1, overflow: 0, tokenLevel: 0 },
     { sessions: 3, left: 2, right: 1, overflow: 0, tokenLevel: 0 },
     { sessions: 4, left: 2, right: 2, overflow: 0, tokenLevel: 0 },
-    { sessions: 5, left: 2, right: 2, overflow: 1, tokenLevel: 0 },
-    { sessions: 6, left: 2, right: 2, overflow: 2, tokenLevel: 0 },
-    { sessions: 8, left: 2, right: 2, overflow: 4, tokenLevel: 0 },
-    { sessions: 10, left: 2, right: 2, overflow: 6, tokenLevel: 0 },
+    // Beyond 4 visible icons the token counter keeps the right wing wide, so
+    // width balance moves an extra icon left instead of splitting by count.
+    { sessions: 5, left: 3, right: 1, overflow: 1, tokenLevel: 0 },
+    { sessions: 6, left: 3, right: 1, overflow: 2, tokenLevel: 0 },
+    { sessions: 8, left: 3, right: 1, overflow: 4, tokenLevel: 0 },
+    { sessions: 10, left: 3, right: 1, overflow: 6, tokenLevel: 0 },
   ])(
     "$sessions sessions → left=$left right=$right +$overflow",
     ({ sessions, left, right, overflow, tokenLevel }) => {
@@ -288,11 +300,100 @@ describe("compactLayout with pending badge", () => {
   it("still fits 4 sessions with pending count on notch display", () => {
     const layout = computeCompactHeaderLayout(NOTCH_14, 4, 4, 999_999, 3);
 
-    expect(layout.leftIconCount).toBe(2);
-    expect(layout.rightIconCount).toBe(2);
+    // The pending badge widens the right wing, so balance shifts an icon
+    // left; the two rendered wing widths end up nearly equal.
+    expect(layout.leftIconCount).toBe(3);
+    expect(layout.rightIconCount).toBe(1);
     assertLayoutInvariants(NOTCH_14, 4, 4, 999_999, 3, layout);
 
     const width = computeCollapsedWindowWidth(NOTCH_14, 4, 4, 999_999, 3);
     expect(width).toBeLessThanOrEqual(COMPACT_MAX_WINDOW_WIDTH);
+  });
+});
+
+describe("compactLayout wing balance (notch)", () => {
+  /** Reconstructs the rendered wing widths the scorer balances. */
+  function wingWidths(
+    layout: Pick<
+      CompactHeaderLayout,
+      "leftIconCount" | "rightIconCount" | "overflowCount" | "tokenCompactLevel"
+    >,
+    tokenTotal: number,
+    pendingCount: number,
+  ) {
+    const hasToken = tokenTotal > 0;
+    const pendingExtra =
+      pendingCount > 0 ? COMPACT_PENDING_BADGE_SLOT + COMPACT_METRICS_GAP : 0;
+    const left =
+      COMPACT_ATOLL_LOGO_SLOT +
+      COMPACT_LISTENER_SLOT +
+      COMPACT_OUTER_PADDING +
+      iconRowWidth(layout.leftIconCount) +
+      (layout.overflowCount > 0 && layout.rightIconCount === 0
+        ? COMPACT_OVERFLOW_SLOT
+        : 0);
+    const tokenText = formatCompactTokenCount(
+      tokenTotal,
+      layout.tokenCompactLevel,
+      tokenTotal,
+    );
+    const tokenWidth = hasToken
+      ? estimateTokenDisplayWidth(tokenText)
+      : 0;
+    const gap = compactMetricsSessionTokenGap(layout.rightIconCount, hasToken);
+    const right =
+      iconRowWidth(layout.rightIconCount) +
+      (layout.overflowCount > 0 && layout.rightIconCount > 0
+        ? COMPACT_OVERFLOW_SLOT
+        : 0) +
+      gap +
+      tokenWidth +
+      COMPACT_OUTER_PADDING +
+      pendingExtra;
+    return { left, right };
+  }
+
+  it("balances rendered wing widths around the notch, not raw icon counts", () => {
+    const tokenTotal = 123_456;
+    const layout = computeCompactHeaderLayout(NOTCH_14, 5, 4, tokenTotal, 0);
+    const chosen = wingWidths(layout, tokenTotal, 0);
+    // The pill stays visually symmetric: wings within 20px of each other.
+    expect(Math.abs(chosen.left - chosen.right)).toBeLessThan(20);
+
+    const countBalanced: CompactHeaderLayout = {
+      leftIconCount: 2,
+      rightIconCount: 2,
+      overflowCount: 1,
+      tokenCompactLevel: 0,
+    };
+    const byCount = wingWidths(countBalanced, tokenTotal, 0);
+    expect(Math.abs(chosen.left - chosen.right)).toBeLessThan(
+      Math.abs(byCount.left - byCount.right),
+    );
+  });
+
+  it("balances wings with a pending badge widening the right side", () => {
+    const layout = computeCompactHeaderLayout(NOTCH_14, 4, 4, 999_999, 3);
+    const chosen = wingWidths(layout, 999_999, 3);
+    expect(Math.abs(chosen.left - chosen.right)).toBeLessThanOrEqual(1);
+  });
+
+  it("keeps both wings inside the auxiliary menu-bar areas", () => {
+    for (const sessions of [2, 4, 6, 8, 10]) {
+      const layout = computeCompactHeaderLayout(
+        NOTCH_14,
+        sessions,
+        8,
+        12_345_678,
+        1,
+      );
+      const wings = wingWidths(layout, 12_345_678, 1);
+      expect(wings.left + COMPACT_NOTCH_INNER_GAP).toBeLessThanOrEqual(
+        NOTCH_14.leftAreaWidth! - COMPACT_OUTER_PADDING,
+      );
+      expect(wings.right + COMPACT_NOTCH_INNER_GAP).toBeLessThanOrEqual(
+        NOTCH_14.rightAreaWidth! - COMPACT_OUTER_PADDING,
+      );
+    }
   });
 });

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use std::sync::mpsc::SyncSender;
@@ -3800,8 +3800,9 @@ mod core_tests {
             false,
             false,
         );
-        // Compact sits in the menu-bar band (like dormant) — no extra_top.
-        assert_eq!(compact.height, COMPACT_WINDOW_HEIGHT);
+        // Compact sits in the menu-bar band (like dormant) — no extra_top. Its
+        // height matches the notch so the pill bottom is flush with the housing.
+        assert_eq!(compact.height, 38.0);
         // Width is clamped up to the notch width so the capsule visually
         // fuses with the camera housing (Dynamic-Island style).
         assert_eq!(compact.width, 200.0);
@@ -3827,7 +3828,7 @@ mod core_tests {
             false,
         );
         assert_eq!(dormant.width, 200.0 + 2.0 * DORMANT_NOTCH_PADDING);
-        assert_eq!(dormant.height, DORMANT_WINDOW_HEIGHT);
+        assert_eq!(dormant.height, 38.0);
     }
 
     #[test]
@@ -3879,7 +3880,8 @@ mod core_tests {
             false,
         );
         assert_eq!(compact.width, 132.0);
-        assert_eq!(compact.height, COMPACT_WINDOW_HEIGHT);
+        // Without a detectable notch the standard notch band height applies.
+        assert_eq!(compact.height, NOTCH_BAND_HEIGHT);
 
         // A compact_width that already exceeds the floor is kept as-is.
         let wide = island_window_logical_size(
@@ -3905,7 +3907,43 @@ mod core_tests {
             dormant.width,
             FALLBACK_NOTCH_WIDTH + 2.0 * DORMANT_NOTCH_PADDING
         );
-        assert_eq!(dormant.height, DORMANT_WINDOW_HEIGHT);
+        assert_eq!(dormant.height, NOTCH_BAND_HEIGHT);
+    }
+
+    #[test]
+    fn collapsed_band_height_and_corner_radius_prefer_live_metrics() {
+        // Live notch height wins on notched displays (bottom flush with the
+        // housing).
+        let notched = NotchMetrics {
+            has_notch: true,
+            height: 38.0,
+            ..NotchMetrics::default()
+        };
+        assert_eq!(collapsed_band_height(&notched), 38.0);
+
+        // Everywhere else: the standard notch band height, uniformly.
+        assert_eq!(
+            collapsed_band_height(&NotchMetrics::default()),
+            NOTCH_BAND_HEIGHT
+        );
+
+        // A zero-height notch report also falls back to the band constant.
+        let empty_notch = NotchMetrics {
+            has_notch: true,
+            ..NotchMetrics::default()
+        };
+        assert_eq!(collapsed_band_height(&empty_notch), NOTCH_BAND_HEIGHT);
+
+        // Corner radius: calibrated value when present, notch fallback otherwise.
+        let calibrated = NotchMetrics {
+            corner_radius: 9.5,
+            ..NotchMetrics::default()
+        };
+        assert_eq!(collapsed_corner_radius(&calibrated), 9.5);
+        assert_eq!(
+            collapsed_corner_radius(&NotchMetrics::default()),
+            FALLBACK_NOTCH_CORNER_RADIUS
+        );
     }
 
     #[test]
