@@ -799,3 +799,160 @@ pub(crate) fn resolve_presentation_width(
         .map(sanitize_compact_width)
         .unwrap_or(saved_compact_width)
 }
+
+/// Why the island window was opened. A global-hotkey summon toggles in the
+/// frontend (press again to collapse, no idle auto-collapse); every other
+/// opener keeps the expand-then-idle-collapse behavior.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum IslandOpenSource {
+    Summon,
+    Focus,
+}
+
+/// Compose the system-notification copy for a new approval request.
+pub(crate) fn approval_notification_copy(
+    agent_label: &str,
+    command: &str,
+    cwd: &str,
+    language: &str,
+) -> (String, String) {
+    let first_line = command.lines().next().unwrap_or("").trim();
+    let mut summary: String = first_line.chars().take(140).collect();
+    if first_line.chars().count() > 140 {
+        summary.push('…');
+    }
+    let project = cwd
+        .rsplit(['/', '\\'])
+        .find(|part| !part.is_empty())
+        .unwrap_or(cwd);
+    if language == "zh-CN" {
+        (
+            format!("{agent_label} 请求批准"),
+            format!("{summary}\n{project} · 点击通知打开 Atoll"),
+        )
+    } else {
+        (
+            format!("{agent_label} requests approval"),
+            format!("{summary}\n{project} · Click to open Atoll"),
+        )
+    }
+}
+
+/// Cursor position within the island, in logical points. macOS reads both
+/// sides natively in AppKit points; tao's getters disagree across displays
+/// with different scale factors (see platform::global_cursor_point).
+#[cfg(target_os = "macos")]
+pub(crate) fn cursor_client_point(window: &tauri::WebviewWindow) -> Option<(f64, f64)> {
+    let (min_x, _min_y, _max_x, max_y) = platform::island_window_frame_points(window)?;
+    let (cursor_x, cursor_y) = platform::global_cursor_point()?;
+    Some((cursor_x - min_x, max_y - cursor_y))
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn cursor_client_point(window: &tauri::WebviewWindow) -> Option<(f64, f64)> {
+    let scale = window.scale_factor().ok()?;
+    let cursor = window.cursor_position().ok()?.to_logical::<f64>(scale);
+    let origin = window.outer_position().ok()?.to_logical::<f64>(scale);
+    Some((cursor.x - origin.x, cursor.y - origin.y))
+}
+
+/// Hover hit-test in one consistent coordinate space. tao's `cursor_position`
+/// rescales global points by the PRIMARY display's scale factor while
+/// `outer_position`/`outer_size` use the window's own scale factor, so on a
+/// mixed-DPI multi-display setup (e.g. 2x Retina + 1x external) the rect and
+/// the cursor land in different spaces and hover never matches once the
+/// island sits on the lower-scale display. macOS therefore compares
+/// NSEvent mouseLocation against NSWindow frame directly; Windows reports
+/// physical pixels on both sides and keeps the tao path.
+#[cfg(target_os = "macos")]
+pub(crate) fn is_cursor_over_window(window: &tauri::WebviewWindow) -> tauri::Result<bool> {
+    if !window.is_visible()? {
+        return Ok(false);
+    }
+
+    let Some((min_x, min_y, max_x, max_y)) = platform::island_window_frame_points(window) else {
+        return Ok(false);
+    };
+    let (cursor_x, cursor_y) = platform::global_cursor_point().unwrap_or((f64::NAN, f64::NAN));
+    let padding = 8.0;
+
+    Ok(cursor_x >= min_x - padding
+        && cursor_x <= max_x + padding
+        && cursor_y >= min_y - padding
+        && cursor_y <= max_y + padding)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn is_cursor_over_window(window: &tauri::WebviewWindow) -> tauri::Result<bool> {
+    if !window.is_visible()? {
+        return Ok(false);
+    }
+
+    let cursor = window.cursor_position()?;
+    let position = window.outer_position()?;
+    let size = window.outer_size()?;
+    let padding = 8.0;
+
+    let left = position.x as f64 - padding;
+    let top = position.y as f64 - padding;
+    let right = position.x as f64 + size.width as f64 + padding;
+    let bottom = position.y as f64 + size.height as f64 + padding;
+
+    Ok(cursor.x >= left && cursor.x <= right && cursor.y >= top && cursor.y <= bottom)
+}
+
+pub(crate) fn default_compact_left_pane_width(compact_width: f64, notch: NotchMetrics) -> f64 {
+    if notch.has_notch {
+        ((compact_width - notch.width).max(0.0) / 2.0).max(28.0)
+    } else {
+        (compact_width / 2.0).max(28.0)
+    }
+}
+
+pub(crate) fn compact_window_origin_x(
+    monitor_center_x: f64,
+    window_width: f64,
+    notch: NotchMetrics,
+    left_pane_width: f64,
+    mode: IslandWindowMode,
+) -> f64 {
+    if notch.has_notch && matches!(mode, IslandWindowMode::Compact) {
+        monitor_center_x - notch.width / 2.0 - left_pane_width.max(0.0)
+    } else {
+        monitor_center_x - window_width / 2.0
+    }
+}
+
+pub(crate) fn is_collapsed_pass_through_mode(mode: IslandWindowMode) -> bool {
+    matches!(
+        mode,
+        IslandWindowMode::Micro | IslandWindowMode::Compact | IslandWindowMode::Dormant
+    )
+}
+
+pub(crate) fn ease_out_cubic(progress: f64) -> f64 {
+    1.0 - (1.0 - progress).powi(3)
+}
+
+/// Under-damped spring step response, normalized so it settles exactly at 1.0.
+/// Launches with an initial velocity (fast start like the old ease-out-back),
+/// decelerates, overshoots ~2%, peaks around 70–80% of the duration, then
+/// settles without dipping — the Dynamic-Island expand feel.
+/// ζ = 0.72, ω = 5.5, v₀ = 2.2.
+pub(crate) fn ease_out_spring(progress: f64) -> f64 {
+    let zeta: f64 = 0.72;
+    let omega: f64 = 5.5;
+    let v0: f64 = 2.2;
+    let omega_d = omega * (1.0 - zeta * zeta).sqrt();
+    let c = (zeta * omega - v0) / omega_d;
+    let value = |t: f64| {
+        let decay = (-zeta * omega * t).exp();
+        1.0 - decay * ((omega_d * t).cos() + c * (omega_d * t).sin())
+    };
+    let end = value(1.0);
+    if end.abs() < 1e-9 {
+        return progress.clamp(0.0, 1.0);
+    }
+    value(progress.clamp(0.0, 1.0)) / end
+}

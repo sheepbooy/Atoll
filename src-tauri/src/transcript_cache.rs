@@ -11,8 +11,8 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use super::{
-    discover_cursor_agent_transcript, is_safe_zcode_session_id, lock_state, transcript,
-    zcode_rollout_path, AgentKind, AppState, KnownSession, PermissionRequest,
+    discover_cursor_agent_transcript, lock_state, transcript, AgentKind, AppState, KnownSession,
+    PermissionRequest,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -755,4 +755,41 @@ pub(crate) fn flush_zcode_chat_message(messages: &mut Vec<ChatMessage>, role: &s
         tool_input: None,
         tool_output: None,
     });
+}
+
+/// ZCode writes one model-I/O rollout JSONL per session, named after the full
+/// session id (`sess_...`). Session ids come from hook payloads and subagent
+/// metadata files, so restrict them to the shape ZCode actually emits before
+/// splicing one into a path.
+pub(crate) fn is_safe_zcode_session_id(session_id: &str) -> bool {
+    session_id.starts_with("sess_")
+        && session_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+pub(crate) fn zcode_rollout_path(session_id: &str) -> Option<std::path::PathBuf> {
+    if !is_safe_zcode_session_id(session_id) {
+        return None;
+    }
+    dirs::home_dir().map(|home| {
+        home.join(".zcode")
+            .join("cli")
+            .join("rollout")
+            .join(format!("model-io-{session_id}.jsonl"))
+    })
+}
+
+/// Directory ZCode uses to persist per-subagent metadata
+/// (`~/.zcode/cli/agents/<parent_session_id>/agent_*/metadata.json`).
+pub(crate) fn zcode_session_agents_dir(parent_session_id: &str) -> Option<std::path::PathBuf> {
+    if !is_safe_zcode_session_id(parent_session_id) {
+        return None;
+    }
+    dirs::home_dir().map(|home| {
+        home.join(".zcode")
+            .join("cli")
+            .join("agents")
+            .join(parent_session_id)
+    })
 }

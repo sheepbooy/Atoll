@@ -2249,3 +2249,33 @@ pub(crate) fn emit_subagent_snapshot(app: &AppHandle, state: &AppState) -> bool 
     let _ = app.emit("snapshot-changed", &snapshot);
     true
 }
+
+fn build_hook_status(
+    installed: bool,
+    script_found: bool,
+    settings_path: String,
+    script_path: String,
+    config: Option<&Value>,
+    marker: &str,
+    agent_key: &str,
+) -> HookStatus {
+    let node_path = config
+        .and_then(|cfg| configured_atoll_hook_node_path(cfg, marker))
+        .unwrap_or_default();
+    let node_found = node_executable_ready(&node_path);
+    // Only meaningful once installed — an agent that was never hooked up has
+    // nothing to have drifted away from.
+    let configured_script = config.and_then(|cfg| configured_atoll_hook_script_path(cfg, marker));
+    let needs_retrust = installed
+        && hook_trust::needs_retrust(agent_key, &script_path, configured_script.as_deref());
+    HookStatus {
+        installed,
+        script_found,
+        settings_path,
+        script_path,
+        node_path,
+        node_found,
+        needs_retrust,
+        competing_hooks: Vec::new(),
+    }
+}
