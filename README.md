@@ -211,41 +211,24 @@ Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事�
 ### 新功能预览
 
 <p align="center">
-  <img src="docs/assets/now-playing.png" alt="Now Playing 音乐卡片：展开态曲目封面与播放控制" width="540" /><br/>
-  <sub><strong>Now Playing</strong> — 展开态曲目封面与播放控制，紧凑态胶囊同步专辑缩略图</sub>
+  <img src="docs/assets/lyrics-compact.png" alt="滚动歌词：紧凑胶囊中部歌词行随播放进度滚动" width="520" /><br/>
+  <sub>滚动歌词 — 紧凑胶囊中部歌词行随播放进度滚动（macOS / Windows）</sub>
 </p>
 
 <p align="center">
-  <img src="docs/assets/lyrics-compact.png" alt="滚动歌词：紧凑胶囊中部歌词行随播放进度滚动" width="440" /><br/>
-  <sub><strong>滚动歌词</strong> — 紧凑胶囊中部歌词行随播放进度滚动（macOS / Windows）</sub>
+  <img src="docs/assets/menubar-lyrics.png" alt="Atoll 嵌入 macOS 菜单栏：歌词行与专辑缩略图" width="800" /><br/>
+  <sub>嵌入菜单栏的真实效果</sub>
 </p>
 
 <p align="center">
-  <img src="docs/assets/menubar-lyrics.png" alt="Atoll 嵌入 macOS 菜单栏：歌词行与专辑缩略图" width="540" /><br/>
-  <sub>嵌入菜单栏的真实效果 — 平时只有一条胶囊，有人唱歌时才知道它在</sub>
+  <img src="docs/assets/now-playing.png" alt="Now Playing 音乐卡片" width="430" />&nbsp;&nbsp;<img src="docs/assets/file-station-feed.png" alt="文件投喂动画" width="336" /><br/>
+  <sub>Now Playing · 文件投喂</sub>
 </p>
 
 <p align="center">
-  <img src="docs/assets/file-station-feed.png" alt="文件投喂：浮岛吃掉文件后播放 toast 提示" width="420" /><br/>
-  <sub><strong>文件中转站</strong> — 把文件拖到浮岛上"投喂"，按存量分档播放吃掉动画</sub>
+  <img src="docs/assets/file-station.png" alt="文件中转站面板" width="256" />&nbsp;<img src="docs/assets/clipboard-history.png" alt="剪贴板历史面板" width="256" />&nbsp;<img src="docs/assets/hook-health.png" alt="Agent 钩子面板" width="256" /><br/>
+  <sub>文件中转站 · 剪贴板历史 · Hook 健康检测</sub>
 </p>
-
-<table>
-  <tr>
-    <td align="center" width="33%">
-      <img src="docs/assets/file-station.png" alt="文件中转站面板：搜索、多选复制、原生拖出" width="256" /><br/>
-      <sub><strong>中转站面板</strong> — 搜索 / 多选复制 / 原生拖出</sub>
-    </td>
-    <td align="center" width="33%">
-      <img src="docs/assets/clipboard-history.png" alt="剪贴板历史面板：搜索框 + 条目列表 + 收藏" width="256" /><br/>
-      <sub><strong>剪贴板历史</strong> — 文本 / 图片 / 文件统一记录，搜索 + 收藏</sub>
-    </td>
-    <td align="center" width="33%">
-      <img src="docs/assets/hook-health.png" alt="Agent 钩子面板：各 Agent 已连接状态" width="256" /><br/>
-      <sub><strong>Hook 健康检测</strong> — 连接状态一目了然，一键装卸</sub>
-    </td>
-  </tr>
-</table>
 
 ---
 
