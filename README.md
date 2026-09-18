@@ -211,19 +211,36 @@ Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事�
 ### 新功能预览
 
 <p align="center">
-  <img src="docs/assets/now-playing-preview.svg" alt="Now Playing 音乐卡片：紧凑态指标器 + 展开态曲目封面与控制" width="420" />
+  <em>Now Playing — 展开态曲目封面与播放控制，紧凑态胶囊同步专辑缩略图</em><br/>
+  <img src="docs/assets/now-playing.png" alt="Now Playing 音乐卡片：展开态曲目封面与播放控制" width="520" />
 </p>
 
 <p align="center">
-  <img src="docs/assets/lyrics-preview.svg" alt="滚动歌词：紧凑胶囊中部歌词行随播放进度滚动" width="420" />
+  <em>滚动歌词 — 紧凑胶囊中部歌词行随播放进度滚动，嵌入菜单栏的真实效果</em><br/>
+  <img src="docs/assets/lyrics-compact.png" alt="滚动歌词：紧凑胶囊中部歌词行随播放进度滚动" width="480" />
 </p>
 
 <p align="center">
-  <img src="docs/assets/clipboard-history-preview.svg" alt="剪贴板历史：搜索框 + 复制条目列表" width="420" />
+  <img src="docs/assets/menubar-lyrics.png" alt="Atoll 嵌入 macOS 菜单栏：歌词行与专辑缩略图" width="92%" />
 </p>
 
 <p align="center">
-  <img src="docs/assets/hook-health-preview.svg" alt="Hook 健康检测：Agent hook 状态 + 失效竞争 hook 清理" width="420" />
+  <em>文件中转站 — 拖文件"投喂"浮岛，按存量分档播放吃掉动画</em><br/>
+  <img src="docs/assets/file-station-feed.png" alt="文件投喂：浮岛吃掉文件后播放 toast 提示" width="360" />
+</p>
+
+<p align="center">
+  <img src="docs/assets/file-station.png" alt="文件中转站面板：搜索、多选复制、原生拖出，上限 30 个" width="480" />
+</p>
+
+<p align="center">
+  <em>剪贴板历史 — 文本 / 图片 / 文件统一记录，关键词搜索 + 收藏</em><br/>
+  <img src="docs/assets/clipboard-history.png" alt="剪贴板历史面板：搜索框 + 条目列表 + 收藏" width="480" />
+</p>
+
+<p align="center">
+  <em>Hook 健康检测 — 各 Agent 连接状态一目了然，一键安装 / 卸载</em><br/>
+  <img src="docs/assets/hook-health.png" alt="Agent 钩子面板：Claude Code / Codex / Cursor 已连接状态" width="480" />
 </p>
 
 ---
