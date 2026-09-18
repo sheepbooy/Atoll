@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>菜单栏 / 顶栏里的 AI 权限审批浮岛</strong><br/>
-  <sub>Claude Code / Codex / Cursor / ZCode 发起权限请求时，不用切窗口，一眼批准或拒绝</sub>
+  <sub>Claude Code / Codex / Cursor / ZCode / Gemini CLI / OpenCode 发起权限请求时，不用切窗口，一眼批准或拒绝</sub>
 </p>
 
 <p align="center">
@@ -58,9 +58,12 @@
 - **应用内更新** — 启动时自动检测新版本，三点菜单一键下载安装并重启
 - **Cursor IDE** — Hook 集成、会话与 subagent 追踪、Token 统计；Shell 权限由 Cursor 自带 UI 处理，Atoll 以 observer hooks 异步监听，不阻塞 IDE；顶栏 **Open Cursor** 一键跳回 IDE
 - **Gemini CLI** — Hook 集成：`BeforeTool` 阻断式审批，Shell / 写文件 / 网络抓取等有副作用的工具先经 Atoll 批准才执行，拒绝时模型直接收到阻断原因；Atoll 未运行时自动回落 Gemini 自带权限流程，不阻塞会话
+- **文件中转站** — 把文件拖到浮岛上即可"投喂"Atoll：拖近时岛自动展开张嘴待喂，按存量分档播放吃掉动画、空闲形象常驻鼓肚；文件以引用方式记录（绝不移动/复制/删除原文件），面板内搜索、多选复制、在文件管理器中显示、拖出即发起原生拖拽
+- **中英文双语** — Settings → Display 一键切换 English / 中文，全量界面文案跟随
+- **多显示器驻留** — 多屏环境可在设置中指定浮岛固定驻留的显示器，按名称持久化，缺席时自动回落主屏
 - **全程本地** — Hook 桥接 `127.0.0.1:47777`，数据不出本机
 
-目前支持 **Claude Code**（CLI 与 Desktop）、**Codex**（CLI 与 Desktop）、**Cursor IDE**（macOS Apple Silicon 与 Windows x64）、**ZCode**（CLI 与 Desktop）和 **Gemini CLI**。
+目前支持 **Claude Code**（CLI 与 Desktop）、**Codex**（CLI 与 Desktop）、**Cursor IDE**、**ZCode**（CLI 与 Desktop）、**Gemini CLI** 和 **OpenCode**。
 
 ---
 
@@ -74,7 +77,7 @@
 curl -fsSL https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.sh | bash
 ```
 
-指定版本：`ATOLL_VERSION=0.1.31 curl -fsSL .../install.sh | bash`
+指定版本：`ATOLL_VERSION=0.1.62 curl -fsSL .../install.sh | bash`
 
 <details>
 <summary>其他 macOS 安装方式</summary>
@@ -115,11 +118,11 @@ irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 |
 指定版本：
 
 ```cmd
-set ATOLL_VERSION=0.1.31 && powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex"
+set ATOLL_VERSION=0.1.62 && powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex"
 ```
 
 ```powershell
-$env:ATOLL_VERSION = "0.1.31"; irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex
+$env:ATOLL_VERSION = "0.1.62"; irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex
 ```
 
 **手动下载** — 从 [Releases](https://github.com/sheepbooy/Atoll/releases) 下载 `Atoll-x64.msi` 并安装。
@@ -144,8 +147,9 @@ Atoll 通过应用内 **一键安装 Hook**，无需手动编辑配置文件。
 | **Cursor**（IDE Agent） | 同上 → Install Cursor | 安装后在 Cursor Settings → Hooks 确认 hook 已加载，重启 Cursor，再在 Agent 模式触发一次 Shell 工具以验证 observer hooks；Shell 权限仍由 Cursor 自身 UI 处理 |
 | **ZCode**（CLI + Desktop） | 同上 → Install ZCode | 安装后完全退出并重启 ZCode，再触发一次 shell 权限验证；Token 统计读取 `~/.zcode/cli/rollout`（含子代理归集） |
 | **Gemini CLI** | 同上 → Install Gemini | 安装后在 Gemini 中打开 `/hooks` 并信任 Atoll hook，重启 Gemini，再触发一次 shell 命令验证（在 Atoll 各执行一次批准与拒绝） |
+| **OpenCode** | 同上 → Install OpenCode | OpenCode 没有 hooks 配置文件——Atoll 在其插件目录 `~/.config/opencode/plugins` 部署进程内桥接插件，安装后重启 OpenCode，再触发一次需要批准的操作验证；Atoll 不在线时 OpenCode 自带的 TUI 确认自动兜底 |
 
-Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）、`~/.codex/hooks.json`、`~/.zcode/cli/config.json`、Cursor hooks 配置或 `~/.gemini/settings.json`。安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`。
+Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）、`~/.codex/hooks.json`、`~/.zcode/cli/config.json`、Cursor hooks 配置或 `~/.gemini/settings.json`；OpenCode 例外，见上表——部署的是进程内桥接插件而非 hooks 配置。安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`。
 
 > Gemini CLI 的 hook 按"项目路径 + hook 键"管理信任：安装后需在 Gemini 中执行 `/hooks` 信任 Atoll hook。Gemini 自身审批模式（如默认确认）仍会生效——Atoll 的拒绝先于 Gemini 确认生效，Atoll 的批准则在 Gemini 判定需要确认时仍走其原生确认。
 
@@ -160,6 +164,8 @@ Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事�
 | Approve | `Enter` |
 | Deny | `Delete` |
 | Always approve | `Shift` + `Enter` |
+
+另有可自定义的**系统级全局快捷键**（Settings → Shortcuts）：召回浮岛 `Cmd/Ctrl+Shift+Space`、批准 `Cmd/Ctrl+Shift+Y`、拒绝 `Cmd/Ctrl+Shift+N`，热键冲突时行内提示；召唤为切换语义，按一下展开并保持，再按收回。
 
 ---
 
@@ -190,10 +196,10 @@ Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事�
 
 ### Agent 形象
 
-每个 Agent 有独立形象：Claude 是像素风 Clawd，Codex / Cursor 使用官方图标，ZCode 是天蓝渐变、白色斜体 Z 的官方方块形象，Gemini 是官方四角星 spark 渐变形象：
+每个 Agent 有独立形象：Claude 是像素风 Clawd，Codex / Cursor 使用官方品牌标，ZCode 是天蓝渐变、白色斜体 Z 的官方方块形象，Gemini 是官方四角星 spark 渐变形象，OpenCode 是取形官方字标的像素圆环 "o"（青色系、随心情变化）：
 
 <p align="center">
-  <img src="docs/assets/agent-mascots.png" alt="Claude / Codex / Cursor / Gemini mascots" width="420" />
+  <img src="docs/assets/agent-mascots.png" alt="Claude / Codex / Cursor / ZCode / Gemini / OpenCode mascots" width="560" />
 </p>
 
 ### 多 Session 与终端
@@ -239,10 +245,14 @@ npm run tauri build  # 打包
 <summary>项目结构 & 文档素材</summary>
 
 ```
-src/                          React 浮岛 UI
-src-tauri/src/hook_bridge.rs  本地 HTTP 桥接（Claude + Codex + Cursor + ZCode + Gemini）
-src-tauri/src/transcript.rs   JSONL 会话 & Token 解析
-scripts/atoll-*-hook.mjs      Hook shim（随应用分发）
+src/App.tsx                    浮岛壳层（hook 编排；面板/Header 组件与状态 hooks 拆分在 components/ 与 hooks/）
+src/styles/                    样式（按域拆分，styles.css 为入口 barrel）
+src-tauri/src/commands/        Tauri command（按域拆分）
+src-tauri/src/session.rs       会话状态与快照组装
+src-tauri/src/hook_bridge.rs   本地 HTTP 桥接（六个 Agent 的 hook 事件入口）
+src-tauri/src/hooks.rs         Hook 安装 / 健康检测 / 卸载（+ hooks/ 子模块）
+src-tauri/src/transcript.rs    JSONL 会话 & Token 解析
+scripts/atoll-*-hook.mjs       Hook shim（随应用分发）
 ```
 
 重新生成 README 截图（macOS）：
@@ -268,14 +278,17 @@ npm run export:brand     # Logo 状态 + Agent 形象
 
 - [ ] Apple 签名 & 公证、Intel Mac 构建
 - [ ] Windows 代码签名
+- [ ] 更多 Agent 适配
 - [x] ZCode hook 适配
 - [x] ZCode token 用量统计（rollout JSONL，含子代理归集）
 - [x] Gemini CLI hook 适配（BeforeTool 阻断式审批）
-- [ ] 更多 Agent 适配
+- [x] OpenCode 接入（插件桥接，无 hooks 管线）
 - [x] Cursor hook 适配
+- [x] Codex hook 适配
+- [x] 文件中转站（拖喂 + 原生拖出）
 - [x] 新请求自动展开、通知中心提醒（强制打断 / 仅通知两种模式，Settings → Notifications）
 - [x] 审批历史持久化、导出、会话搜索
-- [x] Codex hook 适配
+- [x] 中英文双语 UI、多显示器驻留
 
 ---
 

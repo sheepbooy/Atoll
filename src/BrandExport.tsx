@@ -31,7 +31,9 @@ const AGENTS = [
   { id: "claude", label: "Claude" },
   { id: "codex", label: "Codex" },
   { id: "cursor", label: "Cursor" },
+  { id: "zcode", label: "ZCode" },
   { id: "gemini", label: "Gemini" },
+  { id: "opencode", label: "OpenCode" },
 ] as const;
 
 /** 全部姿态（应用态 + 彩蛋），调试台 / 资产导出共用顺序。 */
