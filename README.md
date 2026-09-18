@@ -211,23 +211,7 @@ Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事�
 ### 新功能预览
 
 <p align="center">
-  <img src="docs/assets/lyrics-compact.png" alt="滚动歌词：紧凑胶囊中部歌词行随播放进度滚动" width="520" /><br/>
-  <sub>滚动歌词 — 紧凑胶囊中部歌词行随播放进度滚动（macOS / Windows）</sub>
-</p>
-
-<p align="center">
-  <img src="docs/assets/menubar-lyrics.png" alt="Atoll 嵌入 macOS 菜单栏：歌词行与专辑缩略图" width="800" /><br/>
-  <sub>嵌入菜单栏的真实效果</sub>
-</p>
-
-<p align="center">
-  <img src="docs/assets/now-playing.png" alt="Now Playing 音乐卡片" width="430" />&nbsp;&nbsp;<img src="docs/assets/file-station-feed.png" alt="文件投喂动画" width="336" /><br/>
-  <sub>Now Playing · 文件投喂</sub>
-</p>
-
-<p align="center">
-  <img src="docs/assets/file-station.png" alt="文件中转站面板" width="256" />&nbsp;<img src="docs/assets/clipboard-history.png" alt="剪贴板历史面板" width="256" />&nbsp;<img src="docs/assets/hook-health.png" alt="Agent 钩子面板" width="256" /><br/>
-  <sub>文件中转站 · 剪贴板历史 · Hook 健康检测</sub>
+  <img src="docs/assets/showcase.png" alt="Atoll 功能预览：菜单栏滚动歌词、Now Playing 卡片、文件投喂、文件中转站、剪贴板历史与 Hook 健康检测" width="830" />
 </p>
 
 ---
