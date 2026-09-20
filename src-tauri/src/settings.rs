@@ -401,3 +401,25 @@ pub(crate) fn persist_lyrics_enabled(enabled: bool) {
         let _ = std::fs::write(path, formatted);
     }
 }
+
+/// Risk guard for the approval-rule engine: when on, allow rules never
+/// auto-approve commands flagged dangerous by `risk_patterns`. Defaults on.
+pub(crate) fn load_risk_guard_enabled() -> bool {
+    let Some(path) = atoll_settings_path() else {
+        return true;
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return true;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+        return true;
+    };
+    value
+        .get("riskGuardEnabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+}
+
+pub(crate) fn persist_risk_guard_enabled(enabled: bool) {
+    persist_settings_value("riskGuardEnabled", Value::from(enabled));
+}

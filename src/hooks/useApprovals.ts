@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  createApprovalRuleFromRequest,
   deactivateAtoll,
   getSessionRequests,
   resolvePermissionRequest,
   setSessionAutoApprove,
+  type ApprovalRuleScope,
   type IslandSnapshot,
   type PermissionRequest,
 } from "../tauri";
@@ -88,12 +90,19 @@ export function useApprovals({
     decision: Decision,
     alwaysApprove = false,
     note = "",
+    ruleScope?: ApprovalRuleScope,
   ) {
     if (!request) return;
 
     setBusyDecision(decision);
     try {
       const resolveWork = (async () => {
+        if (ruleScope) {
+          // A failed rule write must not block the approval itself.
+          await createApprovalRuleFromRequest(request.id, ruleScope, decision).catch(
+            () => undefined,
+          );
+        }
         if (alwaysApprove) {
           await setSessionAutoApprove(request.session, true);
         }

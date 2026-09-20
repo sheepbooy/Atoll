@@ -25,7 +25,8 @@ export type SettingsPage =
   | "sessions"
   | "mascot"
   | "notifications"
-  | "shortcuts";
+  | "shortcuts"
+  | "rules";
 export type FoldedIslandSize = "small" | "regular";
 // Window-space rect of the compact media thumb plus the window size it was
 // measured against; scales the expanded artwork backdrop back onto the thumb.

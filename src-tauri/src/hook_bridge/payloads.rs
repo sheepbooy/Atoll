@@ -177,6 +177,7 @@ pub(crate) fn permission_request_from_tool_payload(
             .and_then(Value::as_str)
             .map(str::to_string),
         agent,
+        tool_name: tool_name.clone(),
         session: payload_session_id(&payload)
             .unwrap_or(default_session)
             .to_string(),

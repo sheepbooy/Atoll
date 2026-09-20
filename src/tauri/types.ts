@@ -19,6 +19,8 @@ export interface PermissionRequest {
   id: string;
   toolUseId?: string | null;
   agent: AgentKind;
+  /** Raw tool name from the hook payload ("Bash", "WebFetch", ...). */
+  toolName?: string;
   session: string;
   command: string;
   detail: string;
@@ -29,6 +31,30 @@ export interface PermissionRequest {
   supportsAlways?: boolean;
   toolInput?: unknown;
 }
+
+export type ApprovalRuleDecision = "allow" | "deny";
+
+/** A persistent auto-approve/deny rule (~/.atoll/rules.json). Matchers are
+ * ANDed; unset matchers match anything. `pattern`/`tool` are globs
+ * (`*` / `?`, case-insensitive); `projectPath` scopes the rule to a cwd. */
+export interface ApprovalRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  decision: ApprovalRuleDecision;
+  note: string;
+  /** Agent kind key; undefined = any agent. */
+  agent?: string;
+  tool?: string;
+  pattern?: string;
+  projectPath?: string;
+  createdAt: number;
+  matchCount: number;
+  lastMatchedAt?: number | null;
+}
+
+/** Quick-pick scopes for rules created from an approval card. */
+export type ApprovalRuleScope = "command_project" | "command_global" | "all_project";
 
 export interface IslandSnapshot {
   online: boolean;

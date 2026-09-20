@@ -43,6 +43,9 @@ import {
   FileStationView,
 } from "../FileStationView";
 import {
+  RulesSettingsView,
+} from "../RulesSettingsView";
+import {
   ClipboardSettingsView,
   IslandSettingsView,
   MascotSettingsView,
@@ -141,6 +144,8 @@ interface IslandPanelRouterProps {
     request: PermissionRequest,
     decision: "approved" | "denied",
     alwaysAllow?: boolean,
+    note?: string,
+    ruleScope?: import("../tauri").ApprovalRuleScope,
   ) => void;
   collapseIsland: (skipAnimation?: boolean) => void;
   justResolved: boolean;
@@ -224,7 +229,7 @@ interface IslandPanelRouterProps {
   handleOpenTokensFromSettings: () => void;
   handleOpenUsageFromSettings: () => void;
   openSettingsSubpage: (
-    page: "sessions" | "media" | "island" | "clipboard" | "mascot" | "notifications" | "shortcuts",
+    page: "sessions" | "media" | "island" | "clipboard" | "mascot" | "notifications" | "shortcuts" | "rules",
   ) => void;
   settingsTodayLabel: string;
   usageDisplaySummary: string;
@@ -697,6 +702,10 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
       );
     }
 
+    if (panelView.page === "rules") {
+      return <RulesSettingsView />;
+    }
+
     if (panelView.page === "shortcuts") {
       return (
         <ShortcutSettingsView
@@ -737,6 +746,7 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
         onOpenSessions={() => openSettingsSubpage("sessions")}
         onOpenMascot={() => openSettingsSubpage("mascot")}
         onOpenNotifications={() => openSettingsSubpage("notifications")}
+        onOpenRules={() => openSettingsSubpage("rules")}
         onOpenShortcuts={() => openSettingsSubpage("shortcuts")}
         noticeModeLabel={tSettings(
           approvalNoticeMode === "notify"
@@ -796,6 +806,7 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
         onApprove={() => resolveActive(selectedAgentRequest, "approved")}
         onDeny={() => resolveActive(selectedAgentRequest, "denied")}
         onAlwaysApprove={() => resolveActive(selectedAgentRequest, "approved", true)}
+        onCreateRule={(scope) => resolveActive(selectedAgentRequest, "approved", false, "", scope)}
         onViewSession={navigateToSession}
       />
     );

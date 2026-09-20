@@ -691,3 +691,20 @@
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3), 0 0 0 3px rgba(111, 220, 255, 0.3);
 }
 
+
+/* ---- Approval rules ---- */
+
+.pricing-model-row.is-disabled {
+  opacity: 0.55;
+}
+
+.settings-inline-button.is-confirming {
+  background: rgba(255, 87, 87, 0.16);
+  color: rgba(255, 140, 140, 0.98);
+  border-color: rgba(255, 87, 87, 0.3);
+}
+
+.rules-editor {
+  display: grid;
+  gap: 8px;
+}

@@ -45,6 +45,7 @@ fn active_session_tokens_only_sum_visible_sessions() {
         id: "req-active".into(),
         tool_use_id: None,
         agent: AgentKind::Claude,
+        tool_name: String::new(),
         session: "session-active".into(),
         command: "Bash: ls".into(),
         detail: String::new(),

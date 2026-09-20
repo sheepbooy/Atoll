@@ -11,6 +11,8 @@
 //! pending/approved/denied; the rest is encoded in detail suffixes):
 //! - `approved` — decided in Atoll, or auto-approved for the session.
 //! - `denied` — decided in Atoll.
+//! - `auto_approved` / `auto_denied` — resolved by a matching approval rule
+//!   before any human saw it.
 //! - `expired` — 30-minute hook timeout ("Timed out waiting for Atoll
 //!   approval.") or the auto-archive idle timeout ("Auto-archived after idle
 //!   timeout.").
@@ -39,6 +41,8 @@ pub enum HistoryStatus {
     Pending,
     Approved,
     Denied,
+    AutoApproved,
+    AutoDenied,
     Expired,
     AnsweredElsewhere,
 }
@@ -49,6 +53,8 @@ impl HistoryStatus {
             HistoryStatus::Pending => "pending",
             HistoryStatus::Approved => "approved",
             HistoryStatus::Denied => "denied",
+            HistoryStatus::AutoApproved => "auto_approved",
+            HistoryStatus::AutoDenied => "auto_denied",
             HistoryStatus::Expired => "expired",
             HistoryStatus::AnsweredElsewhere => "answered_elsewhere",
         }
@@ -59,6 +65,8 @@ impl HistoryStatus {
             "pending" => Some(HistoryStatus::Pending),
             "approved" => Some(HistoryStatus::Approved),
             "denied" => Some(HistoryStatus::Denied),
+            "auto_approved" => Some(HistoryStatus::AutoApproved),
+            "auto_denied" => Some(HistoryStatus::AutoDenied),
             "expired" => Some(HistoryStatus::Expired),
             "answered_elsewhere" => Some(HistoryStatus::AnsweredElsewhere),
             _ => None,
@@ -937,6 +945,7 @@ mod tests {
             id: "req-1".into(),
             tool_use_id: Some("tu-1".into()),
             agent: AgentKind::Claude,
+            tool_name: String::new(),
             session: "sess-9".into(),
             command: "Bash: git status".into(),
             detail: "Bash: git status".into(),

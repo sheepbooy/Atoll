@@ -4,6 +4,7 @@ export * from "./runtime";
 export * from "./island";
 export * from "./snapshot";
 export * from "./approvals";
+export * from "./approvalRules";
 export * from "./hooks";
 export * from "./tokens";
 export * from "./media";

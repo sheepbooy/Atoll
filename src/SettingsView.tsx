@@ -23,6 +23,7 @@ export interface SettingsViewProps {
   onOpenSessions: () => void;
   onOpenMascot: () => void;
   onOpenNotifications: () => void;
+  onOpenRules: () => void;
   onOpenShortcuts: () => void;
   todayLabel: string;
   usageDisplaySummary: string;
@@ -51,6 +52,7 @@ export function SettingsView({
   onOpenSessions,
   onOpenMascot,
   onOpenNotifications,
+  onOpenRules,
   onOpenShortcuts,
   todayLabel,
   usageDisplaySummary,
@@ -126,6 +128,15 @@ export function SettingsView({
             badge={noticeModeLabel}
             badgeTone="installed"
             onClick={onOpenNotifications}
+          />
+        </div>
+
+        <div className="settings-section">
+          <span className="settings-section-label">{t("section.rules")}</span>
+          <SettingsNavCard
+            title={t("pages.rulesTitle")}
+            desc={t("pages.rulesDesc")}
+            onClick={onOpenRules}
           />
         </div>
 

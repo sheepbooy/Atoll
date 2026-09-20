@@ -11,6 +11,7 @@ use tauri::utils::config::Color;
 use tauri::{AppHandle, Emitter, Manager};
 
 mod approval_history;
+mod approval_rules;
 mod approval_spool;
 mod capture;
 mod clipboard_history;
@@ -29,9 +30,12 @@ mod media;
 mod media_windows;
 mod platform;
 mod pricing;
+mod risk_patterns;
 mod shortcuts;
 mod token_history;
 mod transcript;
+
+pub(crate) use approval_rules::*;
 
 mod state;
 
@@ -125,6 +129,8 @@ pub fn run() {
             session_request_totals: Mutex::new(HashMap::new()),
             hook_waiters: Mutex::new(HashMap::new()),
             auto_approve_sessions: Mutex::new(HashSet::new()),
+            approval_rules: Mutex::new(approval_rules::load_rules_from_disk()),
+            risk_guard_enabled: Mutex::new(load_risk_guard_enabled()),
             compact_width: Mutex::new(COMPACT_WINDOW_WIDTH),
             compact_left_width: Mutex::new(0.0),
             presentation_generation: Arc::new(AtomicU64::new(0)),
@@ -184,6 +190,11 @@ pub fn run() {
             resolve_permission_request,
             resolve_permission_with_input,
             set_session_auto_approve,
+            get_approval_rules,
+            save_approval_rules,
+            create_approval_rule_from_request,
+            get_risk_guard_enabled,
+            set_risk_guard_enabled,
             archive_request,
             archive_all_resolved,
             archive_session,

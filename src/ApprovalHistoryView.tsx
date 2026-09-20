@@ -39,6 +39,8 @@ const OUTCOME_FILTERS = [
   "",
   "approved",
   "denied",
+  "auto_approved",
+  "auto_denied",
   "expired",
   "answered_elsewhere",
 ] as const;
@@ -47,6 +49,8 @@ const OUTCOME_LABEL_KEYS: Record<ApprovalHistoryStatus, string> = {
   pending: "history.outcomePending",
   approved: "history.outcomeApproved",
   denied: "history.outcomeDenied",
+  auto_approved: "history.outcomeAutoApproved",
+  auto_denied: "history.outcomeAutoDenied",
   expired: "history.outcomeExpired",
   answered_elsewhere: "history.outcomeAnsweredElsewhere",
 };
