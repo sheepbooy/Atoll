@@ -36,6 +36,7 @@ import { HeaderLogo } from "./HeaderLogo";
 import { SessionSubviewNav } from "./SessionSubviewNav";
 import { SettingsPageNav, SettingsSubviewNav } from "./SettingsNavs";
 import { LyricsMarquee, lyricsMatchTrack } from "../LyricsMarquee";
+import type { PlaybackPositionSample } from "../hooks/useLyrics";
 import { TokenCounter } from "../TokenCounter";
 import type { UsageDisplayMode } from "../displayPrefs";
 import type { SessionSummary } from "../tauri/types";
@@ -125,7 +126,7 @@ interface IslandHeaderProps {
 
   lyricsData: LyricPayload | null;
   nowPlayingTrack: NowPlayingTrack | null;
-  playbackPosition: { position: number | null; playing: boolean } | null;
+  playbackPosition: PlaybackPositionSample | null;
 
   compactHeaderLayout: CompactHeaderLayout;
   activeSessionTokens: NonNullable<IslandSnapshot["activeSessionTokens"]>;
@@ -486,8 +487,7 @@ export function IslandHeader(props: IslandHeaderProps) {
           // column-mounted placeholder instead of showing the previous
           // track's lyrics against this track's position.
           lines={lyricsMatchTrack(lyricsData, nowPlayingTrack) ? lyricsData!.lines : []}
-          position={playbackPosition?.position ?? null}
-          playing={playbackPosition?.playing ?? false}
+          sample={playbackPosition}
         />
       ) : null}
 

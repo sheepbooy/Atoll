@@ -9,13 +9,20 @@ import {
 } from "../tauri";
 import { manageAsyncUnlisten } from "../asyncUnlisten";
 
+/**
+ * A backend playback-position sample. The media monitor emits one every ~1s;
+ * `receivedAt` anchors wall-clock interpolation between samples.
+ */
+export interface PlaybackPositionSample {
+  position: number;
+  playing: boolean;
+  receivedAt: number;
+}
+
 export function useLyrics() {
   const [lyricsData, setLyricsData] = useState<LyricPayload | null>(null);
-  const [playbackPosition, setPlaybackPosition] = useState<{
-    position: number;
-    playing: boolean;
-    receivedAt: number;
-  } | null>(null);
+  const [playbackPosition, setPlaybackPosition] =
+    useState<PlaybackPositionSample | null>(null);
   const [lyricsEnabled, setLyricsEnabledState] = useState(false);
 
   useEffect(() => {

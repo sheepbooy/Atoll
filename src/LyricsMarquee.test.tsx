@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { LyricsMarquee, lyricsMatchTrack } from "./LyricsMarquee";
 import type { LyricPayload, NowPlayingTrack } from "./tauri";
 
@@ -44,13 +44,62 @@ describe("lyricsMatchTrack", () => {
 });
 
 describe("LyricsMarquee", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("shows the line active at the playback position", () => {
-    render(<LyricsMarquee lines={lines} position={70} playing={true} />);
+    render(
+      <LyricsMarquee
+        lines={lines}
+        sample={{ position: 70, playing: true, receivedAt: Date.now() }}
+      />,
+    );
     expect(screen.getByText("second line")).toBeTruthy();
   });
 
   it("shows the placeholder instead of lines while lyrics are absent", () => {
-    render(<LyricsMarquee lines={[]} position={70} playing={true} />);
+    render(
+      <LyricsMarquee
+        lines={[]}
+        sample={{ position: 70, playing: true, receivedAt: Date.now() }}
+      />,
+    );
     expect(screen.getByText("· · ·")).toBeTruthy();
+  });
+
+  it("interpolates with the wall clock while playing, crossing the line boundary before the next sample", () => {
+    render(
+      <LyricsMarquee
+        lines={lines}
+        sample={{ position: 59.5, playing: true, receivedAt: Date.now() - 1000 }}
+      />,
+    );
+    expect(screen.getByText("second line")).toBeTruthy();
+  });
+
+  it("does not interpolate while paused", () => {
+    render(
+      <LyricsMarquee
+        lines={lines}
+        sample={{ position: 59.5, playing: false, receivedAt: Date.now() - 1000 }}
+      />,
+    );
+    expect(screen.getByText("first line")).toBeTruthy();
+  });
+
+  it("switches lines on the sub-second tick while playing", () => {
+    vi.useFakeTimers();
+    render(
+      <LyricsMarquee
+        lines={lines}
+        sample={{ position: 59.5, playing: true, receivedAt: Date.now() }}
+      />,
+    );
+    expect(screen.getByText("first line")).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(screen.getByText("second line")).toBeTruthy();
   });
 });
