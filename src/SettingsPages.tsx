@@ -237,11 +237,15 @@ export function ClipboardSettingsView({
   onChangeClipboardHistoryEnabled,
   clipboardLimit,
   onChangeClipboardLimit,
+  clipboardAutoStage,
+  onChangeClipboardAutoStage,
 }: {
   clipboardHistoryEnabled: boolean;
   onChangeClipboardHistoryEnabled: (enabled: boolean) => void;
   clipboardLimit: number;
   onChangeClipboardLimit: (limit: number) => void;
+  clipboardAutoStage: boolean;
+  onChangeClipboardAutoStage: (enabled: boolean) => void;
 }) {
   const { t } = useTranslation("settings");
 
@@ -255,6 +259,12 @@ export function ClipboardSettingsView({
             desc={t("display.clipboardHistoryDesc")}
             checked={clipboardHistoryEnabled}
             onChange={onChangeClipboardHistoryEnabled}
+          />
+          <SettingsToggle
+            label={t("display.clipboardAutoStageLabel")}
+            desc={t("display.clipboardAutoStageDesc")}
+            checked={clipboardAutoStage}
+            onChange={onChangeClipboardAutoStage}
           />
           <SettingsSlider
             label={t("display.clipboardHistoryLimitLabel")}

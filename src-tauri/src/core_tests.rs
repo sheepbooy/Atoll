@@ -46,6 +46,7 @@ pub(crate) fn test_app_state() -> AppState {
         clipboard_history: Mutex::new(Vec::new()),
         clipboard_history_limit: Mutex::new(clipboard_history::DEFAULT_MAX_ENTRIES),
         clipboard_history_enabled: Mutex::new(false),
+        clipboard_auto_stage: Mutex::new(false),
         file_station: Mutex::new(Vec::new()),
         lyrics_enabled: Mutex::new(false),
         lyrics: Mutex::new(None),

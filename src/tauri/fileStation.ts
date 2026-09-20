@@ -14,6 +14,8 @@ export interface StagedFile {
   stagedAt: number;
   /** True when the referenced file no longer exists on disk. */
   lost: boolean;
+  /** Staged from the clipboard history rather than dropped onto the island. */
+  fromClipboard?: boolean;
 }
 
 export interface StageFilesResult {
@@ -60,6 +62,28 @@ export async function copyStagedFilesToClipboard(ids: string[]): Promise<number>
     return 0;
   }
   return invoke<number>("copy_staged_files_to_clipboard", { ids });
+}
+
+/**
+ * Copy staged files (by id) to the clipboard as newline-joined path text —
+ * pasteable into terminals; lands in clipboard history as a text entry.
+ */
+export async function copyStagedPathsToClipboard(ids: string[]): Promise<number> {
+  if (!isTauriRuntime() || ids.length === 0) {
+    return 0;
+  }
+  return invoke<number>("copy_staged_paths_to_clipboard", { ids });
+}
+
+/**
+ * Stage clipboard history entries (by id) into the file station. Images and
+ * path-less text are materialized under ~/.atoll/station/ by the backend.
+ */
+export async function stageClipboardEntries(ids: string[]): Promise<StageFilesResult | null> {
+  if (!isTauriRuntime() || ids.length === 0) {
+    return null;
+  }
+  return invoke<StageFilesResult>("stage_clipboard_entries", { ids });
 }
 
 /**

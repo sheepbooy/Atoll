@@ -157,7 +157,9 @@
     "tabHistory": "History",
     "tabFavorites": "Favorites",
     "favorite": "Favorite",
-    "unfavorite": "Unfavorite"
+    "unfavorite": "Unfavorite",
+    "stage": "Stage in file station",
+    "staged": "Staged in file station"
   },
   "history": {
     "title": "Approval history",
@@ -218,6 +220,8 @@
     "feedHint": "Release to feed Atoll",
     "evicted": "Station full — released {{count}} oldest",
     "skipped": "{{count}} dropped file(s) no longer exist",
-    "stagedToast": "Atoll ate {{count}} file(s)"
+    "stagedToast": "Atoll ate {{count}} file(s)",
+    "copyPaths": "Copy as paths",
+    "fromClipboard": "From clipboard"
   }
 }

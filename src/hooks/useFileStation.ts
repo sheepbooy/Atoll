@@ -28,6 +28,12 @@ export interface FileStationApi {
   stashReactionKey: number;
   /** Play a one-shot stash reaction (spit on panel open, eat on drop). */
   playStashReaction: (reaction: AtollReaction) => void;
+  /**
+   * Feed an externally produced stage result (clipboard bridge) into the same
+   * pipeline as a drop: refresh the list, surface toast copy, play the
+   * tiered eat animation.
+   */
+  celebrateStage: (result: StageFilesResult) => void;
   removeStaged: (id: string) => void;
   clearStaged: () => void;
 }
@@ -56,6 +62,18 @@ export function useFileStation(): FileStationApi {
   }, []);
 
   useEffect(() => () => window.clearTimeout(reactionTimerRef.current), []);
+
+  const celebrateStage = useCallback(
+    (result: StageFilesResult) => {
+      setStagedFiles(result.files);
+      setLastStageResult(result);
+      const reaction = eatReactionForCount(result.files.length);
+      if (reaction) {
+        playStashReaction(reaction);
+      }
+    },
+    [playStashReaction],
+  );
 
   useEffect(() => {
     // Browser demo mode (`?demo=fileStation`): seed rows locally so the panel
@@ -93,12 +111,7 @@ export function useFileStation(): FileStationApi {
             if (!result || result.added === 0) {
               return;
             }
-            setStagedFiles(result.files);
-            setLastStageResult(result);
-            const reaction = eatReactionForCount(result.files.length);
-            if (reaction) {
-              playStashReaction(reaction);
-            }
+            celebrateStage(result);
           })
           .catch(() => undefined);
       }),
@@ -106,7 +119,7 @@ export function useFileStation(): FileStationApi {
     return () => {
       unsubscribeDrop();
     };
-  }, [playStashReaction]);
+  }, [celebrateStage]);
 
   const removeStaged = useCallback((id: string) => {
     if (!isTauriRuntime()) {
@@ -136,6 +149,7 @@ export function useFileStation(): FileStationApi {
     stashReaction,
     stashReactionKey,
     playStashReaction,
+    celebrateStage,
     removeStaged,
     clearStaged,
   };

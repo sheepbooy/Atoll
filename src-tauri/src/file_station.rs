@@ -30,6 +30,9 @@ pub struct StagedFile {
     pub is_dir: bool,
     /// ms since the Unix epoch when the file was staged.
     pub staged_at: u64,
+    /// Staged via the clipboard bridge rather than a drop onto the island.
+    #[serde(default)]
+    pub from_clipboard: bool,
 }
 
 /// Read-out shape sent to the frontend; `lost` is computed per request.
@@ -43,6 +46,7 @@ pub struct StagedFileView {
     pub is_dir: bool,
     pub staged_at: u64,
     pub lost: bool,
+    pub from_clipboard: bool,
 }
 
 /// Result of a drop reported back to the frontend (toast copy + animation).
@@ -126,6 +130,7 @@ pub fn views(entries: &[StagedFile]) -> Vec<StagedFileView> {
             is_dir: entry.is_dir,
             staged_at: entry.staged_at,
             lost: !Path::new(&entry.path).exists(),
+            from_clipboard: entry.from_clipboard,
         })
         .collect()
 }
@@ -137,6 +142,17 @@ pub fn stage_paths(
     entries: &mut Vec<StagedFile>,
     paths: &[String],
     limit: usize,
+) -> StageFilesResult {
+    stage_paths_sourced(entries, paths, limit, false)
+}
+
+/// Same as `stage_paths`, tagging fresh entries with their ingress source
+/// (a re-stage refreshes the source along with `staged_at`).
+pub fn stage_paths_sourced(
+    entries: &mut Vec<StagedFile>,
+    paths: &[String],
+    limit: usize,
+    from_clipboard: bool,
 ) -> StageFilesResult {
     let limit = limit.max(1);
     let mut added = 0usize;
@@ -162,6 +178,7 @@ pub fn stage_paths(
         let staged_at = now_millis();
         if let Some(existing) = entries.iter_mut().find(|e| e.path == path) {
             existing.staged_at = staged_at;
+            existing.from_clipboard = from_clipboard;
         } else {
             entries.insert(
                 0,
@@ -172,6 +189,7 @@ pub fn stage_paths(
                     byte_size,
                     is_dir,
                     staged_at,
+                    from_clipboard,
                 },
             );
         }
@@ -223,6 +241,7 @@ mod tests {
             byte_size: 1,
             is_dir: false,
             staged_at,
+            from_clipboard: false,
         }
     }
 

@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -12,9 +13,11 @@ import {
   getSnapshot,
   sendMediaCommand,
   getClipboardHistory,
+  copyStagedPathsToClipboard,
   setIslandPresentation,
   setPreferredMonitor,
   openAgentApp,
+  stageClipboardEntries,
   type IslandSnapshot,
   type PermissionRequest,
 } from "./tauri";
@@ -127,9 +130,11 @@ export function App() {
     clipboardHistory,
     clipboardEnabled,
     clipboardLimit,
+    clipboardAutoStage,
     setClipboardHistory,
     handleChangeClipboardEnabled,
     handleChangeClipboardLimit,
+    handleChangeClipboardAutoStage,
   } = useClipboardHistory();
   const {
     nowPlayingTrack,
@@ -470,10 +475,31 @@ export function App() {
     stashReaction,
     stashReactionKey,
     playStashReaction,
+    celebrateStage,
     removeStaged,
     clearStaged,
     lastStageResult,
   } = useFileStation();
+
+  // ── 剪贴板 ↔ 中转站联动 ──
+  // 入站：把剪贴板条目存入中转站；有实际入站才播吃零食动画 + toast。
+  const handleStageClipboardEntry = useCallback(
+    (id: string) =>
+      stageClipboardEntries([id])
+        .then((result) => {
+          if (!result || result.added === 0) {
+            return false;
+          }
+          celebrateStage(result);
+          return true;
+        })
+        .catch(() => false),
+    [celebrateStage],
+  );
+  // 出站：中转站行/多选复制路径文本（进入剪贴板，开启历史时一并记录）。
+  const handleCopyStagedPaths = useCallback((ids: string[]) => {
+    copyStagedPathsToClipboard(ids).catch(() => undefined);
+  }, []);
   // 文件中转站反应（吃/吐）优先于状态跃迁反应；二者共用 reactionKey 重放机制。
   const logoReaction = stashReaction ?? atollReaction;
   const logoReactionKey = stashReaction ? stashReactionKey : atollReactionKey;
@@ -932,10 +958,12 @@ export function App() {
               clipboardHistory={clipboardHistory}
               clipboardEnabled={clipboardEnabled}
               setClipboardHistory={setClipboardHistory}
+              stageClipboardEntry={handleStageClipboardEntry}
               stagedFiles={stagedFiles}
               removeStaged={removeStaged}
               clearStaged={clearStaged}
               playStashReaction={playStashReaction}
+              copyStagedPaths={handleCopyStagedPaths}
               dailyTokens={dailyTokens}
               dailyTokensByModel={snapshot.dailyTokensByModel}
               heatmapDisplay={heatmapDisplay}
@@ -968,6 +996,8 @@ export function App() {
               clipboardLimit={clipboardLimit}
               handleChangeClipboardEnabled={handleChangeClipboardEnabled}
               handleChangeClipboardLimit={handleChangeClipboardLimit}
+              clipboardAutoStage={clipboardAutoStage}
+              handleChangeClipboardAutoStage={handleChangeClipboardAutoStage}
               retentionMinutes={retentionMinutes}
               setRetentionMinutes={setRetentionMinutes}
               subagentRetentionMinutes={subagentRetentionMinutes}

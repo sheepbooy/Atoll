@@ -157,7 +157,9 @@
     "tabHistory": "历史",
     "tabFavorites": "收藏",
     "favorite": "收藏",
-    "unfavorite": "取消收藏"
+    "unfavorite": "取消收藏",
+    "stage": "存入中转站",
+    "staged": "已存入中转站"
   },
   "history": {
     "title": "审批历史",
@@ -218,6 +220,8 @@
     "feedHint": "松手投喂 Atoll",
     "evicted": "中转站已满，吐出了最旧的 {{count}} 个",
     "skipped": "{{count}} 个拖入的文件已不存在",
-    "stagedToast": "Atoll 吃掉了 {{count}} 个文件"
+    "stagedToast": "Atoll 吃掉了 {{count}} 个文件",
+    "copyPaths": "复制路径",
+    "fromClipboard": "来自剪贴板"
   }
 }

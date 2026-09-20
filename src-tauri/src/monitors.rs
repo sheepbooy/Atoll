@@ -189,6 +189,10 @@ pub(crate) fn start_clipboard_monitor(app: AppHandle) {
             let Some(payload) = read_clipboard_snapshot(&app) else {
                 continue;
             };
+            let copied_files = match &payload {
+                clipboard_history::ClipboardPayload::Files(paths) => paths.clone(),
+                _ => Vec::new(),
+            };
             let limit = *lock_state(&state.clipboard_history_limit);
             let mut entries = lock_state(&state.clipboard_history);
             if clipboard_history::add_entry(&mut entries, payload, limit) {
@@ -196,6 +200,22 @@ pub(crate) fn start_clipboard_monitor(app: AppHandle) {
                 let snapshot = entries.clone();
                 drop(entries);
                 let _ = app.emit("clipboard-history-changed", &snapshot);
+                // Opt-in auto-stage: copied files land in the file station.
+                // The station lock is only taken after the history lock is
+                // released; staging reuses the drop pipeline (dedup/cap), so
+                // a copy made out of the station merely refreshes those rows.
+                if !copied_files.is_empty() && *lock_state(&state.clipboard_auto_stage) {
+                    let mut staged = lock_state(&state.file_station);
+                    let result = file_station::stage_paths_sourced(
+                        &mut staged,
+                        &copied_files,
+                        file_station::STAGED_FILES_LIMIT,
+                        true,
+                    );
+                    file_station::save_history(&staged);
+                    drop(staged);
+                    let _ = app.emit("file-station-changed", &result.files);
+                }
             }
         }
     });

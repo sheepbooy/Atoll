@@ -9,9 +9,11 @@ import {
   clearClipboardHistory,
   copyClipboardEntry,
   copyStagedFilesToClipboard,
+  copyStagedPathsToClipboard,
   deactivateAtoll,
   getClipboardHistory,
   revealPath,
+  stageClipboardEntries,
   toggleClipboardFavorite,
   type ApprovalNoticeMode,
   type ClipboardEntry,
@@ -160,12 +162,16 @@ interface IslandPanelRouterProps {
   clipboardHistory: ClipboardEntry[];
   clipboardEnabled: boolean;
   setClipboardHistory: (entries: ClipboardEntry[]) => void;
+  /** Stage a clipboard history entry into the file station. */
+  stageClipboardEntry: (id: string) => Promise<boolean>;
 
   // File station panel
   stagedFiles: StagedFile[];
   removeStaged: (id: string) => void;
   clearStaged: () => void;
   playStashReaction: (reaction: AtollReaction) => void;
+  /** Copy staged paths as newline-joined text. */
+  copyStagedPaths: (ids: string[]) => void;
 
   // Settings: usage & pricing
   dailyTokens: TokenUsage;
@@ -204,6 +210,8 @@ interface IslandPanelRouterProps {
   clipboardLimit: number;
   handleChangeClipboardLimit: (limit: number) => void;
   handleChangeClipboardEnabled: (enabled: boolean) => void;
+  clipboardAutoStage: boolean;
+  handleChangeClipboardAutoStage: (enabled: boolean) => void;
   retentionMinutes: number;
   setRetentionMinutes: (minutes: number) => void;
   subagentRetentionMinutes: number;
@@ -284,10 +292,12 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
     clipboardHistory,
     clipboardEnabled,
     setClipboardHistory,
+    stageClipboardEntry,
     stagedFiles,
     removeStaged,
     clearStaged,
     playStashReaction,
+    copyStagedPaths,
     dailyTokens,
     dailyTokensByModel,
     heatmapDisplay,
@@ -320,6 +330,8 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
     clipboardLimit,
     handleChangeClipboardLimit,
     handleChangeClipboardEnabled,
+    clipboardAutoStage,
+    handleChangeClipboardAutoStage,
     retentionMinutes,
     setRetentionMinutes,
     subagentRetentionMinutes,
@@ -545,6 +557,7 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
             })
             .catch(() => undefined);
         }}
+        onStageEntry={stageClipboardEntry}
       />
     );
   }
@@ -555,6 +568,9 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
         files={stagedFiles}
         onCopy={(id) => {
           copyStagedFilesToClipboard([id]).catch(() => undefined);
+        }}
+        onCopyPaths={(ids) => {
+          copyStagedPaths(ids);
         }}
         onReveal={(path) => {
           revealPath(path).catch(() => undefined);
@@ -658,6 +674,8 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
           onChangeClipboardHistoryEnabled={handleChangeClipboardEnabled}
           clipboardLimit={clipboardLimit}
           onChangeClipboardLimit={handleChangeClipboardLimit}
+          clipboardAutoStage={clipboardAutoStage}
+          onChangeClipboardAutoStage={handleChangeClipboardAutoStage}
         />
       );
     }

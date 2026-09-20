@@ -64,6 +64,20 @@ export async function setClipboardHistoryLimit(limit: number): Promise<number> {
   return invoke<number>("set_clipboard_history_limit", { limit });
 }
 
+export async function getClipboardAutoStage(): Promise<boolean> {
+  if (!isTauriRuntime()) {
+    return false;
+  }
+  return invoke<boolean>("get_clipboard_auto_stage");
+}
+
+export async function setClipboardAutoStage(enabled: boolean): Promise<boolean> {
+  if (!isTauriRuntime()) {
+    return enabled;
+  }
+  return invoke<boolean>("set_clipboard_auto_stage", { enabled });
+}
+
 export async function getClipboardEntryThumbnail(id: string): Promise<string | null> {
   if (!isTauriRuntime()) {
     return null;

@@ -125,6 +125,20 @@
   color: rgba(255, 140, 140, 0.8);
 }
 
+/* 来自剪贴板的条目：文件名后的小徽标，说明这条引用的来源。 */
+.fs-clip-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  line-height: 1.4;
+  vertical-align: 1px;
+  color: #6bc8f0;
+  background: rgba(107, 200, 240, 0.1);
+  border: 1px solid rgba(107, 200, 240, 0.18);
+}
+
 .fs-row-action {
   display: inline-flex;
   align-items: center;

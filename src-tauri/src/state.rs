@@ -367,6 +367,8 @@ pub(crate) struct AppState {
     pub(crate) clipboard_history_enabled: Mutex<bool>,
     /// Maximum number of clipboard entries kept (user setting).
     pub(crate) clipboard_history_limit: Mutex<usize>,
+    /// Whether newly copied files are staged into the file station automatically.
+    pub(crate) clipboard_auto_stage: Mutex<bool>,
     /// File staging station references (newest first, never expire).
     pub(crate) file_station: Mutex<Vec<file_station::StagedFile>>,
     /// Whether the scrolling-lyrics marquee is enabled in the compact island.

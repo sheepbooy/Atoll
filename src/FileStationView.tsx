@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Copy, FolderOpen, Inbox, Search, Trash2, X } from "lucide-react";
+import { Copy, FolderOpen, Inbox, Link2, Search, Trash2, X } from "lucide-react";
 import i18n from "./i18n";
 import { STAGED_FILES_LIMIT, type StagedFile } from "./tauri";
 
 interface FileStationViewProps {
   files: StagedFile[];
   onCopy: (id: string) => void;
+  /** Copy the referenced paths as newline-joined text (row or multi-select). */
+  onCopyPaths: (ids: string[]) => void;
   onReveal: (path: string) => void;
   onRemove: (id: string) => void;
   onClear: () => void;
@@ -84,6 +86,7 @@ function StagedFileRow({
   copied,
   selected,
   onCopy,
+  onCopyPaths,
   onReveal,
   onRemove,
   onToggleSelect,
@@ -92,6 +95,7 @@ function StagedFileRow({
   file: StagedFile;
   copied: boolean;
   onCopy: (id: string) => void;
+  onCopyPaths: (id: string) => void;
   onReveal: (path: string) => void;
   onRemove: (id: string) => void;
   onToggleSelect: (id: string) => void;
@@ -170,9 +174,29 @@ function StagedFileRow({
           <FolderOpen size={15} strokeWidth={2.1} />
         </span>
         <span className="fs-entry-body">
-          <span className="fs-entry-name">{file.fileName}</span>
+          <span className="fs-entry-name">
+            {file.fileName}
+            {file.fromClipboard ? (
+              <span className="fs-clip-badge">{t("fileStation.fromClipboard")}</span>
+            ) : null}
+          </span>
           <span className="fs-entry-meta">{meta}</span>
         </span>
+      </button>
+      <button
+        type="button"
+        className="fs-row-action"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onCopyPaths(file.id);
+        }}
+        disabled={lost}
+        aria-label={t("fileStation.copyPaths")}
+        title={t("fileStation.copyPaths")}
+        data-no-drag
+      >
+        <Link2 size={13} />
       </button>
       <button
         type="button"
@@ -210,6 +234,7 @@ function StagedFileRow({
 export function FileStationView({
   files,
   onCopy,
+  onCopyPaths,
   onReveal,
   onRemove,
   onClear,
@@ -255,6 +280,15 @@ export function FileStationView({
     window.setTimeout(() => setCopiedId(null), 1200);
   };
 
+  // 单行复制路径与批量按钮共用同一回调；批量按列表顺序整组复制。
+  const handleRowCopyPaths = (id: string) => {
+    onCopyPaths([id]);
+    setCopiedId(id);
+    window.setTimeout(() => setCopiedId(null), 1200);
+  };
+
+  const selectedFileIds = () => files.filter((f) => selectedIds.has(f.id)).map((f) => f.id);
+
   const handleClearClick = () => {
     if (!confirmClear) {
       setConfirmClear(true);
@@ -292,6 +326,17 @@ export function FileStationView({
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
+              {selectedIds.size > 0 ? (
+                <button
+                  type="button"
+                  className="clipboard-clear-btn"
+                  onClick={() => onCopyPaths(selectedFileIds())}
+                  data-no-drag
+                >
+                  <Link2 size={13} />
+                  <span>{t("fileStation.copyPaths")}</span>
+                </button>
+              ) : null}
               <button
                 type="button"
                 className={`clipboard-clear-btn${confirmClear ? " is-confirming" : ""}`}
@@ -319,6 +364,7 @@ export function FileStationView({
                     copied={copiedId === file.id}
                     selected={selectedIds.has(file.id)}
                     onCopy={handleCopy}
+                    onCopyPaths={handleRowCopyPaths}
                     onReveal={onReveal}
                     onRemove={onRemove}
                     onToggleSelect={(id) => {

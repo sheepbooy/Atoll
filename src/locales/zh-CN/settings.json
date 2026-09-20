@@ -88,7 +88,9 @@
     "sessionAutoArchiveDesc": "空闲会话自动归档前的分钟数。已固定的会话除外。",
     "subagentAutoArchiveLabel": "子 Agent 自动归档",
     "subagentAutoArchiveDesc": "子 Agent 完成后自动归档前的分钟数。",
-    "unitMinutes": " 分钟"
+    "unitMinutes": " 分钟",
+    "clipboardAutoStageLabel": "复制文件自动入站",
+    "clipboardAutoStageDesc": "复制文件时自动存入文件中转站，需先开启剪贴板历史。"
   },
   "mascot": {
     "activityIntervalLabel": "活动间隔",

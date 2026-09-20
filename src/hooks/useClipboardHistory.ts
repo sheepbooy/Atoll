@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   ClipboardEntry,
+  getClipboardAutoStage,
   getClipboardHistory,
   getClipboardHistoryEnabled,
   getClipboardHistoryLimit,
   onClipboardHistoryChanged,
+  setClipboardAutoStage,
   setClipboardHistoryEnabled,
   setClipboardHistoryLimit,
 } from "../tauri";
@@ -18,6 +20,7 @@ export function useClipboardHistory() {
   const [clipboardHistory, setClipboardHistory] = useState<ClipboardEntry[]>([]);
   const [clipboardEnabled, setClipboardEnabled] = useState(false);
   const [clipboardLimit, setClipboardLimit] = useState(50);
+  const [clipboardAutoStage, setAutoStage] = useState(false);
 
   useEffect(() => {
     getClipboardHistoryEnabled()
@@ -25,6 +28,9 @@ export function useClipboardHistory() {
       .catch(() => undefined);
     getClipboardHistoryLimit()
       .then(setClipboardLimit)
+      .catch(() => undefined);
+    getClipboardAutoStage()
+      .then(setAutoStage)
       .catch(() => undefined);
     getClipboardHistory()
       .then(setClipboardHistory)
@@ -58,12 +64,19 @@ export function useClipboardHistory() {
     setClipboardHistoryLimit(clamped).catch(() => undefined);
   }, []);
 
+  const handleChangeClipboardAutoStage = useCallback((enabled: boolean) => {
+    setAutoStage(enabled);
+    setClipboardAutoStage(enabled).catch(() => undefined);
+  }, []);
+
   return {
     clipboardHistory,
     clipboardEnabled,
     clipboardLimit,
+    clipboardAutoStage,
     setClipboardHistory,
     handleChangeClipboardEnabled,
     handleChangeClipboardLimit,
+    handleChangeClipboardAutoStage,
   };
 }

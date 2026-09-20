@@ -14,6 +14,7 @@ mod approval_history;
 mod approval_spool;
 mod capture;
 mod clipboard_history;
+mod clipboard_station;
 mod debug_agent;
 mod file_station;
 mod hook_bridge;
@@ -167,6 +168,7 @@ pub fn run() {
                 load_clipboard_history_limit(),
             )),
             clipboard_history_enabled: Mutex::new(load_clipboard_history_enabled()),
+            clipboard_auto_stage: Mutex::new(load_clipboard_auto_stage()),
             file_station: Mutex::new(file_station::load_history()),
             lyrics_enabled: Mutex::new(load_lyrics_enabled()),
             lyrics: Mutex::new(None),
@@ -243,6 +245,8 @@ pub fn run() {
             set_clipboard_history_enabled,
             get_clipboard_history_limit,
             set_clipboard_history_limit,
+            get_clipboard_auto_stage,
+            set_clipboard_auto_stage,
             toggle_clipboard_favorite,
             get_clipboard_entry_thumbnail,
             get_staged_files,
@@ -250,6 +254,8 @@ pub fn run() {
             remove_staged_file,
             clear_staged_files,
             copy_staged_files_to_clipboard,
+            copy_staged_paths_to_clipboard,
+            stage_clipboard_entries,
             begin_staged_files_drag,
             archive_subagent,
             archive_completed_subagents,

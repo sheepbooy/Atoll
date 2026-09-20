@@ -125,6 +125,27 @@
   border-color: rgba(120, 220, 150, 0.2);
 }
 
+/* 存入中转站按钮：样式与收藏星标同构，悬停/反馈换成岛屿蓝绿。 */
+.clipboard-stage {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--fg-dim, #6b7280);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.clipboard-stage:hover {
+  background: rgba(107, 200, 240, 0.12);
+  border-color: rgba(107, 200, 240, 0.2);
+  color: #6bc8f0;
+}
+
 .clipboard-toolbar {
   display: flex;
   align-items: center;

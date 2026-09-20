@@ -274,6 +274,43 @@ pub(crate) fn persist_clipboard_history_enabled(enabled: bool) {
     }
 }
 
+pub(crate) fn load_clipboard_auto_stage() -> bool {
+    let Some(path) = atoll_settings_path() else {
+        return false;
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+        return false;
+    };
+    value
+        .get("clipboardAutoStage")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+pub(crate) fn persist_clipboard_auto_stage(enabled: bool) {
+    let Some(path) = atoll_settings_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut config: Value = path
+        .exists()
+        .then(|| std::fs::read_to_string(&path).ok())
+        .flatten()
+        .and_then(|c| serde_json::from_str(&c).ok())
+        .unwrap_or_else(|| Value::Object(Default::default()));
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert("clipboardAutoStage".into(), Value::from(enabled));
+    }
+    if let Ok(formatted) = serde_json::to_string_pretty(&config) {
+        let _ = std::fs::write(path, formatted);
+    }
+}
+
 pub(crate) fn load_clipboard_history_limit() -> usize {
     let Some(path) = atoll_settings_path() else {
         return clipboard_history::DEFAULT_MAX_ENTRIES;

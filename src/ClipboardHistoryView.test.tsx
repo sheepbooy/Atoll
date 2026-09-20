@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ClipboardHistoryView } from "./ClipboardHistoryView";
 import type { ClipboardEntry } from "./tauri";
@@ -39,6 +39,7 @@ describe("ClipboardHistoryView", () => {
         onCopy={vi.fn()}
         onClear={vi.fn()}
         onToggleFavorite={vi.fn()}
+        onStageEntry={vi.fn().mockResolvedValue(false)}
       />,
     );
 
@@ -61,6 +62,7 @@ describe("ClipboardHistoryView", () => {
         onCopy={vi.fn()}
         onClear={vi.fn()}
         onToggleFavorite={vi.fn()}
+        onStageEntry={vi.fn().mockResolvedValue(false)}
       />,
     );
 
@@ -80,6 +82,7 @@ describe("ClipboardHistoryView", () => {
         onCopy={onCopy}
         onClear={vi.fn()}
         onToggleFavorite={onToggleFavorite}
+        onStageEntry={vi.fn().mockResolvedValue(false)}
       />,
     );
 
@@ -96,6 +99,7 @@ describe("ClipboardHistoryView", () => {
         onCopy={vi.fn()}
         onClear={vi.fn()}
         onToggleFavorite={vi.fn()}
+        onStageEntry={vi.fn().mockResolvedValue(false)}
       />,
     );
 
@@ -114,10 +118,47 @@ describe("ClipboardHistoryView", () => {
         onCopy={vi.fn()}
         onClear={onClear}
         onToggleFavorite={vi.fn()}
+        onStageEntry={vi.fn().mockResolvedValue(false)}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Clear all/i }));
     expect(onClear).toHaveBeenCalledOnce();
+  });
+
+  it("stages an entry into the file station and shows row feedback", async () => {
+    const onStageEntry = vi.fn().mockResolvedValue(true);
+    render(
+      <ClipboardHistoryView
+        entries={[makeEntry({ preview: "stage me" })]}
+        enabled
+        onCopy={vi.fn()}
+        onClear={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        onStageEntry={onStageEntry}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Stage in file station" }));
+    expect(onStageEntry).toHaveBeenCalledWith("1");
+    expect(await screen.findByText("Staged in file station")).toBeInTheDocument();
+  });
+
+  it("stays silent when staging fails (e.g. pruned image blob)", async () => {
+    const onStageEntry = vi.fn().mockResolvedValue(false);
+    render(
+      <ClipboardHistoryView
+        entries={[makeEntry({ preview: "stage fails" })]}
+        enabled
+        onCopy={vi.fn()}
+        onClear={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        onStageEntry={onStageEntry}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Stage in file station" }));
+    await waitFor(() => expect(onStageEntry).toHaveBeenCalledOnce());
+    expect(screen.queryByText("Staged in file station")).not.toBeInTheDocument();
   });
 });

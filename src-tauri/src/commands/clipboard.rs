@@ -111,6 +111,18 @@ pub(crate) fn get_clipboard_history_limit(state: State<'_, AppState>) -> usize {
 }
 
 #[tauri::command]
+pub(crate) fn get_clipboard_auto_stage(state: State<'_, AppState>) -> bool {
+    *lock_state(&state.clipboard_auto_stage)
+}
+
+#[tauri::command]
+pub(crate) fn set_clipboard_auto_stage(state: State<'_, AppState>, enabled: bool) -> bool {
+    *lock_state(&state.clipboard_auto_stage) = enabled;
+    persist_clipboard_auto_stage(enabled);
+    enabled
+}
+
+#[tauri::command]
 pub(crate) fn set_clipboard_history_limit(state: State<'_, AppState>, limit: usize) -> usize {
     let clamped = limit.clamp(
         clipboard_history::MIN_HISTORY_LIMIT,

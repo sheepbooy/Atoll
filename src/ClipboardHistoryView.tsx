@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ClipboardList, Image as ImageIcon, Paperclip, Search, Star, Trash2 } from "lucide-react";
+import { ClipboardList, Image as ImageIcon, Inbox, Paperclip, Search, Star, Trash2 } from "lucide-react";
 import i18n from "./i18n";
 import { CLIPBOARD_HISTORY_EXPIRY_SECS, getClipboardEntryThumbnail } from "./tauri";
 import type { ClipboardEntry } from "./tauri";
@@ -11,6 +11,8 @@ interface ClipboardHistoryViewProps {
   onCopy: (id: string) => void;
   onClear: () => void;
   onToggleFavorite: (id: string) => void;
+  /** Stage the entry into the file station; resolves true when something was staged. */
+  onStageEntry: (id: string) => Promise<boolean>;
 }
 
 function timeAgoFromSecs(unixSecs: number) {
@@ -56,12 +58,16 @@ function entryTooltip(entry: ClipboardEntry) {
 function ClipboardEntryRow({
   entry,
   copied,
+  staged,
   onCopy,
+  onStageEntry,
   onToggleFavorite,
 }: {
   entry: ClipboardEntry;
   copied: boolean;
+  staged: boolean;
   onCopy: (id: string) => void;
+  onStageEntry: (id: string) => void;
   onToggleFavorite: (id: string) => void;
 }) {
   const { t } = useTranslation();
@@ -121,9 +127,11 @@ function ClipboardEntryRow({
       <span className="clipboard-entry-meta">
         {copied
           ? t("clipboard.copied")
-          : [metaExtras, timeAgoFromSecs(entry.copiedAt)]
-              .filter(Boolean)
-              .join(" · ")}
+          : staged
+            ? t("clipboard.staged")
+            : [metaExtras, timeAgoFromSecs(entry.copiedAt)]
+                .filter(Boolean)
+                .join(" · ")}
       </span>
     </>
   );
@@ -150,6 +158,20 @@ function ClipboardEntryRow({
       </button>
       <button
         type="button"
+        className="clipboard-stage"
+        aria-label={t("clipboard.stage")}
+        title={t("clipboard.stage")}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onStageEntry(entry.id);
+        }}
+        data-no-drag
+      >
+        <Inbox size={14} />
+      </button>
+      <button
+        type="button"
         className={`clipboard-star${favorited ? " is-on" : ""}`}
         aria-pressed={favorited}
         aria-label={favorited ? t("clipboard.unfavorite") : t("clipboard.favorite")}
@@ -172,10 +194,12 @@ export function ClipboardHistoryView({
   onCopy,
   onClear,
   onToggleFavorite,
+  onStageEntry,
 }: ClipboardHistoryViewProps) {
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [stagedId, setStagedId] = useState<string | null>(null);
   const [tab, setTab] = useState<"history" | "favorites">("history");
 
   const favorites = useMemo(
@@ -205,6 +229,17 @@ export function ClipboardHistoryView({
     onCopy(id);
     setCopiedId(id);
     window.setTimeout(() => setCopiedId(null), 1200);
+  };
+
+  // 入站成功才给行内「已入站」反馈；失败（如图片 blob 已被清理）静默。
+  const handleStage = (id: string) => {
+    void onStageEntry(id).then((staged) => {
+      if (!staged) {
+        return;
+      }
+      setStagedId(id);
+      window.setTimeout(() => setStagedId(null), 1200);
+    });
   };
 
   const showDisabledHistory = !enabled && tab === "history";
@@ -300,7 +335,9 @@ export function ClipboardHistoryView({
                         key={entry.id}
                         entry={entry}
                         copied={copiedId === entry.id}
+                        staged={stagedId === entry.id}
                         onCopy={handleCopy}
+                        onStageEntry={handleStage}
                         onToggleFavorite={onToggleFavorite}
                       />
                     ))}

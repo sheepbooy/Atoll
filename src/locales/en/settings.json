@@ -88,7 +88,9 @@
     "sessionAutoArchiveDesc": "Minutes before idle sessions are auto-archived. Pinned sessions are exempt.",
     "subagentAutoArchiveLabel": "Subagent auto-archive",
     "subagentAutoArchiveDesc": "Minutes after completion before subagents are auto-archived.",
-    "unitMinutes": " min"
+    "unitMinutes": " min",
+    "clipboardAutoStageLabel": "Auto-stage copied files",
+    "clipboardAutoStageDesc": "Automatically stage copied files into the file station. Requires clipboard history."
   },
   "mascot": {
     "activityIntervalLabel": "Activity interval",
