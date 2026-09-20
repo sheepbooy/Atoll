@@ -232,6 +232,73 @@ export function MediaSettingsView({
   );
 }
 
+export function BluetoothSettingsView({
+  bluetoothCardEnabled,
+  onChangeBluetoothCardEnabled,
+  bluetoothAlertEnabled,
+  onChangeBluetoothAlertEnabled,
+  bluetoothAlertThreshold,
+  onChangeBluetoothAlertThreshold,
+}: {
+  bluetoothCardEnabled: boolean;
+  onChangeBluetoothCardEnabled: (enabled: boolean) => void;
+  bluetoothAlertEnabled: boolean;
+  onChangeBluetoothAlertEnabled: (enabled: boolean) => void;
+  bluetoothAlertThreshold: number;
+  onChangeBluetoothAlertThreshold: (threshold: number) => void;
+}) {
+  const { t } = useTranslation("settings");
+  const thresholds = [10, 15, 20, 25, 30];
+
+  return (
+    <div className="settings-view" data-no-drag>
+      <div className="settings-body">
+        <div className="settings-section">
+          <span className="settings-section-label">{t("section.bluetooth")}</span>
+          <SettingsToggle
+            label={t("display.bluetoothCardLabel")}
+            desc={t("display.bluetoothCardDesc")}
+            checked={bluetoothCardEnabled}
+            onChange={onChangeBluetoothCardEnabled}
+          />
+          <SettingsToggle
+            label={t("display.bluetoothAlertLabel")}
+            desc={t("display.bluetoothAlertDesc")}
+            checked={bluetoothAlertEnabled}
+            onChange={onChangeBluetoothAlertEnabled}
+          />
+          <div className="settings-card">
+            <div className="settings-card-head">
+              <span className="settings-card-title">
+                {t("display.bluetoothThresholdLabel")}
+              </span>
+              <select
+                className="settings-select"
+                value={bluetoothAlertThreshold}
+                aria-label={t("display.bluetoothThresholdLabel")}
+                disabled={!bluetoothAlertEnabled}
+                onChange={(event) =>
+                  onChangeBluetoothAlertThreshold(Number(event.target.value))
+                }
+                data-no-drag
+              >
+                {thresholds.map((value) => (
+                  <option key={value} value={value}>
+                    {value}%
+                  </option>
+                ))}
+              </select>
+            </div>
+            <span className="settings-card-desc">
+              {t("display.bluetoothThresholdDesc")}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ClipboardSettingsView({
   clipboardHistoryEnabled,
   onChangeClipboardHistoryEnabled,

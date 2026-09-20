@@ -31,6 +31,9 @@ import {
   NowPlayingCard,
 } from "./NowPlayingCard";
 import {
+  BluetoothBatteryCard,
+} from "./BluetoothBatteryCard";
+import {
   deriveAppLogoState,
   deriveAtollActivity,
 } from "./logoStates";
@@ -70,6 +73,7 @@ import { useUpdater } from "./hooks/useUpdater";
 import { useLyrics } from "./hooks/useLyrics";
 import { useClipboardHistory } from "./hooks/useClipboardHistory";
 import { useNowPlaying } from "./hooks/useNowPlaying";
+import { useBluetoothBattery } from "./hooks/useBluetoothBattery";
 import { useDisplayAndSettingsPrefs } from "./hooks/useDisplayAndSettingsPrefs";
 import { useHookInstaller } from "./hooks/useHookInstaller";
 import { useApprovals } from "./hooks/useApprovals";
@@ -139,6 +143,15 @@ export function App() {
     handleChangeMediaCardEnabled,
     handleChangeArtworkBackdropEnabled,
   } = useNowPlaying();
+  const {
+    bluetoothDevices,
+    cardEnabled: bluetoothCardEnabled,
+    alertEnabled: bluetoothAlertEnabled,
+    alertThreshold: bluetoothAlertThreshold,
+    handleChangeCardEnabled: handleChangeBluetoothCardEnabled,
+    handleChangeAlertEnabled: handleChangeBluetoothAlertEnabled,
+    handleChangeAlertThreshold: handleChangeBluetoothAlertThreshold,
+  } = useBluetoothBattery();
   const {
     maxCompactIcons,
     setMaxCompactIcons,
@@ -965,6 +978,13 @@ export function App() {
               handleChangeArtworkBackdropEnabled={handleChangeArtworkBackdropEnabled}
               lyricsEnabled={lyricsEnabled}
               handleChangeLyricsEnabled={handleChangeLyricsEnabled}
+              bluetoothDevices={bluetoothDevices}
+              bluetoothCardEnabled={bluetoothCardEnabled}
+              bluetoothAlertEnabled={bluetoothAlertEnabled}
+              bluetoothAlertThreshold={bluetoothAlertThreshold}
+              handleChangeBluetoothCardEnabled={handleChangeBluetoothCardEnabled}
+              handleChangeBluetoothAlertEnabled={handleChangeBluetoothAlertEnabled}
+              handleChangeBluetoothAlertThreshold={handleChangeBluetoothAlertThreshold}
               clipboardLimit={clipboardLimit}
               handleChangeClipboardEnabled={handleChangeClipboardEnabled}
               handleChangeClipboardLimit={handleChangeClipboardLimit}
@@ -998,15 +1018,25 @@ export function App() {
               handleChangeLaunchAtLogin={handleChangeLaunchAtLogin}
             />
             </div>
-            {isExpandedChrome && mediaCardEnabled && nowPlayingTrack ? (
+            {isExpandedChrome &&
+            ((mediaCardEnabled && nowPlayingTrack) ||
+              (bluetoothCardEnabled && bluetoothDevices.length > 0)) ? (
               <div className="island-panel-footer">
-                <NowPlayingCard
-                  track={nowPlayingTrack}
-                  livePosition={playbackPosition}
-                  onCommand={(cmd) => {
-                    sendMediaCommand(cmd).catch(() => undefined);
-                  }}
-                />
+                {mediaCardEnabled && nowPlayingTrack ? (
+                  <NowPlayingCard
+                    track={nowPlayingTrack}
+                    livePosition={playbackPosition}
+                    onCommand={(cmd) => {
+                      sendMediaCommand(cmd).catch(() => undefined);
+                    }}
+                  />
+                ) : null}
+                {bluetoothCardEnabled && bluetoothDevices.length > 0 ? (
+                  <BluetoothBatteryCard
+                    devices={bluetoothDevices}
+                    alertThreshold={bluetoothAlertThreshold}
+                  />
+                ) : null}
               </div>
             ) : null}
           </div>

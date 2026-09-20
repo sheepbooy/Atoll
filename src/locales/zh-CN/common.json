@@ -219,5 +219,9 @@
     "evicted": "中转站已满，吐出了最旧的 {{count}} 个",
     "skipped": "{{count}} 个拖入的文件已不存在",
     "stagedToast": "Atoll 吃掉了 {{count}} 个文件"
+  },
+  "bluetooth": {
+    "title": "蓝牙电量",
+    "case": "仓"
   }
 }

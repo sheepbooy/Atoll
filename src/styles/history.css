@@ -524,6 +524,73 @@
   background: rgba(255, 255, 255, 0.12);
 }
 
+/* Bluetooth battery card — stacked in the same footer slot as the
+   now-playing card, so each card carries its own bottom margin. */
+.bluetooth-battery-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bt-device-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 0;
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+.bt-device-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.bt-device-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bt-device-detail {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.bt-batt-chip {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  min-width: 38px;
+  justify-content: flex-end;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.bt-batt-chip.is-mid {
+  color: rgba(255, 190, 80, 0.95);
+}
+
+.bt-batt-chip.is-low {
+  color: rgba(255, 105, 105, 0.95);
+}
+
 .idle-dot {
   width: 6px;
   height: 6px;

@@ -12,7 +12,8 @@
     "integrations": "集成",
     "display": "显示",
     "mascot": "吉祥物",
-    "pricing": "定价"
+    "pricing": "定价",
+    "bluetooth": "蓝牙"
   },
   "badge": {
     "on": "开启",
@@ -32,7 +33,9 @@
     "shortcutsTitle": "全局快捷键",
     "shortcutsDesc": "在任意应用中唤起浮岛、批准、拒绝或始终允许请求。",
     "sessionsTitle": "会话",
-    "sessionsDesc": "空闲会话与子 Agent 的自动归档。"
+    "sessionsDesc": "空闲会话与子 Agent 的自动归档。",
+    "bluetoothTitle": "蓝牙电量",
+    "bluetoothDesc": "已连接设备的电量卡片与低电量提醒"
   },
   "general": {
     "launchAtLoginLabel": "登录时启动",
@@ -88,7 +91,13 @@
     "sessionAutoArchiveDesc": "空闲会话自动归档前的分钟数。已固定的会话除外。",
     "subagentAutoArchiveLabel": "子 Agent 自动归档",
     "subagentAutoArchiveDesc": "子 Agent 完成后自动归档前的分钟数。",
-    "unitMinutes": " 分钟"
+    "unitMinutes": " 分钟",
+    "bluetoothCardLabel": "蓝牙电量卡片",
+    "bluetoothCardDesc": "在展开的浮岛中显示已连接蓝牙设备的电量",
+    "bluetoothAlertLabel": "低电量提醒",
+    "bluetoothAlertDesc": "设备电量跌至阈值时发送一次系统通知",
+    "bluetoothThresholdLabel": "提醒阈值",
+    "bluetoothThresholdDesc": "设备电量不高于该值时提醒"
   },
   "mascot": {
     "activityIntervalLabel": "活动间隔",

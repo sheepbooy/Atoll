@@ -12,7 +12,8 @@
     "integrations": "Integrations",
     "display": "Display",
     "mascot": "Mascot",
-    "pricing": "Pricing"
+    "pricing": "Pricing",
+    "bluetooth": "Bluetooth"
   },
   "badge": {
     "on": "On",
@@ -32,7 +33,9 @@
     "shortcutsTitle": "Global shortcuts",
     "shortcutsDesc": "Summon the island and approve, deny, or always-allow requests from anywhere.",
     "sessionsTitle": "Sessions",
-    "sessionsDesc": "Auto-archive idle sessions and completed subagents."
+    "sessionsDesc": "Auto-archive idle sessions and completed subagents.",
+    "bluetoothTitle": "Bluetooth Battery",
+    "bluetoothDesc": "Battery card and low-battery alerts for connected devices"
   },
   "general": {
     "launchAtLoginLabel": "Launch at login",
@@ -88,7 +91,13 @@
     "sessionAutoArchiveDesc": "Minutes before idle sessions are auto-archived. Pinned sessions are exempt.",
     "subagentAutoArchiveLabel": "Subagent auto-archive",
     "subagentAutoArchiveDesc": "Minutes after completion before subagents are auto-archived.",
-    "unitMinutes": " min"
+    "unitMinutes": " min",
+    "bluetoothCardLabel": "Bluetooth battery card",
+    "bluetoothCardDesc": "Show battery levels of connected Bluetooth devices in the expanded island",
+    "bluetoothAlertLabel": "Low battery alerts",
+    "bluetoothAlertDesc": "Send one system notification per device when its battery drops to the threshold",
+    "bluetoothThresholdLabel": "Alert threshold",
+    "bluetoothThresholdDesc": "Alert when a device's battery is at or below this level"
   },
   "mascot": {
     "activityIntervalLabel": "Activity interval",

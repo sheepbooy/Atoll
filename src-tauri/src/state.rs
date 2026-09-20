@@ -361,6 +361,12 @@ pub(crate) struct AppState {
     pub(crate) media_card_enabled: Mutex<bool>,
     /// Whether the expanded island grows the now-playing artwork into a frosted backdrop.
     pub(crate) artwork_backdrop_enabled: Mutex<bool>,
+    /// Whether the Bluetooth battery card is shown in the expanded island.
+    pub(crate) bluetooth_battery_card_enabled: Mutex<bool>,
+    /// Whether low-battery system notifications are sent for Bluetooth devices.
+    pub(crate) bluetooth_battery_alert_enabled: Mutex<bool>,
+    /// Percent at or below which a Bluetooth device triggers one alert.
+    pub(crate) bluetooth_battery_alert_threshold: Mutex<u8>,
     /// Clipboard history entries (pruned, newest first).
     pub(crate) clipboard_history: Mutex<Vec<clipboard_history::ClipboardEntry>>,
     /// Whether clipboard history monitoring is enabled (privacy toggle).

@@ -19,6 +19,7 @@ export interface SettingsViewProps {
   onOpenUsage: () => void;
   onOpenIsland: () => void;
   onOpenMedia: () => void;
+  onOpenBluetooth: () => void;
   onOpenClipboard: () => void;
   onOpenSessions: () => void;
   onOpenMascot: () => void;
@@ -31,6 +32,8 @@ export interface SettingsViewProps {
   hooksAllConnected: boolean;
   showMediaSettings: boolean;
   mediaCardEnabled: boolean;
+  showBluetoothSettings: boolean;
+  bluetoothCardEnabled: boolean;
   clipboardHistoryEnabled: boolean;
   noticeModeLabel: string;
   shortcutsEnabled: boolean;
@@ -47,6 +50,7 @@ export function SettingsView({
   onOpenUsage,
   onOpenIsland,
   onOpenMedia,
+  onOpenBluetooth,
   onOpenClipboard,
   onOpenSessions,
   onOpenMascot,
@@ -59,6 +63,8 @@ export function SettingsView({
   hooksAllConnected,
   showMediaSettings,
   mediaCardEnabled,
+  showBluetoothSettings,
+  bluetoothCardEnabled,
   clipboardHistoryEnabled,
   noticeModeLabel,
   shortcutsEnabled,
@@ -103,6 +109,19 @@ export function SettingsView({
               badge={mediaCardEnabled ? t("badge.on") : t("badge.off")}
               badgeTone={mediaCardEnabled ? "installed" : ""}
               onClick={onOpenMedia}
+            />
+          </div>
+        ) : null}
+
+        {showBluetoothSettings ? (
+          <div className="settings-section">
+            <span className="settings-section-label">{t("section.bluetooth")}</span>
+            <SettingsNavCard
+              title={t("pages.bluetoothTitle")}
+              desc={t("pages.bluetoothDesc")}
+              badge={bluetoothCardEnabled ? t("badge.on") : t("badge.off")}
+              badgeTone={bluetoothCardEnabled ? "installed" : ""}
+              onClick={onOpenBluetooth}
             />
           </div>
         ) : null}

@@ -21,6 +21,7 @@ export type SettingsPage =
   | "usage"
   | "island"
   | "media"
+  | "bluetooth"
   | "clipboard"
   | "sessions"
   | "mascot"

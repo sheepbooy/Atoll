@@ -7,6 +7,7 @@ export * from "./approvals";
 export * from "./hooks";
 export * from "./tokens";
 export * from "./media";
+export * from "./bluetooth";
 export * from "./clipboard";
 export * from "./fileStation";
 export * from "./settings";

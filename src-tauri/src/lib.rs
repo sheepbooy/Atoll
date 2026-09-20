@@ -12,6 +12,11 @@ use tauri::{AppHandle, Emitter, Manager};
 
 mod approval_history;
 mod approval_spool;
+// Compiled on every platform so the pure-logic unit tests run on any host;
+// the system_profiler/ioreg calls are cfg(macos) inside, hence the dead-code
+// allowance on non-macOS targets where only the tests reference the parsers.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod bluetooth_battery;
 mod capture;
 mod clipboard_history;
 mod debug_agent;
@@ -78,6 +83,8 @@ pub(crate) use snapshot::*;
 
 pub(crate) use local_time::{format_unix_timestamp, iso_timestamp_now, parse_iso_timestamp_secs};
 
+#[cfg(test)]
+mod bluetooth_battery_tests;
 #[cfg(test)]
 mod claude_hooks_tests;
 #[cfg(test)]
@@ -162,6 +169,9 @@ pub fn run() {
             transcript_cache: Mutex::new(TranscriptCache::default()),
             media_card_enabled: Mutex::new(load_media_card_enabled()),
             artwork_backdrop_enabled: Mutex::new(load_artwork_backdrop_enabled()),
+            bluetooth_battery_card_enabled: Mutex::new(load_bluetooth_battery_card_enabled()),
+            bluetooth_battery_alert_enabled: Mutex::new(load_bluetooth_battery_alert_enabled()),
+            bluetooth_battery_alert_threshold: Mutex::new(load_bluetooth_battery_alert_threshold()),
             clipboard_history_limit: Mutex::new(load_clipboard_history_limit()),
             clipboard_history: Mutex::new(clipboard_history::load_history(
                 load_clipboard_history_limit(),
@@ -229,6 +239,13 @@ pub fn run() {
             set_global_shortcut_config,
             get_artwork_backdrop_enabled,
             set_artwork_backdrop_enabled,
+            get_bluetooth_battery,
+            get_bluetooth_battery_card_enabled,
+            set_bluetooth_battery_card_enabled,
+            get_bluetooth_battery_alert_enabled,
+            set_bluetooth_battery_alert_enabled,
+            get_bluetooth_battery_alert_threshold,
+            set_bluetooth_battery_alert_threshold,
             get_lyrics_enabled,
             set_lyrics_enabled,
             get_current_lyrics,
@@ -320,6 +337,7 @@ pub fn run() {
             start_token_refresh_timer(app.handle().clone());
             start_token_history_writer(app.handle().clone());
             start_media_monitor(app.handle().clone());
+            start_bluetooth_battery_monitor(app.handle().clone());
             start_clipboard_monitor(app.handle().clone());
             start_lyrics_monitor(app.handle().clone());
             start_initial_maintenance(app.handle().clone());

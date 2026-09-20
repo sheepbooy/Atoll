@@ -109,6 +109,92 @@ pub(crate) fn start_media_monitor(app: AppHandle) {
     }
 }
 
+/// How often to re-read Bluetooth battery levels. Batteries move slowly and
+/// each poll shells out to system_profiler, so this stays far below the 1s
+/// cadence of the other monitors.
+pub(crate) const BLUETOOTH_BATTERY_POLL_INTERVAL: Duration = Duration::from_secs(60);
+
+/// Polls connected Bluetooth devices' battery levels every
+/// [`BLUETOOTH_BATTERY_POLL_INTERVAL`] and emits `bluetooth-battery-changed`
+/// only when the report actually changes. While enabled, posts one
+/// low-battery notification per device per discharge below the alert
+/// threshold (recovery re-arms the alert). Disabling the card clears the
+/// frontend state with a `null` payload.
+pub(crate) fn start_bluetooth_battery_monitor(app: AppHandle) {
+    thread::spawn(move || {
+        // Let the app settle before the first fetch (system_profiler is slow).
+        thread::sleep(Duration::from_secs(5));
+        let mut last: Option<bluetooth_battery::BluetoothBatteryReport> = None;
+        let mut alerted: HashSet<String> = HashSet::new();
+        loop {
+            let (enabled, alert_enabled, threshold, language) = {
+                let state = app.state::<AppState>();
+                let enabled = *lock_state(&state.bluetooth_battery_card_enabled);
+                let alert_enabled = *lock_state(&state.bluetooth_battery_alert_enabled);
+                let threshold = *lock_state(&state.bluetooth_battery_alert_threshold);
+                let language = lock_state(&state.notification_language).clone();
+                (enabled, alert_enabled, threshold, language)
+            };
+            if !enabled {
+                if last.is_some() {
+                    last = None;
+                    alerted.clear();
+                    let _ = app.emit(
+                        "bluetooth-battery-changed",
+                        Option::<bluetooth_battery::BluetoothBatteryReport>::None,
+                    );
+                }
+                thread::sleep(BLUETOOTH_BATTERY_POLL_INTERVAL);
+                continue;
+            }
+            let report = bluetooth_battery::fetch_bluetooth_battery();
+            if alert_enabled {
+                for (name, percent) in bluetooth_battery::collect_low_battery_alerts(
+                    &report.devices,
+                    threshold,
+                    &mut alerted,
+                ) {
+                    send_low_battery_notification(&app, &name, percent, &language);
+                }
+            } else {
+                alerted.clear();
+            }
+            if last.as_ref() != Some(&report) {
+                last = Some(report.clone());
+                let _ = app.emit("bluetooth-battery-changed", &report);
+            }
+            thread::sleep(BLUETOOTH_BATTERY_POLL_INTERVAL);
+        }
+    });
+}
+
+/// Post the low-battery system notification; copy follows the UI language
+/// (same convention as the approval notifications).
+fn send_low_battery_notification(app: &AppHandle, device_name: &str, percent: u8, language: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    let (title, body) = if language == "zh-CN" {
+        (
+            "蓝牙设备电量低".to_string(),
+            format!("{device_name} 电量仅剩 {percent}%"),
+        )
+    } else {
+        (
+            "Bluetooth device low on battery".to_string(),
+            format!("{device_name} battery is at {percent}%"),
+        )
+    };
+    if let Err(error) = app
+        .notification()
+        .builder()
+        .title(title)
+        .body(body)
+        .sound("default")
+        .show()
+    {
+        eprintln!("[Atoll] low battery notification failed: {error}");
+    }
+}
+
 /// Run a closure on the app's main thread and wait briefly for its result.
 /// NSPasteboard must only be touched from the main thread on macOS, so every
 /// pasteboard read/write is marshaled through this. Other platforms call

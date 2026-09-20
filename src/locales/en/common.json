@@ -219,5 +219,9 @@
     "evicted": "Station full — released {{count}} oldest",
     "skipped": "{{count}} dropped file(s) no longer exist",
     "stagedToast": "Atoll ate {{count}} file(s)"
+  },
+  "bluetooth": {
+    "title": "Bluetooth battery",
+    "case": "Case"
   }
 }
