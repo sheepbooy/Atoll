@@ -441,17 +441,30 @@ fn not_installed_status(config_path: &std::path::Path) -> HookStatus {
     }
 }
 
-/// Rebuild the island snapshot after a hook config mutation and emit it so
-/// every open window re-renders from the same state.
+/// Re-read every agent's hook config, refresh the cached hook health, then
+/// broadcast the snapshot. The cache refresh is the point: build_snapshot
+/// only reads AppState (no file IO by design), so broadcasting right after a
+/// config mutation would ship the pre-mutation statuses back to the UI —
+/// where the front-end's prefer-ready merge would visibly undo the
+/// just-applied one until the periodic monitor sync caught up. Runs on a
+/// worker thread so install/uninstall commands return immediately.
 fn emit_hook_snapshot_changed(app: &AppHandle) -> Result<(), String> {
-    let state = app.state::<AppState>();
-    let snapshot = build_snapshot(app, &state);
-    if let Ok(mut last) = state.last_listening_online.lock() {
-        *last = Some(snapshot.online);
-    }
-    remember_hook_health(&state, &snapshot.hook_health);
-    app.emit("snapshot-changed", &snapshot)
-        .map_err(|error| error.to_string())
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        let state = handle.state::<AppState>();
+        let hook_health = build_hook_health(&handle);
+        remember_hook_health(&state, &hook_health);
+        // Refresh the online flag too: it is equally derived from configs, and
+        // leaving it stale kept the logo offline after an install until the
+        // next periodic monitor pass.
+        let online = compute_listening_online(&handle);
+        if let Ok(mut last) = state.last_listening_online.lock() {
+            *last = Some(online);
+        }
+        let snapshot = build_snapshot(&handle, &state);
+        let _ = handle.emit("snapshot-changed", &snapshot);
+    });
+    Ok(())
 }
 
 fn uninstall_hooks_for(profile: &AgentHookProfile, app: AppHandle) -> Result<HookStatus, String> {
@@ -717,10 +730,7 @@ pub(crate) fn remove_competing_claude_hooks(app: AppHandle) -> Result<HookStatus
             .map_err(|e| format!("Cannot serialize settings: {e}"))?;
         std::fs::write(&settings_path, formatted)
             .map_err(|e| format!("Cannot write settings: {e}"))?;
-        let state = app.state::<AppState>();
-        let snapshot = build_snapshot(&app, &state);
-        let _ = app.emit("snapshot-changed", &snapshot);
-        remember_hook_health(&state, &snapshot.hook_health);
+        emit_hook_snapshot_changed(&app)?;
     }
 
     Ok(claude_hook_status(&app))
