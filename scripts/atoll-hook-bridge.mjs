@@ -67,6 +67,82 @@ export function hookAuthHeaders(token) {
   return token ? { "x-atoll-hook-token": token } : {};
 }
 
+// Shared per-user data dir for hook-side files (invoke logs, offline spool).
+// Windows keeps the LOCALAPPDATA convention (with the same sanitized-env
+// fallback as bridgeConfigPath); macOS/Linux use ~/.atoll, matching the
+// approval-history database location.
+export function hookDataDir() {
+  if (process.platform === "win32") {
+    const localAppData = process.env.LOCALAPPDATA;
+    if (localAppData) {
+      return path.join(localAppData, "Atoll");
+    }
+    return path.join(os.homedir(), "AppData", "Local", "Atoll");
+  }
+  return path.join(os.homedir(), ".atoll");
+}
+
+// ─── offline permission-request spool ───────────────────────────────────
+// When the bridge is unreachable (Atoll not running), permission requests
+// are appended as individual JSON files here so Atoll can import them into
+// the approval history on next start — without the spool those approvals
+// happen in the agent's own UI and vanish from Atoll's history entirely.
+
+export const SPOOL_MAX_FILES = 500;
+
+export function spoolDir() {
+  return path.join(hookDataDir(), "hook-spool");
+}
+
+export function spoolPermissionRequest(agent, payload) {
+  try {
+    const dir = spoolDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const now = Date.now();
+    const rand = Math.random().toString(36).slice(2, 8);
+    fs.writeFileSync(
+      path.join(dir, `${agent}-${now}-${rand}.json`),
+      JSON.stringify({
+        agent,
+        payload: payload || "{}",
+        spooledAtSecs: Math.floor(now / 1000),
+      }),
+    );
+    pruneSpool(dir);
+  } catch {
+    // spooling must never break the hook fallback
+  }
+}
+
+function pruneSpool(dir) {
+  try {
+    const names = fs.readdirSync(dir).filter((name) => name.endsWith(".json"));
+    if (names.length <= SPOOL_MAX_FILES) {
+      return;
+    }
+    const statted = names.map((name) => {
+      let mtimeSecs = 0;
+      try {
+        mtimeSecs = Math.floor(fs.statSync(path.join(dir, name)).mtimeMs);
+      } catch {
+        // unstatable files sort first and get dropped
+      }
+      return { name, mtimeSecs };
+    });
+    statted.sort((a, b) => a.mtimeSecs - b.mtimeSecs);
+    const excess = statted.length - SPOOL_MAX_FILES;
+    for (const { name } of statted.slice(0, excess)) {
+      try {
+        fs.unlinkSync(path.join(dir, name));
+      } catch {
+        // best effort
+      }
+    }
+  } catch {
+    // best effort
+  }
+}
+
 // ─── shared hook-shim runtime ───────────────────────────────────────────
 
 export const MAX_HOOK_STDIN_BYTES = 2 * 1024 * 1024;
@@ -147,12 +223,7 @@ export function createHookLogger({ agent, hookUrl, debugEnvKey, logBase = null }
     }
 
     try {
-      const localAppData = process.env.LOCALAPPDATA;
-      const base = logBase
-        ? logBase
-        : localAppData
-          ? path.join(localAppData, "Atoll")
-          : path.join(os.homedir(), "AppData", "Local", "Atoll");
+      const base = logBase ? logBase : hookDataDir();
       fs.mkdirSync(base, { recursive: true });
       let event = "unknown";
       try {

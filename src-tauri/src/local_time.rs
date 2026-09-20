@@ -71,41 +71,14 @@ mod tests {
 }
 
 pub fn parse_iso_timestamp_secs(iso: &str) -> u64 {
-    // Parse "YYYY-MM-DDTHH:MM:SSZ" to unix seconds (simplified)
-    let parts: Vec<&str> = iso.split('T').collect();
-    if parts.len() != 2 {
-        return 0;
-    }
-    let date_parts: Vec<u64> = parts[0].split('-').filter_map(|s| s.parse().ok()).collect();
-    let time_str = parts[1].trim_end_matches('Z');
-    let time_parts: Vec<u64> = time_str.split(':').filter_map(|s| s.parse().ok()).collect();
-
-    if date_parts.len() != 3 || time_parts.len() < 3 {
-        return 0;
-    }
-
-    let (year, month, day) = (date_parts[0], date_parts[1], date_parts[2]);
-    let (hour, min, sec) = (time_parts[0], time_parts[1], time_parts[2]);
-
-    // Approximate days-from-epoch calculation
-    let mut days: u64 = 0;
-    for y in 1970..year {
-        days += if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) {
-            366
-        } else {
-            365
-        };
-    }
-    let month_days = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
-    if month >= 1 && month <= 12 {
-        days += month_days[(month - 1) as usize];
-        if month > 2 && year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) {
-            days += 1;
-        }
-    }
-    days += day.saturating_sub(1);
-
-    days * 86400 + hour * 3600 + min * 60 + sec
+    // Robust RFC3339-style parsing (fractional seconds, explicit offsets) via
+    // the chrono-based parser above. This must never silently return 0 for a
+    // valid timestamp: the approval-history prune deletes rows whose
+    // requested_at predates the retention cutoff, so a 0 from a failed parse
+    // would delete the row immediately after insert.
+    parse_iso_timestamp(iso)
+        .map(|dt| dt.timestamp().max(0) as u64)
+        .unwrap_or(0)
 }
 
 pub fn iso_timestamp_now() -> String {

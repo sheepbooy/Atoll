@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
-import os from "node:os";
-import path from "node:path";
 import {
   createHookLogger,
+  hookDataDir,
   hookEventNameFromPayload,
   parseHookTimeoutMs,
   postToBridge,
   readStdin,
   resolveHookConfig,
+  spoolPermissionRequest,
 } from "./atoll-hook-bridge.mjs";
 
 const defaultHookUrl = "http://127.0.0.1:47777/gemini/hook";
@@ -19,11 +19,7 @@ const logHookInvoke = createHookLogger({
   agent: "gemini",
   hookUrl,
   debugEnvKey: "ATOLL_GEMINI_HOOK_DEBUG",
-  // Gemini logs to ~/.atoll on macOS/Linux (LOCALAPPDATA is Windows-only).
-  logBase:
-    process.platform === "win32" && process.env.LOCALAPPDATA
-      ? path.join(process.env.LOCALAPPDATA, "Atoll")
-      : path.join(os.homedir(), ".atoll"),
+  logBase: hookDataDir(),
 });
 
 // Gemini CLI fires BeforeTool for *every* tool call, but Atoll should only gate
@@ -84,7 +80,16 @@ try {
     process.stdout.write(text);
   }
 } catch (error) {
-  logHookInvoke(globalThis.__ATOLL_LAST_PAYLOAD__, error);
+  const payload = globalThis.__ATOLL_LAST_PAYLOAD__;
+  logHookInvoke(payload, error);
+  // Spool gated-tool approvals so Atoll can import them into the history on
+  // next start instead of losing them to Gemini's own permission flow.
+  if (
+    hookEventNameFromPayload(payload) === "BeforeTool" &&
+    isGatedTool(payload)
+  ) {
+    spoolPermissionRequest("gemini", payload);
+  }
   // Gemini CLI defaults to "Allow" when a hook prints nothing, so Atoll being
   // unavailable degrades to Gemini's own permission flow instead of blocking
   // the session. Observer events degrade the same way.

@@ -147,11 +147,13 @@ fn open_db() -> Result<Connection, String> {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
     if let Some(conn) = open_with_schema(&path) {
+        configure_connection(&conn);
         return Ok(conn);
     }
     eprintln!("Atoll approval history: database unreadable, recreating");
     let _ = std::fs::remove_file(&path);
     let conn = Connection::open(&path).map_err(|error| error.to_string())?;
+    configure_connection(&conn);
     initialize_schema(&conn)?;
     Ok(conn)
 }
@@ -160,6 +162,13 @@ fn open_with_schema(path: &std::path::Path) -> Option<Connection> {
     let conn = Connection::open(path).ok()?;
     initialize_schema(&conn).ok()?;
     Some(conn)
+}
+
+/// Every connection (hook-thread writes and UI queries run concurrently on
+/// fresh connections) waits briefly for the SQLite lock instead of failing
+/// with SQLITE_BUSY on the first contention.
+fn configure_connection(conn: &Connection) {
+    let _ = conn.busy_timeout(std::time::Duration::from_millis(5_000));
 }
 
 fn initialize_schema(conn: &Connection) -> Result<(), String> {
@@ -320,6 +329,13 @@ fn record_entry(entry: &ApprovalHistoryEntry) -> Result<(), String> {
     upsert_entry(&conn, entry)?;
     prune_db(&conn)?;
     Ok(())
+}
+
+/// Insert a fully-formed entry (offline spool import path); prunes like any
+/// other write. The caller-supplied id makes re-importing the same spool
+/// event an idempotent no-op.
+pub(crate) fn record_raw_entry(entry: &ApprovalHistoryEntry) -> Result<(), String> {
+    record_entry(entry)
 }
 
 /// Delete rows older than the retention window, then cap the table to

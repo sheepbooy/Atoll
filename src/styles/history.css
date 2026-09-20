@@ -1,8 +1,19 @@
 /* ─── history.css — approval history view ───────────────────────────── */
 /* ─── Approval history view ──────────────────────────────────────────────── */
 
+/* The history view reuses the settings chrome, but its body must be a flex
+   column: .history-list relies on flex:1 + min-height:0 to own the vertical
+   scroll. Under the settings-body grid the list height stays unconstrained
+   and entries get squeezed until their text overlaps. */
+.approval-history-view .settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .history-toolbar {
   padding-bottom: 8px;
+  flex-shrink: 0;
 }
 
 .history-filters {
@@ -89,6 +100,7 @@
   border: 1px solid rgba(255, 255, 255, 0.05);
   background: rgba(255, 255, 255, 0.03);
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .history-entry.is-expanded {
@@ -224,8 +236,33 @@
   background: rgba(111, 220, 255, 0.16);
 }
 
+.history-error {
+  flex: 1;
+  min-height: 0;
+}
+
+.history-error .clipboard-empty-icon {
+  color: rgba(255, 130, 130, 0.9);
+}
+
+.history-retry-btn {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fg, #e8eaed);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.history-retry-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .history-load-more {
   height: 30px;
+  flex-shrink: 0;
   border-radius: 8px;
   border: 1px dashed rgba(255, 255, 255, 0.12);
   background: transparent;

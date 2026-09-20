@@ -153,6 +153,44 @@ describe("ApprovalHistoryView", () => {
     expect(await screen.findByText("No matching approval history")).toBeInTheDocument();
   });
 
+  it("shows a load error with retry instead of an empty state when the query fails", async () => {
+    mockGet.mockRejectedValue(new Error("database locked"));
+    render(<ApprovalHistoryView />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Couldn't load the approval history",
+    );
+    // The empty state must not render for a failed query.
+    expect(
+      screen.queryByText("Approval requests will be recorded here"),
+    ).not.toBeInTheDocument();
+
+    mockGet.mockResolvedValue({ items: [makeEntry({ id: "a" })], total: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Bash: ls")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("offers gemini and opencode agent filters", async () => {
+    mockGet.mockResolvedValue({ items: [], total: 0 });
+    render(<ApprovalHistoryView />);
+    await waitFor(() => expect(mockGet).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: "Gemini" }));
+    await waitFor(() =>
+      expect(mockGet).toHaveBeenLastCalledWith(
+        expect.objectContaining({ agent: "gemini" }),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "OpenCode" }));
+    await waitFor(() =>
+      expect(mockGet).toHaveBeenLastCalledWith(
+        expect.objectContaining({ agent: "opencode" }),
+      ),
+    );
+  });
+
   it("exports JSON and reveals the exported file", async () => {
     mockGet.mockResolvedValue({ items: [makeEntry()], total: 1 });
     mockExport.mockResolvedValue("/tmp/atoll-history-1.json");

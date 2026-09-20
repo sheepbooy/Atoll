@@ -8,6 +8,7 @@ import {
   postToBridge,
   readStdin,
   resolveHookConfig,
+  spoolPermissionRequest,
 } from "./atoll-hook-bridge.mjs";
 
 const defaultHookUrl = "http://127.0.0.1:47777/cursor/hook";
@@ -61,10 +62,11 @@ try {
   process.stdout.write(text);
 } catch (error) {
   logHookInvoke(globalThis.__ATOLL_LAST_PAYLOAD__, error);
-  process.stdout.write(
-    fallbackForEvent(
-      hookEventNameFromPayload(globalThis.__ATOLL_LAST_PAYLOAD__),
-      error,
-    ),
-  );
+  const eventName = hookEventNameFromPayload(globalThis.__ATOLL_LAST_PAYLOAD__);
+  // Spool unreachable-atoll approvals so Atoll can import them into the
+  // history on next start instead of losing them to Cursor's local allow.
+  if (eventName === "preToolUse") {
+    spoolPermissionRequest("cursor", globalThis.__ATOLL_LAST_PAYLOAD__);
+  }
+  process.stdout.write(fallbackForEvent(eventName, error));
 }

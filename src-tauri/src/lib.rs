@@ -11,6 +11,7 @@ use tauri::utils::config::Color;
 use tauri::{AppHandle, Emitter, Manager};
 
 mod approval_history;
+mod approval_spool;
 mod capture;
 mod clipboard_history;
 mod debug_agent;
@@ -286,6 +287,16 @@ pub fn run() {
 
             build_tray(app.handle())?;
             hook_bridge::start_server(app.handle().clone());
+            // Import permission requests spooled by hooks while Atoll was not
+            // running (they resolved in the agents' own UIs, so they land as
+            // answered_elsewhere history rows). Off the setup path: the DB
+            // write must not delay window creation.
+            std::thread::spawn(|| {
+                let imported = approval_spool::import_spooled_requests();
+                if imported > 0 {
+                    eprintln!("Atoll approval spool: imported {imported} offline request(s)");
+                }
+            });
             #[cfg(desktop)]
             shortcuts::startup(app.handle());
             start_island_hover_monitor(app.handle().clone());

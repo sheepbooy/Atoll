@@ -26,7 +26,15 @@ const PAGE_SIZE = 50;
 const SEARCH_DEBOUNCE_MS = 300;
 const TOAST_AUTO_DISMISS_MS = 6000;
 
-const AGENT_FILTERS = ["", "claude", "codex", "cursor", "zcode"] as const;
+const AGENT_FILTERS = [
+  "",
+  "claude",
+  "codex",
+  "cursor",
+  "zcode",
+  "gemini",
+  "opencode",
+] as const;
 const OUTCOME_FILTERS = [
   "",
   "approved",
@@ -88,6 +96,8 @@ function agentLabelKey(agent: string) {
       return "history.agentZcode";
     case "gemini":
       return "history.agentGemini";
+    case "opencode":
+      return "history.agentOpencode";
     default:
       return "history.agentOther";
   }
@@ -187,6 +197,9 @@ export function ApprovalHistoryView() {
   const [items, setItems] = useState<ApprovalHistoryEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [hasLoaded, setHasLoaded] = useState(false);
+  // Distinguishes "the query failed" from "there are no records": without it
+  // a backend error renders exactly like an empty history.
+  const [loadError, setLoadError] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const requestSeq = useRef(0);
@@ -218,10 +231,12 @@ export function ApprovalHistoryView() {
         }
         setItems((prev) => (append ? [...prev, ...page.items] : page.items));
         setTotal(page.total);
+        setLoadError(false);
       } catch {
         if (seq === requestSeq.current && !append) {
           setItems([]);
           setTotal(0);
+          setLoadError(true);
         }
       }
       if (seq === requestSeq.current) {
@@ -370,7 +385,24 @@ export function ApprovalHistoryView() {
           ) : null}
         </div>
 
-        {showEmpty ? (
+        {loadError ? (
+          <div className="clipboard-empty history-error" role="alert">
+            <div className="clipboard-empty-icon">
+              <History size={24} />
+            </div>
+            <p>{t("history.loadError")}</p>
+            <button
+              type="button"
+              className="history-retry-btn"
+              onClick={() =>
+                void loadPage({ ...baseQuery, limit: PAGE_SIZE, offset: 0 }, false)
+              }
+              data-no-drag
+            >
+              {t("history.retry")}
+            </button>
+          </div>
+        ) : showEmpty ? (
           <div className="clipboard-empty">
             <div className="clipboard-empty-icon">
               <History size={24} />

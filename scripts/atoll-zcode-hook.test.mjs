@@ -82,6 +82,53 @@ for (const hookEventName of [
 }
 
 {
+  // Bridge unreachable: a PermissionRequest spools to ~/.atoll/hook-spool so
+  // Atoll can import it as resolved-outside-Atoll history on next start.
+  const { stdout, exitCode, home } = await runHook(
+    permissionPayload,
+    { ATOLL_HOOK_URL: "http://127.0.0.1:1/zcode/hook" },
+    { keepTempHome: true },
+  );
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(JSON.parse(stdout), {}); // silent fallback still applies
+
+  try {
+    const spoolDir = path.join(home, ".atoll", "hook-spool");
+    const files = fs.readdirSync(spoolDir).filter((name) => name.endsWith(".json"));
+    assert.equal(files.length, 1);
+    assert.ok(files[0].startsWith("zcode-"), `unexpected spool name ${files[0]}`);
+    const record = JSON.parse(fs.readFileSync(path.join(spoolDir, files[0]), "utf8"));
+    assert.equal(record.agent, "zcode");
+    assert.ok(Number.isFinite(record.spooledAtSecs) && record.spooledAtSecs > 0);
+    assert.equal(JSON.parse(record.payload).hook_event_name, "PermissionRequest");
+    assert.equal(JSON.parse(record.payload).tool_input.command, "echo from-zcode-test");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+}
+
+{
+  // Observer events must not spool — only permission requests do.
+  const { home } = await runHook(
+    {
+      session_id: "session-zcode-no-spool",
+      cwd: "/tmp/project",
+      hook_event_name: "Stop",
+    },
+    { ATOLL_HOOK_URL: "http://127.0.0.1:1/zcode/hook" },
+    { keepTempHome: true },
+  );
+
+  try {
+    const spoolDir = path.join(home, ".atoll", "hook-spool");
+    assert.equal(fs.existsSync(spoolDir), false, "observer events must not spool");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+}
+
+{
   const stopPayload = {
     session_id: "session-zcode-slow-stop",
     cwd: "/tmp/project",
@@ -143,7 +190,7 @@ for (const hookEventName of [
   }
 }
 
-async function runHook(payload, env = {}) {
+async function runHook(payload, env = {}, { keepTempHome = false } = {}) {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "atoll-zcode-hook-test-"));
   try {
     const child = spawn(process.execPath, ["scripts/atoll-zcode-hook.mjs"], {
@@ -164,9 +211,11 @@ async function runHook(payload, env = {}) {
       new Promise((resolve) => child.on("close", resolve)),
     ]);
 
-    return { stdout, stderr, exitCode };
+    return { stdout, stderr, exitCode, home: tempHome };
   } finally {
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    if (!keepTempHome) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
   }
 }
 

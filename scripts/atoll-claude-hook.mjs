@@ -7,6 +7,7 @@ import {
   postToBridge,
   readStdin,
   resolveHookConfig,
+  spoolPermissionRequest,
 } from "./atoll-hook-bridge.mjs";
 
 const defaultHookUrl = "http://127.0.0.1:47777/claude/pre-tool-use";
@@ -34,11 +35,14 @@ try {
   });
   process.stdout.write(text);
 } catch (error) {
-  process.stdout.write(
-    fallbackResponse(
-      hookEventNameFromPayload(globalThis.__ATOLL_LAST_PAYLOAD__, "PreToolUse"),
-      error,
-      SILENT_FALLBACK_EVENTS,
-    ),
+  const eventName = hookEventNameFromPayload(
+    globalThis.__ATOLL_LAST_PAYLOAD__,
+    "PreToolUse",
   );
+  // Spool unreachable-atoll approvals so Atoll can import them into the
+  // history on next start instead of losing them to Claude Code's own prompt.
+  if (eventName === "PermissionRequest" || eventName === "PreToolUse") {
+    spoolPermissionRequest("claude", globalThis.__ATOLL_LAST_PAYLOAD__);
+  }
+  process.stdout.write(fallbackResponse(eventName, error, SILENT_FALLBACK_EVENTS));
 }
