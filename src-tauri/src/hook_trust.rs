@@ -174,6 +174,15 @@ fn now_iso() -> String {
     chrono::Local::now().to_rfc3339()
 }
 
+/// Serializes load-modify-save sequences on the trust-state file. Install and
+/// uninstall commands for all six agents run concurrently (the UI fires them
+/// with Promise.all); without the lock their read-modify-writes interleave and
+/// only the last writer's agent survives in the file.
+fn trust_state_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// Record the hook script fingerprint right after Atoll successfully (re)writes
 /// an agent's hook config. This is the moment the user is being asked to go
 /// trust that exact content in the host CLI, so it becomes the new baseline.
@@ -181,6 +190,7 @@ pub(crate) fn record_hook_installed(agent_key: &str, script_path: &str) {
     let Some(hash) = fingerprint(script_path) else {
         return;
     };
+    let _guard = trust_state_lock();
     let mut file = load();
     file.version = STATE_VERSION;
     file.agents.insert(
@@ -266,6 +276,7 @@ pub(crate) fn on_codex_hooks_installed(script_path: &str) {
 
 /// Drop any stored baseline for an agent, e.g. after the user uninstalls its hook.
 pub(crate) fn clear_hook_installed(agent_key: &str) {
+    let _guard = trust_state_lock();
     let mut file = load();
     if file.agents.remove(agent_key).is_some() {
         save(&file);
@@ -296,6 +307,7 @@ pub(crate) fn needs_retrust(
         return agent_key == "codex"
             && codex_trust_state_without_live_script(script_path, configured_script_path);
     };
+    let _guard = trust_state_lock();
     let mut file = load();
     match file.agents.get(agent_key) {
         Some(record) if !record.script_hash.is_empty() => record.script_hash != current_hash,

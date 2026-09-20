@@ -2,6 +2,10 @@
 /**
  * Atoll bridge plugin for OpenCode.
  *
+ * atoll-opencode-bridge — this marker line is load-bearing: Atoll's installer
+ * verifies the deployed copy contains it, and the hook-status read uses it to
+ * tell Atoll's plugin from a user file that happens to share the name.
+ *
  * OpenCode has no command-hook pipeline, so unlike the other agent
  * integrations this file is not spawned per event: it runs inside OpenCode's
  * own Bun runtime (installed to ~/.config/opencode/plugins by Atoll, which

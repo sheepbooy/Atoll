@@ -100,7 +100,7 @@ import {
   clampRetentionMinutes,
 } from "../settingsStorage";
 import { getPlanModeType } from "../planMode";
-import { hookAgentNote, type HookHealthAnalysis } from "../hookHealth";
+import { hookAgentNote, type HookAgentKey, type HookHealthAnalysis } from "../hookHealth";
 import { IS_MACOS } from "../platform";
 import type { AtollReaction } from "../AtollLogo";
 import type { ShortcutAction } from "../tauri";
@@ -115,7 +115,7 @@ interface IslandPanelRouterProps {
 
   // Hook registration
   hookHealth: HookHealthSnapshot;
-  hookBusy: boolean;
+  hookBusy: HookAgentKey | "all" | false;
   hookInstallError: string | null;
   handleInstallClaudeHooks: () => void;
   handleInstallCodexHooks: () => void;

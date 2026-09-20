@@ -29,7 +29,9 @@ export interface HookMenuAgent {
 
 export interface HooksViewProps {
   agents: HookMenuAgent[];
-  hookBusy: boolean;
+  /** Which agent's install/uninstall is in flight ("all" for the bulk
+   * buttons); false when idle. Drives per-button busy labels. */
+  hookBusy: HookAgentKey | "all" | false;
   hookInstallError: string | null;
   onInstallAll: () => void;
   onUninstallAll: () => void;
@@ -49,6 +51,7 @@ export function HooksView({
   onUninstallAll,
 }: HooksViewProps) {
   const { t } = useTranslation("hooks");
+  const busyFor = (key: string) => hookBusy === "all" || hookBusy === key;
   const installedCount = agents.filter((agent) => agent.status?.installed).length;
   const missingCount = agents.filter(
     (agent) => agent.status && !agent.status.installed,
@@ -69,7 +72,7 @@ export function HooksView({
                   type="button"
                   className="settings-hook-button"
                   onClick={onInstallAll}
-                  disabled={hookBusy}
+                  disabled={Boolean(hookBusy)}
                   data-no-drag
                 >
                   <Download size={13} />
@@ -81,7 +84,7 @@ export function HooksView({
                   type="button"
                   className="settings-hook-button is-muted"
                   onClick={onUninstallAll}
-                  disabled={hookBusy}
+                  disabled={Boolean(hookBusy)}
                   data-no-drag
                 >
                   <Trash2 size={13} />
@@ -229,7 +232,7 @@ export function HooksView({
                       type="button"
                       className="settings-hook-button"
                       onClick={agent.onRemoveCompetingHooks}
-                      disabled={hookBusy}
+                      disabled={Boolean(hookBusy)}
                       data-no-drag
                     >
                       <Trash2 size={13} />
@@ -243,22 +246,22 @@ export function HooksView({
                       type="button"
                       className="settings-hook-button is-muted"
                       onClick={agent.onUninstall}
-                      disabled={hookBusy}
+                      disabled={Boolean(hookBusy)}
                       data-no-drag
                     >
                       <Trash2 size={13} />
-                      {t("action.uninstall")}
+                      {busyFor(agent.key) ? t("action.uninstalling") : t("action.uninstall")}
                     </button>
                   ) : (
                     <button
                       type="button"
                       className="settings-hook-button"
                       onClick={agent.onInstall}
-                      disabled={hookBusy}
+                      disabled={Boolean(hookBusy)}
                       data-no-drag
                     >
                       <Download size={13} />
-                      {hookBusy ? t("action.installing") : t("action.install")}
+                      {busyFor(agent.key) ? t("action.installing") : t("action.install")}
                     </button>
                   )}
                 </div>

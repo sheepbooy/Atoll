@@ -10,7 +10,8 @@
   "action": {
     "install": "Install",
     "installing": "Installing…",
-    "uninstall": "Uninstall"
+    "uninstall": "Uninstall",
+    "uninstalling": "Uninstalling…"
   },
   "status": {
     "connected": "Connected",
@@ -109,6 +110,7 @@
     "cursorNotSaved": "Cursor hooks were not saved. Check permissions on ~/.cursor/hooks.json.",
     "installPartial": "Could not install hooks for: {{agents}}.",
     "uninstallFailed": "{{agentLabel}} hook uninstall failed: {{message}}",
+    "uninstallPartial": "Could not uninstall hooks for: {{agents}}.",
     "uninstallAllFailed": "Hook uninstall failed: {{message}}",
     "cleanupFailed": "Hook cleanup failed: {{message}}"
   }

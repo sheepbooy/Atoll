@@ -91,6 +91,9 @@ pub(crate) fn install_opencode_hooks(app: AppHandle) -> Result<HookStatus, Strin
         "OpenCode bridge plugin",
     )?;
     if !is_atoll_opencode_plugin(&dest) {
+        // Roll the copy back: a plugin the status reader cannot recognize
+        // would leave OpenCode loading a bridge Atoll reports as uninstalled.
+        let _ = std::fs::remove_file(&dest);
         return Err(format!(
             "OpenCode plugin was not saved correctly. Check permissions on {}.",
             dest.display()
@@ -151,6 +154,20 @@ mod opencode_plugin_tests {
         assert!(!is_atoll_opencode_plugin(&missing));
 
         let _ = std::fs::remove_dir_all(temp);
+    }
+
+    #[test]
+    fn shipped_plugin_script_contains_the_install_marker() {
+        // install_opencode_hooks verifies the deployed copy against
+        // OPENCODE_PLUGIN_MARKER, so the shipped script itself must contain it
+        // or every install fails with "plugin was not saved correctly".
+        let script = std::fs::read_to_string(repo_hook_script_path(OPENCODE_PLUGIN_SCRIPT))
+            .expect("read shipped atoll-opencode-bridge.js");
+        assert!(
+            script.contains(OPENCODE_PLUGIN_MARKER),
+            "scripts/{OPENCODE_PLUGIN_SCRIPT} must contain the marker \
+             {OPENCODE_PLUGIN_MARKER:?}: the installer and status reads match on it"
+        );
     }
 
     #[test]
