@@ -730,7 +730,14 @@ export function AtollLogo({
                 <StashFileGlyph className="atoll-eat-file f1" />
                 {eatTier >= 2 ? <StashFileGlyph className="atoll-eat-file f2" /> : null}
                 {eatTier >= 3 ? <StashFileGlyph className="atoll-eat-file f3" /> : null}
+                {eatTier >= 4 ? <StashFileGlyph className="atoll-eat-file f4" /> : null}
               </g>
+              {/* 满足收尾：眯眼替代睁眼 + 眼角星光（CSS 在各档尾段淡入） */}
+              <g className="atoll-eat-happy">
+                <EyeSet variant="happy" blinking={false} offsetX={0} />
+              </g>
+              <path className="atoll-eat-smile-spark p1" d={SPARK_D} fill="#FFD24A" />
+              <path className="atoll-eat-smile-spark p2" d={SPARK_D} fill="#9BF0C0" />
               {eatTier >= 2 ? (
                 <g fill="#FFD24A">
                   <path className="atoll-spark s1" d={SPARK_D} transform="translate(16,10)" />
@@ -753,7 +760,9 @@ export function AtollLogo({
           {reactionActive === "spit" && (
             <g className="atoll-reaction-fx atoll-spit-fx">
               <g transform="translate(32,34)">
-                <StashFileGlyph className="atoll-spit-file" />
+                <StashFileGlyph className="atoll-spit-file f1" />
+                <StashFileGlyph className="atoll-spit-file f2" />
+                <StashFileGlyph className="atoll-spit-file f3" />
               </g>
             </g>
           )}

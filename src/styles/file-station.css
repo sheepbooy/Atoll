@@ -272,6 +272,13 @@
   animation: atoll-takeover-shade 200ms ease-out both;
 }
 
+/* spit 轻量遮罩：半透明，不干扰用户正在进行的拖拽视觉。 */
+.atoll-takeover.is-spit {
+  background:
+    radial-gradient(120% 80% at 50% -20%, rgba(255, 255, 255, 0.06), transparent 62%),
+    linear-gradient(180deg, rgba(22, 25, 30, 0.42), rgba(10, 11, 13, 0.38));
+}
+
 .atoll-takeover-logo {
   height: 58%;
   aspect-ratio: 96 / 108;
@@ -288,13 +295,14 @@
   transform: scale(0) !important;
 }
 
-/* 退出：向 header logo 原位缩回（位移/缩放来自 JS 实测写入的 CSS 变量；
-   320ms 须与 App.tsx takeover 退出定时 340ms 匹配）。 */
+/* 退出：向 header logo 原位缩回（位移/缩放来自 JS 实测写入的 CSS 变量）。
+   时长走 --takeover-exit-ms（animationTiming.ts 注入，spit 在元素上覆写
+   240ms），JS 卸载定时器读同一常量，不再两处硬编码人肉同步。 */
 .atoll-takeover.is-exiting {
-  animation: atoll-takeover-shade-out 320ms ease-in both;
+  animation: atoll-takeover-shade-out var(--takeover-exit-ms, 320ms) ease-in both;
 }
 .atoll-takeover.is-exiting .atoll-takeover-logo {
-  animation: atoll-takeover-vanish 320ms cubic-bezier(0.55, 0, 0.8, 0.4) both;
+  animation: atoll-takeover-vanish var(--takeover-exit-ms, 320ms) cubic-bezier(0.55, 0, 0.8, 0.4) both;
 }
 
 @keyframes atoll-takeover-shade {
@@ -337,6 +345,29 @@
   }
 }
 
+/* 复制飞行的文件缩略（islandShape.flyCopyGlyph 以 WAAPI 驱动，用后即删） */
+.stash-copy-glyph {
+  position: absolute;
+  z-index: 80;
+  width: 18px;
+  height: 22px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #f7f2e8, #e3dacb);
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.stash-copy-glyph::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-style: solid;
+  border-width: 0 7px 7px 0;
+  border-color: transparent #c9bfae transparent transparent;
+  border-radius: 0 3px 0 3px;
+}
+
 /* 拖拽悬停待喂提示（张嘴状态下方的青色胶囊） */
 .stash-feed-hint {
   position: absolute;
@@ -357,6 +388,23 @@
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
-  animation: stash-toast-in 260ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+  animation:
+    stash-toast-in 260ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both,
+    stash-feed-bob 1.8s ease-in-out 300ms infinite;
+}
+
+/* 待喂提示轻轻上下浮动，像在盼着投喂。 */
+@keyframes stash-feed-bob {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-3px); }
+}
+
+/* 结果 toast 退场（is-leaving 时播 260ms 退场，之后卸载）。 */
+.stash-toast.is-leaving {
+  animation: stash-toast-out 260ms ease-in both;
+}
+@keyframes stash-toast-out {
+  from { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  to { opacity: 0; transform: translateX(-50%) translateY(8px) scale(0.94); }
 }
 

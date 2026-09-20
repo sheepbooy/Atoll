@@ -31,6 +31,7 @@ export async function setIslandPresentation(
   snap = false,
   expandedPlan?: boolean,
   expandedSettings?: boolean,
+  durationMs?: number,
 ) {
   if (!isTauriRuntime()) {
     return;
@@ -45,6 +46,28 @@ export async function setIslandPresentation(
     expandedSettings,
     animate,
     snap,
+    durationMs,
+  });
+}
+
+/** Cosmetic window pulse for the file-station choreography: grow/shrink the
+ *  island by `widthDelta` x `heightDelta` logical points (top edge pinned),
+ *  spring out over `outMs` and ease back over `backMs`. Fire-and-forget; the
+ *  native side aborts any running pulse when a presentation change starts. */
+export async function pulseIslandShape(options: {
+  widthDelta?: number;
+  heightDelta?: number;
+  outMs?: number;
+  backMs?: number;
+}) {
+  if (!isTauriRuntime()) {
+    return;
+  }
+  return invoke<void>("pulse_island_shape", {
+    widthDelta: options.widthDelta ?? 0,
+    heightDelta: options.heightDelta ?? 0,
+    outMs: options.outMs,
+    backMs: options.backMs,
   });
 }
 

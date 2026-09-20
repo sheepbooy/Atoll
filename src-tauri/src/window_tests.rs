@@ -141,6 +141,60 @@ fn window_animation_interpolates_to_exact_endpoints() {
 }
 
 #[test]
+fn animation_duration_resolves_per_call_with_default_and_clamp() {
+    // Default: the signature 420ms window spring.
+    assert_eq!(
+        resolve_animation_duration(None),
+        Duration::from_millis(420)
+    );
+    assert_eq!(
+        resolve_animation_duration(Some(0)),
+        Duration::from_millis(420)
+    );
+    // Per-call override (fast file-drag expansion).
+    assert_eq!(
+        resolve_animation_duration(Some(140)),
+        Duration::from_millis(140)
+    );
+    // Absurd values are clamped so a bad caller cannot wedge the loop.
+    assert_eq!(
+        resolve_animation_duration(Some(10_000)),
+        Duration::from_millis(2000)
+    );
+}
+
+#[test]
+fn shape_pulse_easing_hits_endpoints_for_both_phases() {
+    // Gulp: spring out 基帧→峰值帧，cubic 峰值帧→基帧。两段各自插值，
+    // 手点处必须连续（out 末端 = back 起点 = 峰值帧），末端精确回基帧。
+    let out = Duration::from_millis(150);
+    let back = Duration::from_millis(240);
+    let start = 240.0f64;
+    let peak = 252.0f64;
+    let height_at = |elapsed: Duration| -> f64 {
+        if elapsed < out {
+            interpolate_f64(
+                start,
+                peak,
+                ease_out_spring(elapsed.as_secs_f64() / out.as_secs_f64()),
+            )
+        } else {
+            interpolate_f64(
+                peak,
+                start,
+                ease_out_cubic(((elapsed - out).as_secs_f64() / back.as_secs_f64()).min(1.0)),
+            )
+        }
+    };
+    assert_eq!(height_at(Duration::ZERO), start);
+    // Approaching the handoff from the out phase lands on the peak...
+    assert!((height_at(out - Duration::from_nanos(1)) - peak).abs() < 0.01);
+    // ...and the first back frame continues from the peak, no jump.
+    assert!((height_at(out) - peak).abs() < 1e-9);
+    assert_eq!(height_at(out + back), start);
+}
+
+#[test]
 fn camera_housing_is_detected_from_auxiliary_top_areas() {
     // Notch present: the menu-bar halves leave a gap (the housing).
     assert!(has_camera_housing(1512.0, 700.0, 700.0));

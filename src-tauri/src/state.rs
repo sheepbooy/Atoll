@@ -306,6 +306,9 @@ pub(crate) struct AppState {
     pub(crate) compact_width: Mutex<f64>,
     pub(crate) compact_left_width: Mutex<f64>,
     pub(crate) presentation_generation: Arc<AtomicU64>,
+    /// Bumped to abort an in-flight cosmetic shape pulse (new pulse or any
+    /// presentation change wins over a running one).
+    pub(crate) shape_pulse_generation: Arc<AtomicU64>,
     pub(crate) home_bounds: Mutex<Option<HomeWindowBounds>>,
     pub(crate) notch_metrics: Mutex<NotchMetrics>,
     pub(crate) session_last_seen: Mutex<HashMap<String, u64>>,

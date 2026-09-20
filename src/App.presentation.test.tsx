@@ -94,6 +94,7 @@ describe("App", () => {
       false,
       false,
       false,
+      undefined,
     );
     expect(container.querySelector(".is-expanded")).not.toBeNull();
     vi.useRealTimers();
@@ -322,6 +323,7 @@ describe("App", () => {
       false,
       false,
       false,
+      undefined,
     );
     vi.useRealTimers();
   });

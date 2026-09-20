@@ -150,6 +150,84 @@
   display: none;
 }
 
+/* ─── 整岛果冻形变（文件中转站吃/吐编舞）────────────────────────
+   islandShape.ts 挂摘 is-shape-* class；时长变量由 animationTiming.ts
+   注入。岛贴屏幕顶边且窗口被 CALayer mask 裁剪，所以形变只做收缩/倾斜/
+   位移（origin 顶部居中，向下变形）——"吞咽鼓起"交给原生窗口脉冲，
+   这层只负责窗口内的果冻感。方向由 --shape-dx/--shape-dy/--shape-skew
+   传入（真实拖拽方向换算，默认 0）。 */
+
+.is-shape-squash {
+  animation: island-shape-squash var(--shape-squash-ms, 320ms) var(--ease-jelly) both;
+}
+@keyframes island-shape-squash {
+  0% { transform: none; }
+  /* 文件砸进嘴里的重量感：快速下压 + 朝拖入侧微倾。 */
+  35% {
+    transform: translateY(var(--shape-dy, 0px)) scaleY(0.94)
+      skewX(var(--shape-skew, 0deg));
+  }
+  70% { transform: translateY(0) scaleY(1.015) skewX(0deg); }
+  100% { transform: none; }
+}
+
+.is-shape-coil {
+  animation: island-shape-coil var(--shape-coil-ms, 130ms) var(--ease-jelly-in) both;
+}
+@keyframes island-shape-coil {
+  0% { transform: none; }
+  100% {
+    /* 蓄力：向拖拽反方向压缩（dx 为负的顺向，即反向）。 */
+    transform: translate(calc(var(--shape-dx, 0px) * -0.5), calc(var(--shape-dy, 0px) * -0.5))
+      scaleY(0.96) skewX(calc(var(--shape-skew, 0deg) * -0.5));
+  }
+}
+
+.is-shape-launch {
+  animation: island-shape-launch var(--shape-launch-ms, 380ms) var(--ease-jelly) both;
+}
+@keyframes island-shape-launch {
+  0% {
+    transform: translate(calc(var(--shape-dx, 0px) * -0.5), calc(var(--shape-dy, 0px) * -0.5))
+      scaleY(0.96) skewX(calc(var(--shape-skew, 0deg) * -0.5));
+  }
+  45% {
+    /* 弹射过冲：顺方向冲出去。 */
+    transform: translate(var(--shape-dx, 0px), var(--shape-dy, 0px))
+      scaleY(1.01) skewX(var(--shape-skew, 0deg));
+  }
+  100% { transform: none; }
+}
+
+.is-shape-wobble {
+  animation: island-shape-wobble var(--shape-wobble-ms, 520ms) ease-out both;
+}
+@keyframes island-shape-wobble {
+  0% {
+    transform: translate(var(--shape-dx, 0px), var(--shape-dy, 0px))
+      skewX(var(--shape-skew, 0deg));
+  }
+  30% {
+    transform: translate(calc(var(--shape-dx, 0px) * -0.35), calc(var(--shape-dy, 0px) * -0.35))
+      skewX(calc(var(--shape-skew, 0deg) * -0.55));
+  }
+  60% {
+    transform: translate(calc(var(--shape-dx, 0px) * 0.12), calc(var(--shape-dy, 0px) * 0.12))
+      skewX(calc(var(--shape-skew, 0deg) * 0.22));
+  }
+  100% { transform: none; }
+}
+
+.is-shape-chew {
+  /* 呼吸周期固定 640ms；总时长（=eat 反应时长）由 islandShape.ts 摘除时机控制。 */
+  animation: island-shape-chew 640ms ease-in-out infinite;
+}
+@keyframes island-shape-chew {
+  0%, 100% { transform: none; }
+  50% { transform: skewX(calc(var(--shape-skew, 0deg) * 0.4)) scaleY(0.997); }
+}
+
+
 /* ─── Frosted artwork backdrop (expanded island) ─────────────────── */
 /* The wrapper always fills the window, so it tracks the native resize
    frame-by-frame; the inner scale layer animates between the full-bleed

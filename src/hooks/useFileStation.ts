@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { ATOLL_REACTION_MS } from "../atollTransitions";
 import { motionDelay } from "../animationTiming";
 import { eatReactionForCount } from "../fileStationTiers";
@@ -13,6 +14,7 @@ import {
   removeStagedFile,
   clearStagedFiles,
   stageFiles,
+  type DragPoint,
   type StageFilesResult,
   type StagedFile,
 } from "../tauri";
@@ -22,12 +24,21 @@ export interface FileStationApi {
   stagedCount: number;
   /** True while files are being dragged over the island (mouth-open state). */
   dragOverIsland: boolean;
+  /** Normalized (-1..1) look direction toward the dragged cursor; null when
+   *  no drag hovers the island. Drives the mascot's pupil tracking. */
+  dragLook: { x: number; y: number } | null;
+  /** Island-local (CSS px) cursor position of the last drop; read by the
+   *  takeover to fly files in from the real drop point. */
+  dropPointRef: RefObject<DragPoint | null>;
+  /** Drag-out vector angle (CSS deg) of the latest spit; null for eat. */
+  spitAngleRef: RefObject<number | null>;
   /** Last drop outcome for toast copy (evicted/skipped); null once consumed. */
   lastStageResult: StageFilesResult | null;
   stashReaction: AtollReaction | null;
   stashReactionKey: number;
-  /** Play a one-shot stash reaction (spit on panel open, eat on drop). */
-  playStashReaction: (reaction: AtollReaction) => void;
+  /** Play a one-shot stash reaction (spit on panel open, eat on drop).
+   *  `spitAngle` (CSS deg, atan2 of the drag vector) steers the spit fan. */
+  playStashReaction: (reaction: AtollReaction, options?: { spitAngle?: number }) => void;
   removeStaged: (id: string) => void;
   clearStaged: () => void;
 }
@@ -41,21 +52,37 @@ export interface FileStationApi {
 export function useFileStation(): FileStationApi {
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
   const [dragOverIsland, setDragOverIsland] = useState(false);
+  const [dragLook, setDragLook] = useState<{ x: number; y: number } | null>(null);
   const [lastStageResult, setLastStageResult] = useState<StageFilesResult | null>(null);
   const [stashReaction, setStashReaction] = useState<AtollReaction | null>(null);
   const [stashReactionKey, setStashReactionKey] = useState(0);
   const reactionTimerRef = useRef(0);
+  const dragLookRafRef = useRef(0);
+  const dropPointRef = useRef<DragPoint | null>(null);
+  const spitAngleRef = useRef<number | null>(null);
 
-  const playStashReaction = useCallback((reaction: AtollReaction) => {
-    setStashReaction(reaction);
-    setStashReactionKey((key) => key + 1);
-    window.clearTimeout(reactionTimerRef.current);
-    reactionTimerRef.current = window.setTimeout(() => {
-      setStashReaction(null);
-    }, motionDelay(ATOLL_REACTION_MS[reaction]));
-  }, []);
+  const playStashReaction = useCallback(
+    (reaction: AtollReaction, options?: { spitAngle?: number }) => {
+      spitAngleRef.current = options?.spitAngle ?? null;
+      setStashReaction(reaction);
+      setStashReactionKey((key) => key + 1);
+      window.clearTimeout(reactionTimerRef.current);
+      reactionTimerRef.current = window.setTimeout(() => {
+        setStashReaction(null);
+      }, motionDelay(ATOLL_REACTION_MS[reaction]));
+    },
+    [],
+  );
 
   useEffect(() => () => window.clearTimeout(reactionTimerRef.current), []);
+  useEffect(
+    () => () => {
+      if (dragLookRafRef.current) {
+        window.cancelAnimationFrame(dragLookRafRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     // Browser demo mode (`?demo=fileStation`): seed rows locally so the panel
@@ -78,15 +105,35 @@ export function useFileStation(): FileStationApi {
   }, []);
 
   useEffect(() => {
+    // 瞳孔追踪方向随 rAF 节流：over 事件频率约等于鼠标移动频率。
+    const scheduleDragLook = (point: DragPoint) => {
+      if (dragLookRafRef.current) {
+        return;
+      }
+      dragLookRafRef.current = window.requestAnimationFrame(() => {
+        dragLookRafRef.current = 0;
+        const dx = point.x - window.innerWidth / 2;
+        const dy = point.y - window.innerHeight / 2;
+        const length = Math.hypot(dx, dy) || 1;
+        setDragLook({ x: dx / length, y: dy / length });
+      });
+    };
     const unsubscribeDrop = manageAsyncUnlisten(
-      onIslandDragDropEvent((kind, paths) => {
+      onIslandDragDropEvent((kind, paths, position) => {
         if (kind === "enter" || kind === "over") {
           setDragOverIsland(true);
+          if (position) {
+            scheduleDragLook(position);
+          }
           return;
         }
         setDragOverIsland(false);
+        setDragLook(null);
         if (kind !== "drop") {
           return;
+        }
+        if (position) {
+          dropPointRef.current = position;
         }
         void stageFiles(paths)
           .then((result) => {
@@ -132,6 +179,9 @@ export function useFileStation(): FileStationApi {
     stagedFiles,
     stagedCount: stagedFiles.length,
     dragOverIsland,
+    dragLook,
+    dropPointRef,
+    spitAngleRef,
     lastStageResult,
     stashReaction,
     stashReactionKey,
