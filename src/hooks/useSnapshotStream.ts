@@ -17,7 +17,7 @@ import {
 } from "../tauri";
 import { manageAsyncUnlisten } from "../asyncUnlisten";
 import { mergeHookHealthPreferReady } from "../hookHealth";
-import { snapshotHasPlanPending } from "../planMode";
+import { isPlanModeCommand, snapshotHasPlanPending } from "../planMode";
 import type { PanelView } from "../appTypes";
 import type { PresentationPhase } from "../islandPresentation";
 
@@ -31,6 +31,7 @@ interface UseSnapshotStreamOptions {
   collapseIsland: (skipAnimation?: boolean) => void;
   openHooksPage: (page: "home") => void;
   suppressHoverExpandRef: { current: boolean };
+  dismissedPlanRequestIdsRef: { current: Set<string> | null };
   panelViewRef: { current: PanelView };
   collapsedModeRef: { current: "micro" | "compact" | "dormant" };
   collapsedWindowWidthRef: { current: number };
@@ -48,6 +49,7 @@ export function useSnapshotStream({
   collapseIsland,
   openHooksPage,
   suppressHoverExpandRef,
+  dismissedPlanRequestIdsRef,
   panelViewRef,
   collapsedModeRef,
   collapsedWindowWidthRef,
@@ -89,8 +91,29 @@ export function useSnapshotStream({
     setSnapshot(merged);
 
     if (merged.pendingCount > 0) {
-      expandIsland();
+      // Once the user collapses the island while plan requests are pending,
+      // later snapshot refreshes must not pop the same plan display back open.
+      // Re-expansion is reserved for a new request (different id) or a
+      // non-plan approval, which keeps its insistent behavior.
+      const pendingRequests = merged.recent.filter(
+        (request) => request.status === "pending",
+      );
+      const dismissedPlanIds = dismissedPlanRequestIdsRef.current;
+      const allPendingDismissedPlans =
+        dismissedPlanIds !== null &&
+        pendingRequests.length > 0 &&
+        pendingRequests.every(
+          (request) =>
+            isPlanModeCommand(request.command) &&
+            dismissedPlanIds.has(request.id),
+        );
+      if (!allPendingDismissedPlans) {
+        expandIsland();
+      }
     } else {
+      // Every request resolved: forget the dismissed batch so the next plan
+      // notification opens the island again.
+      dismissedPlanRequestIdsRef.current = null;
       const collapseInFlight = frozenCollapseWidthRef.current !== null;
       if (!collapseInFlight) {
         scheduleIdleCollapse();

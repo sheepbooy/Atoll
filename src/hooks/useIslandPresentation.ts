@@ -39,7 +39,7 @@ import {
   readFoldedIslandSize,
 } from "../settingsStorage";
 import { EMPTY_NOTCH_METRICS } from "../snapshotDefaults";
-import { snapshotHasPlanPending } from "../planMode";
+import { isPlanModeCommand, snapshotHasPlanPending } from "../planMode";
 import { isTextEntryActive } from "../imeHelpers";
 import { manageAsyncUnlisten } from "../asyncUnlisten";
 import type { ArtworkBackdropOrigin, FoldedIslandSize, PanelView } from "../appTypes";
@@ -116,6 +116,10 @@ export function useIslandPresentation({
   const shrinkInFlightRef = useRef(false);
   const focusedRef = useRef(false);
   const suppressHoverExpandRef = useRef(false);
+  // Set when the user manually collapses while plan requests are pending: the
+  // ids of those plan requests. Later snapshot refreshes must not auto-expand
+  // the island for them again until a different request shows up.
+  const dismissedPlanRequestIdsRef = useRef<Set<string> | null>(null);
   const transitionTimerRef = useRef<number | null>(null);
   const idleTimerRef = useRef<number | null>(null);
   const frozenCollapseWidthRef = useRef<number | null>(null);
@@ -636,6 +640,17 @@ export function useIslandPresentation({
     collapseIslandNow(releaseFocus);
   }
 
+  function latchDismissedPlanRequests() {
+    const planIds = snapshotRef.current.recent
+      .filter(
+        (request) =>
+          request.status === "pending" && isPlanModeCommand(request.command),
+      )
+      .map((request) => request.id);
+    dismissedPlanRequestIdsRef.current =
+      planIds.length > 0 ? new Set(planIds) : null;
+  }
+
   function collapseIslandNow(releaseFocus = false) {
     summonHoldRef.current = false;
     const next = beginCollapse(phaseRef.current);
@@ -648,6 +663,10 @@ export function useIslandPresentation({
       }
       return;
     }
+
+    // Remember which plan requests were pending when the user put the island
+    // away, so snapshot refreshes stop re-opening the plan display.
+    latchDismissedPlanRequests();
 
     if (releaseFocus) {
       suppressHoverExpandRef.current = true;
@@ -887,6 +906,7 @@ export function useIslandPresentation({
     holdCompactAfterSubviewOpenRef,
     frozenCollapseWidthRef,
     suppressHoverExpandRef,
+    dismissedPlanRequestIdsRef,
     lastNativePresentationKeyRef,
     artworkBackdropOrigin,
     artworkBackdropRevealed,

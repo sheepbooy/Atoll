@@ -54,6 +54,23 @@ vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => windowBridge,
 }));
 
+const planApprovalRequest = {
+  ...request,
+  id: "plan-approval-1",
+  command: "ExitPlanMode",
+  detail: "Agent finished planning and wants approval to build.",
+  toolInput: { plan: "# Plan\n1. Latch dismissed plan requests" },
+};
+
+const planSnapshot = {
+  ...emptySnapshot,
+  online: true,
+  pendingCount: 1,
+  activeRequest: planApprovalRequest,
+  recent: [planApprovalRequest],
+  hookHealth: connectedHookHealth,
+};
+
 describe("App", () => {
   beforeEach(() => {
     resetAppTestBridge();
@@ -323,6 +340,83 @@ describe("App", () => {
       false,
       false,
     );
+    vi.useRealTimers();
+  });
+
+  it("does not re-expand from snapshot updates after collapsing a pending plan", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    bridge.getSnapshot.mockResolvedValue(planSnapshot);
+    const { container } = render(<App />);
+
+    await waitFor(() => expect(emitSnapshot).not.toBeNull());
+    await waitFor(() =>
+      expect(container.querySelector(".is-opening, .is-expanded")).not.toBeNull(),
+    );
+    await emitSettledPhase("expanded");
+    const collapseButton = await screen.findByRole("button", { name: "Collapse Atoll" });
+
+    fireEvent.click(collapseButton);
+    await flushPanelExit();
+    expect(container.querySelector(".is-closing")).not.toBeNull();
+    await emitSettledPhase("compact");
+    expect(container.querySelector(".is-compact")).not.toBeNull();
+    bridge.setIslandPresentation.mockClear();
+
+    // Repeated refreshes of the same pending plan must not pop it back open.
+    await act(async () => {
+      emitSnapshot?.(planSnapshot);
+      emitSnapshot?.({
+        ...planSnapshot,
+        dailyTokens: { ...emptySnapshot.dailyTokens, inputTokens: 5_000 },
+      });
+    });
+    expect(bridge.setIslandPresentation).not.toHaveBeenCalled();
+    expect(container.querySelector(".is-compact")).not.toBeNull();
+
+    // A brand-new plan request (different id) still auto-expands.
+    const followUpPlan = { ...planApprovalRequest, id: "plan-approval-2" };
+    await act(async () => {
+      emitSnapshot?.({
+        ...planSnapshot,
+        pendingCount: 2,
+        activeRequest: followUpPlan,
+        recent: [planApprovalRequest, followUpPlan],
+      });
+    });
+    expect(container.querySelector(".is-opening, .is-expanded")).not.toBeNull();
+    await emitSettledPhase("expanded");
+    expect(container.querySelector(".is-expanded")).not.toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("still re-expands for a non-plan approval after collapsing a pending plan", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    bridge.getSnapshot.mockResolvedValue(planSnapshot);
+    const { container } = render(<App />);
+
+    await waitFor(() => expect(emitSnapshot).not.toBeNull());
+    await waitFor(() =>
+      expect(container.querySelector(".is-opening, .is-expanded")).not.toBeNull(),
+    );
+    await emitSettledPhase("expanded");
+    const collapseButton = await screen.findByRole("button", { name: "Collapse Atoll" });
+
+    fireEvent.click(collapseButton);
+    await flushPanelExit();
+    await emitSettledPhase("compact");
+    bridge.setIslandPresentation.mockClear();
+
+    // A tool approval arriving on top of the dismissed plan keeps the
+    // insistent behavior: the island pops back open.
+    await act(async () => {
+      emitSnapshot?.({
+        ...planSnapshot,
+        pendingCount: 2,
+        activeRequest: request,
+        recent: [planApprovalRequest, request],
+      });
+    });
+    expect(container.querySelector(".is-opening, .is-expanded")).not.toBeNull();
     vi.useRealTimers();
   });
 
