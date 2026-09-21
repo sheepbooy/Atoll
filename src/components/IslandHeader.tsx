@@ -317,6 +317,15 @@ export function IslandHeader(props: IslandHeaderProps) {
             </span>
           </span>
         </span>
+        {bluetoothBatteryEnabled &&
+        !isPresentationTransition &&
+        !isExpanded &&
+        (showCompactHeaderMetrics || isMicro) ? (
+          <BluetoothBatteryRing
+            devices={bluetoothDevices}
+            alertThreshold={bluetoothAlertThreshold}
+          />
+        ) : null}
         {showCollapsedActivityStrip ? (
           <>
             <span
@@ -538,14 +547,6 @@ export function IslandHeader(props: IslandHeaderProps) {
               src={`data:image/jpeg;base64,${nowPlayingTrack.artworkBase64}`}
               alt=""
               draggable={false}
-            />
-          ) : null}
-          {bluetoothBatteryEnabled &&
-          !isPresentationTransition &&
-          (showCompactHeaderMetrics || isMicro) ? (
-            <BluetoothBatteryRing
-              devices={bluetoothDevices}
-              alertThreshold={bluetoothAlertThreshold}
             />
           ) : null}
           {showCompactHeaderMetrics && pendingCount > 0 ? (

@@ -122,7 +122,7 @@ mod imp {
     const SERVICE_UUID: &str = "180F";
     const CHARACTERISTIC_UUID: &str = "2A19";
     /// Generous bound for connect + discover + read on a busy HID device.
-    const PROBE_TIMEOUT: Duration = Duration::from_secs(8);
+    const PROBE_TIMEOUT: Duration = Duration::from_secs(15);
 
     enum GattEvent {
         Percent(u8),

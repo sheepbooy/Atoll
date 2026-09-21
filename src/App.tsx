@@ -72,6 +72,7 @@ import { useClipboardHistory } from "./hooks/useClipboardHistory";
 import { useNowPlaying } from "./hooks/useNowPlaying";
 import { useBluetoothBattery } from "./hooks/useBluetoothBattery";
 import { hasBatteryData as hasBluetoothBatteryData } from "./BluetoothBatteryRing";
+
 import { useDisplayAndSettingsPrefs } from "./hooks/useDisplayAndSettingsPrefs";
 import { useHookInstaller } from "./hooks/useHookInstaller";
 import { useApprovals } from "./hooks/useApprovals";
