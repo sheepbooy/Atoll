@@ -30,6 +30,8 @@ export const COMPACT_PENDING_BADGE_SLOT = 28;
 export const COMPACT_METRICS_GAP = 10;
 /** Album-artwork thumbnail slot in compact mode (width + gap). */
 export const COMPACT_MEDIA_THUMB_SLOT = 18 + COMPACT_METRICS_GAP;
+/** Bluetooth battery ring slot in compact mode (width + gap). */
+export const COMPACT_BATTERY_RING_SLOT = 18 + COMPACT_METRICS_GAP;
 
 export const MIN_MAX_COMPACT_ICONS = 1;
 export const ABSOLUTE_MAX_COMPACT_ICONS = 8;
@@ -277,6 +279,7 @@ export function computeCollapsedWindowWidth(
   hasMediaArtwork = false,
   showMediaIndicator = false,
   showLyrics = false,
+  showBatteryRing = false,
 ): number {
   const layout = computeCompactHeaderLayout(
     notchMetrics,
@@ -313,6 +316,7 @@ export function computeCollapsedWindowWidth(
     (hasToken ? estimateTokenDisplayWidth(tokenText) : 0) +
     (pendingCount > 0 ? COMPACT_PENDING_BADGE_SLOT + COMPACT_METRICS_GAP : 0) +
     (showMediaIndicator && hasMediaArtwork ? COMPACT_MEDIA_THUMB_SLOT : 0) +
+    (showBatteryRing ? COMPACT_BATTERY_RING_SLOT : 0) +
     COMPACT_OUTER_PADDING;
 
   const notchWidth = notchMetrics.hasNotch ? notchMetrics.width : 0;

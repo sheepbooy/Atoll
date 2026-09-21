@@ -157,6 +157,7 @@ mod imp {
         unsafe impl CBCentralManagerDelegate for GattDelegate {
             #[unsafe(method(centralManagerDidUpdateState:))]
             unsafe fn centralManagerDidUpdateState(&self, central: &CBCentralManager) {
+                eprintln!("[Atoll] gatt: central state now {:?}", central.state().0);
                 SESSION.with_borrow_mut(|session| {
                     let Some(state) = session.as_mut() else {
                         return;
@@ -183,6 +184,7 @@ mod imp {
                 _central: &CBCentralManager,
                 peripheral: &CBPeripheral,
             ) {
+                eprintln!("[Atoll] gatt: didConnect");
                 let delegate: &ProtocolObject<dyn CBPeripheralDelegate> =
                     ProtocolObject::from_ref(self);
                 SESSION.with_borrow_mut(|session| {
@@ -208,6 +210,7 @@ mod imp {
                 _peripheral: &CBPeripheral,
                 _error: Option<&NSError>,
             ) {
+                eprintln!("[Atoll] gatt: didFailToConnect");
                 SESSION.with_borrow_mut(|session| {
                     let Some(state) = session.as_mut() else {
                         return;
@@ -225,6 +228,7 @@ mod imp {
                 _peripheral: &CBPeripheral,
                 _error: Option<&NSError>,
             ) {
+                eprintln!("[Atoll] gatt: didDisconnect");
                 SESSION.with_borrow_mut(|session| {
                     let Some(state) = session.as_mut() else {
                         return;
@@ -244,6 +248,7 @@ mod imp {
                 _error: Option<&NSError>,
             ) {
                 let Some(service) = (unsafe { find_service(peripheral) }) else {
+                    eprintln!("[Atoll] gatt: battery service not found after discovery");
                     finish_current(GattEvent::NoData);
                     return;
                 };
@@ -258,6 +263,7 @@ mod imp {
                 _error: Option<&NSError>,
             ) {
                 let Some(characteristic) = (unsafe { find_battery_characteristic(service) }) else {
+                    eprintln!("[Atoll] gatt: battery level characteristic not found");
                     finish_current(GattEvent::NoData);
                     return;
                 };
@@ -278,6 +284,7 @@ mod imp {
                     .map(|data| data.to_vec())
                     .and_then(|bytes| bytes.first().copied())
                     .map(|first| first.min(100));
+                eprintln!("[Atoll] gatt: battery value read -> {percent:?}");
                 match percent {
                     Some(percent) => finish_current(GattEvent::Percent(percent)),
                     None => finish_current(GattEvent::NoData),
@@ -441,16 +448,26 @@ mod imp {
     /// `PROBE_TIMEOUT` while the main thread runs the CoreBluetooth flow.
     pub(crate) fn probe_device(app: &AppHandle, name: &str) -> ProbeOutcome {
         let (tx, rx) = channel();
-        let name = name.to_string();
-        let dispatch = app.run_on_main_thread(move || unsafe { begin_probe(name, tx) });
+        let target = name.to_string();
+        let dispatch = app.run_on_main_thread(move || unsafe { begin_probe(target, tx) });
         if dispatch.is_err() {
             return ProbeOutcome::NoData;
         }
         match rx.recv_timeout(PROBE_TIMEOUT) {
-            Ok(GattEvent::Percent(percent)) => ProbeOutcome::Percent(percent),
-            Ok(GattEvent::NoData) => ProbeOutcome::NoData,
-            Ok(GattEvent::PermissionDenied) => ProbeOutcome::PermissionDenied,
+            Ok(GattEvent::Percent(percent)) => {
+                eprintln!("[Atoll] gatt: probe {name:?} -> {percent}%");
+                ProbeOutcome::Percent(percent)
+            }
+            Ok(GattEvent::NoData) => {
+                eprintln!("[Atoll] gatt: probe {name:?} -> no data");
+                ProbeOutcome::NoData
+            }
+            Ok(GattEvent::PermissionDenied) => {
+                eprintln!("[Atoll] gatt: probe {name:?} -> permission denied/unavailable");
+                ProbeOutcome::PermissionDenied
+            }
             Err(_) => {
+                eprintln!("[Atoll] gatt: probe {name:?} timed out");
                 // Timeout: release the main-thread session so the next probe
                 // starts clean.
                 let _ = app.run_on_main_thread(reset_session);

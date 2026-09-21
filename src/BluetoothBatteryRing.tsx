@@ -8,6 +8,11 @@ interface BluetoothBatteryRingProps {
   alertThreshold: number;
 }
 
+/** Whether any device reports a battery level (drives ring visibility). */
+export function hasBatteryData(devices: BluetoothDeviceBattery[]): boolean {
+  return devices.some((device) => deviceBatteryPercent(device) != null);
+}
+
 /** Lowest reported level across main/buds/case; null when none reported. */
 export function deviceBatteryPercent(device: BluetoothDeviceBattery): number | null {
   const values = [

@@ -138,13 +138,15 @@ export function resolveCollapsedMode(
   pendingCount: number,
   phase: PresentationPhase,
   hasLyrics: boolean,
+  hasBatteryRing = false,
 ): "micro" | "compact" | "dormant" {
   if (phase === "micro") return "micro";
   if (shouldRestInMicro(usesMicro)) return "compact";
   if (supportsMicroIsland) return "compact";
   if (sessionCount === 0 && pendingCount === 0) {
-    // Stay compact when lyrics are showing so the header has room.
-    return hasLyrics ? "compact" : "dormant";
+    // Stay compact when lyrics or the Bluetooth battery ring are showing so
+    // the header has room.
+    return hasLyrics || hasBatteryRing ? "compact" : "dormant";
   }
   return "compact";
 }

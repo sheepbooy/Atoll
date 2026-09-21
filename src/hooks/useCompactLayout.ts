@@ -31,6 +31,8 @@ interface UseCompactLayoutOptions {
   compactIndicator: CompactIndicatorMode;
   lyricsEnabled: boolean;
   lyricsData: LyricPayload | null;
+  /** Battery ring has data: the island keeps compact mode instead of dormant. */
+  bluetoothRingActive: boolean;
   phase: PresentationPhase;
   phaseRef: { current: PresentationPhase };
   usesMicroIslandRef: { current: boolean };
@@ -53,6 +55,7 @@ export function useCompactLayout({
   compactIndicator,
   lyricsEnabled,
   lyricsData,
+  bluetoothRingActive,
   phase,
   phaseRef,
   usesMicroIslandRef,
@@ -79,6 +82,7 @@ export function useCompactLayout({
         nowPlayingTrack?.artworkBase64 != null,
         compactIndicator === "media" || compactIndicator === "both",
         lyricsEnabled && lyricsData != null && lyricsData.lines.length > 0,
+        bluetoothRingActive,
       ),
     [
       notchMetrics,
@@ -90,6 +94,7 @@ export function useCompactLayout({
       compactIndicator,
       lyricsEnabled,
       lyricsData,
+      bluetoothRingActive,
     ],
   );
   const stableWidthRef = useRef(computedCollapsedWidth);
@@ -121,6 +126,8 @@ export function useCompactLayout({
     // When lyrics are active, stay in compact mode (not dormant) so the
     // header has room for the lyrics column. Dormant mode is too narrow.
     lyricsEnabled && lyricsData != null && lyricsData.lines.length > 0 && !notchMetrics.hasNotch,
+    // Same for the Bluetooth battery ring: it lives in the compact header.
+    bluetoothRingActive,
   );
   const collapsedMode: "micro" | "compact" | "dormant" =
     (suppressPostCollapseSyncRef.current ||
