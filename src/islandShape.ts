@@ -79,8 +79,11 @@ export function playIslandShape(
 
 const FLY_MS = 380;
 const FLY_STAGGER = 70;
-/** 飞行弧线的抬升高度（px）：路径更"抛"，运动更可读。 */
-const FLY_ARC = 22;
+/** 飞行弧线的下坠深度（px）：向下弧线像文件被"叼"进嘴里——岛贴屏幕上缘，
+ *  向上抬弧会被窗口裁掉，看起来像飞出了屏幕。 */
+const FLY_ARC = 20;
+/** 飞行起止点距岛边缘的最小间距：文件永不飞出（被裁出）屏幕。 */
+const FLY_MARGIN = 12;
 
 export interface FlyStashFilesOptions {
   /** 第一枚文件命中吉祥物（被吃掉）的时刻回调：触发原生脉冲与涟漪。 */
@@ -107,7 +110,19 @@ function logoCenterIn(islandRect: DOMRect, logoEl: HTMLElement | null) {
   return { x: islandRect.width / 2, y: 24 };
 }
 
-/** 飞行路径插值：直线 + 正弦弧线抬升，与主飞行动画的关键帧一致。 */
+/** 把岛内坐标钳制在安全区内（文件不飞出/不被窗口边缘裁掉）。 */
+function clampInside(
+  point: { x: number; y: number },
+  width: number,
+  height: number,
+): { x: number; y: number } {
+  return {
+    x: Math.min(Math.max(point.x, FLY_MARGIN), Math.max(FLY_MARGIN, width - FLY_MARGIN)),
+    y: Math.min(Math.max(point.y, FLY_MARGIN), Math.max(FLY_MARGIN, height - FLY_MARGIN)),
+  };
+}
+
+/** 飞行路径插值：直线 + 正弦下坠弧线（先沉一下再被叼进嘴里）。 */
 function flyPathPoint(
   sx: number,
   sy: number,
@@ -117,8 +132,27 @@ function flyPathPoint(
 ) {
   return {
     x: sx + dx * fraction,
-    y: sy + dy * fraction - Math.sin(fraction * Math.PI) * FLY_ARC,
+    y: sy + dy * fraction + Math.sin(fraction * Math.PI) * FLY_ARC,
   };
+}
+
+/**
+ * 吐出终点钳制：保持拖拽方向，但把飞行距离收缩到终点不越出岛界
+ * （沿拖拽方向投影取最小比例），文件不会朝屏幕外飞。
+ */
+function clampFlightDistance(
+  from: { x: number; y: number },
+  dx: number,
+  dy: number,
+  width: number,
+  height: number,
+): number {
+  let t = 1;
+  if (dx > 0) t = Math.min(t, (width - FLY_MARGIN - from.x) / dx);
+  else if (dx < 0) t = Math.min(t, (FLY_MARGIN - from.x) / dx);
+  if (dy > 0) t = Math.min(t, (height - FLY_MARGIN - from.y) / dy);
+  else if (dy < 0) t = Math.min(t, (FLY_MARGIN - from.y) / dy);
+  return Math.max(0, Math.min(1, t));
 }
 
 /** 像素拖尾：在路径 fraction 处生成一枚快速消散的小方块。 */
@@ -180,12 +214,20 @@ export function flyStashFiles(
   }
   const islandRect = island.getBoundingClientRect();
   const to = logoCenterIn(islandRect, logoEl);
-  const fromX = fromPoint ? fromPoint.x : islandRect.width * 0.7;
-  const fromY = fromPoint ? fromPoint.y : -10;
+  const from = clampInside(
+    fromPoint ?? { x: islandRect.width * 0.7, y: 16 },
+    islandRect.width,
+    islandRect.height,
+  );
+  const fromX = from.x;
+  const fromY = from.y;
   let firstHitFired = false;
   for (let i = 0; i < count; i++) {
     const jitterX = (i - (count - 1) / 2) * 16;
-    const startX = fromX + jitterX;
+    const startX = Math.min(
+      Math.max(fromX + jitterX, FLY_MARGIN),
+      islandRect.width - FLY_MARGIN,
+    );
     const dx = to.x - startX;
     const dy = to.y - fromY;
     const delay = i * FLY_STAGGER;
@@ -198,12 +240,12 @@ export function flyStashFiles(
       [
         { transform: "translate(-50%, -50%) scale(1) rotate(20deg)", opacity: 1 },
         {
-          transform: `translate(calc(-50% + ${(dx * 0.12).toFixed(1)}px), calc(-50% + ${(dy * 0.12 - FLY_ARC * 0.55).toFixed(1)}px)) scale(1.16) rotate(8deg)`,
+          transform: `translate(calc(-50% + ${(dx * 0.12).toFixed(1)}px), calc(-50% + ${(dy * 0.12 + FLY_ARC * 0.55).toFixed(1)}px)) scale(1.16) rotate(8deg)`,
           opacity: 1,
           offset: 0.16,
         },
         {
-          transform: `translate(calc(-50% + ${(dx * 0.55).toFixed(1)}px), calc(-50% + ${(dy * 0.55 - FLY_ARC * 0.8).toFixed(1)}px)) scale(1.05) rotate(-8deg)`,
+          transform: `translate(calc(-50% + ${(dx * 0.55).toFixed(1)}px), calc(-50% + ${(dy * 0.55 + FLY_ARC * 0.8).toFixed(1)}px)) scale(1.05) rotate(-8deg)`,
           opacity: 1,
           offset: 0.6,
         },
@@ -237,7 +279,8 @@ export function flyStashFiles(
 
 /**
  * 吐出飞行层：count 枚文件缩略从吉祥物嘴里沿拖拽方向（CSS deg）扇形飞出，
- * ±12° 散布、错峰 55ms、近大远小。DOM 一次性节点 + WAAPI。
+ * ±12° 散布、错峰 55ms、近大远小；飞行距离按方向投影收缩，终点不越出
+ * 岛界（拖拽方向朝上时文件不会飞出屏幕顶缘）。DOM 一次性节点 + WAAPI。
  */
 export function flySpitFiles(
   island: HTMLElement | null,
@@ -256,18 +299,27 @@ export function flySpitFiles(
     const distance = 110 + Math.abs(spread) * 1.5;
     const dx = Math.cos(radians) * distance;
     const dy = Math.sin(radians) * distance;
+    const scale = clampFlightDistance(
+      from,
+      dx,
+      dy,
+      islandRect.width,
+      islandRect.height,
+    );
+    const fx = dx * scale;
+    const fy = dy * scale;
     const delay = i * 55;
     const glyph = stashGlyph(island, from.x, from.y);
     const animation = glyph.animate(
       [
         { transform: "translate(-50%, -50%) scale(0.35) rotate(0deg)", opacity: 0 },
         {
-          transform: `translate(calc(-50% + ${(dx * 0.3).toFixed(1)}px), calc(-50% + ${(dy * 0.3).toFixed(1)}px)) scale(1) rotate(10deg)`,
+          transform: `translate(calc(-50% + ${(fx * 0.3).toFixed(1)}px), calc(-50% + ${(fy * 0.3).toFixed(1)}px)) scale(1) rotate(10deg)`,
           opacity: 1,
           offset: 0.25,
         },
         {
-          transform: `translate(calc(-50% + ${dx.toFixed(1)}px), calc(-50% + ${dy.toFixed(1)}px)) scale(0.85) rotate(22deg)`,
+          transform: `translate(calc(-50% + ${fx.toFixed(1)}px), calc(-50% + ${fy.toFixed(1)}px)) scale(0.85) rotate(22deg)`,
           opacity: 0,
         },
       ],
