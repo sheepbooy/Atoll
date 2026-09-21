@@ -21,6 +21,7 @@ mod capture;
 mod clipboard_history;
 mod debug_agent;
 mod file_station;
+mod gatt_battery;
 mod hook_bridge;
 mod hook_trust;
 mod local_time;
@@ -95,6 +96,8 @@ mod core_tests;
 mod cursor_hooks_tests;
 #[cfg(test)]
 mod cursor_subagent_tests;
+#[cfg(test)]
+mod gatt_battery_tests;
 #[cfg(test)]
 mod gemini_hooks_tests;
 #[cfg(test)]
