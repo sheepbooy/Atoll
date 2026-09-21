@@ -47,6 +47,7 @@ fn test_app_state() -> AppState {
         bluetooth_battery_card_enabled: Mutex::new(false),
         bluetooth_battery_alert_enabled: Mutex::new(false),
         bluetooth_battery_alert_threshold: Mutex::new(20),
+        gatt_battery_cache: Mutex::new(crate::gatt_battery::GattProbeCache::default()),
         clipboard_history: Mutex::new(Vec::new()),
         clipboard_history_limit: Mutex::new(clipboard_history::DEFAULT_MAX_ENTRIES),
         clipboard_history_enabled: Mutex::new(false),

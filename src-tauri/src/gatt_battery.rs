@@ -335,15 +335,19 @@ mod imp {
             central.retrieveConnectedPeripheralsWithServices(&NSArray::from_retained_slice(&[
                 battery_uuid(SERVICE_UUID),
             ]));
-        let matched = connected
-            .objects_in_range(0..connected.count())
-            .into_iter()
-            .find(|peripheral| {
-                peripheral
-                    .name()
-                    .map(|name| name.to_string().eq_ignore_ascii_case(target))
-                    .unwrap_or(false)
-            });
+        let candidates = connected.objects_in_range(0..connected.count());
+        for candidate in &candidates {
+            eprintln!(
+                "[Atoll] gatt: battery-service peer {:?} (target {target:?})",
+                candidate.name().map(|name| name.to_string()),
+            );
+        }
+        let matched = candidates.into_iter().find(|peripheral| {
+            peripheral
+                .name()
+                .map(|name| name.to_string().eq_ignore_ascii_case(target))
+                .unwrap_or(false)
+        });
         let Some(peripheral) = matched else {
             // Connected to the system but exposes no battery service (or the
             // name isn't advertised): nothing we can read.

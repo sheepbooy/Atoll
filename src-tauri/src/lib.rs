@@ -175,6 +175,7 @@ pub fn run() {
             bluetooth_battery_card_enabled: Mutex::new(load_bluetooth_battery_card_enabled()),
             bluetooth_battery_alert_enabled: Mutex::new(load_bluetooth_battery_alert_enabled()),
             bluetooth_battery_alert_threshold: Mutex::new(load_bluetooth_battery_alert_threshold()),
+            gatt_battery_cache: Mutex::new(gatt_battery::GattProbeCache::default()),
             clipboard_history_limit: Mutex::new(load_clipboard_history_limit()),
             clipboard_history: Mutex::new(clipboard_history::load_history(
                 load_clipboard_history_limit(),

@@ -127,7 +127,6 @@ pub(crate) fn start_bluetooth_battery_monitor(app: AppHandle) {
         let mut last: Option<bluetooth_battery::BluetoothBatteryReport> = None;
         let mut alerted: HashSet<String> = HashSet::new();
         let gatt_app = app.clone();
-        let mut gatt_cache = gatt_battery::GattProbeCache::default();
         loop {
             let (enabled, alert_enabled, threshold, language) = {
                 let state = app.state::<AppState>();
@@ -154,13 +153,17 @@ pub(crate) fn start_bluetooth_battery_monitor(app: AppHandle) {
             // read the standard GATT Battery Service ourselves (may trigger
             // the one-time Bluetooth permission prompt on first use).
             #[cfg(target_os = "macos")]
-            gatt_cache.fill_missing(&mut report.devices, Instant::now(), &mut |name| {
-                gatt_battery::probe_device(&gatt_app, name)
-            });
+            let mut gatt_probe = |name: &str| gatt_battery::probe_device(&gatt_app, name);
             #[cfg(not(target_os = "macos"))]
-            gatt_cache.fill_missing(&mut report.devices, Instant::now(), &mut |_| {
-                gatt_battery::ProbeOutcome::NoData
-            });
+            let mut gatt_probe = |_: &str| gatt_battery::ProbeOutcome::NoData;
+            {
+                let state = app.state::<AppState>();
+                lock_state(&state.gatt_battery_cache).fill_missing(
+                    &mut report.devices,
+                    Instant::now(),
+                    &mut gatt_probe,
+                );
+            }
             if alert_enabled {
                 for (name, percent) in bluetooth_battery::collect_low_battery_alerts(
                     &report.devices,
