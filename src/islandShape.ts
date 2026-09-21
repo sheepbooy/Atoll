@@ -77,8 +77,10 @@ export function playIslandShape(
   );
 }
 
-const FLY_MS = 300;
+const FLY_MS = 380;
 const FLY_STAGGER = 70;
+/** 飞行弧线的抬升高度（px）：路径更"抛"，运动更可读。 */
+const FLY_ARC = 22;
 
 export interface FlyStashFilesOptions {
   /** 第一枚文件命中吉祥物（被吃掉）的时刻回调：触发原生脉冲与涟漪。 */
@@ -105,9 +107,61 @@ function logoCenterIn(islandRect: DOMRect, logoEl: HTMLElement | null) {
   return { x: islandRect.width / 2, y: 24 };
 }
 
+/** 飞行路径插值：直线 + 正弦弧线抬升，与主飞行动画的关键帧一致。 */
+function flyPathPoint(
+  sx: number,
+  sy: number,
+  dx: number,
+  dy: number,
+  fraction: number,
+) {
+  return {
+    x: sx + dx * fraction,
+    y: sy + dy * fraction - Math.sin(fraction * Math.PI) * FLY_ARC,
+  };
+}
+
+/** 像素拖尾：在路径 fraction 处生成一枚快速消散的小方块。 */
+function spawnTrail(island: HTMLElement, x: number, y: number): void {
+  const dot = document.createElement("div");
+  dot.className = "stash-fly-trail";
+  dot.style.left = `${x.toFixed(1)}px`;
+  dot.style.top = `${y.toFixed(1)}px`;
+  island.appendChild(dot);
+  const animation = dot.animate(
+    [
+      { transform: "translate(-50%, -50%) scale(1)", opacity: 0.75 },
+      { transform: "translate(-50%, -50%) scale(0.4)", opacity: 0 },
+    ],
+    { duration: 280, easing: "ease-out", fill: "both" },
+  );
+  animation.onfinish = () => dot.remove();
+  window.setTimeout(() => dot.remove(), 480);
+}
+
+/** 命中闪块：文件入嘴处在吉祥物位置弹出一枚像素星光。 */
+function spawnHitSpark(island: HTMLElement, x: number, y: number): void {
+  const spark = document.createElement("div");
+  spark.className = "stash-fly-spark";
+  spark.style.left = `${x.toFixed(1)}px`;
+  spark.style.top = `${y.toFixed(1)}px`;
+  island.appendChild(spark);
+  const animation = spark.animate(
+    [
+      { transform: "translate(-50%, -50%) scale(0.3) rotate(0deg)", opacity: 0.95 },
+      { transform: "translate(-50%, -50%) scale(1.35) rotate(45deg)", opacity: 0 },
+    ],
+    { duration: 260, easing: "cubic-bezier(0.2, 0.6, 0.3, 1)", fill: "both" },
+  );
+  animation.onfinish = () => spark.remove();
+  window.setTimeout(() => spark.remove(), 460);
+}
+
 /**
- * 吸入飞行层：count 枚文件缩略从真实 drop 点错峰飞向角落吉祥物，
- * 命中即缩小消失（被吃掉）。DOM 一次性节点 + WAAPI，不经过 React。
+ * 吸入飞行层：count 枚文件缩略从真实 drop 点错峰飞向角落吉祥物。
+ * 文件全程保持醒目大小（起飞先弹一下），只在进嘴最后一瞬缩掉；
+ * 路径上撒像素拖尾，每枚命中时弹一枚命中闪块。
+ * DOM 一次性节点 + WAAPI，不经过 React。
  * reduced-motion 时跳过飞行但立即回调 onFirstHit（保持脉冲/涟漪语义）。
  */
 export function flyStashFiles(
@@ -130,7 +184,7 @@ export function flyStashFiles(
   const fromY = fromPoint ? fromPoint.y : -10;
   let firstHitFired = false;
   for (let i = 0; i < count; i++) {
-    const jitterX = (i - (count - 1) / 2) * 14;
+    const jitterX = (i - (count - 1) / 2) * 16;
     const startX = fromX + jitterX;
     const dx = to.x - startX;
     const dy = to.y - fromY;
@@ -142,26 +196,42 @@ export function flyStashFiles(
     const glyph = stashGlyph(island, startX, fromY);
     const animation = glyph.animate(
       [
-        { transform: "translate(-50%, -50%) scale(1) rotate(18deg)", opacity: 1 },
+        { transform: "translate(-50%, -50%) scale(1) rotate(20deg)", opacity: 1 },
         {
-          transform: `translate(calc(-50% + ${(dx * 0.5).toFixed(1)}px), calc(-50% + ${(dy * 0.5 - 12).toFixed(1)}px)) scale(0.8) rotate(-6deg)`,
+          transform: `translate(calc(-50% + ${(dx * 0.12).toFixed(1)}px), calc(-50% + ${(dy * 0.12 - FLY_ARC * 0.55).toFixed(1)}px)) scale(1.16) rotate(8deg)`,
           opacity: 1,
-          offset: 0.55,
+          offset: 0.16,
         },
         {
-          transform: `translate(calc(-50% + ${dx.toFixed(1)}px), calc(-50% + ${dy.toFixed(1)}px)) scale(0.25) rotate(-14deg)`,
-          opacity: 0.3,
+          transform: `translate(calc(-50% + ${(dx * 0.55).toFixed(1)}px), calc(-50% + ${(dy * 0.55 - FLY_ARC * 0.8).toFixed(1)}px)) scale(1.05) rotate(-8deg)`,
+          opacity: 1,
+          offset: 0.6,
+        },
+        {
+          transform: `translate(calc(-50% + ${dx.toFixed(1)}px), calc(-50% + ${dy.toFixed(1)}px)) scale(0.3) rotate(-18deg)`,
+          opacity: 0.4,
         },
       ],
       {
         duration: FLY_MS,
         delay,
-        easing: "cubic-bezier(0.3, 0.5, 0.3, 1)",
+        easing: "cubic-bezier(0.3, 0.4, 0.35, 1)",
         fill: "both",
       },
     );
-    animation.onfinish = () => glyph.remove();
+    animation.onfinish = () => {
+      glyph.remove();
+      spawnHitSpark(island, to.x, to.y);
+    };
     window.setTimeout(() => glyph.remove(), delay + FLY_MS + 200);
+    // 拖尾：沿同一路径在 22%/48%/74% 处撒小方块。
+    for (const fraction of [0.22, 0.48, 0.74]) {
+      const point = flyPathPoint(startX, fromY, dx, dy, fraction);
+      window.setTimeout(
+        () => spawnTrail(island, point.x, point.y),
+        delay + FLY_MS * fraction,
+      );
+    }
   }
 }
 

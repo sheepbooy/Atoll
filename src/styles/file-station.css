@@ -263,12 +263,16 @@
 .stash-copy-glyph {
   position: absolute;
   z-index: 55;
-  width: 18px;
-  height: 22px;
+  width: 22px;
+  height: 26px;
   border-radius: 3px;
-  background: linear-gradient(180deg, #f7f2e8, #e3dacb);
-  border: 1px solid rgba(0, 0, 0, 0.4);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  background: linear-gradient(180deg, #fdf9f0, #e8dfcf);
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  /* 亮边 + 冷色辉光：飞行件在深色岛面上足够醒目 */
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.45),
+    0 0 14px rgba(255, 244, 214, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
   pointer-events: none;
 }
 .stash-fly-file::after,
@@ -278,9 +282,45 @@
   top: 0;
   right: 0;
   border-style: solid;
-  border-width: 0 7px 7px 0;
+  border-width: 0 8px 8px 0;
   border-color: transparent #c9bfae transparent transparent;
   border-radius: 0 3px 0 3px;
+}
+.stash-fly-file::before {
+  /* 像素文件的两道"文字行"，远看也读得出是文件 */
+  content: "";
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  width: 9px;
+  height: 6px;
+  background:
+    linear-gradient(#c4a882 1.5px, transparent 1.5px) 0 0 / 100% 3px repeat-y;
+  opacity: 0.85;
+}
+
+/* 飞行拖尾：路径上快速消散的像素小方块 */
+.stash-fly-trail {
+  position: absolute;
+  z-index: 54;
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: #f7ecd8;
+  box-shadow: 0 0 6px rgba(255, 240, 200, 0.4);
+  pointer-events: none;
+}
+
+/* 命中闪块：文件入嘴时在吉祥物位置弹出的像素星光 */
+.stash-fly-spark {
+  position: absolute;
+  z-index: 56;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: linear-gradient(135deg, #ffffff, #9be8ff);
+  box-shadow: 0 0 12px rgba(111, 220, 255, 0.65);
+  pointer-events: none;
 }
 
 /* 吞咽涟漪：岛底光带从命中点向两侧扩散一圈（islandShape.playSwallowRipple）。 */
