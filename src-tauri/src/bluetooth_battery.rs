@@ -375,7 +375,7 @@ fn run_command(program: &str, args: &[&str]) -> Option<String> {
 fn fetch_macos() -> BluetoothBatteryReport {
     let profiler =
         run_command("system_profiler", &["-json", "SPBluetoothDataType"]).unwrap_or_default();
-    let mut devices = parse_system_profiler_json(&profiler);
+    let devices = parse_system_profiler_json(&profiler);
 
     // Magic Mouse / Keyboard / Trackpad expose battery via the HID event
     // service; classic Bluetooth devices (some headphones) via IOBluetoothDevice.
