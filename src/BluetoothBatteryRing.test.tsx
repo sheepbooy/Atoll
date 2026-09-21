@@ -82,6 +82,34 @@ describe("BluetoothBatteryRing", () => {
     expect(ring?.className).not.toContain("is-mid");
   });
 
+  it("renders the icon matching the lowest device's kind", () => {
+    const { container, rerender } = render(
+      <BluetoothBatteryRing
+        devices={[
+          device({ name: "Magic Mouse", kind: "mouse", batteryPercent: 73 }),
+          device({
+            id: "bb",
+            name: "Magic Keyboard",
+            kind: "keyboard",
+            batteryPercent: 91,
+          }),
+        ]}
+        alertThreshold={20}
+      />,
+    );
+    // Lowest device wins the icon: mouse, not keyboard.
+    expect(container.querySelector(".lucide-mouse")).not.toBeNull();
+    expect(container.querySelector(".lucide-keyboard")).toBeNull();
+
+    rerender(
+      <BluetoothBatteryRing
+        devices={[device({ kind: "headphones", batteryPercent: 50 })]}
+        alertThreshold={20}
+      />,
+    );
+    expect(container.querySelector(".lucide-headphones")).not.toBeNull();
+  });
+
   it("turns amber below 40% without alerting", () => {
     render(
       <BluetoothBatteryRing

@@ -1,11 +1,32 @@
 import { useTranslation } from "react-i18next";
-import { Bluetooth } from "lucide-react";
-import type { BluetoothDeviceBattery } from "./tauri";
+import { Bluetooth, Headphones, Keyboard, Mouse, Pointer } from "lucide-react";
+import type { BluetoothDeviceBattery, BluetoothDeviceKind } from "./tauri";
 
 interface BluetoothBatteryRingProps {
   devices: BluetoothDeviceBattery[];
   /** Percent at or below which the ring turns red (matches the alert). */
   alertThreshold: number;
+}
+
+const RING_ICON_PROPS = {
+  className: "bt-ring-icon",
+  size: 9,
+  strokeWidth: 2.75,
+} as const;
+
+function KindIcon({ kind }: { kind: BluetoothDeviceKind }) {
+  switch (kind) {
+    case "mouse":
+      return <Mouse {...RING_ICON_PROPS} />;
+    case "keyboard":
+      return <Keyboard {...RING_ICON_PROPS} />;
+    case "trackpad":
+      return <Pointer {...RING_ICON_PROPS} />;
+    case "headphones":
+      return <Headphones {...RING_ICON_PROPS} />;
+    default:
+      return <Bluetooth {...RING_ICON_PROPS} />;
+  }
 }
 
 /** Whether any device reports a battery level (drives ring visibility). */
@@ -28,8 +49,8 @@ export function deviceBatteryPercent(device: BluetoothDeviceBattery): number | n
 }
 
 /**
- * Folded-island indicator: a circular Bluetooth icon wrapped in a battery
- * ring (green, amber below 40%, red at the alert threshold). With several
+ * Folded-island indicator: a battery ring (green, amber below 40%, red at
+ * the alert threshold) around a device-kind icon. With several
  * devices it shows the lowest battery — the one that needs attention — and
  * the tooltip lists every device. Renders nothing when no device reports a
  * battery.
@@ -76,7 +97,7 @@ export function BluetoothBatteryRing({
           transform="rotate(-90 10 10)"
         />
       </svg>
-      <Bluetooth className="bt-ring-icon" size={9} strokeWidth={2.75} />
+      <KindIcon kind={worst.device.kind} />
     </span>
   );
 }
