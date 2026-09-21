@@ -50,6 +50,56 @@
   overflow: hidden;
 }
 
+/* Folded-island Bluetooth battery ring: a circular Bluetooth icon wrapped
+   in a battery progress arc. */
+.compact-battery-ring {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.compact-battery-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.bt-ring-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 2.5;
+}
+
+.bt-ring-fill {
+  fill: none;
+  stroke: rgba(76, 217, 100, 0.95);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  transition: stroke-dasharray 600ms ease, stroke 300ms ease;
+}
+
+.bt-ring-icon {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.compact-battery-ring.is-mid .bt-ring-fill {
+  stroke: rgba(255, 190, 80, 0.95);
+}
+
+.compact-battery-ring.is-low .bt-ring-fill {
+  stroke: rgba(255, 105, 105, 0.98);
+}
+
+.compact-battery-ring.is-low .bt-ring-icon {
+  color: rgba(255, 140, 140, 0.95);
+}
+
 /* ─── Clipboard history ─────────────────────────────────────────── */
 
 .clipboard-history-view {

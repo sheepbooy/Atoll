@@ -53,9 +53,6 @@ import {
   ShortcutSettingsView,
 } from "../SettingsPages";
 import {
-  BluetoothBatteryCard,
-} from "../BluetoothBatteryCard";
-import {
   SettingsView,
 } from "../SettingsView";
 import {

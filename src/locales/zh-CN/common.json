@@ -221,7 +221,6 @@
     "stagedToast": "Atoll 吃掉了 {{count}} 个文件"
   },
   "bluetooth": {
-    "title": "蓝牙电量",
-    "case": "仓"
+    "title": "蓝牙电量"
   }
 }

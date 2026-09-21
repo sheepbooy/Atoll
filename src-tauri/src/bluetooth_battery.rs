@@ -158,10 +158,10 @@ struct SystemProfilerDevice {
     battery_right: Option<Value>,
 }
 
-/// Parse the stdout of `system_profiler -json SPBluetoothDataType`. Devices
-/// without any battery data are skipped: a row without a level is noise, and
-/// when ioreg does know the level the merge re-adds the device from that
-/// source.
+/// Parse the stdout of `system_profiler -json SPBluetoothDataType`. Every
+/// connected device is kept — battery-less entries included — because they
+/// are exactly the devices the GATT probe targets (a device the OS reports a
+/// level for never needs a direct read); the UI decides what to show.
 pub(crate) fn parse_system_profiler_json(stdout: &str) -> Vec<BluetoothDeviceBattery> {
     let Ok(root) = serde_json::from_str::<SystemProfilerRoot>(stdout) else {
         return Vec::new();
@@ -186,13 +186,6 @@ pub(crate) fn parse_system_profiler_json(stdout: &str) -> Vec<BluetoothDeviceBat
                     .battery_right
                     .as_ref()
                     .and_then(parse_battery_level_value);
-                let has_battery = battery_percent.is_some()
-                    || case_percent.is_some()
-                    || left_percent.is_some()
-                    || right_percent.is_some();
-                if !has_battery {
-                    continue;
-                }
                 let kind = infer_kind(device.minor_type.as_deref(), &name);
                 devices.push(BluetoothDeviceBattery::new(
                     make_id(device.address.as_deref(), &name),

@@ -86,7 +86,14 @@ fn device(id: &str, name: &str, battery: Option<u8>) -> BluetoothDeviceBattery {
 #[test]
 fn parses_system_profiler_fixture() {
     let devices = parse_system_profiler_json(SYSTEM_PROFILER_FIXTURE);
-    assert_eq!(devices.len(), 2, "battery-less + disconnected excluded");
+    assert_eq!(
+        devices.len(),
+        3,
+        "all connected devices kept (battery-less feed the GATT probe); not-connected excluded"
+    );
+    let mi = devices.iter().find(|d| d.name == "Mi DMMS2").unwrap();
+    assert_eq!(mi.battery_percent, None);
+    assert_eq!(mi.kind, DEVICE_KIND_MOUSE);
 
     let airpods = devices.iter().find(|d| d.name == "AirPods Pro").unwrap();
     assert_eq!(airpods.id, "aa:bb:cc:dd:ee:01");
@@ -162,9 +169,10 @@ fn merge_fills_missing_battery_and_appends_new_devices() {
     let merged = merge_devices(primary, secondary);
     let mi = merged.iter().find(|d| d.name == "Mi DMMS2").unwrap();
     assert_eq!(mi.battery_percent, Some(64));
-    // "Mi DMMS2" is battery-less in system_profiler so it never enters the
-    // primary list; the appended ioreg record can only infer from the name.
-    assert_eq!(mi.kind, DEVICE_KIND_OTHER);
+    // "Mi DMMS2" IS in the primary list now (parser keeps battery-less
+    // devices), so the system_profiler-inferred kind wins over the ioreg
+    // record's name-only inference.
+    assert_eq!(mi.kind, DEVICE_KIND_MOUSE);
     assert!(merged.iter().any(|d| d.name == "Solo Pad"));
     // Sorted by name for stable rendering.
     let names: Vec<&str> = merged.iter().map(|d| d.name.as_str()).collect();

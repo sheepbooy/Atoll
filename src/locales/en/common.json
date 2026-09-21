@@ -221,7 +221,6 @@
     "stagedToast": "Atoll ate {{count}} file(s)"
   },
   "bluetooth": {
-    "title": "Bluetooth battery",
-    "case": "Case"
+    "title": "Bluetooth battery"
   }
 }

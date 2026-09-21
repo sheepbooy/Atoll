@@ -31,9 +31,6 @@ import {
   NowPlayingCard,
 } from "./NowPlayingCard";
 import {
-  BluetoothBatteryCard,
-} from "./BluetoothBatteryCard";
-import {
   deriveAppLogoState,
   deriveAtollActivity,
 } from "./logoStates";
@@ -821,6 +818,9 @@ export function App() {
     showCompactMediaIndicator={showCompactMediaIndicator}
     showCompactNotchSpacer={showCompactNotchSpacer}
     showLyricsMarquee={showLyricsMarquee}
+    bluetoothDevices={bluetoothDevices}
+    bluetoothBatteryEnabled={bluetoothCardEnabled}
+    bluetoothAlertThreshold={bluetoothAlertThreshold}
     startWindowDrag={startWindowDrag}
     atollIndicatorRef={atollIndicatorRef}
     menuRef={menuRef}
@@ -1018,25 +1018,15 @@ export function App() {
               handleChangeLaunchAtLogin={handleChangeLaunchAtLogin}
             />
             </div>
-            {isExpandedChrome &&
-            ((mediaCardEnabled && nowPlayingTrack) ||
-              (bluetoothCardEnabled && bluetoothDevices.length > 0)) ? (
+            {isExpandedChrome && mediaCardEnabled && nowPlayingTrack ? (
               <div className="island-panel-footer">
-                {mediaCardEnabled && nowPlayingTrack ? (
-                  <NowPlayingCard
-                    track={nowPlayingTrack}
-                    livePosition={playbackPosition}
-                    onCommand={(cmd) => {
-                      sendMediaCommand(cmd).catch(() => undefined);
-                    }}
-                  />
-                ) : null}
-                {bluetoothCardEnabled && bluetoothDevices.length > 0 ? (
-                  <BluetoothBatteryCard
-                    devices={bluetoothDevices}
-                    alertThreshold={bluetoothAlertThreshold}
-                  />
-                ) : null}
+                <NowPlayingCard
+                  track={nowPlayingTrack}
+                  livePosition={playbackPosition}
+                  onCommand={(cmd) => {
+                    sendMediaCommand(cmd).catch(() => undefined);
+                  }}
+                />
               </div>
             ) : null}
           </div>
