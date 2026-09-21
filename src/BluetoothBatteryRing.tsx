@@ -10,7 +10,7 @@ interface BluetoothBatteryRingProps {
 
 const RING_ICON_PROPS = {
   className: "bt-ring-icon",
-  size: 9,
+  size: 10,
   strokeWidth: 2.75,
 } as const;
 
@@ -86,7 +86,7 @@ export function BluetoothBatteryRing({
       aria-label={`${t("bluetooth.title")}: ${title}`}
       data-no-drag
     >
-      <svg viewBox="0 0 20 20" width={18} height={18} aria-hidden="true">
+      <svg viewBox="0 0 20 20" width={20} height={20} aria-hidden="true">
         <circle className="bt-ring-track" cx="10" cy="10" r={radius} />
         <circle
           className="bt-ring-fill"

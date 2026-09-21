@@ -37,8 +37,6 @@ import { SessionSubviewNav } from "./SessionSubviewNav";
 import { SettingsPageNav, SettingsSubviewNav } from "./SettingsNavs";
 import { LyricsMarquee, lyricsMatchTrack } from "../LyricsMarquee";
 import { TokenCounter } from "../TokenCounter";
-import { BluetoothBatteryRing } from "../BluetoothBatteryRing";
-import type { BluetoothDeviceBattery } from "../tauri";
 import type { UsageDisplayMode } from "../displayPrefs";
 import type { SessionSummary } from "../tauri/types";
 import type { AtollReaction } from "../AtollLogo";
@@ -66,10 +64,6 @@ interface IslandHeaderProps {
   showCompactMediaIndicator: boolean;
   showCompactNotchSpacer: boolean;
   showLyricsMarquee: boolean;
-  // Folded-island Bluetooth battery ring
-  bluetoothDevices: BluetoothDeviceBattery[];
-  bluetoothBatteryEnabled: boolean;
-  bluetoothAlertThreshold: number;
 
   startWindowDrag: (event: React.MouseEvent<HTMLElement>) => void;
   atollIndicatorRef: RefObject<HTMLSpanElement>;
@@ -183,9 +177,6 @@ export function IslandHeader(props: IslandHeaderProps) {
     showCompactMediaIndicator,
     showCompactNotchSpacer,
     showLyricsMarquee,
-    bluetoothDevices,
-    bluetoothBatteryEnabled,
-    bluetoothAlertThreshold,
     startWindowDrag,
     atollIndicatorRef,
     menuRef,
@@ -317,15 +308,6 @@ export function IslandHeader(props: IslandHeaderProps) {
             </span>
           </span>
         </span>
-        {bluetoothBatteryEnabled &&
-        !isPresentationTransition &&
-        !isExpanded &&
-        (showCompactHeaderMetrics || isMicro) ? (
-          <BluetoothBatteryRing
-            devices={bluetoothDevices}
-            alertThreshold={bluetoothAlertThreshold}
-          />
-        ) : null}
         {showCollapsedActivityStrip ? (
           <>
             <span

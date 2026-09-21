@@ -50,6 +50,19 @@
   overflow: hidden;
 }
 
+/* Fixed anchor for the battery ring: pinned just right of the logo slot at
+   the top of the island window, outside the header grid so it survives
+   every folded state (compact AND dormant) and never participates in the
+   header's transition-hiding. */
+.battery-ring-anchor {
+  position: fixed;
+  /* COMPACT_ATOLL_LOGO_SLOT(34) + left padding(8) + small gap */
+  left: 46px;
+  top: calc((var(--compact-height, 32px) - 20px) / 2);
+  z-index: 50;
+  pointer-events: none;
+}
+
 /* Folded-island Bluetooth battery ring: a circular Bluetooth icon wrapped
    in a battery progress arc. */
 .compact-battery-ring {
@@ -57,10 +70,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  flex-shrink: 1;
-  min-width: 0;
+  width: 20px;
+  height: 20px;
+  /* Unlike the media thumb, the ring must never be squeezed away — it is
+     the only battery readout on the folded island. */
+  flex-shrink: 0;
+  margin: 0 2px;
 }
 
 .compact-battery-ring svg {
@@ -72,14 +87,14 @@
 
 .bt-ring-track {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.16);
-  stroke-width: 2.5;
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 3;
 }
 
 .bt-ring-fill {
   fill: none;
-  stroke: rgba(76, 217, 100, 0.95);
-  stroke-width: 2.5;
+  stroke: rgba(76, 217, 100, 1);
+  stroke-width: 3;
   stroke-linecap: round;
   transition: stroke-dasharray 600ms ease, stroke 300ms ease;
 }
