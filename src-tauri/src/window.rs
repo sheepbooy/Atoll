@@ -26,10 +26,16 @@ pub(crate) async fn set_island_presentation(
     expanded_settings: Option<bool>,
     animate: Option<bool>,
     snap: Option<bool>,
+    duration_ms: Option<u64>,
 ) -> Result<(), String> {
     let Some(window) = app.get_webview_window("main") else {
         return Ok(());
     };
+    // Any presentation change (animated or snap) supersedes a running
+    // cosmetic shape pulse.
+    state
+        .shape_pulse_generation
+        .fetch_add(1, Ordering::SeqCst);
 
     if let Some(width) = compact_width {
         if should_persist_compact_width(mode) {
@@ -150,11 +156,184 @@ pub(crate) async fn set_island_presentation(
             expanded_idle,
             expanded_plan,
             expanded_settings,
+            resolve_animation_duration(duration_ms),
         )
         .map_err(|error| error.to_string())
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+/// Per-call animation length: the frontend shortens the native resize for
+/// file-drag expansions so the drop target is large quickly and the main
+/// thread stays responsive to WKWebView drag updates (the system suppresses
+/// its top-edge Mission Control trigger only while a drag destination under
+/// the cursor answers promptly).
+pub(crate) fn resolve_animation_duration(duration_ms: Option<u64>) -> Duration {
+    match duration_ms {
+        Some(ms) if ms > 0 => Duration::from_millis(ms.min(2000)),
+        _ => WINDOW_ANIMATION_DURATION,
+    }
+}
+
+/// Cosmetic island shape pulse: grow/shrink the window by `width_delta` x
+/// `height_delta` logical points — spring out over `out_ms`, ease back over
+/// `back_ms` — always returning to the live base frame. Purely visual: no
+/// presentation state changes, no settled event. This is what lets the
+/// island itself "swallow" ( gulp taller ) and "squeeze" during the
+/// file-station eat/spit choreography, because CSS cannot grow the island
+/// past the window bounds (the content view masks to the window frame).
+#[tauri::command]
+pub(crate) fn pulse_island_shape(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    width_delta: Option<f64>,
+    height_delta: Option<f64>,
+    out_ms: Option<u64>,
+    back_ms: Option<u64>,
+) -> Result<(), String> {
+    let Some(window) = app.get_webview_window("main") else {
+        return Ok(());
+    };
+    // Reduced motion: no cosmetic window motion at all.
+    if platform::prefers_reduced_motion() {
+        return Ok(());
+    }
+    let width_delta = width_delta.unwrap_or(0.0);
+    let height_delta = height_delta.unwrap_or(0.0);
+    if !width_delta.is_finite() || !height_delta.is_finite() {
+        return Ok(());
+    }
+    if width_delta == 0.0 && height_delta == 0.0 {
+        return Ok(());
+    }
+    let out = Duration::from_millis(out_ms.unwrap_or(160).clamp(60, 600));
+    let back = Duration::from_millis(back_ms.unwrap_or(240).clamp(60, 900));
+
+    // A new pulse — or any presentation change, which bumps this counter in
+    // set_island_presentation — supersedes the one in flight.
+    let generation = state
+        .shape_pulse_generation
+        .fetch_add(1, Ordering::SeqCst)
+        + 1;
+    let shape_pulse_generation = Arc::clone(&state.shape_pulse_generation);
+    let presentation_generation = Arc::clone(&state.presentation_generation);
+    let presentation_generation_at_start = presentation_generation.load(Ordering::SeqCst);
+    let home_bounds = *state
+        .home_bounds
+        .lock()
+        .map_err(|error| error.to_string())?;
+
+    // Fire-and-forget: the caller keeps choreographing while the pulse runs.
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = animate_island_shape_pulse(
+            &window,
+            generation,
+            &shape_pulse_generation,
+            &presentation_generation,
+            presentation_generation_at_start,
+            home_bounds,
+            width_delta,
+            height_delta,
+            out,
+            back,
+        );
+    });
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn animate_island_shape_pulse(
+    window: &tauri::WebviewWindow,
+    generation: u64,
+    shape_pulse_generation: &Arc<AtomicU64>,
+    presentation_generation: &Arc<AtomicU64>,
+    presentation_generation_at_start: u64,
+    home_bounds: Option<HomeWindowBounds>,
+    width_delta: f64,
+    height_delta: f64,
+    out: Duration,
+    back: Duration,
+) -> tauri::Result<()> {
+    let scale_factor = home_bounds
+        .map(|home| home.compact_size.width as f64 / COMPACT_WINDOW_WIDTH)
+        .unwrap_or_else(|| window.scale_factor().unwrap_or(1.0));
+    let start_position = window.outer_position()?.to_logical::<f64>(scale_factor);
+    let start_size = window.outer_size()?.to_logical::<f64>(scale_factor);
+    // Floor the target so a negative pulse can never collapse the window to
+    // nonsense; the top edge stays pinned (Tauri positions are top-left, so
+    // growth extends downward only — the island hangs from the menu bar).
+    let target_size = LogicalSize::new(
+        (start_size.width + width_delta).max(80.0),
+        (start_size.height + height_delta).max(20.0),
+    );
+    let target_position = LogicalPosition::new(
+        start_position.x - (target_size.width - start_size.width) / 2.0,
+        start_position.y - (target_size.height - start_size.height),
+    );
+    let animation_frame = platform::display_animation_frame_interval(window);
+    let total = out + back;
+    let started_at = Instant::now();
+    let mut next_frame_at = started_at;
+
+    loop {
+        if shape_pulse_generation.load(Ordering::SeqCst) != generation
+            || presentation_generation.load(Ordering::SeqCst) != presentation_generation_at_start
+        {
+            return Ok(());
+        }
+        let elapsed = started_at.elapsed();
+        // Out 阶段 spring 从基帧到峰值帧；back 阶段 cubic 从峰值帧回基帧。
+        // 两段各自插值，手点处连续（spring(1)==1 且 cubic(0)==0 都落在峰值帧）。
+        let (from_size, to_size, from_position, to_position, eased) = if elapsed < out {
+            (
+                start_size,
+                target_size,
+                start_position,
+                target_position,
+                ease_out_spring(elapsed.as_secs_f64() / out.as_secs_f64()),
+            )
+        } else {
+            (
+                target_size,
+                start_size,
+                target_position,
+                start_position,
+                ease_out_cubic(((elapsed - out).as_secs_f64() / back.as_secs_f64()).min(1.0)),
+            )
+        };
+        let size = LogicalSize::new(
+            interpolate_f64(from_size.width, to_size.width, eased),
+            interpolate_f64(from_size.height, to_size.height, eased),
+        );
+        let position = LogicalPosition::new(
+            interpolate_f64(from_position.x, to_position.x, eased),
+            interpolate_f64(from_position.y, to_position.y, eased),
+        );
+
+        platform::set_island_window_frame(window, position, size, scale_factor, home_bounds)?;
+        #[cfg(target_os = "macos")]
+        {
+            // Same AppKit back-pressure as the presentation animation: one
+            // bounded wait, absolute-time progress catches up if the main
+            // thread is busy; the loop-top generation check aborts stale
+            // pulses before they can set further frames.
+            let (frame_tx, frame_rx) = std::sync::mpsc::sync_channel::<()>(0);
+            window.run_on_main_thread(move || {
+                let _ = frame_tx.send(());
+            })?;
+            let _ = frame_rx.recv_timeout(Duration::from_millis(120));
+        }
+
+        if elapsed >= total {
+            break;
+        }
+        next_frame_at += animation_frame;
+        if let Some(delay) = next_frame_at.checked_duration_since(Instant::now()) {
+            thread::sleep(delay);
+        }
+    }
+    Ok(())
 }
 
 /// Displays available to the island selector, in OS enumeration order.
@@ -497,6 +676,7 @@ pub(crate) fn animate_island_window_mode(
     expanded_idle: bool,
     expanded_plan: bool,
     expanded_settings: bool,
+    duration: Duration,
 ) -> tauri::Result<()> {
     let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
     platform::ensure_island_on_top(window);
@@ -565,7 +745,7 @@ pub(crate) fn animate_island_window_mode(
         }
 
         let progress =
-            (started_at.elapsed().as_secs_f64() / WINDOW_ANIMATION_DURATION.as_secs_f64()).min(1.0);
+            (started_at.elapsed().as_secs_f64() / duration.as_secs_f64()).min(1.0);
         // Overshoot only when growing out of the menu-bar pill. Resizing between
         // already-expanded sizes (idle → settings/tokens) stays cubic so AppKit
         // never has to grow past the target and shrink back — that path felt
@@ -609,7 +789,7 @@ pub(crate) fn animate_island_window_mode(
                 if frame_rx.recv_timeout(Duration::from_millis(250)).is_ok() {
                     break;
                 }
-                if started_at.elapsed() >= WINDOW_ANIMATION_DURATION {
+                if started_at.elapsed() >= duration {
                     break;
                 }
             }

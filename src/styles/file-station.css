@@ -238,7 +238,7 @@
   left: 50%;
   bottom: 14px;
   transform: translateX(-50%);
-  z-index: 70; /* 高于 .atoll-takeover(60)：吃/吐接管时结果提示仍浮在上方 */
+  z-index: 70; /* 吃/吐表演在岛内底层进行，结果提示浮在最上 */
   max-width: calc(100% - 32px);
   padding: 7px 14px;
   border: 1px solid rgba(111, 220, 255, 0.22);
@@ -272,83 +272,83 @@
   }
 }
 
-/* ─── Atoll 吃/吐接管：logo 从左上角原位放大占满整岛 ─────────────── */
-.atoll-takeover {
+/* ─── 文件飞行层（岛即生物）：吸入/吐出/复制的文件缩略，DOM 一次性节点 ─── */
+.stash-fly-file,
+.stash-copy-glyph {
   position: absolute;
-  inset: 0;
-  z-index: 60;
-  display: grid;
-  place-items: center;
-  border-radius: inherit;
+  z-index: 55;
+  width: 22px;
+  height: 26px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #fdf9f0, #e8dfcf);
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  /* 亮边 + 冷色辉光：飞行件在深色岛面上足够醒目 */
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.45),
+    0 0 14px rgba(255, 244, 214, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+}
+.stash-fly-file::after,
+.stash-copy-glyph::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-style: solid;
+  border-width: 0 8px 8px 0;
+  border-color: transparent #c9bfae transparent transparent;
+  border-radius: 0 3px 0 3px;
+}
+.stash-fly-file::before {
+  /* 像素文件的两道"文字行"，远看也读得出是文件 */
+  content: "";
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  width: 9px;
+  height: 6px;
   background:
-    radial-gradient(120% 80% at 50% -20%, rgba(255, 255, 255, 0.09), transparent 62%),
-    linear-gradient(180deg, var(--surface-2), var(--surface-base));
-  animation: atoll-takeover-shade 200ms ease-out both;
+    linear-gradient(#c4a882 1.5px, transparent 1.5px) 0 0 / 100% 3px repeat-y;
+  opacity: 0.85;
 }
 
-.atoll-takeover-logo {
-  height: 58%;
-  aspect-ratio: 96 / 108;
-  animation: atoll-takeover-grow 380ms cubic-bezier(0.26, 0.9, 0.36, 1) both;
+/* 飞行拖尾：路径上快速消散的像素小方块 */
+.stash-fly-trail {
+  position: absolute;
+  z-index: 54;
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: #f7ecd8;
+  box-shadow: 0 0 6px rgba(255, 240, 200, 0.4);
+  pointer-events: none;
 }
 
-.atoll-takeover-logo .atoll-logo {
-  width: 100%;
-  height: 100%;
+/* 命中闪块：文件入嘴时在吉祥物位置弹出的像素星光 */
+.stash-fly-spark {
+  position: absolute;
+  z-index: 56;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: linear-gradient(135deg, #ffffff, #9be8ff);
+  box-shadow: 0 0 12px rgba(111, 220, 255, 0.65);
+  pointer-events: none;
 }
 
-/* 接管放大时收起鼓肚：大尺寸下底部椭圆会读成第二张嘴。 */
-.atoll-takeover .atoll-belly-bump {
-  transform: scale(0) !important;
-}
-
-/* 退出：向 header logo 原位缩回（位移/缩放来自 JS 实测写入的 CSS 变量；
-   320ms 须与 App.tsx takeover 退出定时 340ms 匹配）。 */
-.atoll-takeover.is-exiting {
-  animation: atoll-takeover-shade-out 320ms ease-in both;
-}
-.atoll-takeover.is-exiting .atoll-takeover-logo {
-  animation: atoll-takeover-vanish 320ms cubic-bezier(0.55, 0, 0.8, 0.4) both;
-}
-
-@keyframes atoll-takeover-shade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@keyframes atoll-takeover-shade-out {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-@keyframes atoll-takeover-grow {
-  0% {
-    opacity: 0;
-    transform: translate(var(--takeover-dx, -180px), var(--takeover-dy, -110px))
-      scale(var(--takeover-scale, 0.18));
-  }
-  55% {
-    opacity: 1;
-  }
-  80% {
-    transform: translate(0, 0) scale(1.05);
-  }
-  100% {
-    opacity: 1;
-    transform: translate(0, 0) scale(1);
-  }
-}
-@keyframes atoll-takeover-vanish {
-  0% {
-    opacity: 1;
-    transform: translate(0, 0) scale(1);
-  }
-  25% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-    transform: translate(var(--takeover-dx, -180px), var(--takeover-dy, -110px))
-      scale(var(--takeover-scale, 0.18));
-  }
+/* 吞咽涟漪：岛底光带从命中点向两侧扩散一圈（islandShape.playSwallowRipple）。 */
+.stash-gulp-ripple {
+  position: absolute;
+  bottom: 0;
+  width: 130%;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--accent-cyan, #6fdcff), transparent);
+  filter: drop-shadow(0 0 6px rgba(111, 220, 255, 0.55));
+  transform-origin: center;
+  pointer-events: none;
+  z-index: 3;
 }
 
 /* 拖拽悬停待喂提示（张嘴状态下方的青色胶囊） */
@@ -371,6 +371,23 @@
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
-  animation: stash-toast-in 260ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+  animation:
+    stash-toast-in 260ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both,
+    stash-feed-bob 1.8s ease-in-out 300ms infinite;
+}
+
+/* 待喂提示轻轻上下浮动，像在盼着投喂。 */
+@keyframes stash-feed-bob {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-3px); }
+}
+
+/* 结果 toast 退场（is-leaving 时播 260ms 退场，之后卸载）。 */
+.stash-toast.is-leaving {
+  animation: stash-toast-out 260ms ease-in both;
+}
+@keyframes stash-toast-out {
+  from { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  to { opacity: 0; transform: translateX(-50%) translateY(8px) scale(0.94); }
 }
 

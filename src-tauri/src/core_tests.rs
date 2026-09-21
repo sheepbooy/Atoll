@@ -11,6 +11,7 @@ pub(crate) fn test_app_state() -> AppState {
         compact_width: Mutex::new(COMPACT_WINDOW_WIDTH),
         compact_left_width: Mutex::new(0.0),
         presentation_generation: Arc::new(AtomicU64::new(0)),
+        shape_pulse_generation: Arc::new(AtomicU64::new(0)),
         home_bounds: Mutex::new(None),
         notch_metrics: Mutex::new(NotchMetrics::default()),
         session_last_seen: Mutex::new(HashMap::new()),

@@ -174,9 +174,14 @@ interface IslandPanelRouterProps {
   stagedFiles: StagedFile[];
   removeStaged: (id: string) => void;
   clearStaged: () => void;
-  playStashReaction: (reaction: AtollReaction) => void;
+  playStashReaction: (
+    reaction: AtollReaction,
+    options?: { spitAngle?: number },
+  ) => void;
   /** Copy staged paths as newline-joined text. */
   copyStagedPaths: (ids: string[]) => void;
+  /** 复制飞行 + 岛身 micro squash（App 实现；originRect 为发起行位置）。 */
+  onCopyStagedFly: (originRect: DOMRect | null) => void;
 
   // Settings: usage & pricing
   dailyTokens: TokenUsage;
@@ -303,6 +308,7 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
     clearStaged,
     playStashReaction,
     copyStagedPaths,
+    onCopyStagedFly,
     dailyTokens,
     dailyTokensByModel,
     heatmapDisplay,
@@ -571,8 +577,9 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
     return (
       <FileStationView
         files={stagedFiles}
-        onCopy={(id) => {
+        onCopy={(id, originRect) => {
           copyStagedFilesToClipboard([id]).catch(() => undefined);
+          onCopyStagedFly(originRect);
         }}
         onCopyPaths={(ids) => {
           copyStagedPaths(ids);
@@ -582,9 +589,19 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
         }}
         onRemove={removeStaged}
         onClear={clearStaged}
-        onDragOut={(ids) => {
-          playStashReaction("spit");
-          beginStagedFilesDrag(ids).catch(() => undefined);
+        onDragOut={(ids, dragAngle, originRect) => {
+          // 先锚定原生拖拽会话，成功才播 spit（否则动画会"说谎"）；
+          // 锚定失败回退为复制到剪贴板 + 飞行动画。
+          void beginStagedFilesDrag(ids)
+            .then((anchored) => {
+              if (anchored) {
+                playStashReaction("spit", { spitAngle: dragAngle });
+              } else {
+                copyStagedFilesToClipboard(ids).catch(() => undefined);
+                onCopyStagedFly(originRect);
+              }
+            })
+            .catch(() => undefined);
         }}
       />
     );

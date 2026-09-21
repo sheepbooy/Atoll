@@ -107,29 +107,47 @@ export async function onFileStationChanged(callback: (files: StagedFile[]) => vo
   );
 }
 
+/** Cursor position in CSS (logical) px relative to the island webview. */
+export interface DragPoint {
+  x: number;
+  y: number;
+}
+
 /**
  * Native drag-drop events for the island webview. Tauri v2 keeps
  * `dragDropEnabled` at its default (true), which routes file drops through
- * this channel instead of HTML5 drop events.
+ * this channel instead of HTML5 drop events. `position` (enter/over/drop)
+ * carries the cursor in physical px; it is converted to logical px so the
+ * eat/spit choreography can fly files from the real cursor position.
  */
 export async function onIslandDragDropEvent(
-  callback: (kind: "enter" | "over" | "leave" | "drop", paths: string[]) => void,
+  callback: (
+    kind: "enter" | "over" | "leave" | "drop",
+    paths: string[],
+    position?: DragPoint,
+  ) => void,
 ) {
   if (!isTauriRuntime()) {
     return () => undefined;
   }
+  const toLogical = (physical: { x: number; y: number }): DragPoint => {
+    const scale = window.devicePixelRatio || 1;
+    return { x: physical.x / scale, y: physical.y / scale };
+  };
   return getCurrentWebview().onDragDropEvent((event) => {
     const payload = event.payload;
     switch (payload.type) {
       case "enter":
+        callback("enter", payload.paths, toLogical(payload.position));
+        break;
       case "drop":
-        callback(payload.type, payload.paths);
+        callback("drop", payload.paths, toLogical(payload.position));
         break;
       case "leave":
         callback("leave", []);
         break;
       default:
-        callback("over", []);
+        callback("over", [], toLogical(payload.position));
         break;
     }
   });

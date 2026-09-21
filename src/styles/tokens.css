@@ -67,6 +67,9 @@
      of the spring step; native Tauri resize uses the real oscillator. */
   --ease-window: cubic-bezier(0.34, 1.2, 0.64, 1);
   --ease-window-collapse: cubic-bezier(0.33, 1, 0.68, 1);
+  /* 整岛果冻形变（文件中转站吃/吐编舞）：压缩回弹带轻微过冲。 */
+  --ease-jelly: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --ease-jelly-in: cubic-bezier(0.4, 0, 0.6, 1);
   --duration-instant: 100ms;
   --duration-fast: 150ms;
   --duration-quick: 180ms;

@@ -6,6 +6,10 @@ export type PresentationPhase =
   | "closing";
 
 export const COLLAPSE_ANIMATION_MS = 420;
+/** Fast native resize for file-drag expansions: the drop target must be
+ *  large quickly, and a short animation keeps the main thread responsive to
+ *  WKWebView drag updates (see set_island_presentation duration_ms). */
+export const DRAG_EXPAND_ANIMATION_MS = 140;
 /** Fallback for the `island-presentation-settled` event; only the event path
  *  drives phase transitions, this fires when the event never arrives. */
 export const PRESENTATION_SETTLE_FALLBACK_MS = 2000;

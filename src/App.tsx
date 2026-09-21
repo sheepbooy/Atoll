@@ -39,6 +39,8 @@ import {
 } from "./logoStates";
 import { useAtollReaction } from "./useAtollReaction";
 import { useFileStation } from "./hooks/useFileStation";
+import { flyCopyGlyph, playIslandShape } from "./islandShape";
+import { prefersReducedMotion } from "./animationTiming";
 import { AtollLogo } from "./AtollLogo";
 import { stashBellyLevel } from "./fileStationTiers";
 import {
@@ -84,7 +86,7 @@ import { usePricingData } from "./hooks/usePricingData";
 import { useAppSettings } from "./hooks/useAppSettings";
 import { useCompactLayout } from "./hooks/useCompactLayout";
 import { useUsageSummary } from "./hooks/useUsageSummary";
-import { useStashTakeover } from "./hooks/useStashTakeover";
+import { useStashChoreography } from "./hooks/useStashChoreography";
 import { useImeSync } from "./hooks/useImeSync";
 import { useNativePresentationSync } from "./hooks/useNativePresentationSync";
 import { deriveIslandChromeFlags } from "./islandChromeFlags";
@@ -259,6 +261,7 @@ export function App() {
     artworkBackdropOriginRef,
     compactMediaThumbRef,
     expandIsland,
+    setFileDragActive,
     collapseIsland,
     scheduleIdleCollapse,
     clearIdleTimer,
@@ -474,6 +477,9 @@ export function App() {
     stagedFiles,
     stagedCount,
     dragOverIsland,
+    dragLook,
+    dropPointRef,
+    spitAngleRef,
     stashReaction,
     stashReactionKey,
     playStashReaction,
@@ -482,6 +488,14 @@ export function App() {
     clearStaged,
     lastStageResult,
   } = useFileStation();
+
+  // 文件拖入悬停：展开走快速通道——缩短原生窗口动画，让拖放目标尽快就位，
+  // 也让主线程及时响应 WKWebView 拖拽询问（抑制系统顶边多桌面条触发）。
+  useEffect(() => {
+    setFileDragActive(dragOverIsland);
+    // setFileDragActive 每次渲染重建但幂等，仅由 dragOverIsland 驱动。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragOverIsland]);
 
   // ── 剪贴板 ↔ 中转站联动 ──
   // 入站：把剪贴板条目存入中转站；有实际入站才播吃零食动画 + toast。
@@ -507,25 +521,45 @@ export function App() {
   const logoReactionKey = stashReaction ? stashReactionKey : atollReactionKey;
   const logoStashLevel = stashBellyLevel(stagedCount);
 
-  // ── Atoll 吃/吐接管时刻：logo 从左上角原位放大占满整岛，播完缩回原位 ──
-  // 拖入文件 → 分档 eat 反应；从面板行拖出文件 → spit。takeover 期间盖住
-  // header 与面板；退出时向 header logo 原位缩回（位移/缩放由测量写入
-  // CSS 变量，退出动画时长 340ms 须与 styles.css atoll-takeover-vanish 同步）。
+  // ── 文件中转站"岛即生物"编舞 ──
+  // 拖入文件 → 分档 eat 反应；从面板行拖出文件 → spit。吉祥物只演眼睛，
+  // 岛形拍点/原生脉冲/吞咽涟漪/文件飞行层由 useStashChoreography 编排。
   const islandRef = useRef<HTMLElement | null>(null);
   const atollIndicatorRef = useRef<HTMLSpanElement | null>(null);
-  const {
-    takeover,
-    takeoverExiting,
-    takeoverElRef,
-    stashToast,
-  } = useStashTakeover({
+  // 待喂瞳孔追踪：把归一化视线方向写到岛上（层叠作用于 header logo）。
+  useEffect(() => {
+    const islandEl = islandRef.current;
+    if (!islandEl) {
+      return;
+    }
+    if (dragLook) {
+      islandEl.style.setProperty("--pupil-dx", `${(dragLook.x * 1.2).toFixed(2)}px`);
+      islandEl.style.setProperty("--pupil-dy", `${(dragLook.y * 1.2).toFixed(2)}px`);
+    } else {
+      islandEl.style.removeProperty("--pupil-dx");
+      islandEl.style.removeProperty("--pupil-dy");
+    }
+  }, [dragLook]);
+  const { stashToast, stashToastLeaving } = useStashChoreography({
     stashReaction,
     stashReactionKey,
     lastStageResult,
     islandRef,
     atollIndicatorRef,
+    dropPointRef,
+    spitAngleRef,
     t,
   });
+  // 复制飞行：文件缩略从行位置飞向 header logo 嘴里，岛身轻压一下"接住"
+  // （点击复制与拖出锚定失败的复制回退共用）。
+  function handleStagedCopyFly(originRect: DOMRect | null) {
+    const islandEl = islandRef.current;
+    if (!islandEl || prefersReducedMotion()) {
+      return;
+    }
+    flyCopyGlyph(islandEl, atollIndicatorRef.current, originRect);
+    playIslandShape(islandEl, "squash", { durationMs: 260 });
+  }
   const headerLogo = useMemo(
     () =>
       deriveHeaderLogoDisplay(hookHealthAnalysis, atollActivity, {
@@ -646,6 +680,28 @@ export function App() {
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // demo 模式动画预览热键：1-4 播 eat1-4，s 播 spit（沿 55° 方向）。
+  // 仅 ?demo=fileStation 注册，便于在浏览器里核对整岛编舞节奏。
+  useEffect(() => {
+    if (!isFileStationDemoMode()) return;
+    const onKey = (event: KeyboardEvent) => {
+      const map: Record<string, "eat1" | "eat2" | "eat3" | "eat4" | "spit"> = {
+        "1": "eat1",
+        "2": "eat2",
+        "3": "eat3",
+        "4": "eat4",
+        s: "spit",
+      };
+      const reaction = map[event.key];
+      if (!reaction) return;
+      playStashReaction(reaction, {
+        spitAngle: reaction === "spit" ? 55 : undefined,
+      });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [playStashReaction]);
 
   useEffect(() => {
     if (!isGifCaptureMode()) return;
@@ -798,7 +854,7 @@ export function App() {
     <main className="stage">
       <section
         ref={islandRef}
-        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isPlanExpanded ? "is-plan" : ""} ${isSettingsExpanded ? "is-settings" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList" ? "is-session-subview" : ""}${panelExiting ? " is-panel-exiting" : ""}`}
+        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isPlanExpanded ? "is-plan" : ""} ${isSettingsExpanded ? "is-settings" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${logoStashLevel > 0 ? `is-stash-${Math.min(Math.round(logoStashLevel), 3)}` : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList" ? "is-session-subview" : ""}${panelExiting ? " is-panel-exiting" : ""}`}
         style={{ "--panel-glow": panelGlow } as CSSProperties}
         aria-label={t("app.name")}
         tabIndex={0}
@@ -966,6 +1022,7 @@ export function App() {
               clearStaged={clearStaged}
               playStashReaction={playStashReaction}
               copyStagedPaths={handleCopyStagedPaths}
+              onCopyStagedFly={handleStagedCopyFly}
               dailyTokens={dailyTokens}
               dailyTokensByModel={snapshot.dailyTokensByModel}
               heatmapDisplay={heatmapDisplay}
@@ -1046,26 +1103,13 @@ export function App() {
         {updateNotice ? (
           <UpdateNotice version={updateNotice} onDismiss={dismissUpdateNotice} />
         ) : null}
-        {takeover ? (
-          <div
-            ref={takeoverElRef}
-            className={`atoll-takeover${takeoverExiting ? " is-exiting" : ""}`}
-            aria-hidden="true"
-          >
-            <div className="atoll-takeover-logo">
-              <AtollLogo
-                activity="idle"
-                size={0}
-                reaction={takeover.reaction}
-                reactionKey={takeover.key}
-                stashLevel={logoStashLevel}
-                motionPaused={isPresentationTransition}
-              />
-            </div>
-          </div>
-        ) : null}
         {stashToast ? (
-          <div key={stashToast.key} className="stash-toast" role="status" data-no-drag>
+          <div
+            key={stashToast.key}
+            className={`stash-toast${stashToastLeaving ? " is-leaving" : ""}`}
+            role="status"
+            data-no-drag
+          >
             <span className="stash-toast-text">{stashToast.text}</span>
           </div>
         ) : dragOverIsland ? (

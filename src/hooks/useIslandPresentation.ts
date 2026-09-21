@@ -21,6 +21,7 @@ import {
   beginCollapse,
   beginExpand,
   finishExpand,
+  DRAG_EXPAND_ANIMATION_MS,
   IDLE_COLLAPSE_DELAY_MS,
   MICRO_SHRINK_DELAY_MS,
   PRESENTATION_SETTLE_FALLBACK_MS,
@@ -120,6 +121,9 @@ export function useIslandPresentation({
   // ids of those plan requests. Later snapshot refreshes must not auto-expand
   // the island for them again until a different request shows up.
   const dismissedPlanRequestIdsRef = useRef<Set<string> | null>(null);
+  // True while a native file drag hovers the island (see useFileStation):
+  // expansions triggered meanwhile use the fast drag duration.
+  const fileDragActiveRef = useRef(false);
   const transitionTimerRef = useRef<number | null>(null);
   const idleTimerRef = useRef<number | null>(null);
   const frozenCollapseWidthRef = useRef<number | null>(null);
@@ -255,6 +259,9 @@ export function useIslandPresentation({
   const unsubscribeHover = manageAsyncUnlisten(
     onIslandHoverChanged(({ hovering, cursorOverWindow }) => {
       cursorOverIslandRef.current = cursorOverWindow;
+      const dragExpandOptions = fileDragActiveRef.current
+        ? { fast: true }
+        : undefined;
       if (cursorOverWindow) {
         clearIdleTimer();
         if (
@@ -262,14 +269,14 @@ export function useIslandPresentation({
           (phaseRef.current === "closing" ||
             (shrinkInFlightRef.current && phaseRef.current === "micro"))
         ) {
-          expandIsland();
+          expandIsland(dragExpandOptions);
           return;
         }
       }
       hoveringRef.current = hovering;
       if (hovering) {
         if (!suppressHoverExpandRef.current) {
-          expandIsland();
+          expandIsland(dragExpandOptions);
         }
       } else if (!cursorOverWindow) {
         if (phaseRef.current !== "closing") {
@@ -508,13 +515,41 @@ export function useIslandPresentation({
     setArtworkBackdropOrigin(origin);
   }
 
-  async function expandIsland() {
+  async function expandIsland(options?: { fast?: boolean }) {
     clearIdleTimer();
     holdCompactAfterSubviewOpenRef.current = false;
     cancelPanelExit();
 
     const next = beginExpand(phaseRef.current);
-    if (next === phaseRef.current) return;
+    if (next === phaseRef.current) {
+      // A file drag re-requesting an in-flight expansion shortens the native
+      // animation instead of waiting out the default 420ms one.
+      if (options?.fast && phaseRef.current === "opening") {
+        startExpandTransition(DRAG_EXPAND_ANIMATION_MS);
+      }
+      return;
+    }
+    startExpandTransition(options?.fast ? DRAG_EXPAND_ANIMATION_MS : undefined);
+  }
+
+  /** File-drag state from useFileStation: while a native file drag hovers the
+   *  island, expansions take the fast path, and the drag-enter itself forces
+   *  an expansion (the hover poll can lag behind the drag events). */
+  function setFileDragActive(active: boolean) {
+    if (fileDragActiveRef.current === active) return;
+    fileDragActiveRef.current = active;
+    if (
+      active &&
+      !suppressHoverExpandRef.current &&
+      (phaseRef.current === "compact" ||
+        phaseRef.current === "micro" ||
+        phaseRef.current === "closing")
+    ) {
+      expandIsland({ fast: true });
+    }
+  }
+
+  function startExpandTransition(durationMs?: number) {
     clearTransitionWork();
     if (artworkBackdropExitFadeRef.current) {
       artworkBackdropExitFadeRef.current = false;
@@ -542,7 +577,7 @@ export function useIslandPresentation({
       planExpanded && !settingsExpanded,
       settingsExpanded,
     );
-    setPresentationPhase(next);
+    setPresentationPhase("opening");
     const nativeTransition = setIslandPresentation(
       "expanded",
       collapsedWindowWidthRef.current,
@@ -552,6 +587,7 @@ export function useIslandPresentation({
       false,
       planExpanded && !settingsExpanded,
       settingsExpanded,
+      durationMs,
     );
     pendingExpandRef.current = async () => {
       if (phaseRef.current !== "opening") return;
@@ -914,6 +950,7 @@ export function useIslandPresentation({
     artworkBackdropOriginRef,
     compactMediaThumbRef,
     expandIsland,
+    setFileDragActive,
     collapseIsland,
     scheduleIdleCollapse,
     clearIdleTimer,

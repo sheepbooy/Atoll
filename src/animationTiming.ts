@@ -1,4 +1,9 @@
-import { ATOLL_ENTER_MS, ATOLL_EXIT_MS, ATOLL_REACTION_MS } from "./atollTransitions";
+import {
+  ATOLL_ENTER_MS,
+  ATOLL_EXIT_MS,
+  ATOLL_REACTION_MS,
+  ISLAND_SHAPE_MS,
+} from "./atollTransitions";
 import {
   COLLAPSE_ANIMATION_MS,
   PANEL_EXIT_MS,
@@ -43,6 +48,10 @@ export const ANIMATION_TIMING_VARS = {
   "--reaction-eat3-ms": ms(ATOLL_REACTION_MS.eat3),
   "--reaction-eat4-ms": ms(ATOLL_REACTION_MS.eat4),
   "--reaction-spit-ms": ms(ATOLL_REACTION_MS.spit),
+  "--shape-squash-ms": ms(ISLAND_SHAPE_MS.squash),
+  "--shape-coil-ms": ms(ISLAND_SHAPE_MS.coil),
+  "--shape-launch-ms": ms(ISLAND_SHAPE_MS.launch),
+  "--shape-wobble-ms": ms(ISLAND_SHAPE_MS.wobble),
   "--duration-expand": ms(COLLAPSE_ANIMATION_MS),
   "--panel-exit-ms": ms(PANEL_EXIT_MS),
   "--resolve-feedback-ms": ms(RESOLVE_FEEDBACK_MS),

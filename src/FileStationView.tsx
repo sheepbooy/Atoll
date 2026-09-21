@@ -6,14 +6,16 @@ import { STAGED_FILES_LIMIT, type StagedFile } from "./tauri";
 
 interface FileStationViewProps {
   files: StagedFile[];
-  onCopy: (id: string) => void;
+  /** 复制单行；originRect 为行按钮位置（供"飞向 logo"动画取起点）。 */
+  onCopy: (id: string, originRect: DOMRect | null) => void;
   /** Copy the referenced paths as newline-joined text (row or multi-select). */
   onCopyPaths: (ids: string[]) => void;
   onReveal: (path: string) => void;
   onRemove: (id: string) => void;
   onClear: () => void;
-  /** Begin a native drag-out of the given files when the user drags a row away. */
-  onDragOut: (ids: string[]) => void;
+  /** Begin a native drag-out of the given files when the user drags a row
+   *  away. dragAngle 为拖拽向量角（CSS deg），originRect 为发起行位置。 */
+  onDragOut: (ids: string[], dragAngle: number, originRect: DOMRect | null) => void;
 }
 
 function timeAgoFromMs(ms: number) {
@@ -94,12 +96,12 @@ function StagedFileRow({
 }: {
   file: StagedFile;
   copied: boolean;
-  onCopy: (id: string) => void;
+  onCopy: (id: string, originRect: DOMRect | null) => void;
   onCopyPaths: (id: string) => void;
   onReveal: (path: string) => void;
   onRemove: (id: string) => void;
   onToggleSelect: (id: string) => void;
-  onDragOut: (rowId: string) => void;
+  onDragOut: (rowId: string, dragAngle: number, originRect: DOMRect | null) => void;
   selected: boolean;
 }) {
   const { t } = useTranslation();
@@ -122,10 +124,14 @@ function StagedFileRow({
     if (!gesture || gesture.dragged) {
       return;
     }
-    const distance = Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y);
-    if (distance >= 8) {
+    const dx = event.clientX - gesture.x;
+    const dy = event.clientY - gesture.y;
+    if (Math.hypot(dx, dy) >= 8) {
       gesture.dragged = true;
-      onDragOut(file.id);
+      // 拖拽向量角（CSS 坐标系，y 向下）：吐出文件沿真实方向扇形飞出。
+      const dragAngle = (Math.atan2(dy, dx) * 180) / Math.PI;
+      const rect = event.currentTarget.getBoundingClientRect();
+      onDragOut(file.id, dragAngle, rect);
     }
   };
 
@@ -163,7 +169,7 @@ function StagedFileRow({
             onToggleSelect(file.id);
             return;
           }
-          onCopy(file.id);
+          onCopy(file.id, event.currentTarget.getBoundingClientRect());
         }}
         onContextMenu={(event) => event.preventDefault()}
         disabled={lost}
@@ -274,8 +280,8 @@ export function FileStationView({
     );
   }, [files, search]);
 
-  const handleCopy = (id: string) => {
-    onCopy(id);
+  const handleCopy = (id: string, originRect: DOMRect | null) => {
+    onCopy(id, originRect);
     setCopiedId(id);
     window.setTimeout(() => setCopiedId(null), 1200);
   };
@@ -378,7 +384,9 @@ export function FileStationView({
                         return next;
                       });
                     }}
-                    onDragOut={(rowId) => onDragOut(resolveDragIds(rowId))}
+                    onDragOut={(rowId, dragAngle, originRect) =>
+                      onDragOut(resolveDragIds(rowId), dragAngle, originRect)
+                    }
                   />
                 ))}
               </div>
