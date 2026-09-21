@@ -83,7 +83,7 @@ import { usePricingData } from "./hooks/usePricingData";
 import { useAppSettings } from "./hooks/useAppSettings";
 import { useCompactLayout } from "./hooks/useCompactLayout";
 import { useUsageSummary } from "./hooks/useUsageSummary";
-import { useStashTakeover } from "./hooks/useStashTakeover";
+import { useStashChoreography } from "./hooks/useStashChoreography";
 import { useImeSync } from "./hooks/useImeSync";
 import { useNativePresentationSync } from "./hooks/useNativePresentationSync";
 import { deriveIslandChromeFlags } from "./islandChromeFlags";
@@ -492,13 +492,12 @@ export function App() {
   const logoReactionKey = stashReaction ? stashReactionKey : atollReactionKey;
   const logoStashLevel = stashBellyLevel(stagedCount);
 
-  // ── Atoll 吃/吐接管时刻：logo 从左上角原位放大占满整岛，播完缩回原位 ──
-  // 拖入文件 → 分档 eat 反应；从面板行拖出文件 → spit。takeover 期间盖住
-  // header 与面板；退出时向 header logo 原位缩回（位移/缩放由测量写入
-  // CSS 变量，退出动画时长 340ms 须与 styles.css atoll-takeover-vanish 同步）。
+  // ── 文件中转站"岛即生物"编舞 ──
+  // 拖入文件 → 分档 eat 反应；从面板行拖出文件 → spit。吉祥物只演眼睛，
+  // 岛形拍点/原生脉冲/吞咽涟漪/文件飞行层由 useStashChoreography 编排。
   const islandRef = useRef<HTMLElement | null>(null);
   const atollIndicatorRef = useRef<HTMLSpanElement | null>(null);
-  // 待喂瞳孔追踪：把归一化视线方向写到岛上（层叠作用于 header/接管 logo）。
+  // 待喂瞳孔追踪：把归一化视线方向写到岛上（层叠作用于 header logo）。
   useEffect(() => {
     const islandEl = islandRef.current;
     if (!islandEl) {
@@ -512,13 +511,7 @@ export function App() {
       islandEl.style.removeProperty("--pupil-dy");
     }
   }, [dragLook]);
-  const {
-    takeover,
-    takeoverExiting,
-    takeoverElRef,
-    stashToast,
-    stashToastLeaving,
-  } = useStashTakeover({
+  const { stashToast, stashToastLeaving } = useStashChoreography({
     stashReaction,
     stashReactionKey,
     lastStageResult,
@@ -832,7 +825,7 @@ export function App() {
     <main className="stage">
       <section
         ref={islandRef}
-        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isPlanExpanded ? "is-plan" : ""} ${isSettingsExpanded ? "is-settings" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList" ? "is-session-subview" : ""}${panelExiting ? " is-panel-exiting" : ""}`}
+        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isPlanExpanded ? "is-plan" : ""} ${isSettingsExpanded ? "is-settings" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${logoStashLevel > 0 ? `is-stash-${Math.min(Math.round(logoStashLevel), 3)}` : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList" ? "is-session-subview" : ""}${panelExiting ? " is-panel-exiting" : ""}`}
         style={{ "--panel-glow": panelGlow } as CSSProperties}
         aria-label={t("app.name")}
         tabIndex={0}
@@ -884,7 +877,7 @@ export function App() {
     menuBarLogoSize={menuBarLogoSize}
     idleIntervalMin={idleIntervalMin}
     idleDurationMin={idleDurationMin}
-    logoReaction={takeover ? null : logoReaction}
+    logoReaction={logoReaction}
     logoReactionKey={logoReactionKey}
     logoStashLevel={logoStashLevel}
     dragOverIsland={dragOverIsland}
@@ -1076,24 +1069,6 @@ export function App() {
         ) : null}
         {updateNotice ? (
           <UpdateNotice version={updateNotice} onDismiss={dismissUpdateNotice} />
-        ) : null}
-        {takeover ? (
-          <div
-            ref={takeoverElRef}
-            className={`atoll-takeover${takeover.reaction === "spit" ? " is-spit" : ""}${takeoverExiting ? " is-exiting" : ""}`}
-            aria-hidden="true"
-          >
-            <div className="atoll-takeover-logo">
-              <AtollLogo
-                activity="idle"
-                size={0}
-                reaction={takeover.reaction}
-                reactionKey={takeover.key}
-                stashLevel={logoStashLevel}
-                motionPaused={isPresentationTransition}
-              />
-            </div>
-          </div>
         ) : null}
         {stashToast ? (
           <div

@@ -56,6 +56,12 @@
   overflow: visible;
 }
 
+/* 岛即生物：中转站有存货时，岛底光带按档位亮起——岛本身就是肚子。
+   （写法放在 .island.has-pending::after 之前，审批警示光优先级更高。） */
+.island.is-stash-1::after { opacity: 0.4; }
+.island.is-stash-2::after { opacity: 0.65; }
+.island.is-stash-3::after { opacity: 0.9; }
+
 /* Hairline top highlight + ambient agent glow */
 .island::before {
   content: "";
@@ -216,15 +222,6 @@
       skewX(calc(var(--shape-skew, 0deg) * 0.22));
   }
   100% { transform: none; }
-}
-
-.is-shape-chew {
-  /* 呼吸周期固定 640ms；总时长（=eat 反应时长）由 islandShape.ts 摘除时机控制。 */
-  animation: island-shape-chew 640ms ease-in-out infinite;
-}
-@keyframes island-shape-chew {
-  0%, 100% { transform: none; }
-  50% { transform: skewX(calc(var(--shape-skew, 0deg) * 0.4)) scaleY(0.997); }
 }
 
 

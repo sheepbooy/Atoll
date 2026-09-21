@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ISLAND_SHAPE_MS } from "./atollTransitions";
 import { playIslandShape } from "./islandShape";
 
 function makeIsland() {
@@ -14,7 +15,7 @@ describe("islandShape", () => {
       const island = makeIsland();
       playIslandShape(island, "squash");
       expect(island.classList.contains("is-shape-squash")).toBe(true);
-      vi.advanceTimersByTime(319);
+      vi.advanceTimersByTime(ISLAND_SHAPE_MS.squash - 1);
       expect(island.classList.contains("is-shape-squash")).toBe(true);
       vi.advanceTimersByTime(2);
       expect(island.classList.contains("is-shape-squash")).toBe(false);
@@ -28,12 +29,12 @@ describe("islandShape", () => {
     try {
       const island = makeIsland();
       playIslandShape(island, "squash");
-      vi.advanceTimersByTime(200);
+      vi.advanceTimersByTime(ISLAND_SHAPE_MS.squash * 0.6);
       playIslandShape(island, "squash");
-      // 第二次触发重新计时：320ms 后才摘除，而不是剩余的 120ms。
-      vi.advanceTimersByTime(120);
+      // 第二次触发重新计时：完整时长后才摘除，而不是剩余时间。
+      vi.advanceTimersByTime(ISLAND_SHAPE_MS.squash * 0.4);
       expect(island.classList.contains("is-shape-squash")).toBe(true);
-      vi.advanceTimersByTime(201);
+      vi.advanceTimersByTime(ISLAND_SHAPE_MS.squash * 0.6 + 1);
       expect(island.classList.contains("is-shape-squash")).toBe(false);
     } finally {
       vi.useRealTimers();
@@ -45,13 +46,13 @@ describe("islandShape", () => {
     try {
       const island = makeIsland();
       playIslandShape(island, "launch");
-      vi.advanceTimersByTime(330);
+      vi.advanceTimersByTime(ISLAND_SHAPE_MS.launch - 50);
       playIslandShape(island, "wobble");
-      // launch 在自己的 380ms 摘除，不被 wobble 的启动取消。
+      // launch 在自己的时长摘除，不被 wobble 的启动取消。
       vi.advanceTimersByTime(50);
       expect(island.classList.contains("is-shape-launch")).toBe(false);
       expect(island.classList.contains("is-shape-wobble")).toBe(true);
-      vi.advanceTimersByTime(521);
+      vi.advanceTimersByTime(ISLAND_SHAPE_MS.wobble + 1);
       expect(island.classList.contains("is-shape-wobble")).toBe(false);
     } finally {
       vi.useRealTimers();

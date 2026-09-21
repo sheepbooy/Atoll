@@ -11,7 +11,7 @@ export interface IslandShapeDirection {
 }
 
 export interface PlayIslandShapeOptions {
-  /** 覆盖默认拍点时长（如 chew 跟随 eat 反应总时长）。 */
+  /** 覆盖默认拍点时长。 */
   durationMs?: number;
   direction?: IslandShapeDirection;
 }
@@ -21,12 +21,10 @@ const BEAT_CLASS: Record<IslandShapeBeat, string> = {
   coil: "is-shape-coil",
   launch: "is-shape-launch",
   wobble: "is-shape-wobble",
-  chew: "is-shape-chew",
 };
 
 /** 每个岛元素按拍点分键跟踪摘除定时器：新拍点只清自己的旧定时器，
- *  不会误取消上一个拍点的摘除（否则上一个 class 会卡死——若卡的是
- *  chew 这类 infinite 动画，岛会永久停在形变里）。 */
+ *  不会误取消上一个拍点的摘除（否则上一个 class 会卡死在形变里）。 */
 const activeTimers = new WeakMap<HTMLElement, Map<IslandShapeBeat, number>>();
 
 /**
@@ -79,10 +77,172 @@ export function playIslandShape(
   );
 }
 
+const FLY_MS = 300;
+const FLY_STAGGER = 70;
+
+export interface FlyStashFilesOptions {
+  /** 第一枚文件命中吉祥物（被吃掉）的时刻回调：触发原生脉冲与涟漪。 */
+  onFirstHit?: () => void;
+}
+
+function stashGlyph(island: HTMLElement, x: number, y: number): HTMLDivElement {
+  const glyph = document.createElement("div");
+  glyph.className = "stash-fly-file";
+  glyph.style.left = `${x.toFixed(1)}px`;
+  glyph.style.top = `${y.toFixed(1)}px`;
+  island.appendChild(glyph);
+  return glyph;
+}
+
+function logoCenterIn(islandRect: DOMRect, logoEl: HTMLElement | null) {
+  if (logoEl) {
+    const rect = logoEl.getBoundingClientRect();
+    return {
+      x: rect.left + rect.width / 2 - islandRect.left,
+      y: rect.top + rect.height / 2 - islandRect.top,
+    };
+  }
+  return { x: islandRect.width / 2, y: 24 };
+}
+
 /**
- * 复制飞行动画：一枚文件缩略从列表行位置飞向 header logo 嘴里（WAAPI
- * 驱动的一次性 DOM 节点，结束自动移除）。用于点击复制与拖出锚定失败的
- * 复制回退。reduced-motion 时跳过。
+ * 吸入飞行层：count 枚文件缩略从真实 drop 点错峰飞向角落吉祥物，
+ * 命中即缩小消失（被吃掉）。DOM 一次性节点 + WAAPI，不经过 React。
+ * reduced-motion 时跳过飞行但立即回调 onFirstHit（保持脉冲/涟漪语义）。
+ */
+export function flyStashFiles(
+  island: HTMLElement | null,
+  logoEl: HTMLElement | null,
+  fromPoint: { x: number; y: number } | null,
+  count: number,
+  options?: FlyStashFilesOptions,
+): void {
+  if (!island) {
+    return;
+  }
+  if (prefersReducedMotion()) {
+    options?.onFirstHit?.();
+    return;
+  }
+  const islandRect = island.getBoundingClientRect();
+  const to = logoCenterIn(islandRect, logoEl);
+  const fromX = fromPoint ? fromPoint.x : islandRect.width * 0.7;
+  const fromY = fromPoint ? fromPoint.y : -10;
+  let firstHitFired = false;
+  for (let i = 0; i < count; i++) {
+    const jitterX = (i - (count - 1) / 2) * 14;
+    const startX = fromX + jitterX;
+    const dx = to.x - startX;
+    const dy = to.y - fromY;
+    const delay = i * FLY_STAGGER;
+    if (!firstHitFired) {
+      firstHitFired = true;
+      window.setTimeout(() => options?.onFirstHit?.(), delay + FLY_MS);
+    }
+    const glyph = stashGlyph(island, startX, fromY);
+    const animation = glyph.animate(
+      [
+        { transform: "translate(-50%, -50%) scale(1) rotate(18deg)", opacity: 1 },
+        {
+          transform: `translate(calc(-50% + ${(dx * 0.5).toFixed(1)}px), calc(-50% + ${(dy * 0.5 - 12).toFixed(1)}px)) scale(0.8) rotate(-6deg)`,
+          opacity: 1,
+          offset: 0.55,
+        },
+        {
+          transform: `translate(calc(-50% + ${dx.toFixed(1)}px), calc(-50% + ${dy.toFixed(1)}px)) scale(0.25) rotate(-14deg)`,
+          opacity: 0.3,
+        },
+      ],
+      {
+        duration: FLY_MS,
+        delay,
+        easing: "cubic-bezier(0.3, 0.5, 0.3, 1)",
+        fill: "both",
+      },
+    );
+    animation.onfinish = () => glyph.remove();
+    window.setTimeout(() => glyph.remove(), delay + FLY_MS + 200);
+  }
+}
+
+/**
+ * 吐出飞行层：count 枚文件缩略从吉祥物嘴里沿拖拽方向（CSS deg）扇形飞出，
+ * ±12° 散布、错峰 55ms、近大远小。DOM 一次性节点 + WAAPI。
+ */
+export function flySpitFiles(
+  island: HTMLElement | null,
+  logoEl: HTMLElement | null,
+  angleDeg: number,
+  count: number,
+): void {
+  if (!island || prefersReducedMotion()) {
+    return;
+  }
+  const islandRect = island.getBoundingClientRect();
+  const from = logoCenterIn(islandRect, logoEl);
+  for (let i = 0; i < count; i++) {
+    const spread = (i - (count - 1) / 2) * 12;
+    const radians = ((angleDeg + spread) * Math.PI) / 180;
+    const distance = 110 + Math.abs(spread) * 1.5;
+    const dx = Math.cos(radians) * distance;
+    const dy = Math.sin(radians) * distance;
+    const delay = i * 55;
+    const glyph = stashGlyph(island, from.x, from.y);
+    const animation = glyph.animate(
+      [
+        { transform: "translate(-50%, -50%) scale(0.35) rotate(0deg)", opacity: 0 },
+        {
+          transform: `translate(calc(-50% + ${(dx * 0.3).toFixed(1)}px), calc(-50% + ${(dy * 0.3).toFixed(1)}px)) scale(1) rotate(10deg)`,
+          opacity: 1,
+          offset: 0.25,
+        },
+        {
+          transform: `translate(calc(-50% + ${dx.toFixed(1)}px), calc(-50% + ${dy.toFixed(1)}px)) scale(0.85) rotate(22deg)`,
+          opacity: 0,
+        },
+      ],
+      {
+        duration: 480,
+        delay,
+        easing: "cubic-bezier(0.2, 0.5, 0.4, 1)",
+        fill: "both",
+      },
+    );
+    animation.onfinish = () => glyph.remove();
+    window.setTimeout(() => glyph.remove(), delay + 480 + 200);
+  }
+}
+
+/**
+ * 吞咽涟漪：岛底一条光带从命中点向两侧扩散一圈后淡出——"咽下去"的
+ * 水面反馈，与 .island::after 的常驻光带同一视觉语言。
+ */
+export function playSwallowRipple(
+  island: HTMLElement | null,
+  xLocal: number,
+): void {
+  if (!island || prefersReducedMotion()) {
+    return;
+  }
+  const ripple = document.createElement("div");
+  ripple.className = "stash-gulp-ripple";
+  ripple.style.left = `${Math.min(Math.max(xLocal, 0), island.clientWidth || 0).toFixed(1)}px`;
+  island.appendChild(ripple);
+  const animation = ripple.animate(
+    [
+      { transform: "translateX(-50%) scaleX(0.02)", opacity: 0.9 },
+      { transform: "translateX(-50%) scaleX(1)", opacity: 0 },
+    ],
+    { duration: 620, easing: "cubic-bezier(0.2, 0.6, 0.3, 1)" },
+  );
+  animation.onfinish = () => ripple.remove();
+  window.setTimeout(() => ripple.remove(), 900);
+}
+
+/**
+ * 复制飞行动画：一枚文件缩略从列表行位置飞向 header logo（WAAPI 驱动的
+ * 一次性 DOM 节点，结束自动移除）。用于点击复制与拖出锚定失败的复制回退。
+ * reduced-motion 时跳过。
  */
 export function flyCopyGlyph(
   island: HTMLElement | null,
@@ -95,20 +255,10 @@ export function flyCopyGlyph(
   const islandRect = island.getBoundingClientRect();
   const fromX = originRect.left - islandRect.left + originRect.width / 2;
   const fromY = originRect.top - islandRect.top + originRect.height / 2;
-  let toX = fromX;
-  let toY = fromY - 48;
-  if (logoEl) {
-    const logoRect = logoEl.getBoundingClientRect();
-    toX = logoRect.left + logoRect.width / 2 - islandRect.left;
-    toY = logoRect.top + logoRect.height / 2 - islandRect.top;
-  }
-  const glyph = document.createElement("div");
-  glyph.className = "stash-copy-glyph";
-  glyph.style.left = `${fromX.toFixed(1)}px`;
-  glyph.style.top = `${fromY.toFixed(1)}px`;
-  island.appendChild(glyph);
-  const dx = toX - fromX;
-  const dy = toY - fromY;
+  const to = logoCenterIn(islandRect, logoEl);
+  const dx = to.x - fromX;
+  const dy = to.y - fromY;
+  const glyph = stashGlyph(island, fromX, fromY);
   const animation = glyph.animate(
     [
       { transform: "translate(-50%, -50%) scale(1) rotate(0deg)", opacity: 1 },

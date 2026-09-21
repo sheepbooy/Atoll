@@ -3,7 +3,6 @@ import {
   ATOLL_EXIT_MS,
   ATOLL_REACTION_MS,
   ISLAND_SHAPE_MS,
-  TAKEOVER_EXIT_MS,
 } from "./atollTransitions";
 import {
   COLLAPSE_ANIMATION_MS,
@@ -53,7 +52,6 @@ export const ANIMATION_TIMING_VARS = {
   "--shape-coil-ms": ms(ISLAND_SHAPE_MS.coil),
   "--shape-launch-ms": ms(ISLAND_SHAPE_MS.launch),
   "--shape-wobble-ms": ms(ISLAND_SHAPE_MS.wobble),
-  "--takeover-exit-ms": ms(TAKEOVER_EXIT_MS),
   "--duration-expand": ms(COLLAPSE_ANIMATION_MS),
   "--panel-exit-ms": ms(PANEL_EXIT_MS),
   "--resolve-feedback-ms": ms(RESOLVE_FEEDBACK_MS),

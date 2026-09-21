@@ -224,7 +224,7 @@
   left: 50%;
   bottom: 14px;
   transform: translateX(-50%);
-  z-index: 70; /* 高于 .atoll-takeover(60)：吃/吐接管时结果提示仍浮在上方 */
+  z-index: 70; /* 吃/吐表演在岛内底层进行，结果提示浮在最上 */
   max-width: calc(100% - 32px);
   padding: 7px 14px;
   border: 1px solid rgba(111, 220, 255, 0.22);
@@ -258,95 +258,11 @@
   }
 }
 
-/* ─── Atoll 吃/吐接管：logo 从左上角原位放大占满整岛 ─────────────── */
-.atoll-takeover {
-  position: absolute;
-  inset: 0;
-  z-index: 60;
-  display: grid;
-  place-items: center;
-  border-radius: inherit;
-  background:
-    radial-gradient(120% 80% at 50% -20%, rgba(255, 255, 255, 0.09), transparent 62%),
-    linear-gradient(180deg, var(--surface-2), var(--surface-base));
-  animation: atoll-takeover-shade 200ms ease-out both;
-}
-
-/* spit 轻量遮罩：半透明，不干扰用户正在进行的拖拽视觉。 */
-.atoll-takeover.is-spit {
-  background:
-    radial-gradient(120% 80% at 50% -20%, rgba(255, 255, 255, 0.06), transparent 62%),
-    linear-gradient(180deg, rgba(22, 25, 30, 0.42), rgba(10, 11, 13, 0.38));
-}
-
-.atoll-takeover-logo {
-  height: 58%;
-  aspect-ratio: 96 / 108;
-  /* 果冻曲线自带 ~4% 过冲，生长落位更有弹性（不再手写 80% 关键帧）。 */
-  animation: atoll-takeover-grow 380ms var(--ease-jelly, cubic-bezier(0.34, 1.45, 0.64, 1)) both;
-}
-
-.atoll-takeover-logo .atoll-logo {
-  width: 100%;
-  height: 100%;
-}
-
-/* 接管放大时收起鼓肚：大尺寸下底部椭圆会读成第二张嘴。 */
-.atoll-takeover .atoll-belly-bump {
-  transform: scale(0) !important;
-}
-
-/* 退出：向 header logo 原位缩回（位移/缩放来自 JS 实测写入的 CSS 变量）。
-   时长走 --takeover-exit-ms（animationTiming.ts 注入，spit 在元素上覆写
-   240ms），JS 卸载定时器读同一常量，不再两处硬编码人肉同步。 */
-.atoll-takeover.is-exiting {
-  animation: atoll-takeover-shade-out var(--takeover-exit-ms, 320ms) ease-in both;
-}
-.atoll-takeover.is-exiting .atoll-takeover-logo {
-  animation: atoll-takeover-vanish var(--takeover-exit-ms, 320ms) cubic-bezier(0.55, 0, 0.8, 0.4) both;
-}
-
-@keyframes atoll-takeover-shade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@keyframes atoll-takeover-shade-out {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-@keyframes atoll-takeover-grow {
-  0% {
-    opacity: 0;
-    transform: translate(var(--takeover-dx, -180px), var(--takeover-dy, -110px))
-      scale(var(--takeover-scale, 0.18));
-  }
-  45% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 1;
-    transform: translate(0, 0) scale(1);
-  }
-}
-@keyframes atoll-takeover-vanish {
-  0% {
-    opacity: 1;
-    transform: translate(0, 0) scale(1);
-  }
-  25% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-    transform: translate(var(--takeover-dx, -180px), var(--takeover-dy, -110px))
-      scale(var(--takeover-scale, 0.18));
-  }
-}
-
-/* 复制飞行的文件缩略（islandShape.flyCopyGlyph 以 WAAPI 驱动，用后即删） */
+/* ─── 文件飞行层（岛即生物）：吸入/吐出/复制的文件缩略，DOM 一次性节点 ─── */
+.stash-fly-file,
 .stash-copy-glyph {
   position: absolute;
-  z-index: 80;
+  z-index: 55;
   width: 18px;
   height: 22px;
   border-radius: 3px;
@@ -355,6 +271,7 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
   pointer-events: none;
 }
+.stash-fly-file::after,
 .stash-copy-glyph::after {
   content: "";
   position: absolute;
@@ -364,6 +281,20 @@
   border-width: 0 7px 7px 0;
   border-color: transparent #c9bfae transparent transparent;
   border-radius: 0 3px 0 3px;
+}
+
+/* 吞咽涟漪：岛底光带从命中点向两侧扩散一圈（islandShape.playSwallowRipple）。 */
+.stash-gulp-ripple {
+  position: absolute;
+  bottom: 0;
+  width: 130%;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--accent-cyan, #6fdcff), transparent);
+  filter: drop-shadow(0 0 6px rgba(111, 220, 255, 0.55));
+  transform-origin: center;
+  pointer-events: none;
+  z-index: 3;
 }
 
 /* 拖拽悬停待喂提示（张嘴状态下方的青色胶囊） */

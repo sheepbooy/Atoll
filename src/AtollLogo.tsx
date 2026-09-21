@@ -172,15 +172,8 @@ function MascotBody({ baseVariant, altVariants, blinking, eyeOffsetX }: MascotBo
         <ellipse cx="32" cy="35.5" rx="5" ry="4.5" fill="#15323c" shapeRendering="auto" />
         <ellipse cx="32" cy="37" rx="3" ry="2" fill="#c46a6a" shapeRendering="auto" />
       </g>
-      <g className="atoll-mouth-open">
-        <g className="atoll-mouth-inner">
-          {/* 像素方嘴：小方形张开（ Jaw 从上缘向下翻开），不破坏像素形象；
-              下缘一小块舌头保留吞咽的表情感 */}
-          <rect className="atoll-mouth-px" x="28.5" y="33" width="7" height="6" rx="1" fill="#15323c" shapeRendering="auto" />
-          <rect className="atoll-mouth-px-tongue" x="30" y="36.2" width="3" height="1.8" rx="0.7" fill="#c46a6a" shapeRendering="auto" />
-        </g>
-      </g>
-      {/* 待喂兴奋：头侧两粒像素闪块（张嘴待喂时阶跃闪烁） */}
+      {/* 像素形象的嘴不参与任何表演（情绪由眼睛承担）；
+          待喂兴奋：头侧两粒像素闪块（张嘴待喂时阶跃闪烁） */}
       <g className="atoll-eager">
         <rect className="atoll-eager-spark e1" x="11" y="13" width="2.4" height="2.4" fill="#FFD24A" shapeRendering="auto" />
         <rect className="atoll-eager-spark e2" x="51" y="11" width="2" height="2" fill="#9BF0C0" shapeRendering="auto" />
@@ -202,19 +195,6 @@ function SkyStar({ x, y, scale, cls }: { x: number; y: number; scale: number; cl
 }
 
 const SPARK_D = "M0 0 l1.2 2.6 2.6 1.2 -2.6 1.2 -1.2 2.6 -1.2 -2.6 -2.6 -1.2 2.6 -1.2 Z";
-
-/** 文件中转站的"文件"图元（吃入 / 吐出动画共用）。 */
-function StashFileGlyph({ className }: { className: string }) {
-  return (
-    <g className={className}>
-      <rect x="-4.5" y="-6" width="9" height="12" rx="1.2" fill="#F5F0E8" shapeRendering="auto" />
-      <path d="M0.5 -6 L4.5 -2 L4.5 -6 Z" fill="#D8CFC0" shapeRendering="auto" />
-      <rect x="-2.5" y="-1.5" width="5" height="1" fill="#C4A882" />
-      <rect x="-2.5" y="0.5" width="5" height="1" fill="#C4A882" />
-      <rect x="-2.5" y="2.5" width="3.5" height="1" fill="#C4A882" />
-    </g>
-  );
-}
 
 export function AtollLogo({
   activity = "idle",
@@ -730,51 +710,15 @@ export function AtollLogo({
             </g>
           )}
 
-          {/* ── 文件中转站：吃掉 / 吐出 ── */}
+          {/* ── 文件中转站：吃掉（岛形+飞行层承担大动作，logo 只演眼睛）── */}
           {eatTier !== null && (
             <g className={`atoll-reaction-fx atoll-eat-fx t${eatTier}`}>
-              <g transform="translate(32,36)">
-                <StashFileGlyph className="atoll-eat-file f1" />
-                {eatTier >= 2 ? <StashFileGlyph className="atoll-eat-file f2" /> : null}
-                {eatTier >= 3 ? <StashFileGlyph className="atoll-eat-file f3" /> : null}
-                {eatTier >= 4 ? <StashFileGlyph className="atoll-eat-file f4" /> : null}
-              </g>
-              {/* 像素碎屑：咬合时从嘴角蹦出的小方块 */}
-              <rect className="atoll-crumb c1" x="0" y="0" width="2.2" height="2.2" fill="#F5F0E8" shapeRendering="auto" />
-              <rect className="atoll-crumb c2" x="0" y="0" width="1.8" height="1.8" fill="#E3D8C6" shapeRendering="auto" />
-              <rect className="atoll-crumb c3" x="0" y="0" width="1.6" height="1.6" fill="#F5F0E8" shapeRendering="auto" />
-              {/* 满足收尾：眯眼替代睁眼 + 眼角星光（CSS 在各档尾段淡入） */}
+              {/* 满足收尾：眯眼替代睁眼 + 眼角星光（CSS 在反应尾段淡入） */}
               <g className="atoll-eat-happy">
                 <EyeSet variant="happy" blinking={false} offsetX={0} />
               </g>
               <path className="atoll-eat-smile-spark p1" d={SPARK_D} fill="#FFD24A" />
               <path className="atoll-eat-smile-spark p2" d={SPARK_D} fill="#9BF0C0" />
-              {eatTier >= 2 ? (
-                <g fill="#FFD24A">
-                  <path className="atoll-spark s1" d={SPARK_D} transform="translate(16,10)" />
-                  <path className="atoll-spark s2" d={SPARK_D} transform="translate(48,8)" />
-                </g>
-              ) : null}
-              {eatTier >= 3 ? (
-                <path className="atoll-sweat" d="M55 24 q2.6 3.4 0 5.2 q-2.6 -1.8 0 -5.2 Z" fill="#8FD8F0" shapeRendering="auto" />
-              ) : null}
-              {eatTier >= 4 ? (
-                <g className="atoll-burp">
-                  <circle className="atoll-burp-b b1" cx="36" cy="25" r="3" fill="#DFF6EF" shapeRendering="auto" />
-                  <circle className="atoll-burp-b b2" cx="41" cy="17" r="2.4" fill="#DFF6EF" shapeRendering="auto" />
-                  <circle className="atoll-burp-b b3" cx="34" cy="11" r="1.8" fill="#DFF6EF" shapeRendering="auto" />
-                  <text className="atoll-burp-text" x="44" y="8" fontSize="8" fontWeight="800" fill="#9BB8C4" fontFamily="var(--font-mono, monospace)" shapeRendering="auto">BURP</text>
-                </g>
-              ) : null}
-            </g>
-          )}
-          {reactionActive === "spit" && (
-            <g className="atoll-reaction-fx atoll-spit-fx">
-              <g transform="translate(32,34)">
-                <StashFileGlyph className="atoll-spit-file f1" />
-                <StashFileGlyph className="atoll-spit-file f2" />
-                <StashFileGlyph className="atoll-spit-file f3" />
-              </g>
             </g>
           )}
         </g>
