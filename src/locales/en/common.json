@@ -63,6 +63,11 @@
     "approving": "Approving...",
     "always": "Always",
     "alwaysTitle": "Approve this and all future requests for this session",
+    "ruleScopeTitle": "Always allow with a rule",
+    "ruleScopeSession": "This session",
+    "ruleScopeCommandProject": "This command · this project",
+    "ruleScopeCommandGlobal": "This command · anywhere",
+    "ruleScopeAllProject": "Everything in this project",
     "viewSession": "View session"
   },
   "plan": {
@@ -176,7 +181,9 @@
     "agentOther": "Agent",
     "outcomePending": "Pending",
     "outcomeApproved": "Approved",
+    "outcomeAutoApproved": "Auto-approved",
     "outcomeDenied": "Denied",
+    "outcomeAutoDenied": "Auto-denied",
     "outcomeExpired": "Expired",
     "outcomeAnsweredElsewhere": "Resolved elsewhere",
     "empty": "Approval requests will be recorded here",

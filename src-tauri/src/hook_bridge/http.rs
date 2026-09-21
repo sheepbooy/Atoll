@@ -138,6 +138,11 @@ pub(crate) fn command_label(tool_name: &str, tool_input: &Value) -> String {
         return format!("{tool_name}: {file_path}");
     }
 
+    // OpenCode names edit/write inputs "path" instead of "file_path".
+    if let Some(path) = tool_input.get("path").and_then(Value::as_str) {
+        return format!("{tool_name}: {path}");
+    }
+
     tool_name.to_string()
 }
 
@@ -150,7 +155,11 @@ pub(crate) fn detail_label(tool_name: &str, tool_input: &Value) -> String {
         return command.to_string();
     }
 
-    if let Some(file_path) = tool_input.get("file_path").and_then(Value::as_str) {
+    if let Some(file_path) = tool_input
+        .get("file_path")
+        .and_then(Value::as_str)
+        .or_else(|| tool_input.get("path").and_then(Value::as_str))
+    {
         return format!("{tool_name} wants to access {file_path}.");
     }
 

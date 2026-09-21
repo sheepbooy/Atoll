@@ -422,6 +422,7 @@ mod bridge_bind_tests {
                 id: format!("resolved-{index}"),
                 tool_use_id: None,
                 agent: AgentKind::Codex,
+                tool_name: String::new(),
                 session: "session-a".into(),
                 command: "Bash: true".into(),
                 detail: String::new(),

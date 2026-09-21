@@ -603,3 +603,64 @@
   gap: 6px;
 }
 
+
+/* ---- Persistent-rule quick-pick: "Always" plus a scope-menu chevron ---- */
+
+.always-wrap {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+}
+
+.always-wrap .always-approve {
+  flex: 1;
+  min-width: 0;
+}
+
+.always-scope-toggle {
+  flex: 0 0 auto;
+  width: 26px;
+  padding: 0;
+}
+
+.always-scope-toggle svg {
+  transition: transform var(--duration-fast) var(--ease-pop);
+}
+
+.always-scope-toggle svg.is-flipped {
+  transform: rotate(180deg);
+}
+
+.rule-scope-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.rule-scope-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(111, 220, 255, 0.22);
+  background: rgba(111, 220, 255, 0.08);
+  color: rgba(210, 240, 255, 0.92);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    filter var(--duration-fast) ease,
+    background var(--duration-fast) ease;
+}
+
+.rule-scope-pill:hover:not(:disabled) {
+  background: rgba(111, 220, 255, 0.16);
+  filter: brightness(1.08);
+}
+
+.rule-scope-pill:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}

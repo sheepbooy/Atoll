@@ -1,3 +1,4 @@
+mod approval_rules;
 mod clipboard;
 mod file_station;
 mod history;
@@ -8,6 +9,7 @@ mod settings_cmds;
 mod snapshot;
 mod system;
 
+pub(crate) use approval_rules::*;
 pub(crate) use clipboard::*;
 pub(crate) use file_station::*;
 pub(crate) use history::*;

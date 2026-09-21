@@ -1,10 +1,12 @@
 import {
   useMemo,
+  useState,
   CSSProperties,
 } from "react";
 import {
   Check,
   CheckCheck,
+  ChevronDown,
   ChevronRight,
   FolderClosed,
   TriangleAlert,
@@ -14,6 +16,7 @@ import {
   useTranslation,
 } from "react-i18next";
 import {
+  type ApprovalRuleScope,
   type PermissionRequest,
   type SessionSummary,
 } from "../tauri";
@@ -47,11 +50,14 @@ export interface ApprovalCardProps {
   onApprove: () => void;
   onDeny: () => void;
   onAlwaysApprove: () => void;
+  /** Quick-pick a persistent rule from this request, then approve it. */
+  onCreateRule?: (scope: ApprovalRuleScope) => void;
   onViewSession: (sessionId: string) => void;
 }
 
-export function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAlwaysApprove, onViewSession }: ApprovalCardProps) {
+export function ApprovalCard({ request, busyDecision, sessions, onApprove, onDeny, onAlwaysApprove, onCreateRule, onViewSession }: ApprovalCardProps) {
   const { t } = useTranslation();
+  const [ruleMenuOpen, setRuleMenuOpen] = useState(false);
   const session = sessions.find((s) => s.sessionId === request.session);
   const sessionColor = getSessionColor(request.session);
   const tone = sessionColor.tone;
@@ -128,19 +134,81 @@ export function ApprovalCard({ request, busyDecision, sessions, onApprove, onDen
             <kbd className="decision-kbd" aria-hidden="true">{DECISION_SHORTCUTS.approve}</kbd>
           </button>
           {request.supportsAlways ? (
-            <button
-              className="decision-button always-approve"
-              type="button"
-              onClick={onAlwaysApprove}
-              disabled={busyDecision !== null}
-              title={t("approval.alwaysTitle")}
-            >
-              <CheckCheck size={16} />
-              <span>{t("approval.always")}</span>
-              <kbd className="decision-kbd" aria-hidden="true">{DECISION_SHORTCUTS.always}</kbd>
-            </button>
+            <div className="always-wrap">
+              <button
+                className="decision-button always-approve"
+                type="button"
+                onClick={onAlwaysApprove}
+                disabled={busyDecision !== null}
+                title={t("approval.alwaysTitle")}
+              >
+                <CheckCheck size={16} />
+                <span>{t("approval.always")}</span>
+                <kbd className="decision-kbd" aria-hidden="true">{DECISION_SHORTCUTS.always}</kbd>
+              </button>
+              {onCreateRule ? (
+                <button
+                  className="decision-button always-approve always-scope-toggle"
+                  type="button"
+                  aria-label={t("approval.ruleScopeTitle")}
+                  aria-expanded={ruleMenuOpen}
+                  disabled={busyDecision !== null}
+                  onClick={() => setRuleMenuOpen((open) => !open)}
+                >
+                  <ChevronDown size={13} className={ruleMenuOpen ? "is-flipped" : ""} />
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
+        {ruleMenuOpen && onCreateRule ? (
+          <div className="rule-scope-menu" role="group" aria-label={t("approval.ruleScopeTitle")}>
+            <button
+              type="button"
+              className="rule-scope-pill"
+              disabled={busyDecision !== null}
+              onClick={() => {
+                setRuleMenuOpen(false);
+                onAlwaysApprove();
+              }}
+            >
+              {t("approval.ruleScopeSession")}
+            </button>
+            <button
+              type="button"
+              className="rule-scope-pill"
+              disabled={busyDecision !== null}
+              onClick={() => {
+                setRuleMenuOpen(false);
+                onCreateRule("command_project");
+              }}
+            >
+              {t("approval.ruleScopeCommandProject")}
+            </button>
+            <button
+              type="button"
+              className="rule-scope-pill"
+              disabled={busyDecision !== null}
+              onClick={() => {
+                setRuleMenuOpen(false);
+                onCreateRule("command_global");
+              }}
+            >
+              {t("approval.ruleScopeCommandGlobal")}
+            </button>
+            <button
+              type="button"
+              className="rule-scope-pill"
+              disabled={busyDecision !== null}
+              onClick={() => {
+                setRuleMenuOpen(false);
+                onCreateRule("all_project");
+              }}
+            >
+              {t("approval.ruleScopeAllProject")}
+            </button>
+          </div>
+        ) : null}
         {session ? (
           <button
             type="button"

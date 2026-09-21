@@ -54,6 +54,46 @@ pub(crate) fn submit_blocking_permission_request(
     let state = app.state::<AppState>();
     let agent_label = agent_resolved_label(&request.agent);
 
+    // Persistent rules run before the session auto-approve list so a deny
+    // rule can still block an auto-approved session.
+    let matched_rule = {
+        let rules = lock_state(&state.approval_rules);
+        let risk_guard_enabled = *lock_state(&state.risk_guard_enabled);
+        approval_rules::evaluate_rules(&rules, &request, risk_guard_enabled)
+    };
+    if let Some(rule) = matched_rule {
+        approval_rules::record_rule_match(&state, &rule.id);
+        let (decision, history_status, detail_suffix, response_note) = match rule.decision {
+            approval_rules::RuleDecision::Allow => (
+                Decision::Approved,
+                approval_history::HistoryStatus::AutoApproved,
+                format!("Auto-approved by rule \"{}\".", rule.label()),
+                String::new(),
+            ),
+            approval_rules::RuleDecision::Deny => (
+                Decision::Denied,
+                approval_history::HistoryStatus::AutoDenied,
+                format!("Auto-denied by rule \"{}\".", rule.label()),
+                if rule.note.trim().is_empty() {
+                    "Denied by Atoll rule.".to_string()
+                } else {
+                    rule.note.trim().to_string()
+                },
+            ),
+        };
+        return rule_auto_resolve(
+            &app,
+            &state,
+            request,
+            decision,
+            detail_suffix,
+            &response_note,
+            history_status,
+            response_style,
+            hook_event_name,
+        );
+    }
+
     let is_auto_approved = state
         .auto_approve_sessions
         .lock()
@@ -218,6 +258,47 @@ pub(crate) fn submit_blocking_permission_request(
             }
         }
     }
+}
+
+/// Resolve a request programmatically on behalf of a matching approval rule:
+/// record it, surface it in the island, and answer the hook immediately.
+/// Mirrors the session auto-approve block above.
+#[allow(clippy::too_many_arguments)]
+fn rule_auto_resolve(
+    app: &AppHandle,
+    state: &AppState,
+    mut request: PermissionRequest,
+    decision: Decision,
+    detail_suffix: String,
+    response_note: &str,
+    history_status: approval_history::HistoryStatus,
+    response_style: PermissionResponseStyle,
+    hook_event_name: &str,
+) -> Result<Value, String> {
+    request.status = match decision {
+        Decision::Approved => PermissionStatus::Approved,
+        Decision::Denied => PermissionStatus::Denied,
+    };
+    request.detail = format!("{} {detail_suffix}", request.detail);
+    let session_id = request.session.clone();
+    touch_session_activity(state, &session_id);
+    // Record outside the requests lock: history writes do disk I/O.
+    approval_history::record_outcome(state, &request, history_status);
+    {
+        let mut requests = state.requests.lock().map_err(|error| error.to_string())?;
+        requests.insert(0, request);
+        record_and_prune_request(state, &mut requests, &session_id);
+    }
+    roll_over_token_usage_if_needed(state);
+    let snapshot = build_snapshot(app, state);
+    let _ = app.emit("snapshot-changed", &snapshot);
+    Ok(build_permission_response(
+        response_style,
+        hook_event_name,
+        decision,
+        response_note,
+        None,
+    ))
 }
 
 pub(crate) fn agent_resolved_label(agent: &AgentKind) -> &'static str {

@@ -63,6 +63,11 @@
     "approving": "批准中...",
     "always": "始终",
     "alwaysTitle": "批准本次及本会话的所有后续请求",
+    "ruleScopeTitle": "创建规则并始终放行",
+    "ruleScopeSession": "仅本会话",
+    "ruleScopeCommandProject": "本命令 · 本项目",
+    "ruleScopeCommandGlobal": "本命令 · 全局",
+    "ruleScopeAllProject": "本项目全部命令",
     "viewSession": "查看会话"
   },
   "plan": {
@@ -176,7 +181,9 @@
     "agentOther": "Agent",
     "outcomePending": "待处理",
     "outcomeApproved": "已批准",
+    "outcomeAutoApproved": "规则放行",
     "outcomeDenied": "已拒绝",
+    "outcomeAutoDenied": "规则拦截",
     "outcomeExpired": "已超时",
     "outcomeAnsweredElsewhere": "在别处处理",
     "empty": "审批请求会记录到这里",

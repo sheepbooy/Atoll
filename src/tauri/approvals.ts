@@ -133,6 +133,8 @@ export type ApprovalHistoryStatus =
   | "pending"
   | "approved"
   | "denied"
+  | "auto_approved"
+  | "auto_denied"
   | "expired"
   | "answered_elsewhere";
 

@@ -193,6 +193,7 @@ fn snapshot_exposes_zcode_db_path_for_chat() {
         id: "req-zcode-1".into(),
         tool_use_id: None,
         agent: AgentKind::Zcode,
+        tool_name: String::new(),
         session: SESSION.into(),
         command: "Bash: ls".into(),
         detail: "List files".into(),

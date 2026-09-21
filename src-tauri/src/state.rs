@@ -13,8 +13,8 @@ use serde_json::Value;
 use tauri::{LogicalPosition, PhysicalSize};
 
 use crate::{
-    clipboard_history, file_station, lyrics, platform, shortcuts, transcript, HookHealthSnapshot,
-    TranscriptCache,
+    approval_rules, clipboard_history, file_station, lyrics, platform, shortcuts, transcript,
+    HookHealthSnapshot, TranscriptCache,
 };
 
 pub(crate) const COMPACT_WINDOW_WIDTH: f64 = 132.0;
@@ -53,6 +53,9 @@ pub(crate) static APPROVAL_HISTORY_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 #[cfg(test)]
 pub(crate) static PRICING_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
+pub(crate) static APPROVAL_RULES_ENV_LOCK: Mutex<()> = Mutex::new(());
 // Fallback notch width (logical pt) used when the auxiliary menu-bar areas
 // can't be read but a notch height is reported.
 pub(crate) const FALLBACK_NOTCH_WIDTH: f64 = 200.0;
@@ -75,6 +78,9 @@ pub(crate) struct PermissionRequest {
     pub(crate) id: String,
     pub(crate) tool_use_id: Option<String>,
     pub(crate) agent: AgentKind,
+    /// Raw tool name from the hook payload ("Bash", "WebFetch", ...).
+    #[serde(default)]
+    pub(crate) tool_name: String,
     pub(crate) session: String,
     pub(crate) command: String,
     pub(crate) detail: String,
@@ -303,6 +309,10 @@ pub(crate) struct AppState {
     pub(crate) session_request_totals: Mutex<HashMap<String, usize>>,
     pub(crate) hook_waiters: Mutex<HashMap<String, SyncSender<DecisionWithNote>>>,
     pub(crate) auto_approve_sessions: Mutex<HashSet<String>>,
+    /// Persistent approval rules (cached from ~/.atoll/rules.json).
+    pub(crate) approval_rules: Mutex<Vec<approval_rules::ApprovalRule>>,
+    /// Whether the rule engine's risk guard blocks auto-approving dangerous commands.
+    pub(crate) risk_guard_enabled: Mutex<bool>,
     pub(crate) compact_width: Mutex<f64>,
     pub(crate) compact_left_width: Mutex<f64>,
     pub(crate) presentation_generation: Arc<AtomicU64>,
