@@ -174,9 +174,16 @@ function MascotBody({ baseVariant, altVariants, blinking, eyeOffsetX }: MascotBo
       </g>
       <g className="atoll-mouth-open">
         <g className="atoll-mouth-inner">
-          {/* 竖椭圆：惊讶期待的小 o 嘴（备选 4） */}
-          <ellipse cx="32" cy="36.2" rx="4.4" ry="5.6" fill="#15323c" shapeRendering="auto" />
+          {/* 像素方嘴：小方形张开（ Jaw 从上缘向下翻开），不破坏像素形象；
+              下缘一小块舌头保留吞咽的表情感 */}
+          <rect className="atoll-mouth-px" x="28.5" y="33" width="7" height="6" rx="1" fill="#15323c" shapeRendering="auto" />
+          <rect className="atoll-mouth-px-tongue" x="30" y="36.2" width="3" height="1.8" rx="0.7" fill="#c46a6a" shapeRendering="auto" />
         </g>
+      </g>
+      {/* 待喂兴奋：头侧两粒像素闪块（张嘴待喂时阶跃闪烁） */}
+      <g className="atoll-eager">
+        <rect className="atoll-eager-spark e1" x="11" y="13" width="2.4" height="2.4" fill="#FFD24A" shapeRendering="auto" />
+        <rect className="atoll-eager-spark e2" x="51" y="11" width="2" height="2" fill="#9BF0C0" shapeRendering="auto" />
       </g>
       <g className="atoll-cheeks">
         <ellipse className="atoll-cheek atoll-cheek-l" cx="9" cy="35" rx="4.5" ry="5" fill={IDLE_PALETTE.body} shapeRendering="auto" />
@@ -732,6 +739,10 @@ export function AtollLogo({
                 {eatTier >= 3 ? <StashFileGlyph className="atoll-eat-file f3" /> : null}
                 {eatTier >= 4 ? <StashFileGlyph className="atoll-eat-file f4" /> : null}
               </g>
+              {/* 像素碎屑：咬合时从嘴角蹦出的小方块 */}
+              <rect className="atoll-crumb c1" x="0" y="0" width="2.2" height="2.2" fill="#F5F0E8" shapeRendering="auto" />
+              <rect className="atoll-crumb c2" x="0" y="0" width="1.8" height="1.8" fill="#E3D8C6" shapeRendering="auto" />
+              <rect className="atoll-crumb c3" x="0" y="0" width="1.6" height="1.6" fill="#F5F0E8" shapeRendering="auto" />
               {/* 满足收尾：眯眼替代睁眼 + 眼角星光（CSS 在各档尾段淡入） */}
               <g className="atoll-eat-happy">
                 <EyeSet variant="happy" blinking={false} offsetX={0} />

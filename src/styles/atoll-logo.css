@@ -1397,28 +1397,31 @@
 
 /* 张嘴待喂（文件拖到岛上悬停）：
    外层组只管显隐过渡；开合的弹入/收合与待喂呼吸都在内层组 —— 与 eat/spit
-   反应 keyframes（作用于外层、按 view-box 原点缩放）互不干扰。 */
+   反应 keyframes（作用于外层、按 view-box 原点缩放）互不干扰。
+   嘴是像素方嘴： Jaw（下颚）锚定上缘向下翻开，steps 阶跃过渡保留像素感。 */
 .atoll-logo .atoll-mouth-open {
   transition: opacity 150ms ease-out;
+  transform-box: fill-box;
+  transform-origin: 50% 15%;
 }
 .atoll-logo.is-mouth-open .atoll-mouth-open {
   opacity: 1;
 }
 
-/* 内层：o 嘴从中心弹入展开，拖走时反向收合。 */
+/* 内层：像素嘴从闭合细缝向下翻开，拖走时反向收合（阶跃而非平滑缩放）。 */
 .atoll-logo .atoll-mouth-inner {
   opacity: 0;
-  transform: translateY(1.5px) scale(0.4);
+  transform: scale(1, 0.12);
   transform-box: fill-box;
-  transform-origin: 50% 50%;
+  transform-origin: 50% 15%;
   transition:
-    opacity 160ms ease-out,
-    transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    opacity 140ms ease-out,
+    transform 240ms steps(3, end);
 }
 .atoll-logo.is-mouth-open .atoll-mouth-inner {
   opacity: 1;
-  transform: translateY(0) scale(1);
-  animation: atoll-mouth-gape 1.7s ease-in-out 0.36s infinite;
+  transform: scale(1, 1);
+  animation: atoll-mouth-gape 1.9s steps(2, end) 0.3s infinite;
 }
 
 /* eat/spit 反应期间内层必须完全放开（外层 keyframes 负责全部表演）。 */
@@ -1429,11 +1432,23 @@
   animation: none;
 }
 
-/* 待喂呼吸：竖向的不对称张合，比均匀缩放更像“盼着投喂”。 */
+/* 待喂呼吸：阶跃式的像素开合（像在小口催促），不再放大整张嘴。 */
 @keyframes atoll-mouth-gape {
-  0%, 100% { transform: translateY(0) scale(1, 1); }
-  35% { transform: translateY(0.3px) scale(1.04, 1.12); }
-  60% { transform: translateY(0.15px) scale(1.02, 1.06); }
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(1, 0.68); }
+}
+
+/* 待喂兴奋：头侧两粒像素闪块阶跃闪烁，替代大嘴承担"期待感"。 */
+.atoll-logo .atoll-eager-spark { opacity: 0; }
+.atoll-logo.is-mouth-open .atoll-eager-spark {
+  animation: atoll-eager-blink 1.3s steps(2, end) 0.35s infinite;
+}
+.atoll-logo.is-mouth-open .atoll-eager-spark.e2 {
+  animation-delay: 0.8s;
+}
+@keyframes atoll-eager-blink {
+  0%, 100% { opacity: 0; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-1.2px); }
 }
 
 /* 张嘴的伴随微动作：身体轻压前倾（eager 姿态）、眼睛睁大、腮帮微鼓。
@@ -1504,7 +1519,7 @@
 /* eat1：小口吃（1.4s）—— 一个文件、两次咀嚼、咕咚咽下 */
 .atoll-logo.is-reaction-eat1 .atoll-stage { animation: atoll-eat-stage-hop var(--reaction-eat1-ms) cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
 .atoll-logo.is-reaction-eat1 .atoll-body-group { animation: atoll-eat1-chew var(--reaction-eat1-ms) ease-in-out both; }
-.atoll-logo.is-reaction-eat1 .atoll-mouth-open { animation: atoll-eat1-mouth var(--reaction-eat1-ms) ease-in-out both; }
+.atoll-logo.is-reaction-eat1 .atoll-mouth-open { animation: atoll-eat1-mouth var(--reaction-eat1-ms) steps(2, end) both; }
 .atoll-logo.is-reaction-eat1 .atoll-eat-file.f1 { animation: atoll-eat-file-in var(--reaction-eat1-ms) cubic-bezier(0.45, 0, 0.7, 1) both; }
 
 @keyframes atoll-eat1-chew {
@@ -1521,22 +1536,23 @@
   100% { transform: translateY(0) scale(1, 1); }
 }
 
+/* 像素方嘴的咬合：不再放大整张嘴，只有开合的 scaleY 在阶跃翻转。 */
 @keyframes atoll-eat1-mouth {
-  0% { opacity: 0; transform: scale(0.5); }
-  6% { opacity: 1; transform: scale(1); }
-  26% { transform: scale(1, 1.3); }
-  34% { transform: scale(1, 0.8); }
-  42% { transform: scale(1, 1.3); }
-  50% { transform: scale(1, 0.85); }
-  58% { transform: scale(1, 1.15); }
-  66% { opacity: 1; transform: scale(0.85, 0.6); }
-  74%, 100% { opacity: 0; transform: scale(0.5); }
+  0% { opacity: 0; transform: scale(1, 0.12); }
+  6% { opacity: 1; transform: scale(1, 1); }
+  26% { transform: scale(1, 0.55); }
+  34% { transform: scale(1, 1.06); }
+  42% { transform: scale(1, 0.55); }
+  50% { transform: scale(1, 1.04); }
+  58% { transform: scale(1, 0.75); }
+  66% { opacity: 1; transform: scale(1, 0.35); }
+  74%, 100% { opacity: 0; transform: scale(1, 0.12); }
 }
 
 /* eat2：大快朵颐（1.8s）—— 两个文件、三次咀嚼、左右回味 */
 .atoll-logo.is-reaction-eat2 .atoll-stage { animation: atoll-eat-stage-hop var(--reaction-eat2-ms) cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
 .atoll-logo.is-reaction-eat2 .atoll-body-group { animation: atoll-eat2-chew var(--reaction-eat2-ms) ease-in-out both; }
-.atoll-logo.is-reaction-eat2 .atoll-mouth-open { animation: atoll-eat2-mouth var(--reaction-eat2-ms) ease-in-out both; }
+.atoll-logo.is-reaction-eat2 .atoll-mouth-open { animation: atoll-eat2-mouth var(--reaction-eat2-ms) steps(2, end) both; }
 .atoll-logo.is-reaction-eat2 .atoll-eat-file.f1 { animation: atoll-eat-file-in var(--reaction-eat2-ms) cubic-bezier(0.45, 0, 0.7, 1) both; }
 .atoll-logo.is-reaction-eat2 .atoll-eat-file.f2 { animation: atoll-eat-file-in var(--reaction-eat2-ms) cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 160ms; }
 .atoll-logo.is-reaction-eat2 .atoll-spark { animation: atoll-eat2-spark var(--reaction-eat2-ms) ease-out both; }
@@ -1557,17 +1573,17 @@
 }
 
 @keyframes atoll-eat2-mouth {
-  0% { opacity: 0; transform: scale(0.5); }
-  6% { opacity: 1; transform: scale(1.1); }
-  18% { transform: scale(1.15, 1.3); }
-  26% { transform: scale(1.1, 0.85); }
-  34% { transform: scale(1.15, 1.3); }
-  42% { transform: scale(1.1, 0.85); }
-  50% { transform: scale(1.15, 1.3); }
-  58% { transform: scale(1.1, 0.9); }
-  66% { transform: scale(1, 1.15); }
-  74% { opacity: 1; transform: scale(0.9, 0.6); }
-  82%, 100% { opacity: 0; transform: scale(0.5); }
+  0% { opacity: 0; transform: scale(1, 0.12); }
+  6% { opacity: 1; transform: scale(1, 1.04); }
+  18% { transform: scale(1, 0.55); }
+  26% { transform: scale(1, 1.06); }
+  34% { transform: scale(1, 0.55); }
+  42% { transform: scale(1, 1.06); }
+  50% { transform: scale(1, 0.6); }
+  58% { transform: scale(1, 1); }
+  66% { transform: scale(1, 0.5); }
+  74% { opacity: 1; transform: scale(1, 0.35); }
+  82%, 100% { opacity: 0; transform: scale(1, 0.12); }
 }
 
 @keyframes atoll-eat2-spark {
@@ -1580,7 +1596,7 @@
 /* eat3：吃撑（2.2s）—— 三个文件、费力慢嚼、冒冷汗、后仰咽下 */
 .atoll-logo.is-reaction-eat3 .atoll-stage { animation: atoll-eat-stage-hop var(--reaction-eat3-ms) cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
 .atoll-logo.is-reaction-eat3 .atoll-body-group { animation: atoll-eat3-chew var(--reaction-eat3-ms) ease-in-out both; }
-.atoll-logo.is-reaction-eat3 .atoll-mouth-open { animation: atoll-eat3-mouth var(--reaction-eat3-ms) ease-in-out both; }
+.atoll-logo.is-reaction-eat3 .atoll-mouth-open { animation: atoll-eat3-mouth var(--reaction-eat3-ms) steps(2, end) both; }
 .atoll-logo.is-reaction-eat3 .atoll-eat-file.f1 { animation: atoll-eat-file-in var(--reaction-eat3-ms) cubic-bezier(0.45, 0, 0.7, 1) both; }
 .atoll-logo.is-reaction-eat3 .atoll-eat-file.f2 { animation: atoll-eat-file-in var(--reaction-eat3-ms) cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 200ms; }
 .atoll-logo.is-reaction-eat3 .atoll-eat-file.f3 { animation: atoll-eat-file-in var(--reaction-eat3-ms) cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 400ms; }
@@ -1602,17 +1618,17 @@
 }
 
 @keyframes atoll-eat3-mouth {
-  0% { opacity: 0; transform: scale(0.5); }
-  5% { opacity: 1; transform: scale(1.15); }
-  17% { transform: scale(1.2, 1.25); }
-  25% { transform: scale(1.15, 0.9); }
-  33% { transform: scale(1.2, 1.25); }
-  41% { transform: scale(1.15, 0.9); }
-  49% { transform: scale(1.2, 1.2); }
-  57% { transform: scale(1.1, 0.95); }
-  65% { transform: scale(1, 1.05); }
-  73% { opacity: 1; transform: scale(0.9, 0.6); }
-  81%, 100% { opacity: 0; transform: scale(0.5); }
+  0% { opacity: 0; transform: scale(1, 0.12); }
+  5% { opacity: 1; transform: scale(1, 1.06); }
+  17% { transform: scale(1, 0.55); }
+  25% { transform: scale(1, 1.06); }
+  33% { transform: scale(1, 0.5); }
+  41% { transform: scale(1, 1.04); }
+  49% { transform: scale(1, 0.55); }
+  57% { transform: scale(1, 1); }
+  65% { transform: scale(1, 0.6); }
+  73% { opacity: 1; transform: scale(1, 0.35); }
+  81%, 100% { opacity: 0; transform: scale(1, 0.12); }
 }
 
 @keyframes atoll-eat-sweat {
@@ -1625,7 +1641,7 @@
 /* eat4：饱嗝（2.6s）—— 囫囵吞下、打个激灵、BURP 云雾上飘 */
 .atoll-logo.is-reaction-eat4 .atoll-stage { animation: atoll-eat-stage-hop var(--reaction-eat4-ms) cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
 .atoll-logo.is-reaction-eat4 .atoll-body-group { animation: atoll-eat4-chew var(--reaction-eat4-ms) ease-in-out both; }
-.atoll-logo.is-reaction-eat4 .atoll-mouth-open { animation: atoll-eat4-mouth var(--reaction-eat4-ms) ease-in-out both; }
+.atoll-logo.is-reaction-eat4 .atoll-mouth-open { animation: atoll-eat4-mouth var(--reaction-eat4-ms) steps(2, end) both; }
 .atoll-logo.is-reaction-eat4 .atoll-eat-file.f1 { animation: atoll-eat-file-in var(--reaction-eat4-ms) cubic-bezier(0.45, 0, 0.7, 1) both; }
 .atoll-logo.is-reaction-eat4 .atoll-eat-file.f2 { animation: atoll-eat-file-in var(--reaction-eat4-ms) cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 160ms; }
 .atoll-logo.is-reaction-eat4 .atoll-eat-file.f3 { animation: atoll-eat-file-in var(--reaction-eat4-ms) cubic-bezier(0.45, 0, 0.7, 1) both; animation-delay: 320ms; }
@@ -1654,16 +1670,16 @@
 }
 
 @keyframes atoll-eat4-mouth {
-  0% { opacity: 0; transform: scale(0.5); }
-  5% { opacity: 1; transform: scale(1.15); }
-  17% { transform: scale(1.2, 1.25); }
-  25% { transform: scale(1.15, 0.9); }
-  33% { transform: scale(1.2, 1.2); }
-  41% { transform: scale(1.1, 0.95); }
-  50% { transform: scale(0.95, 0.6); }
-  60% { opacity: 1; transform: scale(1.35, 1.15); }
-  80% { opacity: 1; transform: scale(1.2, 1); }
-  90%, 100% { opacity: 0; transform: scale(0.5); }
+  0% { opacity: 0; transform: scale(1, 0.12); }
+  5% { opacity: 1; transform: scale(1, 1.08); }
+  17% { transform: scale(1, 0.6); }
+  25% { transform: scale(1, 1.05); }
+  33% { transform: scale(1, 0.55); }
+  41% { transform: scale(1, 1); }
+  50% { transform: scale(1, 0.4); }
+  60% { opacity: 1; transform: scale(1, 1.08); }
+  80% { opacity: 1; transform: scale(1, 0.7); }
+  90%, 100% { opacity: 0; transform: scale(1, 0.12); }
 }
 
 @keyframes atoll-eat-burp-b {
@@ -1698,7 +1714,7 @@
    飞行方向由 --spit-angle（JS 写入的拖拽向量角 + 90°，因为文件沿 rotate
    后的局部 -Y 轴飞出）驱动；未提供时回退约 -31°（旧版右上方向）。 */
 .atoll-logo.is-reaction-spit .atoll-body-group { animation: atoll-spit-body var(--reaction-spit-ms) ease-out both; }
-.atoll-logo.is-reaction-spit .atoll-mouth-open { animation: atoll-spit-mouth var(--reaction-spit-ms) ease-in-out both; }
+.atoll-logo.is-reaction-spit .atoll-mouth-open { animation: atoll-spit-mouth var(--reaction-spit-ms) steps(2, end) both; }
 .atoll-logo.is-reaction-spit .atoll-cheek-l { animation: atoll-spit-cheek var(--reaction-spit-ms) ease-out both; }
 .atoll-logo.is-reaction-spit .atoll-cheek-r { animation: atoll-spit-cheek var(--reaction-spit-ms) ease-out both; }
 .atoll-logo.is-reaction-spit .atoll-spit-file { animation: atoll-spit-file-out var(--reaction-spit-ms) cubic-bezier(0.2, 0.6, 0.5, 1) both; }
@@ -1719,11 +1735,12 @@
 }
 
 @keyframes atoll-spit-mouth {
-  0%, 4% { opacity: 0; transform: scale(0.6); }
-  10%, 26% { opacity: 1; transform: scale(1.15, 0.9); }
-  32% { opacity: 1; transform: scale(1.3, 1.2); }
-  80% { opacity: 1; transform: scale(1.2, 1); }
-  90%, 100% { opacity: 0; transform: scale(0.6); }
+  0%, 4% { opacity: 0; transform: scale(1, 0.2); }
+  10%, 26% { opacity: 1; transform: scale(1, 0.85); }
+  32% { opacity: 1; transform: scale(1, 1.1); }
+  55% { opacity: 1; transform: scale(1, 0.9); }
+  80% { opacity: 1; transform: scale(1, 0.5); }
+  90%, 100% { opacity: 0; transform: scale(1, 0.12); }
 }
 
 @keyframes atoll-spit-cheek {
@@ -1740,6 +1757,23 @@
   55% { opacity: 1; transform: rotate(var(--spit-a, 59deg)) translateY(-26px) scale(1); }
   78% { opacity: 1; transform: rotate(var(--spit-a, 59deg)) translateY(-34px) scale(0.95); }
   92%, 100% { opacity: 0; transform: rotate(var(--spit-a, 59deg)) translateY(-38px) scale(0.9); }
+}
+
+/* 像素碎屑：咬合（~30%）时从嘴角蹦出的小方块，带重力坠落，steps 阶跃。 */
+.atoll-logo .atoll-crumb { opacity: 0; }
+.atoll-logo.is-reaction-eat1 .atoll-crumb { animation: atoll-crumb-pop var(--reaction-eat1-ms) steps(3, end) both; }
+.atoll-logo.is-reaction-eat2 .atoll-crumb { animation: atoll-crumb-pop var(--reaction-eat2-ms) steps(3, end) both; }
+.atoll-logo.is-reaction-eat3 .atoll-crumb { animation: atoll-crumb-pop var(--reaction-eat3-ms) steps(3, end) both; }
+.atoll-logo.is-reaction-eat4 .atoll-crumb { animation: atoll-crumb-pop var(--reaction-eat4-ms) steps(3, end) both; }
+/* 散布方向与错峰（c2/c3 延迟须写在 shorthand 之后才会生效）。 */
+.atoll-logo .atoll-crumb.c1 { --cx: -8px; --cy: 2px; }
+.atoll-logo .atoll-crumb.c2 { --cx: 7px; --cy: 5px; animation-delay: 90ms; }
+.atoll-logo .atoll-crumb.c3 { --cx: -3px; --cy: 8px; animation-delay: 150ms; }
+@keyframes atoll-crumb-pop {
+  0%, 24% { opacity: 0; transform: translate(31px, 34px); }
+  30% { opacity: 1; transform: translate(calc(31px + var(--cx, -6px) * 0.7), calc(34px + var(--cy, 4px) * 0.4)); }
+  46% { opacity: 1; transform: translate(calc(31px + var(--cx, -6px)), calc(34px + var(--cy, 4px))); }
+  62%, 100% { opacity: 0; transform: translate(calc(31px + var(--cx, -6px) * 1.2), calc(34px + var(--cy, 4px) + 9px)); }
 }
 
 /* 满足收尾：眯眼替代睁眼 + 眼角星光，各档最后 ~22% 淡入再淡出。 */

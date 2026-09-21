@@ -282,7 +282,8 @@
 .atoll-takeover-logo {
   height: 58%;
   aspect-ratio: 96 / 108;
-  animation: atoll-takeover-grow 380ms cubic-bezier(0.26, 0.9, 0.36, 1) both;
+  /* 果冻曲线自带 ~4% 过冲，生长落位更有弹性（不再手写 80% 关键帧）。 */
+  animation: atoll-takeover-grow 380ms var(--ease-jelly, cubic-bezier(0.34, 1.45, 0.64, 1)) both;
 }
 
 .atoll-takeover-logo .atoll-logo {
@@ -319,11 +320,8 @@
     transform: translate(var(--takeover-dx, -180px), var(--takeover-dy, -110px))
       scale(var(--takeover-scale, 0.18));
   }
-  55% {
+  45% {
     opacity: 1;
-  }
-  80% {
-    transform: translate(0, 0) scale(1.05);
   }
   100% {
     opacity: 1;
