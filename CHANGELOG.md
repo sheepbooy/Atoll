@@ -2,13 +2,22 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [未发布]
+## [0.1.64] - 2026-09-23
 
 ### 新增
 - **审批规则引擎**：新增 `~/.atoll/rules.json` 持久化的自动放行/拦截规则——按 Agent、工具名、命令模式（`*`/`?` 通配符，大小写不敏感）、项目路径（cwd 前缀）匹配，拦截规则优先于放行规则，同一决策内按列表顺序取首个命中；规则评估挂在 hook 阻断审批链路最前端（等待 UI 之前，零阻塞），命中即在审批历史落一条 `auto_approved` / `auto_denied` 记录（历史页新增对应筛选 pill 与徽章配色），detail 追加命中的规则名。Settings → Approval Rules 提供完整的规则管理（增删改、启停、上移/下移调优先级、命中次数与最近命中统计、两段式删除确认），并默认开启**风险命令保护**：前端 `riskAssess` 的 DANGER_PATTERNS 移植为 Rust `risk_patterns.rs`，开启时危险命令即使命中放行规则也回落人工审批。审批卡「Always」按钮新增 ▾ 作用域菜单——仅本会话（原行为不变）/ 本命令·本项目 / 本命令·全局 / 本项目全部命令，选择即创建规则并批准当前请求，等价规则自动去重。已知边界：Cursor 为 observer 模式不阻断、规则对其无效；Gemini 仅 shim 转发的副作用工具可被规则拦截
+- **剪贴板 ↔ 文件中转站联动**：剪贴板历史每行新增"存入中转站"操作——文件清单暂存其引用路径；图片从可回收的 blob 存储转存到 `~/.atoll/station/`，引用在 24h 剪贴板过期后仍然有效；文本行逐行解析为真实路径暂存，无法解析时实体化为 .txt 文件；暂存成功回放吃入动画与 toast。中转侧行与多选工具新增"复制为路径"（换行拼接的路径文本，历史开启时回落为文本条目）；剪贴板设置提供可选的**自动暂存**（新复制的文件清单自动入站），剪贴板来源条目带"来自剪贴板"徽标保持来源可读
+
+### 改进
+- **文件中转站"岛即生物"重设计**：吃/吐表演不再接管面板——遮罩、logo 放大、接管退场全部移除，表演期间面板内容全程可见；吉祥物只用眼睛演（睁大看文件 → 看向肚子 → 满足眯眼 + 眼角星光，吐出时眯紧→瞪大），不再有嘴部与戏剧化动作。新增 WAAPI 文件飞行层：吸入从真实 drop 点错峰飞向角落吉祥物，飞行件放大到 22x26 并带冷色辉光、亮边、像素文字行与快速消散的像素拖尾，入嘴时弹出像素星光形成连吃节奏；吐出沿真实拖拽方向扇形飞出；飞行弧线统一向下且起终点钳制在岛界 12px 安全边距内，文件永不飞出屏幕造成"消失"错觉。第一枚文件命中时岛底光带从命中点扩散吞咽涟漪，配合原生窗口 +12pt 鼓起（Rust `pulse_island_shape`，spring 出 + cubic 回）；岛底光带按存量档位常驻亮起（is-stash-1/2/3）。拖文件悬停展开走 140ms 快速通道（`set_island_presentation` 新增 duration_ms）以抑制 macOS 顶边多桌面条触发；节奏全面提速——eat 900/1100/1350/1600ms、spit 700ms。`useStashTakeover` 重写为 `useStashChoreography`（islandShape.ts 果冻拍点编排器），demo 模式（`?demo=fileStation`）热键 1-4/s 可预览各反应
 
 ### 修复
 - OpenCode 的 edit/write 工具入参键为 `path`（非 `file_path`），其审批标签此前不显示文件路径，现纳入 `command_label`/`detail_label` 归一化；各 Agent 载荷解析补充 `tool_name` 字段供规则匹配
+- **审批历史可用性与离线审批**：历史视图复用设置 chrome 但 body 是 grid，而历史列表按 flex 列书写，矮面板下条目文字互相重叠、展开详情不可读——该视图 body 改为 flex 列，条目/加载更多/工具栏 flex-shrink:0（附 CSS 守卫测试）。Atoll 不在线时 hooks 静默回落到各 agent 自己的权限提示、审批从历史中彻底消失——hook 脚本现在把 PermissionRequest 事件落盘到 `~/.atoll/hook-spool`，Atoll 启动时按 spool 文件名幂等导入为 answered_elsewhere 条目（保留期与历史一致）。另修复：加载失败显示错误态与重试而非伪装成空列表；秒小数时间戳此前解析为 0 导致条目插入即被清理，`parse_iso_timestamp_secs` 改由 chrono 解析；数据库连接加 busy_timeout=5000；gemini/opencode 历史过滤器与 macOS hook 日志路径（`~/.atoll`）修正
+- **hook 安装三连修**：OpenCode 安装校验要求部署的插件含 "atoll-opencode-bridge" 标记而出厂脚本没有，每次安装必然报"插件未正确保存"并留下半安装副本——补上标记、校验失败回滚副本、加守卫测试防回归；六个按 agent 的安装/卸载命令对 hook_trust_state 无锁读改写，UI 并发触发时只有最后写入者的 agent 幸存——加互斥锁串行化；一键安装/卸载全部用 Promise.all，单个 agent 失败掩盖其他成功并误报整体失败——改 allSettled 并列出失败 agent（新增 uninstallPartial 文案），按钮增加按 agent 的忙碌反馈（卸载此前无任何反馈）
+- **hook 健康与在线状态即时刷新**：安装/卸载后立即广播的快照仍携带变更前的缓存状态（前端 prefer-ready 合并保留旧值，表现为按钮无响应、要等下一轮周期巡检才纠正）——广播前重读全部 agent 配置刷新缓存并同趟重算在线标志；`compute_listening_online` 此前只检查 claude/codex/cursor，只安装 zcode/gemini/opencode 时 logo 永远离线；卸载路径改为立即应用命令返回的权威状态，不再与缓存刷新线程竞速（表现为需要点两下）
+- **歌词行切换对齐音频**：跑马灯此前直接用 ~1s 的后端采样挑行，人声唱完 0.5-1s 后才换行——改为播放期间从 receivedAt 插值（250ms tick，与进度条同方案）并加 150ms 前导（LYRICS_SYNC_LEAD_S）补偿采样延迟与淡入爬升
+- **计划面板手动收起不再被顶开**：会话活跃时 ~2s 一次的快照刷新在任何请求挂起时都会重新展开岛，被手动收起的计划显示反复弹回——收起时闩锁挂起的计划请求 id，恰为这些请求挂起期间抑制快照驱动的展开；新请求 id 或非计划审批仍自动展开，全部落定后闩锁清除
 
 ## [0.1.63] - 2026-09-18
 
