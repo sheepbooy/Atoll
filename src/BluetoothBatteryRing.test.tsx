@@ -1,6 +1,10 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { BluetoothBatteryRing, deviceBatteryPercent } from "./BluetoothBatteryRing";
+import {
+  BluetoothBatteryRing,
+  deviceBatteryPercent,
+  devicesWithBattery,
+} from "./BluetoothBatteryRing";
 import type { BluetoothDeviceBattery } from "./tauri";
 
 vi.mock("react-i18next", () => ({

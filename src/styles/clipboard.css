@@ -52,6 +52,13 @@
 
 /* Folded-island Bluetooth battery ring: a circular Bluetooth icon wrapped
    in a battery progress arc. */
+.compact-battery-rings {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .compact-battery-ring {
   width: 20px;
   height: 20px;
@@ -59,7 +66,6 @@
      coordinate space misplaces CSS-positioned elements, regular replaced
      elements flow correctly. */
   flex-shrink: 0;
-  margin: 0 2px;
 }
 
 /* ─── Clipboard history ─────────────────────────────────────────── */

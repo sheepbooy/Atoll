@@ -94,55 +94,67 @@ function ringImageDataUrl(
   return canvas.toDataURL("image/png");
 }
 
+/** Devices that report a level, lowest battery first (the worst ring leads). */
+export function devicesWithBattery(
+  devices: BluetoothDeviceBattery[],
+): Array<{ device: BluetoothDeviceBattery; percent: number }> {
+  return devices
+    .map((device) => ({ device, percent: deviceBatteryPercent(device) }))
+    .filter((entry): entry is { device: BluetoothDeviceBattery; percent: number } =>
+      entry.percent != null,
+    )
+    .sort((a, b) => a.percent - b.percent);
+}
+
 /**
- * Folded-island indicator: a battery ring (green, amber below 40%, red at
- * the alert threshold) around a device-kind glyph, drawn on a canvas and
- * shown as an img next to the token counter. With several devices it shows
- * the lowest battery and the tooltip lists every device. Renders nothing
- * when no device reports a battery.
+ * Folded-island indicator: one battery ring per reporting device (green,
+ * amber below 40%, red at the alert threshold) around the device-kind
+ * glyph, drawn on a canvas and shown as an img next to the token counter —
+ * the panel composites regular replaced elements reliably, unlike inline
+ * SVG or conic gradients. Rings render lowest-battery-first; each carries
+ * its own tooltip. Renders nothing when no device reports a battery.
  */
 export function BluetoothBatteryRing({
   devices,
   alertThreshold,
 }: BluetoothBatteryRingProps) {
   const { t } = useTranslation("common");
-  const withBattery = devices
-    .map((device) => ({ device, percent: deviceBatteryPercent(device) }))
-    .filter((entry): entry is { device: BluetoothDeviceBattery; percent: number } =>
-      entry.percent != null,
-    );
-  const worst = withBattery.length
-    ? withBattery.reduce((a, b) => (b.percent < a.percent ? b : a))
-    : null;
-  const src = useMemo(
+  const entries = devicesWithBattery(devices);
+  const srcs = useMemo(
     () =>
-      worst
-        ? ringImageDataUrl(
-            worst.percent,
-            KIND_GLYPH[worst.device.kind],
-            worst.percent <= alertThreshold,
-            worst.percent > alertThreshold && worst.percent < 40,
-          )
-        : null,
-    [worst?.percent, worst?.device.kind, alertThreshold],
+      entries.map((entry) =>
+        ringImageDataUrl(
+          entry.percent,
+          KIND_GLYPH[entry.device.kind],
+          entry.percent <= alertThreshold,
+          entry.percent > alertThreshold && entry.percent < 40,
+        ),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      entries
+        .map((entry) => `${entry.device.kind}:${entry.percent}`)
+        .join("|"),
+      alertThreshold,
+    ],
   );
-  if (!worst || !src) {
+  if (entries.length === 0 || srcs.some((src) => !src)) {
     return null;
   }
-  const title = withBattery
-    .map(({ device, percent }) => `${device.name} ${percent}%`)
-    .join(" · ");
-
   return (
-    <img
-      className="compact-battery-ring"
-      src={src}
-      width={RING_PX}
-      height={RING_PX}
-      title={title}
-      alt={`${t("bluetooth.title")}: ${title}`}
-      draggable={false}
-      data-no-drag
-    />
+    <span className="compact-battery-rings" data-no-drag>
+      {entries.map((entry, index) => (
+        <img
+          key={entry.device.id}
+          className="compact-battery-ring"
+          src={srcs[index] ?? undefined}
+          width={RING_PX}
+          height={RING_PX}
+          title={`${entry.device.name} ${entry.percent}%`}
+          alt={`${t("bluetooth.title")}: ${entry.device.name} ${entry.percent}%`}
+          draggable={false}
+        />
+      ))}
+    </span>
   );
 }
