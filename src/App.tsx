@@ -71,7 +71,10 @@ import { useLyrics } from "./hooks/useLyrics";
 import { useClipboardHistory } from "./hooks/useClipboardHistory";
 import { useNowPlaying } from "./hooks/useNowPlaying";
 import { useBluetoothBattery } from "./hooks/useBluetoothBattery";
-import { BluetoothBatteryRing, hasBatteryData as hasBluetoothBatteryData } from "./BluetoothBatteryRing";
+import { hasBatteryData as hasBluetoothBatteryData } from "./BluetoothBatteryRing";
+
+
+
 
 
 import { useDisplayAndSettingsPrefs } from "./hooks/useDisplayAndSettingsPrefs";
@@ -823,6 +826,9 @@ export function App() {
     showCompactMediaIndicator={showCompactMediaIndicator}
     showCompactNotchSpacer={showCompactNotchSpacer}
     showLyricsMarquee={showLyricsMarquee}
+    bluetoothDevices={bluetoothDevices}
+    bluetoothBatteryEnabled={bluetoothCardEnabled}
+    bluetoothAlertThreshold={bluetoothAlertThreshold}
     startWindowDrag={startWindowDrag}
     atollIndicatorRef={atollIndicatorRef}
     menuRef={menuRef}
@@ -1052,18 +1058,6 @@ export function App() {
                 motionPaused={isPresentationTransition}
               />
             </div>
-          </div>
-        ) : null}
-        {bluetoothCardEnabled &&
-        bluetoothDevices.length > 0 &&
-        !isExpanded &&
-        !isPresentationTransition &&
-        !isMicro ? (
-          <div className="battery-ring-anchor" data-no-drag>
-            <BluetoothBatteryRing
-              devices={bluetoothDevices}
-              alertThreshold={bluetoothAlertThreshold}
-            />
           </div>
         ) : null}
         {stashToast ? (

@@ -37,9 +37,11 @@ import { SessionSubviewNav } from "./SessionSubviewNav";
 import { SettingsPageNav, SettingsSubviewNav } from "./SettingsNavs";
 import { LyricsMarquee, lyricsMatchTrack } from "../LyricsMarquee";
 import { TokenCounter } from "../TokenCounter";
+import { BluetoothBatteryRing } from "../BluetoothBatteryRing";
 import type { UsageDisplayMode } from "../displayPrefs";
 import type { SessionSummary } from "../tauri/types";
 import type { AtollReaction } from "../AtollLogo";
+import type { BluetoothDeviceBattery } from "../tauri";
 import type { HeaderLogoDisplay } from "../hookHealth";
 import type { LyricPayload } from "../tauri";
 import type { PermissionRequest } from "../tauri";
@@ -64,6 +66,10 @@ interface IslandHeaderProps {
   showCompactMediaIndicator: boolean;
   showCompactNotchSpacer: boolean;
   showLyricsMarquee: boolean;
+  // Folded-island Bluetooth battery ring (right metrics row)
+  bluetoothDevices: BluetoothDeviceBattery[];
+  bluetoothBatteryEnabled: boolean;
+  bluetoothAlertThreshold: number;
 
   startWindowDrag: (event: React.MouseEvent<HTMLElement>) => void;
   atollIndicatorRef: RefObject<HTMLSpanElement>;
@@ -177,6 +183,9 @@ export function IslandHeader(props: IslandHeaderProps) {
     showCompactMediaIndicator,
     showCompactNotchSpacer,
     showLyricsMarquee,
+    bluetoothDevices,
+    bluetoothBatteryEnabled,
+    bluetoothAlertThreshold,
     startWindowDrag,
     atollIndicatorRef,
     menuRef,
@@ -497,6 +506,16 @@ export function IslandHeader(props: IslandHeaderProps) {
             isMicro ? " is-micro-metrics" : ""
           }${isPresentationTransition ? ` is-${phase}` : ""}`}
         >
+          {bluetoothBatteryEnabled &&
+          !isPresentationTransition &&
+          (showCompactHeaderMetrics || isMicro) ? (
+            <>
+              <BluetoothBatteryRing
+                devices={bluetoothDevices}
+                alertThreshold={bluetoothAlertThreshold}
+              />
+            </>
+          ) : null}
           {showCompactHeaderMetrics && compactRightSessions.length > 0 ? (
             <CompactSessionStack
               placement="right"
