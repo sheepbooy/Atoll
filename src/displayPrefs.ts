@@ -1,4 +1,4 @@
-export type UsageDisplayMode = "tokens" | "cost";
+export type UsageDisplayMode = "tokens" | "cost" | "salary";
 export type CompactIndicatorMode = "media" | "tokens" | "both" | "none";
 
 export const FOLDED_COUNTER_DISPLAY_KEY = "atoll.display.foldedCounter";
@@ -11,7 +11,8 @@ export function readDisplayMode(key: string, fallback: UsageDisplayMode = "token
   if (typeof window === "undefined") return fallback;
   try {
     const stored = window.localStorage.getItem(key);
-    return stored === "cost" ? "cost" : "tokens";
+    if (stored === "cost" || stored === "salary") return stored;
+    return "tokens";
   } catch {
     return fallback;
   }

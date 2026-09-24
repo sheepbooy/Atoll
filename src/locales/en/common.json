@@ -147,7 +147,8 @@
     "cost": "Cost",
     "media": "Media",
     "both": "Both",
-    "none": "None"
+    "none": "None",
+    "salary": "Salary"
   },
   "clipboard": {
     "title": "Clipboard history",

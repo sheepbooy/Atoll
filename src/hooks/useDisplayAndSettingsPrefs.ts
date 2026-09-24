@@ -34,6 +34,11 @@ import {
   HEATMAP_DISPLAY_KEY,
   SETTINGS_BADGE_DISPLAY_KEY,
 } from "../displayPrefs";
+import {
+  readSalarySettings,
+  writeSalarySettings,
+  type SalarySettings,
+} from "../salarySettings";
 
 /**
  * Slider / display-preference state with its localStorage + backend
@@ -61,6 +66,9 @@ export function useDisplayAndSettingsPrefs() {
   );
   const [heatmapDisplay, setHeatmapDisplay] = useState<UsageDisplayMode>(() =>
     readDisplayMode(HEATMAP_DISPLAY_KEY),
+  );
+  const [salarySettings, setSalarySettingsState] = useState<SalarySettings>(() =>
+    readSalarySettings(),
   );
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
   const [launchAtLoginBusy, setLaunchAtLoginBusy] = useState(false);
@@ -93,6 +101,10 @@ export function useDisplayAndSettingsPrefs() {
   useEffect(() => {
     writeDisplayMode(HEATMAP_DISPLAY_KEY, heatmapDisplay);
   }, [heatmapDisplay]);
+
+  useEffect(() => {
+    writeSalarySettings(salarySettings);
+  }, [salarySettings]);
 
   useEffect(() => {
     try {
@@ -195,6 +207,8 @@ export function useDisplayAndSettingsPrefs() {
     setSettingsBadgeDisplay,
     heatmapDisplay,
     setHeatmapDisplay,
+    salarySettings,
+    setSalarySettings: setSalarySettingsState,
     launchAtLogin,
     launchAtLoginBusy,
     handleChangeLaunchAtLogin,

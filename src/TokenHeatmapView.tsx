@@ -3,6 +3,9 @@ import { useTranslation } from "react-i18next";
 import { formatCompactCost } from "./costFormat";
 import { formatCompactTokenCount } from "./tokenCounterFormat";
 import type { UsageDisplayMode } from "./displayPrefs";
+import { formatSalaryEarnings } from "./salaryFormat";
+import { DEFAULT_SALARY_SETTINGS, type SalarySettings } from "./salarySettings";
+import { useSalaryTicker } from "./hooks/useSalaryTicker";
 import { COLLAPSE_ANIMATION_MS } from "./islandPresentation";
 import { resolveIntlLocale } from "./i18n";
 import type { ModelRate } from "./pricing";
@@ -24,7 +27,13 @@ import {
   type AgentSlice,
   type TrendPoint,
 } from "./tokenHeatmap";
-import { getTokenHistory, type TokenHistoryResponse, type TokenUsage } from "./tauri";
+import {
+  getSalaryHistory,
+  getTokenHistory,
+  type SalaryHistoryResponse,
+  type TokenHistoryResponse,
+  type TokenUsage,
+} from "./tauri";
 
 const WEEKDAY_LABELS_FALLBACK = ["Mon", "", "Wed", "", "Fri", "", "Sun"];
 
@@ -60,6 +69,7 @@ interface TokenHeatmapViewProps {
   todayTokensByModel?: Record<string, TokenUsage>;
   displayMode?: UsageDisplayMode;
   pricingRates?: Record<string, ModelRate>;
+  salarySettings?: SalarySettings;
 }
 
 export function TokenHeatmapView({
@@ -67,14 +77,19 @@ export function TokenHeatmapView({
   todayTokensByModel = {},
   displayMode = "tokens",
   pricingRates = {},
+  salarySettings,
 }: TokenHeatmapViewProps) {
   const { t } = useTranslation("tokens");
+  const isSalaryMode = displayMode === "salary";
+  const salary = salarySettings ?? DEFAULT_SALARY_SETTINGS;
   const weekdayLabels = (t("heatmap.weekdays", {
     returnObjects: true,
   }) as string[]) ?? WEEKDAY_LABELS_FALLBACK;
   const formatCount = (value: number) => value.toLocaleString(resolveIntlLocale());
   const [history, setHistory] = useState<TokenHistoryResponse | null>(null);
+  const [salaryHistory, setSalaryHistory] = useState<SalaryHistoryResponse | null>(null);
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
+  const todaySalaryEarned = useSalaryTicker(salarySettings, isSalaryMode);
   // Defer dense grid/SVG charts until the settings window resize finishes so
   // native frame animation and WebView layout don't fight for the main thread.
   const [chartsReady, setChartsReady] = useState(false);
@@ -113,6 +128,23 @@ export function TokenHeatmapView({
   }, []);
 
   useEffect(() => {
+    if (!isSalaryMode) return;
+    let cancelled = false;
+    getSalaryHistory(HEATMAP_WEEKS * 7)
+      .then((response) => {
+        if (!cancelled) setSalaryHistory(response);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSalaryHistory({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, days: [] });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSalaryMode]);
+
+  useEffect(() => {
     if (!chartsReady) return;
     const el = scrollRef.current;
     if (!el) return;
@@ -121,6 +153,24 @@ export function TokenHeatmapView({
 
   const days = useMemo(() => {
     const todayKey = localDayKey(new Date());
+    if (isSalaryMode) {
+      // In salary mode the per-day values come from the salary history map,
+      // so the token-shaped entries only need to carry dates.
+      const salaryDays = salaryHistory?.days ?? [];
+      const dateKeys =
+        salaryDays.length > 0
+          ? salaryDays.map((day) => day.date)
+          : [todayKey];
+      return dateKeys.map((date) => ({
+        date,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        byAgent: {},
+        byModel: {},
+      }));
+    }
     const base = history?.days ?? [];
     if (base.length === 0) {
       return [
@@ -141,35 +191,55 @@ export function TokenHeatmapView({
         byModel: mergeByModelMax(day.byModel, todayTokensByModel),
       };
     });
-  }, [history, todayTokens, todayTokensByModel]);
+  }, [isSalaryMode, salaryHistory, history, todayTokens, todayTokensByModel]);
+
+  const salaryByDate = useMemo(() => {
+    if (!isSalaryMode) return undefined;
+    const map: Record<string, number> = {};
+    for (const day of salaryHistory?.days ?? []) {
+      map[day.date] = day.amount;
+    }
+    // Quantize the live value so the grid/series memos rebuild at ~0.1
+    // granularity instead of on every ticker step; the today stat shows the
+    // raw live amount directly.
+    const todayKey = localDayKey(new Date());
+    map[todayKey] = Math.max(map[todayKey] ?? 0, Math.round(todaySalaryEarned * 10) / 10);
+    return map;
+  }, [isSalaryMode, salaryHistory, todaySalaryEarned]);
 
   const grid = useMemo(
     () =>
       chartsReady
-        ? buildHeatmapGrid(days, HEATMAP_WEEKS, displayMode, pricingRates)
+        ? buildHeatmapGrid(days, HEATMAP_WEEKS, displayMode, pricingRates, salaryByDate)
         : null,
-    [chartsReady, days, displayMode, pricingRates],
+    [chartsReady, days, displayMode, pricingRates, salaryByDate],
   );
   const summary = useMemo(
-    () => summarizeHeatmap(days, displayMode, pricingRates),
-    [days, displayMode, pricingRates],
+    () => summarizeHeatmap(days, displayMode, pricingRates, salaryByDate),
+    [days, displayMode, pricingRates, salaryByDate],
   );
   const agentSlices = useMemo(
     () =>
-      chartsReady ? aggregateByAgent(days, displayMode, pricingRates) : [],
-    [chartsReady, days, displayMode, pricingRates],
+      chartsReady && !isSalaryMode
+        ? aggregateByAgent(days, displayMode, pricingRates)
+        : [],
+    [chartsReady, isSalaryMode, days, displayMode, pricingRates],
   );
   const trendSeries = useMemo(
     () =>
-      chartsReady ? buildTrendSeries(days, 30, displayMode, pricingRates) : [],
-    [chartsReady, days, displayMode, pricingRates],
+      chartsReady
+        ? buildTrendSeries(days, 30, displayMode, pricingRates, salaryByDate)
+        : [],
+    [chartsReady, days, displayMode, pricingRates, salaryByDate],
   );
   const hoveredCell =
     !grid || hoveredDate === null
       ? null
       : grid.rows.flat().find((cell) => cell.date === hoveredDate && cell.inRange) ?? null;
   const todayKey = localDayKey(new Date());
-  const hasHistory = days.some((day) => dayDisplayTotal(day, displayMode, pricingRates) > 0);
+  const hasHistory = days.some(
+    (day) => dayDisplayTotal(day, displayMode, pricingRates, salaryByDate) > 0,
+  );
   const hasUnpricedHistory =
     displayMode === "cost" &&
     days.some((day) => tokenTotal(day) > 0 && byModelCostUsd(day.byModel, pricingRates) === 0);
@@ -177,7 +247,9 @@ export function TokenHeatmapView({
   const formatSummaryValue = (value: number) =>
     displayMode === "cost"
       ? formatCompactCost(value, 0, value)
-      : formatCompactTokenCount(value, value >= 1_000 ? 1 : 0, value);
+      : displayMode === "salary"
+        ? formatSalaryEarnings(value, salary.currency, 0, value)
+        : formatCompactTokenCount(value, value >= 1_000 ? 1 : 0, value);
 
   return (
     <div className="settings-view" data-no-drag>
@@ -191,7 +263,7 @@ export function TokenHeatmapView({
             <div className="token-heatmap-stat">
               <span className="token-heatmap-stat-label">{t("heatmap.today")}</span>
               <span className="token-heatmap-stat-value">
-                {formatSummaryValue(summary.today)}
+                {formatSummaryValue(isSalaryMode ? todaySalaryEarned : summary.today)}
               </span>
             </div>
             <div className="token-heatmap-stat">
@@ -209,7 +281,9 @@ export function TokenHeatmapView({
           </div>
 
           {!hasHistory ? (
-            <p className="token-heatmap-empty">{t("heatmap.recordingStarts")}</p>
+            <p className="token-heatmap-empty">
+              {isSalaryMode ? t("heatmap.salaryRecordingStarts") : t("heatmap.recordingStarts")}
+            </p>
           ) : null}
 
           {chartsReady && grid ? (
@@ -229,7 +303,9 @@ export function TokenHeatmapView({
                     aria-label={
                       displayMode === "cost"
                         ? t("heatmap.dailyCostActivity")
-                        : t("heatmap.dailyTokenActivity")
+                        : displayMode === "salary"
+                          ? t("heatmap.dailySalaryActivity")
+                          : t("heatmap.dailyTokenActivity")
                     }
                   >
                     {grid.rows[0].map((_, weekIndex) => (
@@ -258,10 +334,20 @@ export function TokenHeatmapView({
                                       date: formatHeatmapDate(cell.date),
                                       amount: formatCompactCost(cell.total, 0, cell.total),
                                     })
-                                  : t("heatmap.cellTokens", {
-                                      date: formatHeatmapDate(cell.date),
-                                      count: formatCount(cell.total),
-                                    })
+                                  : displayMode === "salary"
+                                    ? t("heatmap.cellSalary", {
+                                        date: formatHeatmapDate(cell.date),
+                                        amount: formatSalaryEarnings(
+                                          cell.total,
+                                          salary.currency,
+                                          0,
+                                          cell.total,
+                                        ),
+                                      })
+                                    : t("heatmap.cellTokens", {
+                                        date: formatHeatmapDate(cell.date),
+                                        count: formatCount(cell.total),
+                                      })
                               }
                               disabled={!cell.inRange}
                               onMouseEnter={() => setHoveredDate(cell.date)}
@@ -295,9 +381,18 @@ export function TokenHeatmapView({
                     <span className="token-heatmap-tooltip-total">
                       {displayMode === "cost"
                         ? formatCompactCost(hoveredCell.total, 0, hoveredCell.total)
-                        : t("heatmap.tooltipTokens", {
-                            count: formatCount(hoveredCell.total),
-                          })}
+                        : displayMode === "salary"
+                          ? t("heatmap.tooltipSalary", {
+                              amount: formatSalaryEarnings(
+                                hoveredCell.total,
+                                salary.currency,
+                                0,
+                                hoveredCell.total,
+                              ),
+                            })
+                          : t("heatmap.tooltipTokens", {
+                              count: formatCount(hoveredCell.total),
+                            })}
                     </span>
                     {displayMode === "tokens" ? (
                       <span className="token-heatmap-tooltip-detail">
@@ -308,6 +403,10 @@ export function TokenHeatmapView({
                         {t("counter.tooltipOut", {
                           count: formatCount(hoveredCell.usage.outputTokens),
                         })}
+                      </span>
+                    ) : displayMode === "salary" ? (
+                      <span className="token-heatmap-tooltip-detail">
+                        {t("heatmap.salaryRecordedNote")}
                       </span>
                     ) : (
                       <span className="token-heatmap-tooltip-detail">
@@ -340,8 +439,14 @@ export function TokenHeatmapView({
 
         {chartsReady ? (
           <div className="token-heatmap-charts">
-            <AgentDonutChart slices={agentSlices} displayMode={displayMode} />
-            <TrendLineChart series={trendSeries} displayMode={displayMode} />
+            {isSalaryMode ? null : (
+              <AgentDonutChart slices={agentSlices} displayMode={displayMode} />
+            )}
+            <TrendLineChart
+              series={trendSeries}
+              displayMode={displayMode}
+              salaryCurrency={salary.currency}
+            />
           </div>
         ) : (
           <div className="token-heatmap-charts token-heatmap-charts--pending" aria-hidden="true" />
@@ -458,9 +563,11 @@ const TREND_PAD = { top: 10, right: 10, bottom: 8, left: 10 };
 function TrendLineChart({
   series,
   displayMode,
+  salaryCurrency = "¥",
 }: {
   series: TrendPoint[];
   displayMode: UsageDisplayMode;
+  salaryCurrency?: SalarySettings["currency"];
 }) {
   const { t } = useTranslation("tokens");
   const gradientId = `trend-fill-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
@@ -518,7 +625,9 @@ function TrendLineChart({
       ? null
       : displayMode === "cost"
         ? formatCompactCost(hovered.total, 0, hovered.total)
-        : hovered.total.toLocaleString(resolveIntlLocale());
+        : displayMode === "salary"
+          ? formatSalaryEarnings(hovered.total, salaryCurrency, 0, hovered.total)
+          : hovered.total.toLocaleString(resolveIntlLocale());
 
   const gridYs = [
     TREND_PAD.top,

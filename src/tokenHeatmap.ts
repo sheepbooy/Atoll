@@ -36,13 +36,19 @@ export function mergeByModelMax(
 
 export function dayDisplayTotal(
   day: {
+    date?: string;
     inputTokens: number;
     outputTokens: number;
     byModel?: Record<string, TokenUsage>;
   },
   displayMode: UsageDisplayMode = "tokens",
   pricingRates: Record<string, ModelRate> = {},
+  salaryByDate?: Record<string, number>,
 ): number {
+  if (displayMode === "salary") {
+    if (!day.date || !salaryByDate) return 0;
+    return salaryByDate[day.date] ?? 0;
+  }
   if (displayMode === "cost") {
     return byModelCostUsd(day.byModel, pricingRates);
   }
@@ -127,6 +133,7 @@ export function buildHeatmapGrid(
   weeks = HEATMAP_WEEKS,
   displayMode: UsageDisplayMode = "tokens",
   pricingRates: Record<string, ModelRate> = {},
+  salaryByDate?: Record<string, number>,
 ): HeatmapGrid {
   const today = new Date();
   const endDate = localDayKey(today);
@@ -138,7 +145,7 @@ export function buildHeatmapGrid(
     days.map((day) => [
       day.date,
       {
-        total: dayDisplayTotal(day, displayMode, pricingRates),
+        total: dayDisplayTotal(day, displayMode, pricingRates, salaryByDate),
         usage: {
           inputTokens: day.inputTokens,
           outputTokens: day.outputTokens,
@@ -201,10 +208,11 @@ export function summarizeHeatmap(
   }>,
   displayMode: UsageDisplayMode = "tokens",
   pricingRates: Record<string, ModelRate> = {},
+  salaryByDate?: Record<string, number>,
 ) {
   const totals = days.map((day) => ({
     date: day.date,
-    total: dayDisplayTotal(day, displayMode, pricingRates),
+    total: dayDisplayTotal(day, displayMode, pricingRates, salaryByDate),
   }));
   const todayKey = localDayKey(new Date());
   const today = totals.find((day) => day.date === todayKey)?.total ?? 0;
@@ -279,12 +287,16 @@ export function buildTrendSeries(
   n = 30,
   displayMode: UsageDisplayMode = "tokens",
   pricingRates: Record<string, ModelRate> = {},
+  salaryByDate?: Record<string, number>,
 ): TrendPoint[] {
   const today = new Date();
   const result: TrendPoint[] = [];
 
   const byDate = new Map(
-    days.map((day) => [day.date, dayDisplayTotal(day, displayMode, pricingRates)]),
+    days.map((day) => [
+      day.date,
+      dayDisplayTotal(day, displayMode, pricingRates, salaryByDate),
+    ]),
   );
 
   for (let offset = n - 1; offset >= 0; offset -= 1) {

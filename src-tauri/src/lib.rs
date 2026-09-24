@@ -32,6 +32,7 @@ mod media_windows;
 mod platform;
 mod pricing;
 mod risk_patterns;
+mod salary_history;
 mod shortcuts;
 mod token_history;
 mod transcript;
@@ -273,6 +274,8 @@ pub fn run() {
             archive_subagent,
             archive_completed_subagents,
             get_token_history,
+            record_salary_day,
+            get_salary_history,
             get_pricing,
             set_model_rate,
             reset_model_rate,

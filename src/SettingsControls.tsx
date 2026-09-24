@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight } from "lucide-react";
 import type { AppLanguage } from "./i18n";
@@ -134,7 +134,7 @@ export function SettingsNavCard({
 }: {
   title: string;
   desc: string;
-  badge?: string;
+  badge?: ReactNode;
   badgeTone?: "installed" | "missing" | "";
   onClick: () => void;
 }) {

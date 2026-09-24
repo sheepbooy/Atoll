@@ -605,6 +605,17 @@
   letter-spacing: 0.01em;
 }
 
+.token-counter--salary {
+  letter-spacing: 0.01em;
+}
+
+/* -- salary counter card -- */
+.salary-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
 .token-counter-mark.is-cost {
   opacity: 0.9;
 }
