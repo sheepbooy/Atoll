@@ -24,6 +24,14 @@ import {
   formatCompactCost,
 } from "./costFormat";
 import type { UsageDisplayMode } from "./displayPrefs";
+import { useSalaryTicker } from "./hooks/useSalaryTicker";
+import {
+  formatSalaryEarnings,
+  formatSalaryRate,
+  formatSalaryWage,
+  salaryPerSecond,
+} from "./salaryFormat";
+import { DEFAULT_SALARY_SETTINGS, type SalarySettings } from "./salarySettings";
 import { resolveIntlLocale } from "./i18n";
 import { onIslandHoverChanged, type TokenUsage } from "./tauri";
 
@@ -39,6 +47,9 @@ function tokenScopeLabel(
   displayMode: UsageDisplayMode,
   t: (key: string) => string,
 ): string {
+  if (displayMode === "salary") {
+    return t("counter.todayEarnings");
+  }
   const scope =
     variant === "expanded" ? t("counter.today") : t("counter.activeSession");
   return displayMode === "cost"
@@ -53,6 +64,9 @@ function tokenScopeShortLabel(
   displayMode: UsageDisplayMode,
   t: (key: string) => string,
 ): string {
+  if (displayMode === "salary") {
+    return t("counter.todayEarningsShort");
+  }
   if (displayMode === "cost") {
     return variant === "expanded"
       ? t("counter.todayCostShort")
@@ -91,7 +105,17 @@ function tokenCounterTitle(
   variant: TokenCounterVariant,
   displayMode: UsageDisplayMode,
   t: (key: string, options?: Record<string, unknown>) => string,
+  salary: SalarySettings = DEFAULT_SALARY_SETTINGS,
 ): string {
+  if (displayMode === "salary") {
+    return [
+      `${t("counter.todayEarnings")} ${formatSalaryEarnings(value, salary.currency, 0, value)}`,
+      t("counter.salaryWage", { wage: formatSalaryWage(salary.monthlyWage, salary.currency) }),
+      t("counter.salaryRate", {
+        rate: formatSalaryRate(salaryPerSecond(salary), salary.currency),
+      }),
+    ].join(" · ");
+  }
   if (displayMode === "cost") {
     return [
       `${tokenScopeLabel(variant, displayMode, t)} ${formatCompactCost(value, 0, value)}`,
@@ -127,14 +151,17 @@ function TokenCounterTooltip({
   visible,
   variant,
   displayMode,
+  salary,
 }: {
   value: number;
   usage: TokenUsage;
   visible: boolean;
   variant: TokenCounterVariant;
   displayMode: UsageDisplayMode;
+  salary?: SalarySettings;
 }) {
   const { t } = useTranslation("tokens");
+  const salarySettings = salary ?? DEFAULT_SALARY_SETTINGS;
 
   return (
     <span
@@ -147,12 +174,32 @@ function TokenCounterTooltip({
         {tokenScopeLabel(variant, displayMode, t)}{" "}
         {displayMode === "cost"
           ? formatCompactCost(value, 0, value)
-          : formatCount(value)}
+          : displayMode === "salary"
+            ? formatSalaryEarnings(value, salarySettings.currency, 0, value)
+            : formatCount(value)}
       </span>
       {displayMode === "cost" ? (
         <span className="token-counter-tooltip-detail">
           {t("counter.pricedUsageOnly")}
         </span>
+      ) : displayMode === "salary" ? (
+        <>
+          <span className="token-counter-tooltip-detail">
+            {t("counter.salaryWage", {
+              wage: formatSalaryWage(salarySettings.monthlyWage, salarySettings.currency),
+            })}{" "}
+            ·{" "}
+            {t("counter.salaryWorkVolume", {
+              days: salarySettings.workDaysPerMonth,
+              hours: salarySettings.workHoursPerDay,
+            })}
+          </span>
+          <span className="token-counter-tooltip-detail">
+            {t("counter.salaryRate", {
+              rate: formatSalaryRate(salaryPerSecond(salarySettings), salarySettings.currency),
+            })}
+          </span>
+        </>
       ) : (
         <>
           <span className="token-counter-tooltip-detail">
@@ -281,6 +328,8 @@ export interface TokenCounterProps {
   usage: TokenUsage;
   variant?: TokenCounterVariant;
   displayMode?: UsageDisplayMode;
+  /** Salary settings; the counter ticks internally when displayMode is "salary". */
+  salary?: SalarySettings;
   sessionCount?: number;
   maxCompactIcons?: number;
   /** When set, overrides width/session heuristics for collapsed display. */
@@ -297,6 +346,7 @@ export function TokenCounter({
   usage,
   variant = "compact",
   displayMode = "tokens",
+  salary,
   sessionCount = 0,
   maxCompactIcons = DEFAULT_ICON_LIMIT,
   compactTokenLevel,
@@ -305,18 +355,24 @@ export function TokenCounter({
 }: TokenCounterProps) {
   const { t } = useTranslation("tokens");
   const isCollapsedVariant = variant === "compact" || variant === "micro";
+  const isSalaryMode = displayMode === "salary";
+  const salarySettings = salary ?? DEFAULT_SALARY_SETTINGS;
+  const salaryEarned = useSalaryTicker(salarySettings, isSalaryMode);
+  const effectiveValue = isSalaryMode ? salaryEarned : value;
   const compactLevel =
     isCollapsedVariant && compactTokenLevel !== undefined
       ? compactTokenLevel
-      : displayMode === "cost"
-        ? costDisplayCompactLevel(value, variant, sessionCount, maxCompactIcons)
-        : tokenDisplayCompactLevel(value, variant, sessionCount, maxCompactIcons);
+      : displayMode === "tokens"
+        ? tokenDisplayCompactLevel(effectiveValue, variant, sessionCount, maxCompactIcons)
+        : costDisplayCompactLevel(effectiveValue, variant, sessionCount, maxCompactIcons);
   const formatValue = (nextValue: number, level = compactLevel) =>
     displayMode === "cost"
       ? formatCompactCost(nextValue, level, value)
-      : formatCompactTokenCount(nextValue, level, value);
-  const animateDigits = !suppressAnimations && displayMode === "tokens";
-  const [displayText, setDisplayText] = useState(() => formatValue(value));
+      : displayMode === "salary"
+        ? formatSalaryEarnings(nextValue, salarySettings.currency, level, effectiveValue)
+        : formatCompactTokenCount(nextValue, level, value);
+  const animateDigits = !suppressAnimations && displayMode !== "cost";
+  const [displayText, setDisplayText] = useState(() => formatValue(effectiveValue));
   const [energy, setEnergy] = useState<TokenCounterEnergy>("idle");
   const [deltaText, setDeltaText] = useState<string | null>(null);
   const [deltaKey, setDeltaKey] = useState(0);
@@ -376,8 +432,29 @@ export function TokenCounter({
     clearTimers();
 
     const previousTarget = targetRef.current;
-    targetRef.current = value;
-    const incomingDelta = value - previousTarget;
+    targetRef.current = effectiveValue;
+
+    const publishDisplay = (nextValue: number) => {
+      const rounded =
+        displayMode === "salary" ? nextValue : Math.round(nextValue);
+      const nextText = formatValue(rounded, compactLevel);
+      animatedValueRef.current = nextValue;
+      if (nextText !== displayTextRef.current) {
+        displayTextRef.current = nextText;
+        setDisplayText(nextText);
+      }
+    };
+
+    if (displayMode === "salary") {
+      // The target tracks the wall clock and moves continuously; publish
+      // directly instead of easing toward it, and skip the +delta float.
+      setDeltaText(null);
+      publishDisplay(effectiveValue);
+      setEnergy("idle");
+      return clearTimers;
+    }
+
+    const incomingDelta = effectiveValue - previousTarget;
 
     if (
       incomingDelta > 0 &&
@@ -394,24 +471,14 @@ export function TokenCounter({
       setDeltaText(null);
     }
 
-    const publishDisplay = (nextValue: number) => {
-      const rounded = Math.round(nextValue);
-      const nextText = formatValue(rounded, compactLevel);
-      animatedValueRef.current = nextValue;
-      if (nextText !== displayTextRef.current) {
-        displayTextRef.current = nextText;
-        setDisplayText(nextText);
-      }
-    };
-
     if (suppressAnimations) {
-      publishDisplay(value);
+      publishDisplay(effectiveValue);
       setEnergy("idle");
       return clearTimers;
     }
 
-    if (Math.abs(value - animatedValueRef.current) < 0.5) {
-      publishDisplay(value);
+    if (Math.abs(effectiveValue - animatedValueRef.current) < 0.5) {
+      publishDisplay(effectiveValue);
       return clearTimers;
     }
 
@@ -453,7 +520,7 @@ export function TokenCounter({
       }
       clearTimers();
     };
-  }, [value, compactLevel, variant, suppressAnimations, displayMode]);
+  }, [effectiveValue, compactLevel, variant, suppressAnimations, displayMode]);
 
   function handlePointerEnter() {
     pointerHoverRef.current = true;
@@ -506,17 +573,31 @@ export function TokenCounter({
       onPointerLeave={handlePointerLeave}
     >
       <TokenCounterTooltip
-        value={value}
+        value={effectiveValue}
         usage={usage}
         visible={tooltipVisible}
         variant={variant}
         displayMode={displayMode}
+        salary={salarySettings}
       />
       <span className={`token-counter-body token-counter-body--${variant}`}>
         <TokenScopeMark variant={variant} displayMode={displayMode} />
         <span
-          className={`token-counter${displayMode === "cost" ? " token-counter--cost" : ""}`}
-          aria-label={tokenCounterTitle(value, usage, variant, displayMode, t)}
+          className={`token-counter${
+            displayMode === "cost"
+              ? " token-counter--cost"
+              : displayMode === "salary"
+                ? " token-counter--salary"
+                : ""
+          }`}
+          aria-label={tokenCounterTitle(
+            effectiveValue,
+            usage,
+            variant,
+            displayMode,
+            t,
+            salarySettings,
+          )}
           aria-describedby={tooltipVisible ? "token-counter-tooltip" : undefined}
         >
           {variant === "expanded" && displayMode === "tokens" ? (

@@ -13,7 +13,8 @@
     "integrations": "集成",
     "display": "显示",
     "mascot": "吉祥物",
-    "pricing": "定价"
+    "pricing": "定价",
+    "salary": "秒薪"
   },
   "badge": {
     "on": "开启",
@@ -43,7 +44,7 @@
   },
   "usage": {
     "displayPricingTitle": "显示与定价",
-    "displayPricingDesc": "为各计数器选择 Token 或费用，并编辑模型费率。",
+    "displayPricingDesc": "为各计数器选择 Token、费用或秒薪，并编辑模型费率。",
     "tokenActivityTitle": "Token 活动",
     "tokenActivityDesc": "每日 Token 热力图与使用历史。",
     "summaryTokens": "Token",
@@ -52,7 +53,10 @@
     "todayTokens": "今日 {{amount}}",
     "todayCost": "今日 {{amount}}",
     "noPricedUsage": "无已定价用量",
-    "noUsageYet": "暂无用量"
+    "noUsageYet": "暂无用量",
+    "summarySalary": "秒薪",
+    "summarySalaryMixed": "{{count}} 项秒薪",
+    "todaySalary": "今日 {{amount}}"
   },
   "integrations": {
     "agentHooksTitle": "Agent 钩子",
@@ -132,7 +136,13 @@
     "settingsBadgeLabel": "设置徽章",
     "settingsBadgeDesc": "Token 活动入口卡片上显示的摘要。",
     "heatmapLabel": "热力图页面",
-    "heatmapDesc": "Token 活动页中的每日总计、提示与趋势图。"
+    "heatmapDesc": "Token 活动页中的每日总计、提示与趋势图。",
+    "salaryCardTitle": "秒薪计数器",
+    "salaryCurrency": "货币",
+    "salaryMonthlyWage": "月薪",
+    "salaryWorkDays": "每月工作日",
+    "salaryWorkHours": "每日工作小时",
+    "salaryRatePreview": "当前秒薪 {{rate}}/秒，每天 0 点起实时累计。"
   },
   "rules": {
     "riskGuardLabel": "风险命令保护",

@@ -4,6 +4,7 @@ import {
   buildHeatmapGrid,
   buildTrendGeometry,
   buildTrendSeries,
+  dayDisplayTotal,
   formatHeatmapDate,
   heatmapLevel,
   localDayKey,
@@ -125,6 +126,39 @@ describe("tokenHeatmap", () => {
     expect(series[series.length - 1].date).toBe(todayKey);
     expect(series[series.length - 1].total).toBe(700);
     expect(series[0].total).toBe(0);
+  });
+
+  it("derives day values from the salary map in salary mode", () => {
+    const todayKey = localDayKey(new Date());
+    const yesterdayKey = localDayKey(
+      new Date(new Date().getTime() - 24 * 3600 * 1000),
+    );
+    const day = { date: todayKey, inputTokens: 999, outputTokens: 1 };
+    const salaryByDate = { [todayKey]: 123.45, [yesterdayKey]: 80 };
+
+    // Salary overrides tokens; missing map entries read as zero.
+    expect(dayDisplayTotal(day, "salary", {}, salaryByDate)).toBe(123.45);
+    expect(dayDisplayTotal({ ...day, date: "2026-01-01" }, "salary", {}, salaryByDate)).toBe(0);
+    expect(dayDisplayTotal(day, "tokens", {}, salaryByDate)).toBe(1000);
+
+    const summary = summarizeHeatmap([day], "salary", {}, salaryByDate);
+    expect(summary.today).toBe(123.45);
+    expect(summary.sevenDay).toBe(123.45);
+    expect(summary.best.total).toBe(123.45);
+
+    const series = buildTrendSeries([day], 30, "salary", {}, salaryByDate);
+    expect(series[series.length - 1].total).toBe(123.45);
+
+    const gridDay = {
+      ...day,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      byAgent: {},
+    };
+    const grid = buildHeatmapGrid([gridDay], 4, "salary", {}, salaryByDate);
+    expect(grid.maxTotal).toBe(123.45);
+    const todayCell = grid.rows.flat().find((cell) => cell.date === todayKey);
+    expect(todayCell?.total).toBe(123.45);
   });
 
   it("builds a monotone cubic trend path that stays within the value range", () => {

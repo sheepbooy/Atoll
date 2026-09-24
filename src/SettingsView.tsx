@@ -1,5 +1,9 @@
 import { useTranslation } from "react-i18next";
 import type { AppLanguage } from "./i18n";
+import type { UsageDisplayMode } from "./displayPrefs";
+import { formatSalaryEarnings } from "./salaryFormat";
+import { DEFAULT_SALARY_SETTINGS, type SalarySettings } from "./salarySettings";
+import { useSalaryTicker } from "./hooks/useSalaryTicker";
 import {
   SettingsLanguageToggle,
   SettingsNavCard,
@@ -26,6 +30,9 @@ export interface SettingsViewProps {
   onOpenRules: () => void;
   onOpenShortcuts: () => void;
   todayLabel: string;
+  /** Display mode of the token-activity badge; "salary" ticks live. */
+  todayBadgeMode?: UsageDisplayMode;
+  salarySettings?: SalarySettings;
   usageDisplaySummary: string;
   hooksSummary: string;
   hooksNeedAttention: boolean;
@@ -55,6 +62,8 @@ export function SettingsView({
   onOpenRules,
   onOpenShortcuts,
   todayLabel,
+  todayBadgeMode = "tokens",
+  salarySettings,
   usageDisplaySummary,
   hooksSummary,
   hooksNeedAttention,
@@ -172,7 +181,13 @@ export function SettingsView({
           <SettingsNavCard
             title={t("usage.tokenActivityTitle")}
             desc={t("usage.tokenActivityDesc")}
-            badge={todayLabel}
+            badge={
+              todayBadgeMode === "salary" ? (
+                <SalaryTodayBadgeLabel salarySettings={salarySettings} />
+              ) : (
+                todayLabel
+              )
+            }
             badgeTone="installed"
             onClick={onOpenTokens}
           />
@@ -190,5 +205,18 @@ export function SettingsView({
         </div>
       </div>
     </div>
+  );
+}
+
+function SalaryTodayBadgeLabel({ salarySettings }: { salarySettings?: SalarySettings }) {
+  const { t } = useTranslation("settings");
+  const salary = salarySettings ?? DEFAULT_SALARY_SETTINGS;
+  const earned = useSalaryTicker(salarySettings, true);
+  return (
+    <>
+      {t("usage.todaySalary", {
+        amount: formatSalaryEarnings(earned, salary.currency, 0, earned),
+      })}
+    </>
   );
 }

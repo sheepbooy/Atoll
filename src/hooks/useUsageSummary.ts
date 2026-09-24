@@ -50,6 +50,11 @@ export function useUsageSummary({
       heatmapDisplay,
     ];
     const costCount = modes.filter((mode) => mode === "cost").length;
+    const salaryCount = modes.filter((mode) => mode === "salary").length;
+    if (salaryCount === modes.length) return tSettings("usage.summarySalary");
+    if (salaryCount > 0) {
+      return tSettings("usage.summarySalaryMixed", { count: salaryCount });
+    }
     if (costCount === 0) return tSettings("usage.summaryTokens");
     if (costCount === modes.length) return tSettings("usage.summaryCost");
     return tSettings("usage.summaryMixedCost", { count: costCount });

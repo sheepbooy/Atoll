@@ -7,6 +7,7 @@ export * from "./approvals";
 export * from "./approvalRules";
 export * from "./hooks";
 export * from "./tokens";
+export * from "./salary";
 export * from "./media";
 export * from "./clipboard";
 export * from "./fileStation";

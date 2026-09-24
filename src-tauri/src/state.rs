@@ -56,6 +56,9 @@ pub(crate) static PRICING_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 #[cfg(test)]
 pub(crate) static APPROVAL_RULES_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
+pub(crate) static SALARY_HISTORY_ENV_LOCK: Mutex<()> = Mutex::new(());
 // Fallback notch width (logical pt) used when the auxiliary menu-bar areas
 // can't be read but a notch height is reported.
 pub(crate) const FALLBACK_NOTCH_WIDTH: f64 = 200.0;

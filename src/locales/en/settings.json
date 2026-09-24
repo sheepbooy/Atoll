@@ -13,7 +13,8 @@
     "integrations": "Integrations",
     "display": "Display",
     "mascot": "Mascot",
-    "pricing": "Pricing"
+    "pricing": "Pricing",
+    "salary": "Salary"
   },
   "badge": {
     "on": "On",
@@ -43,7 +44,7 @@
   },
   "usage": {
     "displayPricingTitle": "Display & pricing",
-    "displayPricingDesc": "Choose tokens or cost for each counter, and edit model rates.",
+    "displayPricingDesc": "Choose tokens, cost, or salary for each counter, and edit model rates.",
     "tokenActivityTitle": "Token activity",
     "tokenActivityDesc": "Daily token heatmap and usage history.",
     "summaryTokens": "Tokens",
@@ -52,7 +53,10 @@
     "todayTokens": "{{amount}} today",
     "todayCost": "{{amount}} today",
     "noPricedUsage": "No priced usage",
-    "noUsageYet": "No usage yet"
+    "noUsageYet": "No usage yet",
+    "summarySalary": "Salary",
+    "summarySalaryMixed": "{{count}} salary",
+    "todaySalary": "{{amount}} today"
   },
   "integrations": {
     "agentHooksTitle": "Agent hooks",
@@ -132,7 +136,13 @@
     "settingsBadgeLabel": "Settings badge",
     "settingsBadgeDesc": "Summary shown on the Token activity entry card.",
     "heatmapLabel": "Heatmap page",
-    "heatmapDesc": "Daily totals, tooltips, and trend charts on Token activity."
+    "heatmapDesc": "Daily totals, tooltips, and trend charts on Token activity.",
+    "salaryCardTitle": "Salary counter",
+    "salaryCurrency": "Currency",
+    "salaryMonthlyWage": "Monthly wage",
+    "salaryWorkDays": "Work days / month",
+    "salaryWorkHours": "Work hours / day",
+    "salaryRatePreview": "Per-second rate {{rate}} — earnings accumulate live from midnight each day."
   },
   "rules": {
     "riskGuardLabel": "Risk guard",

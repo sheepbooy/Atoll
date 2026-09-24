@@ -564,6 +564,16 @@
   text-align: center;
 }
 
+/* Salary prefix: currency sign reads as a small raised price marker rather
+   than a cramped full-size glyph glued to the first digit. */
+.token-counter--salary .token-odo-char--other:first-child {
+  width: auto;
+  margin-right: 0.18em;
+  font-size: 0.72em;
+  letter-spacing: 0;
+  color: rgba(255, 255, 255, 0.88);
+}
+
 .token-odo-slot {
   position: relative;
   display: inline-block;

@@ -147,7 +147,8 @@
     "cost": "费用",
     "media": "媒体",
     "both": "全部",
-    "none": "无"
+    "none": "无",
+    "salary": "秒薪"
   },
   "clipboard": {
     "title": "剪贴板历史",

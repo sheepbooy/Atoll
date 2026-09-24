@@ -39,6 +39,7 @@ import { LyricsMarquee, lyricsMatchTrack } from "../LyricsMarquee";
 import type { PlaybackPositionSample } from "../hooks/useLyrics";
 import { TokenCounter } from "../TokenCounter";
 import type { UsageDisplayMode } from "../displayPrefs";
+import type { SalarySettings } from "../salarySettings";
 import type { SessionSummary } from "../tauri/types";
 import type { AtollReaction } from "../AtollLogo";
 import type { HeaderLogoDisplay } from "../hookHealth";
@@ -137,6 +138,8 @@ interface IslandHeaderProps {
   dailyCostTotal: number;
   foldedCounterDisplay: UsageDisplayMode;
   expandedCounterDisplay: UsageDisplayMode;
+  /** Salary settings for the "salary" display mode of the two counters. */
+  salary?: SalarySettings;
   maxCompactIcons: number;
 
   handleControlMouseDown: (event: React.MouseEvent<HTMLElement>) => void;
@@ -233,6 +236,7 @@ export function IslandHeader(props: IslandHeaderProps) {
     dailyCostTotal,
     foldedCounterDisplay,
     expandedCounterDisplay,
+    salary,
     maxCompactIcons,
     handleControlMouseDown,
     handleOpenTokensFromCounter,
@@ -511,15 +515,22 @@ export function IslandHeader(props: IslandHeaderProps) {
               value={
                 foldedCounterDisplay === "cost"
                   ? activeSessionCostTotal
-                  : activeSessionTokenTotal
+                  : foldedCounterDisplay === "salary"
+                    ? 0
+                    : activeSessionTokenTotal
               }
               usage={activeSessionTokens}
               variant={isMicro ? "micro" : "compact"}
               displayMode={foldedCounterDisplay}
+              salary={salary}
               suppressAnimations={isPresentationTransition}
               sessionCount={sessionsCount}
               maxCompactIcons={maxCompactIcons}
-              compactTokenLevel={compactHeaderLayout.tokenCompactLevel}
+              compactTokenLevel={
+                foldedCounterDisplay === "salary"
+                  ? undefined
+                  : compactHeaderLayout.tokenCompactLevel
+              }
             />
           ) : null}
           {showCompactMediaIndicator && nowPlayingTrack?.artworkBase64 ? (
@@ -557,11 +568,16 @@ export function IslandHeader(props: IslandHeaderProps) {
         {showExpandedTokenCounter && !isDormant ? (
           <TokenCounter
             value={
-              expandedCounterDisplay === "cost" ? dailyCostTotal : dailyTokenTotal
+              expandedCounterDisplay === "cost"
+                ? dailyCostTotal
+                : expandedCounterDisplay === "salary"
+                  ? 0
+                  : dailyTokenTotal
             }
             usage={dailyTokens}
             variant="expanded"
             displayMode={expandedCounterDisplay}
+            salary={salary}
             onClick={handleOpenTokensFromCounter}
           />
         ) : null}

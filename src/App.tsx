@@ -76,6 +76,7 @@ import { useLyrics } from "./hooks/useLyrics";
 import { useClipboardHistory } from "./hooks/useClipboardHistory";
 import { useNowPlaying } from "./hooks/useNowPlaying";
 import { useDisplayAndSettingsPrefs } from "./hooks/useDisplayAndSettingsPrefs";
+import { useSalaryRecorder } from "./hooks/useSalaryRecorder";
 import { useHookInstaller } from "./hooks/useHookInstaller";
 import { useApprovals } from "./hooks/useApprovals";
 import { usePanelNavigation } from "./hooks/usePanelNavigation";
@@ -169,12 +170,22 @@ export function App() {
     setSettingsBadgeDisplay,
     heatmapDisplay,
     setHeatmapDisplay,
+    salarySettings,
+    setSalarySettings,
     launchAtLogin,
     launchAtLoginBusy,
     handleChangeLaunchAtLogin,
     preferredMonitorName,
     setPreferredMonitorNameState,
   } = useDisplayAndSettingsPrefs();
+
+  // Persist observed daily earnings while any surface displays salary mode.
+  const anySalaryDisplay =
+    foldedCounterDisplay === "salary" ||
+    expandedCounterDisplay === "salary" ||
+    settingsBadgeDisplay === "salary" ||
+    heatmapDisplay === "salary";
+  useSalaryRecorder(salarySettings, anySalaryDisplay);
 
   const [hookHealthHydrated, setHookHealthHydrated] = useState(false);
   const sessions = snapshot.sessions;
@@ -945,6 +956,7 @@ export function App() {
     dailyCostTotal={dailyCostTotal}
     foldedCounterDisplay={foldedCounterDisplay}
     expandedCounterDisplay={expandedCounterDisplay}
+    salary={salarySettings}
     maxCompactIcons={maxCompactIcons}
     handleControlMouseDown={handleControlMouseDown}
     handleOpenTokensFromCounter={handleOpenTokensFromCounter}
@@ -1036,6 +1048,8 @@ export function App() {
               setExpandedCounterDisplay={setExpandedCounterDisplay}
               setSettingsBadgeDisplay={setSettingsBadgeDisplay}
               setHeatmapDisplay={setHeatmapDisplay}
+              salarySettings={salarySettings}
+              setSalarySettings={setSalarySettings}
               maxCompactIcons={maxCompactIcons}
               maxCompactIconLimit={maxCompactIconLimit}
               setMaxCompactIcons={setMaxCompactIcons}

@@ -32,6 +32,7 @@ import type {
   SettingsPage,
 } from "../appTypes";
 import type { CompactIndicatorMode, UsageDisplayMode } from "../displayPrefs";
+import type { SalarySettings } from "../salarySettings";
 import type { ModelPricingEntry, pricingRateMap } from "../pricing";
 import type { TokenUsage } from "../tauri/types";
 import type { AppLanguage } from "../i18n";
@@ -197,6 +198,8 @@ interface IslandPanelRouterProps {
   setExpandedCounterDisplay: (mode: UsageDisplayMode) => void;
   setSettingsBadgeDisplay: (mode: UsageDisplayMode) => void;
   setHeatmapDisplay: (mode: UsageDisplayMode) => void;
+  salarySettings: SalarySettings;
+  setSalarySettings: (settings: SalarySettings) => void;
 
   // Settings: island
   maxCompactIcons: number;
@@ -320,6 +323,8 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
     settingsBadgeDisplay,
     setFoldedCounterDisplay,
     setExpandedCounterDisplay,
+    salarySettings,
+    setSalarySettings,
     setSettingsBadgeDisplay,
     setHeatmapDisplay,
     maxCompactIcons,
@@ -631,6 +636,7 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
           todayTokensByModel={dailyTokensByModel}
           displayMode={heatmapDisplay}
           pricingRates={pricingRates}
+          salarySettings={salarySettings}
         />
       );
     }
@@ -646,6 +652,8 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
           onChangeExpandedCounterDisplay={setExpandedCounterDisplay}
           onChangeSettingsBadgeDisplay={setSettingsBadgeDisplay}
           onChangeHeatmapDisplay={setHeatmapDisplay}
+          salarySettings={salarySettings}
+          onChangeSalarySettings={setSalarySettings}
           pricingModels={pricingModels}
           onPricingModelsChange={setPricingModels}
         />
@@ -789,6 +797,8 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
             : "notice.modeInterrupt",
         )}
         todayLabel={settingsTodayLabel}
+        todayBadgeMode={settingsBadgeDisplay}
+        salarySettings={salarySettings}
         usageDisplaySummary={usageDisplaySummary}
         hooksSummary={hooksSetupSummary}
         hooksNeedAttention={hooksNeedAttention}
