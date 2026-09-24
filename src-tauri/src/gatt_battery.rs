@@ -21,9 +21,13 @@ use std::time::{Duration, Instant};
 
 use super::bluetooth_battery::BluetoothDeviceBattery;
 
-/// How long a probe result (success or failure) is trusted before the device
-/// is probed again.
+/// How long a successful probe result is trusted before the device is
+/// probed again.
 pub(crate) const GATT_PROBE_TTL: Duration = Duration::from_secs(10 * 60);
+/// A failed/empty probe retries far sooner — a connect hiccup or a lost
+/// race with another caller (whose probe abandonment surfaces as a timeout)
+/// must not blind the ring for ten minutes.
+pub(crate) const NO_DATA_TTL: Duration = Duration::from_secs(2 * 60);
 /// One probe per poll at most this many battery-less devices, so a handful
 /// of stubborn devices can't stretch a cycle out.
 pub(crate) const MAX_PROBE_DEVICES_PER_CYCLE: usize = 4;
@@ -53,8 +57,10 @@ pub(crate) struct GattProbeCache {
 
 impl GattProbeCache {
     /// Probe battery-less devices through `probe` and fill the results into
-    /// `devices`. `now` is injectable for tests. Probing stops early once
-    /// `PermissionDenied` is seen (cached forever within this process).
+    /// `devices`. `now` is injectable for tests. A cached result is applied to
+    /// the device (not just skipped over) — every caller must see the level,
+    /// not only the one that happened to run the probe. Probing stops early
+    /// once `PermissionDenied` is seen (cached forever within this process).
     pub(crate) fn fill_missing<F: FnMut(&str) -> ProbeOutcome>(
         &mut self,
         devices: &mut [BluetoothDeviceBattery],
@@ -64,19 +70,34 @@ impl GattProbeCache {
         if self.disabled {
             return;
         }
-        self.entries
-            .retain(|_, cached| now.duration_since(cached.at) < GATT_PROBE_TTL);
+        let success_ttl = GATT_PROBE_TTL;
+        let empty_ttl = NO_DATA_TTL;
+        self.entries.retain(|_, cached| {
+            now.duration_since(cached.at)
+                < if cached.percent.is_some() {
+                    success_ttl
+                } else {
+                    empty_ttl
+                }
+        });
         let mut budget = MAX_PROBE_DEVICES_PER_CYCLE;
         let mut denied = false;
         for device in devices.iter_mut() {
             if budget == 0 || denied {
                 break;
             }
+            let key = device.name.to_lowercase();
             let has_battery = device.battery_percent.is_some()
                 || device.case_percent.is_some()
                 || device.left_percent.is_some()
                 || device.right_percent.is_some();
-            if has_battery || self.entries.contains_key(&device.name.to_lowercase()) {
+            if has_battery {
+                continue;
+            }
+            if let Some(cached) = self.entries.get(&key) {
+                if let Some(percent) = cached.percent {
+                    device.battery_percent = Some(percent);
+                }
                 continue;
             }
             let percent = match probe(&device.name) {
@@ -87,8 +108,7 @@ impl GattProbeCache {
                     None
                 }
             };
-            self.entries
-                .insert(device.name.to_lowercase(), CachedProbe { percent, at: now });
+            self.entries.insert(key, CachedProbe { percent, at: now });
             if let Some(percent) = percent {
                 device.battery_percent = Some(percent);
             }
