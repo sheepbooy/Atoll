@@ -50,6 +50,24 @@
   overflow: hidden;
 }
 
+/* Folded-island Bluetooth battery ring: a circular Bluetooth icon wrapped
+   in a battery progress arc. */
+.compact-battery-rings {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.compact-battery-ring {
+  width: 20px;
+  height: 20px;
+  /* Canvas-rendered img (like the compact media thumb): the folded panel's
+     coordinate space misplaces CSS-positioned elements, regular replaced
+     elements flow correctly. */
+  flex-shrink: 0;
+}
+
 /* ─── Clipboard history ─────────────────────────────────────────── */
 
 .clipboard-history-view {

@@ -30,6 +30,25 @@ export const COMPACT_PENDING_BADGE_SLOT = 28;
 export const COMPACT_METRICS_GAP = 10;
 /** Album-artwork thumbnail slot in compact mode (width + gap). */
 export const COMPACT_MEDIA_THUMB_SLOT = 18 + COMPACT_METRICS_GAP;
+/** One battery ring's width and the gap between rings. */
+export const COMPACT_BATTERY_RING = 20;
+export const COMPACT_BATTERY_RING_GAP = 4;
+/** Ring count ceiling — keeps the capsule width bounded with noisy data. */
+export const BATTERY_RING_MAX = 4;
+
+/** Width budget for the battery rings: n rings + inner gaps + the metrics
+ * gap that separates them from neighbors. 0 when there are none. */
+export function batteryRingsSlot(count: number): number {
+  if (count <= 0) {
+    return 0;
+  }
+  const rings = Math.min(count, BATTERY_RING_MAX);
+  return (
+    rings * COMPACT_BATTERY_RING +
+    (rings - 1) * COMPACT_BATTERY_RING_GAP +
+    COMPACT_METRICS_GAP
+  );
+}
 
 export const MIN_MAX_COMPACT_ICONS = 1;
 export const ABSOLUTE_MAX_COMPACT_ICONS = 8;
@@ -277,6 +296,7 @@ export function computeCollapsedWindowWidth(
   hasMediaArtwork = false,
   showMediaIndicator = false,
   showLyrics = false,
+  batteryRingCount = 0,
 ): number {
   const layout = computeCompactHeaderLayout(
     notchMetrics,
@@ -313,6 +333,7 @@ export function computeCollapsedWindowWidth(
     (hasToken ? estimateTokenDisplayWidth(tokenText) : 0) +
     (pendingCount > 0 ? COMPACT_PENDING_BADGE_SLOT + COMPACT_METRICS_GAP : 0) +
     (showMediaIndicator && hasMediaArtwork ? COMPACT_MEDIA_THUMB_SLOT : 0) +
+    batteryRingsSlot(batteryRingCount) +
     COMPACT_OUTER_PADDING;
 
   const notchWidth = notchMetrics.hasNotch ? notchMetrics.width : 0;

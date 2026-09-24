@@ -49,6 +49,7 @@ import {
   RulesSettingsView,
 } from "../RulesSettingsView";
 import {
+  BluetoothSettingsView,
   ClipboardSettingsView,
   IslandSettingsView,
   MascotSettingsView,
@@ -109,7 +110,7 @@ import { getPlanModeType } from "../planMode";
 import { hookAgentNote, type HookAgentKey, type HookHealthAnalysis } from "../hookHealth";
 import { IS_MACOS } from "../platform";
 import type { AtollReaction } from "../AtollLogo";
-import type { ShortcutAction } from "../tauri";
+import type { BluetoothDeviceBattery, ShortcutAction } from "../tauri";
 
 interface IslandPanelRouterProps {
   panelView: PanelView;
@@ -220,6 +221,16 @@ interface IslandPanelRouterProps {
   handleChangeArtworkBackdropEnabled: (enabled: boolean) => void;
   lyricsEnabled: boolean;
   handleChangeLyricsEnabled: (enabled: boolean) => void;
+
+  // Settings & card: Bluetooth battery
+  bluetoothDevices: BluetoothDeviceBattery[];
+  bluetoothCardEnabled: boolean;
+  bluetoothAlertEnabled: boolean;
+  bluetoothAlertThreshold: number;
+  handleChangeBluetoothCardEnabled: (enabled: boolean) => void;
+  handleChangeBluetoothAlertEnabled: (enabled: boolean) => void;
+  handleChangeBluetoothAlertThreshold: (threshold: number) => void;
+
   clipboardLimit: number;
   handleChangeClipboardLimit: (limit: number) => void;
   handleChangeClipboardEnabled: (enabled: boolean) => void;
@@ -245,7 +256,7 @@ interface IslandPanelRouterProps {
   handleOpenTokensFromSettings: () => void;
   handleOpenUsageFromSettings: () => void;
   openSettingsSubpage: (
-    page: "sessions" | "media" | "island" | "clipboard" | "mascot" | "notifications" | "shortcuts" | "rules",
+    page: "sessions" | "media" | "bluetooth" | "island" | "clipboard" | "mascot" | "notifications" | "shortcuts" | "rules",
   ) => void;
   settingsTodayLabel: string;
   usageDisplaySummary: string;
@@ -343,6 +354,13 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
     handleChangeArtworkBackdropEnabled,
     lyricsEnabled,
     handleChangeLyricsEnabled,
+    bluetoothDevices,
+    bluetoothCardEnabled,
+    bluetoothAlertEnabled,
+    bluetoothAlertThreshold,
+    handleChangeBluetoothCardEnabled,
+    handleChangeBluetoothAlertEnabled,
+    handleChangeBluetoothAlertThreshold,
     clipboardLimit,
     handleChangeClipboardLimit,
     handleChangeClipboardEnabled,
@@ -697,6 +715,19 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
       );
     }
 
+    if (panelView.page === "bluetooth") {
+      return (
+        <BluetoothSettingsView
+          bluetoothCardEnabled={bluetoothCardEnabled}
+          onChangeBluetoothCardEnabled={handleChangeBluetoothCardEnabled}
+          bluetoothAlertEnabled={bluetoothAlertEnabled}
+          onChangeBluetoothAlertEnabled={handleChangeBluetoothAlertEnabled}
+          bluetoothAlertThreshold={bluetoothAlertThreshold}
+          onChangeBluetoothAlertThreshold={handleChangeBluetoothAlertThreshold}
+        />
+      );
+    }
+
     if (panelView.page === "clipboard") {
       return (
         <ClipboardSettingsView
@@ -785,6 +816,7 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
         onOpenUsage={handleOpenUsageFromSettings}
         onOpenIsland={() => openSettingsSubpage("island")}
         onOpenMedia={() => openSettingsSubpage("media")}
+        onOpenBluetooth={() => openSettingsSubpage("bluetooth")}
         onOpenClipboard={() => openSettingsSubpage("clipboard")}
         onOpenSessions={() => openSettingsSubpage("sessions")}
         onOpenMascot={() => openSettingsSubpage("mascot")}
@@ -804,7 +836,9 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
         hooksNeedAttention={hooksNeedAttention}
         hooksAllConnected={hookHealthAnalysis.allConnected}
         showMediaSettings={IS_MACOS}
+        showBluetoothSettings={IS_MACOS}
         mediaCardEnabled={mediaCardEnabled}
+        bluetoothCardEnabled={bluetoothCardEnabled}
         clipboardHistoryEnabled={clipboardEnabled}
         shortcutsEnabled={globalShortcutView?.config.enabled ?? true}
       />

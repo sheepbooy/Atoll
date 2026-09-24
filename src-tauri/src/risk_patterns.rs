@@ -47,7 +47,9 @@ fn danger_patterns() -> &'static Vec<Regex> {
 /// True when the command label matches a high-risk pattern. The risk guard
 /// uses this to fall back to human approval even when an allow rule matches.
 pub(crate) fn is_dangerous_command(command: &str) -> bool {
-    danger_patterns().iter().any(|pattern| pattern.is_match(command))
+    danger_patterns()
+        .iter()
+        .any(|pattern| pattern.is_match(command))
 }
 
 #[cfg(test)]
@@ -82,7 +84,9 @@ mod tests {
 
     #[test]
     fn flags_windows_destructive_commands() {
-        assert!(is_dangerous_command("Remove-Item -Recurse -Force C:\\build"));
+        assert!(is_dangerous_command(
+            "Remove-Item -Recurse -Force C:\\build"
+        ));
         assert!(is_dangerous_command("Bash: del /f notes.txt"));
         assert!(is_dangerous_command("Bash: format C:"));
     }

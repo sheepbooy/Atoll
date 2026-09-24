@@ -33,9 +33,7 @@ pub(crate) async fn set_island_presentation(
     };
     // Any presentation change (animated or snap) supersedes a running
     // cosmetic shape pulse.
-    state
-        .shape_pulse_generation
-        .fetch_add(1, Ordering::SeqCst);
+    state.shape_pulse_generation.fetch_add(1, Ordering::SeqCst);
 
     if let Some(width) = compact_width {
         if should_persist_compact_width(mode) {
@@ -212,10 +210,7 @@ pub(crate) fn pulse_island_shape(
 
     // A new pulse — or any presentation change, which bumps this counter in
     // set_island_presentation — supersedes the one in flight.
-    let generation = state
-        .shape_pulse_generation
-        .fetch_add(1, Ordering::SeqCst)
-        + 1;
+    let generation = state.shape_pulse_generation.fetch_add(1, Ordering::SeqCst) + 1;
     let shape_pulse_generation = Arc::clone(&state.shape_pulse_generation);
     let presentation_generation = Arc::clone(&state.presentation_generation);
     let presentation_generation_at_start = presentation_generation.load(Ordering::SeqCst);
@@ -744,8 +739,7 @@ pub(crate) fn animate_island_window_mode(
             return Ok(());
         }
 
-        let progress =
-            (started_at.elapsed().as_secs_f64() / duration.as_secs_f64()).min(1.0);
+        let progress = (started_at.elapsed().as_secs_f64() / duration.as_secs_f64()).min(1.0);
         // Overshoot only when growing out of the menu-bar pill. Resizing between
         // already-expanded sizes (idle → settings/tokens) stays cubic so AppKit
         // never has to grow past the target and shrink back — that path felt

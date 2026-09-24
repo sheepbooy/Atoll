@@ -176,10 +176,7 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("json.bak"));
         let _ = std::fs::remove_file(path.with_extension("json.tmp"));
-        std::env::set_var(
-            "ATOLL_SALARY_HISTORY_PATH",
-            path.to_string_lossy().as_ref(),
-        );
+        std::env::set_var("ATOLL_SALARY_HISTORY_PATH", path.to_string_lossy().as_ref());
         path
     }
 
@@ -216,7 +213,10 @@ mod tests {
 
         record_salary_day(&day_key, 200.0).expect("first record");
         let merged = record_salary_day(&day_key, 150.0).expect("second record");
-        assert_eq!(merged, 200.0, "a lower observed value must not rewind the day");
+        assert_eq!(
+            merged, 200.0,
+            "a lower observed value must not rewind the day"
+        );
 
         record_salary_day(&day_key, 260.0).expect("third record");
         let history = get_salary_history(1).expect("query");

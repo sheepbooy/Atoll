@@ -6,6 +6,7 @@ import {
 } from "./tokenCounterFormat";
 import {
   ABSOLUTE_MAX_COMPACT_ICONS,
+  batteryRingsSlot,
   COMPACT_ATOLL_LOGO_SLOT,
   COMPACT_HEADER_GAP,
   COMPACT_LISTENER_SLOT,
@@ -395,5 +396,21 @@ describe("compactLayout wing balance (notch)", () => {
         NOTCH_14.rightAreaWidth! - COMPACT_OUTER_PADDING,
       );
     }
+  });
+});
+
+
+describe("batteryRingsSlot", () => {
+  it("scales with the ring count and caps at the ceiling", () => {
+    expect(batteryRingsSlot(0)).toBe(0);
+    expect(batteryRingsSlot(1)).toBe(20 + 10);
+    expect(batteryRingsSlot(2)).toBe(20 * 2 + 4 + 10);
+    expect(batteryRingsSlot(9)).toBe(batteryRingsSlot(4));
+  });
+
+  it("widens the collapsed window per device", () => {
+    const one = computeCollapsedWindowWidth(NO_NOTCH, 0, 8, 0, 0, false, false, false, 1);
+    const two = computeCollapsedWindowWidth(NO_NOTCH, 0, 8, 0, 0, false, false, false, 2);
+    expect(two - one).toBe(20 + 4);
   });
 });

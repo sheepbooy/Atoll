@@ -75,6 +75,14 @@ import { useUpdater } from "./hooks/useUpdater";
 import { useLyrics } from "./hooks/useLyrics";
 import { useClipboardHistory } from "./hooks/useClipboardHistory";
 import { useNowPlaying } from "./hooks/useNowPlaying";
+import { useBluetoothBattery } from "./hooks/useBluetoothBattery";
+import { devicesWithBattery as bluetoothDevicesWithBattery } from "./BluetoothBatteryRing";
+
+
+
+
+
+
 import { useDisplayAndSettingsPrefs } from "./hooks/useDisplayAndSettingsPrefs";
 import { useSalaryRecorder } from "./hooks/useSalaryRecorder";
 import { useHookInstaller } from "./hooks/useHookInstaller";
@@ -147,6 +155,15 @@ export function App() {
     handleChangeMediaCardEnabled,
     handleChangeArtworkBackdropEnabled,
   } = useNowPlaying();
+  const {
+    bluetoothDevices,
+    cardEnabled: bluetoothCardEnabled,
+    alertEnabled: bluetoothAlertEnabled,
+    alertThreshold: bluetoothAlertThreshold,
+    handleChangeCardEnabled: handleChangeBluetoothCardEnabled,
+    handleChangeAlertEnabled: handleChangeBluetoothAlertEnabled,
+    handleChangeAlertThreshold: handleChangeBluetoothAlertThreshold,
+  } = useBluetoothBattery();
   const {
     maxCompactIcons,
     setMaxCompactIcons,
@@ -654,6 +671,9 @@ export function App() {
     compactIndicator,
     lyricsEnabled,
     lyricsData,
+    bluetoothRingCount: bluetoothCardEnabled
+      ? bluetoothDevicesWithBattery(bluetoothDevices).length
+      : 0,
     phase,
     phaseRef,
     usesMicroIslandRef,
@@ -903,6 +923,9 @@ export function App() {
     showCompactMediaIndicator={showCompactMediaIndicator}
     showCompactNotchSpacer={showCompactNotchSpacer}
     showLyricsMarquee={showLyricsMarquee}
+    bluetoothDevices={bluetoothDevices}
+    bluetoothBatteryEnabled={bluetoothCardEnabled}
+    bluetoothAlertThreshold={bluetoothAlertThreshold}
     startWindowDrag={startWindowDrag}
     atollIndicatorRef={atollIndicatorRef}
     menuRef={menuRef}
@@ -1066,6 +1089,13 @@ export function App() {
               handleChangeArtworkBackdropEnabled={handleChangeArtworkBackdropEnabled}
               lyricsEnabled={lyricsEnabled}
               handleChangeLyricsEnabled={handleChangeLyricsEnabled}
+              bluetoothDevices={bluetoothDevices}
+              bluetoothCardEnabled={bluetoothCardEnabled}
+              bluetoothAlertEnabled={bluetoothAlertEnabled}
+              bluetoothAlertThreshold={bluetoothAlertThreshold}
+              handleChangeBluetoothCardEnabled={handleChangeBluetoothCardEnabled}
+              handleChangeBluetoothAlertEnabled={handleChangeBluetoothAlertEnabled}
+              handleChangeBluetoothAlertThreshold={handleChangeBluetoothAlertThreshold}
               clipboardLimit={clipboardLimit}
               handleChangeClipboardEnabled={handleChangeClipboardEnabled}
               handleChangeClipboardLimit={handleChangeClipboardLimit}

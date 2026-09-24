@@ -143,10 +143,7 @@ fn window_animation_interpolates_to_exact_endpoints() {
 #[test]
 fn animation_duration_resolves_per_call_with_default_and_clamp() {
     // Default: the signature 420ms window spring.
-    assert_eq!(
-        resolve_animation_duration(None),
-        Duration::from_millis(420)
-    );
+    assert_eq!(resolve_animation_duration(None), Duration::from_millis(420));
     assert_eq!(
         resolve_animation_duration(Some(0)),
         Duration::from_millis(420)

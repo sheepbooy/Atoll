@@ -14,7 +14,8 @@
     "display": "Display",
     "mascot": "Mascot",
     "pricing": "Pricing",
-    "salary": "Salary"
+    "salary": "Salary",
+    "bluetooth": "Bluetooth"
   },
   "badge": {
     "on": "On",
@@ -36,7 +37,9 @@
     "rulesTitle": "Approval rules",
     "rulesDesc": "Auto-approve or deny matching requests without asking.",
     "sessionsTitle": "Sessions",
-    "sessionsDesc": "Auto-archive idle sessions and completed subagents."
+    "sessionsDesc": "Auto-archive idle sessions and completed subagents.",
+    "bluetoothTitle": "Bluetooth Battery",
+    "bluetoothDesc": "Battery card and low-battery alerts for connected devices"
   },
   "general": {
     "launchAtLoginLabel": "Launch at login",
@@ -44,7 +47,7 @@
   },
   "usage": {
     "displayPricingTitle": "Display & pricing",
-    "displayPricingDesc": "Choose tokens, cost, or salary for each counter, and edit model rates.",
+    "displayPricingDesc": "Choose tokens or cost for each counter, and edit model rates.",
     "tokenActivityTitle": "Token activity",
     "tokenActivityDesc": "Daily token heatmap and usage history.",
     "summaryTokens": "Tokens",
@@ -97,7 +100,13 @@
     "subagentAutoArchiveDesc": "Minutes after completion before subagents are auto-archived.",
     "unitMinutes": " min",
     "clipboardAutoStageLabel": "Auto-stage copied files",
-    "clipboardAutoStageDesc": "Automatically stage copied files into the file station. Requires clipboard history."
+    "clipboardAutoStageDesc": "Automatically stage copied files into the file station. Requires clipboard history.",
+    "bluetoothCardLabel": "Bluetooth battery ring",
+    "bluetoothCardDesc": "Show a battery ring for connected Bluetooth devices on the folded island (lowest battery wins)",
+    "bluetoothAlertLabel": "Low battery alerts",
+    "bluetoothAlertDesc": "Send one system notification per device when its battery drops to the threshold",
+    "bluetoothThresholdLabel": "Alert threshold",
+    "bluetoothThresholdDesc": "Alert when a device's battery is at or below this level"
   },
   "mascot": {
     "activityIntervalLabel": "Activity interval",

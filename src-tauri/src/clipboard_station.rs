@@ -141,7 +141,8 @@ mod tests {
     }
 
     fn temp_dir(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("atoll-clip-station-{tag}-{}", uuid::Uuid::new_v4()));
+        let dir =
+            std::env::temp_dir().join(format!("atoll-clip-station-{tag}-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         // Staged paths are canonicalized (/tmp → /private/tmp on macOS), so
         // prefix assertions must compare against the resolved dir too.
@@ -214,14 +215,21 @@ mod tests {
         let mut station = Vec::new();
         let result = stage_entries_in(
             &mut station,
-            &[clip_entry("t1", EntryKind::Text, &format!("{path}\n/not/a/real/path"))],
+            &[clip_entry(
+                "t1",
+                EntryKind::Text,
+                &format!("{path}\n/not/a/real/path"),
+            )],
             30,
             &temp_dir("text-path-dir"),
             |_| None,
         );
         assert_eq!(result.added, 1);
         assert_eq!(result.skipped, 0);
-        assert_eq!(station[0].path, std::fs::canonicalize(&path).unwrap().to_string_lossy());
+        assert_eq!(
+            station[0].path,
+            std::fs::canonicalize(&path).unwrap().to_string_lossy()
+        );
     }
 
     #[test]
@@ -230,7 +238,11 @@ mod tests {
         let mut station = Vec::new();
         let result = stage_entries_in(
             &mut station,
-            &[clip_entry("txt99", EntryKind::Text, "just some copied words")],
+            &[clip_entry(
+                "txt99",
+                EntryKind::Text,
+                "just some copied words",
+            )],
             30,
             &station_dir,
             |_| None,
@@ -240,7 +252,10 @@ mod tests {
         let path = std::path::PathBuf::from(&station[0].path);
         assert!(path.starts_with(&station_dir));
         assert!(station[0].file_name.ends_with("-txt99.txt"));
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "just some copied words");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "just some copied words"
+        );
     }
 
     #[test]

@@ -9,6 +9,7 @@ export * from "./hooks";
 export * from "./tokens";
 export * from "./salary";
 export * from "./media";
+export * from "./bluetooth";
 export * from "./clipboard";
 export * from "./fileStation";
 export * from "./settings";

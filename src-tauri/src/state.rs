@@ -13,8 +13,8 @@ use serde_json::Value;
 use tauri::{LogicalPosition, PhysicalSize};
 
 use crate::{
-    approval_rules, clipboard_history, file_station, lyrics, platform, shortcuts, transcript,
-    HookHealthSnapshot, TranscriptCache,
+    approval_rules, clipboard_history, file_station, gatt_battery, lyrics, platform, shortcuts,
+    transcript, HookHealthSnapshot, TranscriptCache,
 };
 
 pub(crate) const COMPACT_WINDOW_WIDTH: f64 = 132.0;
@@ -377,6 +377,15 @@ pub(crate) struct AppState {
     pub(crate) media_card_enabled: Mutex<bool>,
     /// Whether the expanded island grows the now-playing artwork into a frosted backdrop.
     pub(crate) artwork_backdrop_enabled: Mutex<bool>,
+    /// Whether the Bluetooth battery card is shown in the expanded island.
+    pub(crate) bluetooth_battery_card_enabled: Mutex<bool>,
+    /// Whether low-battery system notifications are sent for Bluetooth devices.
+    pub(crate) bluetooth_battery_alert_enabled: Mutex<bool>,
+    /// Percent at or below which a Bluetooth device triggers one alert.
+    pub(crate) bluetooth_battery_alert_threshold: Mutex<u8>,
+    /// GATT probe results shared by the battery monitor and the initial
+    /// `get_bluetooth_battery` pull so both paths report the same levels.
+    pub(crate) gatt_battery_cache: Mutex<gatt_battery::GattProbeCache>,
     /// Clipboard history entries (pruned, newest first).
     pub(crate) clipboard_history: Mutex<Vec<clipboard_history::ClipboardEntry>>,
     /// Whether clipboard history monitoring is enabled (privacy toggle).

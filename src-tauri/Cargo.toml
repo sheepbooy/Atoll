@@ -81,5 +81,6 @@ objc2-app-kit = { version = "0.3.2", features = [
   "NSWindow",
   "NSWorkspace",
 ] }
+objc2-core-bluetooth = "0.3.2"
 objc2-foundation = { version = "0.3.2", features = ["NSString", "NSError", "NSData", "NSArray", "NSDictionary", "NSSet", "NSURL"] }
 objc2-service-management = { version = "0.3.2", features = ["SMAppService"] }

@@ -126,12 +126,11 @@ pub(crate) fn stage_clipboard_entries(
     // Clone the requested entries under the clipboard lock, then release it
     // before touching the station: materialization does fs work and the
     // emit below fans out to the frontend.
-    let clip_entries: Vec<clipboard_history::ClipboardEntry> =
-        lock_state(&state.clipboard_history)
-            .iter()
-            .filter(|e| ids.contains(&e.id))
-            .cloned()
-            .collect();
+    let clip_entries: Vec<clipboard_history::ClipboardEntry> = lock_state(&state.clipboard_history)
+        .iter()
+        .filter(|e| ids.contains(&e.id))
+        .cloned()
+        .collect();
     if clip_entries.is_empty() {
         return file_station::StageFilesResult {
             files: file_station::views(&lock_state(&state.file_station)),

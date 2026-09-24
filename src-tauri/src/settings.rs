@@ -4,6 +4,7 @@
 
 use serde_json::Value;
 
+use crate::bluetooth_battery;
 use crate::clipboard_history;
 
 pub(crate) const DEFAULT_SESSION_RETENTION_SECS: u64 = 900;
@@ -459,4 +460,60 @@ pub(crate) fn load_risk_guard_enabled() -> bool {
 
 pub(crate) fn persist_risk_guard_enabled(enabled: bool) {
     persist_settings_value("riskGuardEnabled", Value::from(enabled));
+}
+
+pub(crate) fn load_bluetooth_battery_card_enabled() -> bool {
+    load_settings_bool("bluetoothBatteryCardEnabled", true)
+}
+
+pub(crate) fn persist_bluetooth_battery_card_enabled(enabled: bool) {
+    persist_settings_value("bluetoothBatteryCardEnabled", Value::from(enabled));
+}
+
+pub(crate) fn load_bluetooth_battery_alert_enabled() -> bool {
+    load_settings_bool("bluetoothBatteryAlertEnabled", true)
+}
+
+pub(crate) fn persist_bluetooth_battery_alert_enabled(enabled: bool) {
+    persist_settings_value("bluetoothBatteryAlertEnabled", Value::from(enabled));
+}
+
+pub(crate) fn load_bluetooth_battery_alert_threshold() -> u8 {
+    let Some(path) = atoll_settings_path() else {
+        return bluetooth_battery::DEFAULT_ALERT_THRESHOLD;
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return bluetooth_battery::DEFAULT_ALERT_THRESHOLD;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+        return bluetooth_battery::DEFAULT_ALERT_THRESHOLD;
+    };
+    value
+        .get("bluetoothBatteryAlertThreshold")
+        .and_then(Value::as_u64)
+        .and_then(|threshold| u8::try_from(threshold).ok())
+        .map(bluetooth_battery::clamp_alert_threshold)
+        .unwrap_or(bluetooth_battery::DEFAULT_ALERT_THRESHOLD)
+}
+
+pub(crate) fn persist_bluetooth_battery_alert_threshold(threshold: u8) {
+    persist_settings_value(
+        "bluetoothBatteryAlertThreshold",
+        Value::from(bluetooth_battery::clamp_alert_threshold(threshold)),
+    );
+}
+
+/// Shared loader for the boolean battery settings: missing file/key or a
+/// malformed file falls back to `default`.
+fn load_settings_bool(key: &str, default: bool) -> bool {
+    let Some(path) = atoll_settings_path() else {
+        return default;
+    };
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return default;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+        return default;
+    };
+    value.get(key).and_then(Value::as_bool).unwrap_or(default)
 }

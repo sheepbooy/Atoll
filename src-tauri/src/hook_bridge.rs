@@ -11,13 +11,12 @@ use socket2::{Domain, Socket, Type};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
-    approval_history, approval_rules, approval_notice_is_notify, build_snapshot,
-    complete_subagent, cursor_lifecycle_token_seen, cursor_payload_has_token_usage,
-    emit_subagent_snapshot, get_stored_session_host, ingest_cursor_token_usage_from_payload,
-    is_codex_internal_session, iso_timestamp_now, lock_state, payload_subagent_id,
-    payload_subagent_parent_session_id, platform, purge_tracked_session,
-    refresh_session_token_usage, register_known_session, register_subagent_start,
-    remember_cursor_lifecycle_token_session, resolve_codex_session_cwd,
+    approval_history, approval_notice_is_notify, approval_rules, build_snapshot, complete_subagent,
+    cursor_lifecycle_token_seen, cursor_payload_has_token_usage, emit_subagent_snapshot,
+    get_stored_session_host, ingest_cursor_token_usage_from_payload, is_codex_internal_session,
+    iso_timestamp_now, lock_state, payload_subagent_id, payload_subagent_parent_session_id,
+    platform, purge_tracked_session, refresh_session_token_usage, register_known_session,
+    register_subagent_start, remember_cursor_lifecycle_token_session, resolve_codex_session_cwd,
     resolve_cursor_session_for_payload, roll_over_token_usage_if_needed,
     schedule_observer_snapshot_emit, send_approval_notification, show_island_quietly,
     show_main_window_for_approval, touch_hook_activity, touch_session_activity, AgentKind,

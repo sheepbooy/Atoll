@@ -5,9 +5,7 @@ use tauri::{AppHandle, State};
 use crate::*;
 
 #[tauri::command]
-pub(crate) fn get_approval_rules(
-    state: State<'_, AppState>,
-) -> Vec<approval_rules::ApprovalRule> {
+pub(crate) fn get_approval_rules(state: State<'_, AppState>) -> Vec<approval_rules::ApprovalRule> {
     lock_state(&state.approval_rules).clone()
 }
 
@@ -44,8 +42,7 @@ pub(crate) fn create_approval_rule_from_request(
         Decision::Approved => approval_rules::RuleDecision::Allow,
         Decision::Denied => approval_rules::RuleDecision::Deny,
     };
-    let candidate =
-        approval_rules::build_rule_for_request(&request, &scope, rule_decision)?;
+    let candidate = approval_rules::build_rule_for_request(&request, &scope, rule_decision)?;
 
     let (already_exists, updated) = {
         let mut rules = lock_state(&state.approval_rules);

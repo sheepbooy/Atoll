@@ -1,4 +1,5 @@
 mod approval_rules;
+mod bluetooth;
 mod clipboard;
 mod file_station;
 mod history;
@@ -11,6 +12,7 @@ mod snapshot;
 mod system;
 
 pub(crate) use approval_rules::*;
+pub(crate) use bluetooth::*;
 pub(crate) use clipboard::*;
 pub(crate) use file_station::*;
 pub(crate) use history::*;

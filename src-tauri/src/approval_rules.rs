@@ -243,7 +243,11 @@ fn rule_matches(rule: &ApprovalRule, request: &PermissionRequest) -> bool {
             return false;
         }
     }
-    if let Some(project) = rule.project_path.as_deref().filter(|p| !p.trim().is_empty()) {
+    if let Some(project) = rule
+        .project_path
+        .as_deref()
+        .filter(|p| !p.trim().is_empty())
+    {
         if !cwd_within(&request.cwd, project) {
             return false;
         }
@@ -259,7 +263,8 @@ pub(crate) fn evaluate_rules(
     request: &PermissionRequest,
     risk_guard_enabled: bool,
 ) -> Option<ApprovalRule> {
-    let dangerous = risk_guard_enabled && crate::risk_patterns::is_dangerous_command(&request.command);
+    let dangerous =
+        risk_guard_enabled && crate::risk_patterns::is_dangerous_command(&request.command);
     let mut allow_match: Option<&ApprovalRule> = None;
     for rule in rules.iter().filter(|rule| rule.enabled) {
         if !rule_matches(rule, request) {
@@ -316,7 +321,11 @@ pub(crate) fn build_rule_for_request(
     let name = match (pattern.as_deref(), project_path.as_deref()) {
         (Some(pattern), _) => truncate_label(pattern),
         (None, Some(project)) => {
-            let folder = project.trim_end_matches('/').rsplit('/').next().unwrap_or(project);
+            let folder = project
+                .trim_end_matches('/')
+                .rsplit('/')
+                .next()
+                .unwrap_or(project);
             format!("All tools · {folder}")
         }
         (None, None) => "Unnamed rule".into(),
@@ -424,7 +433,12 @@ mod tests {
         ));
         assert!(rule_matches(
             &rule,
-            &request(AgentKind::Claude, "Bash", "Bash: ls", "/Users/dev/Atoll/src-tauri")
+            &request(
+                AgentKind::Claude,
+                "Bash",
+                "Bash: ls",
+                "/Users/dev/Atoll/src-tauri"
+            )
         ));
         assert!(rule_matches(
             &rule,
@@ -581,7 +595,10 @@ mod tests {
         let command_project =
             build_rule_for_request(&req, "command_project", RuleDecision::Allow).unwrap();
         assert_eq!(command_project.pattern.as_deref(), Some("Bash: npm test"));
-        assert_eq!(command_project.project_path.as_deref(), Some("/Users/dev/Atoll"));
+        assert_eq!(
+            command_project.project_path.as_deref(),
+            Some("/Users/dev/Atoll")
+        );
         assert_eq!(command_project.agent.as_deref(), Some("claude"));
 
         let command_global =
@@ -589,10 +606,12 @@ mod tests {
         assert_eq!(command_global.pattern.as_deref(), Some("Bash: npm test"));
         assert!(command_global.project_path.is_none());
 
-        let all_project =
-            build_rule_for_request(&req, "all_project", RuleDecision::Allow).unwrap();
+        let all_project = build_rule_for_request(&req, "all_project", RuleDecision::Allow).unwrap();
         assert!(all_project.pattern.is_none());
-        assert_eq!(all_project.project_path.as_deref(), Some("/Users/dev/Atoll"));
+        assert_eq!(
+            all_project.project_path.as_deref(),
+            Some("/Users/dev/Atoll")
+        );
         assert_eq!(all_project.name, "All tools · Atoll");
 
         assert!(build_rule_for_request(&req, "everything", RuleDecision::Allow).is_err());
