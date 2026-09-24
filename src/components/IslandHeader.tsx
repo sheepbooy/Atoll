@@ -509,12 +509,10 @@ export function IslandHeader(props: IslandHeaderProps) {
           {bluetoothBatteryEnabled &&
           !isPresentationTransition &&
           (showCompactHeaderMetrics || isMicro) ? (
-            <>
-              <BluetoothBatteryRing
-                devices={bluetoothDevices}
-                alertThreshold={bluetoothAlertThreshold}
-              />
-            </>
+            <BluetoothBatteryRing
+              devices={bluetoothDevices}
+              alertThreshold={bluetoothAlertThreshold}
+            />
           ) : null}
           {showCompactHeaderMetrics && compactRightSessions.length > 0 ? (
             <CompactSessionStack
