@@ -71,7 +71,7 @@ import { useLyrics } from "./hooks/useLyrics";
 import { useClipboardHistory } from "./hooks/useClipboardHistory";
 import { useNowPlaying } from "./hooks/useNowPlaying";
 import { useBluetoothBattery } from "./hooks/useBluetoothBattery";
-import { hasBatteryData as hasBluetoothBatteryData } from "./BluetoothBatteryRing";
+import { devicesWithBattery as bluetoothDevicesWithBattery } from "./BluetoothBatteryRing";
 
 
 
@@ -598,8 +598,9 @@ export function App() {
     compactIndicator,
     lyricsEnabled,
     lyricsData,
-    bluetoothRingActive:
-      bluetoothCardEnabled && hasBluetoothBatteryData(bluetoothDevices),
+    bluetoothRingCount: bluetoothCardEnabled
+      ? bluetoothDevicesWithBattery(bluetoothDevices).length
+      : 0,
     phase,
     phaseRef,
     usesMicroIslandRef,

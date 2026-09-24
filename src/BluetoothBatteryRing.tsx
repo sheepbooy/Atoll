@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { BluetoothDeviceBattery, BluetoothDeviceKind } from "./tauri";
+import { BATTERY_RING_MAX } from "./compactLayout";
 
 interface BluetoothBatteryRingProps {
   devices: BluetoothDeviceBattery[];
@@ -119,7 +120,7 @@ export function BluetoothBatteryRing({
   alertThreshold,
 }: BluetoothBatteryRingProps) {
   const { t } = useTranslation("common");
-  const entries = devicesWithBattery(devices);
+  const entries = devicesWithBattery(devices).slice(0, BATTERY_RING_MAX);
   const srcs = useMemo(
     () =>
       entries.map((entry) =>
