@@ -17,6 +17,8 @@
     "test:shims": "node --test scripts/*.test.mjs",
     "fetch:node-runtime": "node scripts/fetch-node-runtime.mjs",
     "tauri": "tauri",
+    "clean": "node scripts/clean-build.mjs",
+    "build:app": "npm run tauri build && node scripts/clean-build.mjs --keep-bundle",
     "capture:gif": "node scripts/capture-app-media.mjs",
     "capture:media": "node scripts/capture-app-media.mjs",
     "capture:compact-bar": "node scripts/capture-compact-bar.mjs",

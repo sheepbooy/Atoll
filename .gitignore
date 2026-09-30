@@ -1,6 +1,7 @@
 node_modules
 dist
 dist-ssr
+release-out
 target
 src-tauri/target
 src-tauri/generated/

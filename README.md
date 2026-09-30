@@ -224,6 +224,8 @@ npm install          # 安装依赖
 npm run tauri dev    # 启动桌面应用（需 Rust）
 npm test             # 运行测试
 npm run tauri build  # 打包
+npm run build:app    # 打包并自动清理构建产物（.app/.dmg 保留在 release-out/）
+npm run clean        # 手动清理构建产物（--all 连同 src-tauri/generated 一起删）
 ```
 
 **Windows 额外要求：** Visual Studio Build Tools（C++ 工作负载）、WebView2 Runtime、Node.js（Hook 脚本）。
