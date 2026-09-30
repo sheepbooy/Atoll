@@ -75,6 +75,10 @@ pub(crate) fn resolve_node_executable() -> Result<String, String> {
             }
         }
 
+        if let Some(path) = resolve_bundled_node_executable() {
+            return Ok(path);
+        }
+
         return Err(
             "Node.js not found. Install Node.js and ensure it is on PATH, then retry.".into(),
         );
@@ -88,7 +92,120 @@ pub(crate) fn resolve_node_executable() -> Result<String, String> {
         if let Some(path) = resolve_node_executable_from_path() {
             return Ok(path);
         }
+        if let Some(path) = resolve_bundled_node_executable() {
+            return Ok(path);
+        }
         Err("Node.js not found. Install Node.js and ensure it is on PATH, then retry.".into())
+    }
+}
+
+/// Probe Atoll's own bundled Node runtime (a Tauri resource written by
+/// `scripts/fetch-node-runtime.mjs`) so hook installs work on fresh machines
+/// without a system Node. Mirrors the exe-ancestry probing of
+/// `bundled_hook_script_candidates`; takes a fallback seat after every system
+/// Node so existing setups keep using their own runtime.
+pub(crate) fn resolve_bundled_node_executable() -> Option<String> {
+    let exe = std::env::current_exe().ok();
+    first_usable_node_candidate(bundled_node_candidates(exe.as_deref()))
+}
+
+fn first_usable_node_candidate(candidates: Vec<std::path::PathBuf>) -> Option<String> {
+    candidates
+        .into_iter()
+        .find(|candidate| hook_script_is_usable(candidate))
+        .map(|path| normalize_hook_script_path(&path.to_string_lossy()))
+}
+
+#[cfg(not(windows))]
+pub(crate) fn bundled_node_candidates(exe: Option<&std::path::Path>) -> Vec<std::path::PathBuf> {
+    let mut candidates = Vec::new();
+    // Dev builds: repo layout, where fetch-node-runtime.mjs writes the runtime.
+    candidates.push(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("generated")
+            .join("node")
+            .join("bin")
+            .join("node"),
+    );
+    if let Some(exe) = exe {
+        // Installed .app layout: exe at Contents/MacOS, resource at
+        // Contents/Resources/node/bin/node.
+        for ancestor in exe.ancestors().skip(1) {
+            candidates.push(ancestor.join("Resources/node/bin/node"));
+        }
+    }
+    candidates
+}
+
+#[cfg(windows)]
+pub(crate) fn bundled_node_candidates(exe: Option<&std::path::Path>) -> Vec<std::path::PathBuf> {
+    let mut candidates = Vec::new();
+    // Dev builds: repo layout, where fetch-node-runtime.mjs writes the runtime.
+    candidates.push(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("generated")
+            .join("node.exe"),
+    );
+    if let Some(exe) = exe {
+        if let Some(exe_dir) = exe.parent() {
+            // Installed layout (MSI): resources sit below the install dir,
+            // matching the "node/node.exe" target in tauri.conf.json.
+            candidates.push(exe_dir.join("node/node.exe"));
+            candidates.push(exe_dir.join("resources/node/node.exe"));
+        }
+    }
+    candidates
+}
+
+#[cfg(test)]
+mod bundled_node_tests {
+    use super::*;
+
+    #[cfg(not(windows))]
+    #[test]
+    fn candidates_include_app_bundle_resources_dir() {
+        let exe = std::path::Path::new("/Applications/Atoll.app/Contents/MacOS/Atoll");
+        let candidates = bundled_node_candidates(Some(exe));
+        assert!(candidates.iter().any(|candidate| candidate
+            .to_string_lossy()
+            .ends_with("Atoll.app/Contents/Resources/node/bin/node")));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn candidates_include_dev_generated_runtime() {
+        let candidates = bundled_node_candidates(None);
+        assert!(candidates.iter().any(|candidate| candidate
+            .to_string_lossy()
+            .ends_with("generated/node/bin/node")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn candidates_include_installed_resource_dir() {
+        let exe = std::path::Path::new(r"C:\Program Files\Atoll\Atoll.exe");
+        let candidates = bundled_node_candidates(Some(exe));
+        assert!(candidates.iter().any(|candidate| candidate
+            .to_string_lossy()
+            .replace('\\', "/")
+            .ends_with("/Atoll/node/node.exe")));
+    }
+
+    #[test]
+    fn selection_skips_empty_placeholders_and_picks_non_empty_files() {
+        let dir = std::env::temp_dir().join(format!("atoll-bundled-node-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let empty = dir.join("empty-node");
+        std::fs::write(&empty, []).unwrap();
+        let real = dir.join("node");
+        std::fs::write(&real, b"stub").unwrap();
+
+        let picked = first_usable_node_candidate(vec![empty, real.clone()]);
+        assert_eq!(
+            picked,
+            Some(normalize_hook_script_path(&real.to_string_lossy()))
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
 

@@ -46,6 +46,8 @@
     ],
     "resources": {
       "generated/atoll-hook-runner.exe": "scripts/atoll-hook-runner.exe",
+      "generated/node/bin/node": "node/bin/node",
+      "generated/node.exe": "node/node.exe",
       "../scripts/atoll-claude-hook.mjs": "scripts/atoll-claude-hook.mjs",
       "../scripts/atoll-codex-hook.mjs": "scripts/atoll-codex-hook.mjs",
       "../scripts/atoll-cursor-hook.mjs": "scripts/atoll-cursor-hook.mjs",

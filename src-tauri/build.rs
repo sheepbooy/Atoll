@@ -53,8 +53,33 @@ fn main() {
     build_hook_runner_resource();
     #[cfg(not(windows))]
     ensure_hook_runner_resource_placeholder();
+    ensure_node_resource_placeholders();
 
     tauri_build::build();
+}
+
+/// Tauri resolves every `bundle.resources` entry at build time, and the
+/// resources map is shared across platforms: the Windows `node.exe` entry must
+/// exist when building on macOS and vice versa. When CI (or
+/// `npm run fetch:node-runtime`) has not produced the real runtime for this
+/// platform, write a 0-byte placeholder so the build succeeds — the resolver
+/// in hooks/node.rs only accepts non-empty files, so placeholders are never
+/// picked as a working Node.
+fn ensure_node_resource_placeholders() {
+    use std::fs;
+    use std::path::PathBuf;
+
+    let generated_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("generated");
+    for relative in ["node/bin/node", "node.exe"] {
+        let resource = generated_dir.join(relative);
+        if resource.is_file() {
+            continue;
+        }
+        if let Some(parent) = resource.parent() {
+            fs::create_dir_all(parent).ok();
+        }
+        fs::write(&resource, []).ok();
+    }
 }
 
 #[cfg(not(windows))]

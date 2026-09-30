@@ -15,6 +15,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:shims": "node --test scripts/*.test.mjs",
+    "fetch:node-runtime": "node scripts/fetch-node-runtime.mjs",
     "tauri": "tauri",
     "capture:gif": "node scripts/capture-app-media.mjs",
     "capture:media": "node scripts/capture-app-media.mjs",

@@ -150,7 +150,7 @@ Atoll 通过应用内 **一键安装 Hook**，无需手动编辑配置文件。
 | **Gemini CLI** | 同上 → Install Gemini | 安装后在 Gemini 中打开 `/hooks` 并信任 Atoll hook，重启 Gemini，再触发一次 shell 命令验证（在 Atoll 各执行一次批准与拒绝） |
 | **OpenCode** | 同上 → Install OpenCode | OpenCode 没有 hooks 配置文件——Atoll 在其插件目录 `~/.config/opencode/plugins` 部署进程内桥接插件，安装后重启 OpenCode，再触发一次需要批准的操作验证；Atoll 不在线时 OpenCode 自带的 TUI 确认自动兜底 |
 
-Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）、`~/.codex/hooks.json`、`~/.zcode/cli/config.json`、Cursor hooks 配置或 `~/.gemini/settings.json`；OpenCode 例外，见上表——部署的是进程内桥接插件而非 hooks 配置。安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`。
+Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）、`~/.codex/hooks.json`、`~/.zcode/cli/config.json`、Cursor hooks 配置或 `~/.gemini/settings.json`；OpenCode 例外，见上表——部署的是进程内桥接插件而非 hooks 配置。安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`；系统没有 Node 时（如全新电脑）自动回退到 Atoll 自带的运行时，无需单独安装 Node.js。
 
 > Gemini CLI 的 hook 按"项目路径 + hook 键"管理信任：安装后需在 Gemini 中执行 `/hooks` 信任 Atoll hook。Gemini 自身审批模式（如默认确认）仍会生效——Atoll 的拒绝先于 Gemini 确认生效，Atoll 的批准则在 Gemini 判定需要确认时仍走其原生确认。
 

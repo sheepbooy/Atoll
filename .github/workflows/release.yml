@@ -58,6 +58,9 @@ jobs:
       - name: Run tests
         run: npm test -- --run
 
+      - name: Fetch bundled Node runtime
+        run: node scripts/fetch-node-runtime.mjs
+
       - name: Build Tauri app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -151,6 +154,9 @@ jobs:
 
       - name: Run tests
         run: npm test -- --run
+
+      - name: Fetch bundled Node runtime
+        run: node scripts/fetch-node-runtime.mjs
 
       - name: Build Tauri app
         env:

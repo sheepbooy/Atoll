@@ -184,7 +184,7 @@ function Print-Success {
     Write-Host "  1. Open Atoll from the Start menu."
     Write-Host "  2. Use the tray/island menu and click 'Install hooks' to connect Claude Code."
     Write-Host ""
-    Write-Host "Node.js must be installed and available on PATH for agent hooks."
+    Write-Host "Agent hooks use Atoll's bundled Node.js runtime; installing Node.js separately is optional."
 }
 
 Require-Windows
