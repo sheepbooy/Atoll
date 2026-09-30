@@ -36,6 +36,11 @@ image = { version = "0.25", default-features = false, features = ["png", "tiff",
 # Approval-rule risk guard (rust port of the frontend danger patterns).
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json"] }
+# tauri-plugin-updater builds reqwest 0.13 with default-features = false,
+# which drops reqwest's `system-proxy` feature, so the updater ignores the
+# OS proxy entirely. Re-declaring reqwest 0.13 here (never imported) turns
+# that feature back on via Cargo feature unification.
+reqwest-system-proxy = { package = "reqwest", version = "0.13", default-features = false, features = ["system-proxy"] }
 
 [target.'cfg(windows)'.dependencies]
 auto-launch = "0.5"
