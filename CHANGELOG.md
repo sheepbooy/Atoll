@@ -2,6 +2,11 @@
 
 本项目的所有重要变更均记录于此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.67] - 2026-09-30
+
+### 修复
+- **更新检查/下载走系统代理**：tauri-plugin-updater 构建其内部 reqwest 0.13 时关闭了默认特性，丢掉了 reqwest 的 `system-proxy`（读取 macOS 系统代理 / Windows 注册表代理）能力，导致检查更新与下载安装包始终直连 GitHub——国内网络下检查 20 秒超时、下载极慢。现通过在 Cargo.toml 重新声明 reqwest 0.13（重命名条目、代码不引用）以 Cargo feature 合并补回 `system-proxy`，更新器恢复读取操作系统代理：FlClash/Surge 等开启「系统代理」后更新即走本地代理，未开系统代理的用户行为不变。新增依赖仅 macOS 的 system-configuration 与 Windows 的 windows-registry（均按 target 隔离，Linux 构建零影响）
+
 ## [0.1.66] - 2026-09-30
 
 ### 新增
