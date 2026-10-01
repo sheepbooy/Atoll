@@ -54,6 +54,8 @@
 - **剪贴板历史** — 跨平台剪贴板历史记录，关键词搜索 + 隐私开关，敏感内容自动过滤
 - **审批历史** — 审批请求持久化到本地 SQLite，重启不丢；支持关键词/会话搜索、Agent 与结果筛选，一键导出 JSON/CSV
 - **Token 热力图** — 持久化每日用量，重启后继续累计；展开态计数器可查看热力图、Agent 占比与 30 天趋势
+- **秒薪计数器** — 用量计数器可切换为「秒薪」模式：按月薪 ÷ 工作时长逐秒累积当日收入，价签式货币前缀（¥/$/€），收入按天持久化，热力图页切换为每日收入统计与 30 天趋势
+- **蓝牙设备电量环** — 折叠浮岛为每台已连接蓝牙设备显示环形电量（鼠标/键盘/触控板/耳机图标），GATT 直读 macOS 不上报电量的第三方外设；跌破阈值发一次系统提醒，Settings → 蓝牙电量可配置开关与阈值
 - **Hook 健康检测** — 自动检测并清理失效的竞争 Claude hooks，启动时补齐缺失的 lifecycle hooks
 - **开机自启动** — Settings → General 可开启 Launch at login（macOS / Windows）
 - **应用内更新** — 启动时自动检测新版本，三点菜单一键下载安装并重启
@@ -62,6 +64,7 @@
 - **文件中转站** — 把文件拖到浮岛上即可"投喂"Atoll：拖近时岛自动展开张嘴待喂，按存量分档播放吃掉动画、空闲形象常驻鼓肚；文件以引用方式记录（绝不移动/复制/删除原文件），面板内搜索、多选复制、在文件管理器中显示、拖出即发起原生拖拽
 - **中英文双语** — Settings → Display 一键切换 English / 中文，全量界面文案跟随
 - **多显示器驻留** — 多屏环境可在设置中指定浮岛固定驻留的显示器，按名称持久化，缺席时自动回落主屏
+- **刘海屏适配** — 有刘海的 MacBook 上与实体刘海像素级贴合：折叠胶囊锚定刘海居中，展开态「贴顶 + 左右对称翼」随内容自适应加宽，顶栏内容不落入摄像头模组区域，展开/收起动画零平移
 - **全程本地** — Hook 桥接 `127.0.0.1:47777`，数据不出本机
 
 目前支持 **Claude Code**（CLI 与 Desktop）、**Codex**（CLI 与 Desktop）、**Cursor IDE**、**ZCode**（CLI 与 Desktop）、**Gemini CLI** 和 **OpenCode**。
@@ -78,7 +81,7 @@
 curl -fsSL https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.sh | bash
 ```
 
-指定版本：`ATOLL_VERSION=0.1.62 curl -fsSL .../install.sh | bash`
+指定版本：`ATOLL_VERSION=0.1.68 curl -fsSL .../install.sh | bash`
 
 <details>
 <summary>其他 macOS 安装方式</summary>
@@ -119,17 +122,17 @@ irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 |
 指定版本：
 
 ```cmd
-set ATOLL_VERSION=0.1.62 && powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex"
+set ATOLL_VERSION=0.1.68 && powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex"
 ```
 
 ```powershell
-$env:ATOLL_VERSION = "0.1.62"; irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex
+$env:ATOLL_VERSION = "0.1.68"; irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex
 ```
 
 **手动下载** — 从 [Releases](https://github.com/sheepbooy/Atoll/releases) 下载 `Atoll-x64.msi` 并安装。
 
 > Windows 安装包（`Atoll-x64.msi`）从 **v0.1.9** 起随 Release 发布；v0.1.8 及更早版本仅含 macOS 产物。
-> 首次运行若被 SmartScreen 拦截，选择「更多信息」→「仍要运行」。Hook 安装需要本机已安装 **Node.js** 且在 PATH 中。
+> 首次运行若被 SmartScreen 拦截，选择「更多信息」→「仍要运行」。Hook 安装优先使用本机 Node.js，系统没有 Node 时自动回退 Atoll 自带的运行时（v0.1.67 起）。
 
 ---
 
@@ -277,6 +280,8 @@ npm run export:brand     # Logo 状态 + Agent 形象
 - [x] Cursor hook 适配
 - [x] Codex hook 适配
 - [x] 文件中转站（拖喂 + 原生拖出）
+- [x] 刘海屏 Mac 全面适配（对称翼展开、折叠胶囊锚定刘海）
+- [x] 蓝牙设备电量环、秒薪计数器、审批规则引擎
 - [x] 新请求自动展开、通知中心提醒（强制打断 / 仅通知两种模式，Settings → Notifications）
 - [x] 审批历史持久化、导出、会话搜索
 - [x] 中英文双语 UI、多显示器驻留

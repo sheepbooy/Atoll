@@ -4,13 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Atoll — 菜单栏 AI 工作流浮岛</title>
-  <meta name="description" content="Atoll 住在 macOS 菜单栏 / Windows 顶栏，为 Claude Code、Codex、Cursor 与 ZCode 提供权限审批、通知提醒、Plan 模式交互、Subagent 追踪与 Token 用量统计。100% 本地，数据不出本机。" />
+  <meta name="description" content="Atoll 住在 macOS 菜单栏 / Windows 顶栏，为 Claude Code、Codex、Cursor、ZCode、Gemini CLI 与 OpenCode 提供权限审批、审批规则引擎、通知提醒、Plan 模式交互、Subagent 追踪与 Token 用量统计。100% 本地，数据不出本机。" />
   <meta name="theme-color" content="#0a0b0d" />
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Atoll — 菜单栏 AI 工作流浮岛" />
-  <meta property="og:description" content="本地 Coding Agent 工作流浮岛：权限审批、通知提醒、Plan 模式问答与构建确认、Subagent 追踪、Token 统计。支持 Claude Code / Codex / Cursor / ZCode。" />
+  <meta property="og:description" content="本地 Coding Agent 工作流浮岛：权限审批、审批规则引擎、通知提醒、Plan 模式问答与构建确认、Subagent 追踪、Token 统计。支持 Claude Code / Codex / Cursor / ZCode / Gemini CLI / OpenCode。" />
   <meta property="og:image" content="https://sheepbooy.github.io/Atoll/assets/hero.png" />
   <meta property="og:url" content="https://sheepbooy.github.io/Atoll/" />
 
@@ -24,581 +24,92 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/site.css" />
-  <link rel="stylesheet" href="css/mascots.css" />
-  <link rel="stylesheet" href="css/atoll-logo.css" />
-  <link rel="stylesheet" href="css/compact-bar-preview.css" />
-  <link rel="stylesheet" href="css/approval-preview.css" />
+  <link rel="stylesheet" href="css/mascots.css?v=133d240e55" />
+  <link rel="stylesheet" href="css/atoll-logo.css?v=5eb4b17fe2" />
+  <link rel="stylesheet" href="css/site.css?v=7dc29db49a" />
+  <script defer src="js/atoll-logo.js?v=a7b0347ddb"></script>
+  <script defer src="js/cursor-mascot.js?v=0d06122c97"></script>
+  <script defer src="js/agent-mascots.js?v=4aa9e142ea"></script>
+  <script defer src="js/site.js?v=50ce54d311"></script>
 </head>
 <body>
-  <div class="bg-glow" aria-hidden="true"></div>
-  <div class="bg-grid" aria-hidden="true"></div>
-
-  <div class="page">
-    <!-- Navigation -->
-    <nav class="nav" id="nav">
-      <div class="nav-inner">
-        <a href="#" class="nav-brand">
-          <img src="assets/logo.svg" alt="" width="32" height="36" />
-          Atoll
-        </a>
-        <ul class="nav-links" id="nav-links">
-          <li><a href="#features">特性</a></li>
-          <li><a href="#plan">Plan 模式</a></li>
-          <li><a href="#subagents">Subagent</a></li>
-          <li><a href="#install">安装</a></li>
-          <li><a href="#agents">接入</a></li>
-          <li><a href="#visual">视觉</a></li>
-        </ul>
-        <div class="nav-actions">
-          <a href="https://github.com/sheepbooy/Atoll" class="btn btn-ghost btn-sm" target="_blank" rel="noopener">GitHub</a>
-          <a href="#install" class="btn btn-primary btn-sm">下载</a>
-          <button class="nav-toggle" id="nav-toggle" aria-label="打开菜单">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-          </button>
-        </div>
+  <a class="skip-link" href="#main">跳到正文</a>
+  <nav class="nav" aria-label="主导航" id="nav">
+    <div class="container nav-inner">
+      <a class="nav-brand" href="#top" aria-label="Atoll 首页"><svg class="brand-mark" viewBox="0 0 64 44" aria-hidden="true"><path fill="#38bdd8" d="M4 4h56v36H4z"/><path fill="#7de5ed" d="M4 4h56v7H4z"/><path fill="#0c1317" d="M17 15h6v15h-6zm24 0h6v15h-6z"/></svg><span>Atoll</span></a>
+      <div class="nav-links" id="nav-links">
+        <a href="#features">工作流</a><a href="#everyday">日常工具</a><a href="#agents">接入</a><a href="#visual">浮岛生活</a>
       </div>
-    </nav>
-
-    <!-- Hero -->
-    <header class="hero">
-      <div class="container hero-layout">
-        <div class="hero-intro">
-          <img src="assets/logo.svg" alt="Atoll mascot" class="hero-logo" width="64" height="72" />
-          <div class="hero-badge">
-            <span class="dot"></span>
-            v0.1.58 · macOS &amp; Windows
+      <div class="nav-actions"><a class="nav-github" href="https://github.com/sheepbooy/Atoll" target="_blank" rel="noopener">GitHub <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a><a class="btn btn-small btn-primary" href="#install">下载 Atoll</a><button class="nav-toggle" id="nav-toggle" aria-label="打开菜单" aria-controls="nav-links" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button></div>
+    </div>
+  </nav>
+  <main id="main">
+    <header class="hero container" id="top">
+      <div class="hero-intro">
+        <div class="eyebrow"><span class="status-dot"></span> YOUR AGENTS. ONE LITTLE ISLAND.</div>
+        <h1>专注写代码，<br /><span>其余交给浮岛。</span></h1>
+        <p class="hero-tagline">权限审批、计划确认、后台任务。<br />让 AI 工作流住进顶栏，让你留在心流里。</p>
+        <div class="hero-actions"><a class="btn btn-primary" href="#install">立即安装 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a><a class="btn btn-secondary" href="#features">探索工作流 <span aria-hidden="true">↓</span></a></div>
+        <div class="hero-meta"><span>macOS &amp; Windows</span><span>100% 本地</span><span>MIT 开源</span></div>
+        <p class="hero-version">v0.1.68 <span>·</span> 为每天与 Coding Agent 协作的你而造</p>
+      </div>
+      <div class="hero-demo reveal" data-motion-zone>
+        <div class="demo-topline"><span><span class="tiny-square"></span> ATOLL IN ACTION</span><span>交互演示</span></div>
+        <div class="demo-workspace">
+          <div class="desktop-menubar" aria-hidden="true"><span>Atoll</span><span>文件　编辑　窗口</span><span>周五 09:41</span></div>
+          <div class="demo-island" id="demo-island" data-state="idle" aria-label="浮岛交互演示">
+            <div class="island-bar"><svg class="brand-mark" viewBox="0 0 64 44" aria-hidden="true"><path fill="#38bdd8" d="M4 4h56v36H4z"/><path fill="#7de5ed" d="M4 4h56v7H4z"/><path fill="#0c1317" d="M17 15h6v15h-6zm24 0h6v15h-6z"/></svg><span class="status-dot"></span><span class="island-bar-label" id="island-label">在线监听</span><span class="island-agent">Claude</span><span class="island-count" id="island-count">0</span></div>
+            <div class="island-content" id="demo-content">
+              <div class="demo-panel" data-panel="approve" hidden>
+                <div class="demo-heading"><span class="agent-dot coral"></span><span>Claude Code 请求权限</span><span class="micro-label">01 / APPROVE</span></div>
+                <h3>运行项目测试</h3><p class="demo-description">Agent 已准备好，下一步由你决定。</p>
+                <div class="demo-command"><code>$ npm test --run</code><span>~/code/my-app</span></div>
+                <div class="demo-decisions"><button data-decision="deny">Deny <kbd>Del</kbd></button><button class="decision-approve" data-decision="approve">Approve <kbd>↵</kbd></button><button class="decision-always" data-decision="always">Always <kbd>⇧ ↵</kbd></button></div>
+              </div>
+              <div class="demo-panel" data-panel="plan" hidden>
+                <div class="demo-heading"><span class="agent-dot violet"></span><span>Plan mode</span><span class="micro-label">02 / PLAN</span></div>
+                <form id="demo-plan-form"><h3>这次优先优化什么？</h3><fieldset><legend class="sr-only">选择优化范围</legend><label class="demo-option"><input type="radio" name="demo-scope" value="页面与动效" checked /><span>页面与动效</span><span class="option-detail">完整体验</span></label><label class="demo-option"><input type="radio" name="demo-scope" value="卡片与排版" /><span>卡片与排版</span><span class="option-detail">聚焦细节</span></label></fieldset><button class="demo-primary" type="submit">提交回答 <span aria-hidden="true">→</span></button></form>
+                <div id="demo-build" hidden><h3>计划已就绪</h3><div class="demo-plan-preview"><strong id="demo-plan-title">页面与动效</strong><p>1. 统一视觉与布局<br />2. 优化浮岛交互<br />3. 检查移动端体验</p></div><div class="demo-build-actions"><button id="continue-plan">继续规划</button><button class="demo-primary" id="agree-build">同意构建 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></button></div></div>
+              </div>
+              <div class="demo-panel" data-panel="subagents" hidden>
+                <div class="demo-heading"><span class="agent-dot mint"></span><span>my-app · Subagents</span><span class="micro-label">03 / TRACK</span></div>
+                <div id="demo-task-list"><h3>一起工作，尽在掌握。</h3><button class="demo-task" data-task="explore"><span class="task-icon coral">E</span><span><strong>explore</strong><small>梳理页面结构</small></span><span class="task-state running">运行中</span><span aria-hidden="true">›</span></button><button class="demo-task" data-task="shell"><span class="task-icon mint">S</span><span><strong>shell</strong><small>验证项目测试</small></span><span class="task-state done">已完成</span><span aria-hidden="true">›</span></button><p class="demo-description">点击任务，查看执行详情。</p></div>
+                <div id="demo-task-detail" hidden><button class="demo-back" id="task-back">← 返回任务列表</button><h3 id="task-title">explore</h3><div class="task-transcript" id="task-transcript"></div></div>
+              </div>
+              <div class="demo-panel demo-result" data-panel="result" hidden><span class="result-mark" id="result-mark">✓</span><h3 id="result-title">已批准</h3><p id="result-description">决定已送回 Agent，继续你的工作。</p></div>
+            </div>
           </div>
-          <h1>
-            <span class="gradient">AI 工作流浮岛</span>
-            <span class="hero-title-line">住在你的菜单栏</span>
-          </h1>
-          <p class="hero-tagline">
-            本地 Coding Agent 发起权限请求、进入 Plan 模式或派发 subagent 时，不用切窗口——在顶栏里审批、回答、确认构建、追踪后台任务。
-          </p>
-          <div class="hero-actions">
-            <a href="#install" class="btn btn-primary">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-              立即安装
-            </a>
-            <a href="https://github.com/sheepbooy/Atoll" class="btn btn-ghost" target="_blank" rel="noopener">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.395-.135-.345-.72-1.395-1.23-1.665-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-              查看源码
-            </a>
-          </div>
-          <div class="hero-meta">
-            <span class="pill">100% 本地</span>
-            <span class="pill">MIT 开源</span>
-            <span class="pill pill-agents">Claude Code · Codex · Cursor · ZCode</span>
-            <span class="pill pill-agents">通知提醒 · Plan 模式 · Subagent · Token</span>
-          </div>
-          <div class="hero-capabilities" aria-label="Atoll 核心能力">
-            <article class="hero-capability">
-              <span class="hero-capability-kicker">Approve</span>
-              <strong>权限审批</strong>
-              <p>Approve / Deny / Always，键盘即可处理。</p>
-            </article>
-            <article class="hero-capability">
-              <span class="hero-capability-kicker">Plan</span>
-              <strong>规划问答</strong>
-              <p>回答问题、预览 Markdown 计划、确认构建。</p>
-            </article>
-            <article class="hero-capability">
-              <span class="hero-capability-kicker">Subagent</span>
-              <strong>后台任务</strong>
-              <p>追踪子 agent 状态、详情与批量归档。</p>
-            </article>
-          </div>
+          <div class="demo-idle-note" id="demo-idle-note"><span class="note-line"></span>小小浮岛，随时待命。</div>
+          <div class="terminal-window" aria-hidden="true"><div class="terminal-title"><span class="window-dots"><i></i><i></i><i></i></span><span>my-app — agent</span><span>⌘ 1</span></div><div class="terminal-body"><p><span class="term-muted">~/code/my-app</span> <span class="term-mint">main</span></p><p><span class="term-mint">❯</span> claude</p><p class="term-muted">Let's build something good.</p><p><span class="term-mint">✦</span> <span id="terminal-status">Agent 已连接，等待下一步。</span></p><p class="term-muted terminal-last">你的注意力，留给真正重要的事。<span class="terminal-cursor"></span></p></div></div>
         </div>
-
-        <div class="hero-demo">
-          <div class="demo-frame">
-            <img src="assets/demo.gif" alt="Atoll 演示：权限审批、置顶、归档" width="720" loading="eager" />
-          </div>
-          <p class="demo-caption">权限请求 → Plan / Subagent 状态 → 置顶 / 归档 → 自动收回</p>
-        </div>
+        <div class="demo-controls" role="group" aria-label="选择演示场景"><button data-scene="approve" aria-pressed="false"><span>01</span> 权限审批</button><button data-scene="plan" aria-pressed="false"><span>02</span> Plan 问答</button><button data-scene="subagents" aria-pressed="false"><span>03</span> 后台任务</button><button class="demo-replay" id="demo-replay" aria-label="重播当前演示">↻</button></div>
+        <p class="demo-caption" id="demo-caption">点击一个场景，体验浮岛如何回应。演示数据仅存在于网页。</p>
+        <p class="sr-only" id="demo-status" role="status" aria-live="polite"></p>
+        <noscript><p class="noscript-note">交互演示需要 JavaScript；下方可阅读全部功能与安装说明。</p></noscript>
       </div>
     </header>
-
-    <!-- Features -->
-    <section id="features" class="container reveal">
-      <span class="section-label">特性</span>
-      <h2 class="section-title">终端里写代码，顶栏里批权限</h2>
-      <p class="section-desc">Atoll 是一个轻量桌面应用，住在屏幕顶栏。平时是紧凑胶囊，有请求、计划或子 agent 动态时自动展开——全程本地，数据不出本机。</p>
-
-      <div class="features-grid">
-        <article class="feature-card">
-          <div class="feature-card-body">
-            <div class="feature-icon cyan">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M9 3v18M3 9h18"/></svg>
-            </div>
-            <h3>顶栏浮岛，零上下文切换</h3>
-            <p>macOS 菜单栏 / Windows 工作区顶部，紧凑胶囊显示在线状态、活跃会话、待审批数量与 token 用量。有请求时自动展开，展示命令、Plan 或 subagent 状态。</p>
-          </div>
-          <div class="feature-preview compact-bar-preview" role="img" aria-label="Atoll 菜单栏紧凑胶囊">
-            <div class="compact-bar-pill">
-              <span class="compact-bar-logo" aria-hidden="true">
-                <svg viewBox="-16 -36 96 108" shape-rendering="crispEdges">
-                  <rect x="8" y="18" width="48" height="26" fill="#38BDD8"/>
-                  <rect x="8" y="18" width="48" height="5" fill="#5FD8EC"/>
-                  <rect x="19" y="24" width="5" height="11" fill="#1a1a1a"/>
-                  <rect x="38" y="24" width="5" height="11" fill="#1a1a1a"/>
-                </svg>
-              </span>
-              <span class="compact-bar-listener" aria-hidden="true"></span>
-              <span class="compact-session-dot coral">
-                <span class="mascot-slot" data-agent="claude" data-mood="alert"></span>
-              </span>
-              <span class="compact-session-dot cyan">
-                <span class="mascot-slot" data-agent="codex"></span>
-              </span>
-              <span class="compact-session-dot violet">
-                <span class="mascot-slot" data-agent="cursor"></span>
-              </span>
-              <span class="compact-session-dot azure">
-                <span class="mascot-slot" data-agent="zcode"></span>
-              </span>
-              <span class="compact-bar-spacer" aria-hidden="true"></span>
-              <span class="compact-bar-metrics" aria-hidden="true">
-                <span class="compact-bar-token-mark"></span>
-                <span class="compact-bar-token">170,580</span>
-                <span class="compact-bar-pending">1</span>
-              </span>
-            </div>
-          </div>
-        </article>
-
-        <article class="feature-card">
-          <div class="feature-card-body">
-            <div class="feature-icon lime">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            </div>
-            <h3>100% 本地，隐私优先</h3>
-            <p>Hook 桥接 <code>127.0.0.1:47777</code>，所有数据留在本机。不联网、不上传、不追踪。</p>
-          </div>
-          <div class="feature-preview">
-            <img src="assets/local-privacy-preview.svg" alt="100% 本地：Agent 与 Atoll 仅通过 127.0.0.1 本机通信" width="480" loading="lazy" />
-          </div>
-        </article>
-
-        <article class="feature-card">
-          <div class="feature-card-body">
-            <div class="feature-icon coral">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-            </div>
-            <h3>一键 Approve / Deny / Always</h3>
-            <p>支持 Enter 批准、Delete 拒绝、Shift+Enter 永久放行。多 Session 并行，每个 Agent 与 subagent 都有清晰状态。</p>
-          </div>
-          <div class="feature-preview approval-preview" role="img" aria-label="权限审批卡片：Approve / Deny / Always">
-            <div class="approval-tabbar" aria-hidden="true">
-              <div class="approval-tab coral is-active">
-                <span class="mascot-slot" data-agent="claude" data-mood="alert"></span>
-                <span class="approval-tab-pending">1</span>
-              </div>
-              <div class="approval-tab cyan">
-                <span class="mascot-slot" data-agent="codex"></span>
-              </div>
-              <div class="approval-tab violet">
-                <span class="mascot-slot" data-agent="cursor"></span>
-              </div>
-            </div>
-            <div class="approval-card">
-              <div class="approval-kicker">
-                <span class="mascot-slot" data-agent="claude" data-mood="alert"></span>
-                <span class="approval-kicker-label">Command request</span>
-                <span class="approval-agent-pill coral">Claude</span>
-              </div>
-              <code class="approval-command">$ npm test --run</code>
-              <div class="approval-cwd">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
-                ~/code/my-app
-              </div>
-              <div class="approval-decisions" aria-hidden="true">
-                <div class="approval-decision deny">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                  <span>Deny</span>
-                  <kbd>Del</kbd>
-                </div>
-                <div class="approval-decision approve">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
-                  <span>Approve</span>
-                  <kbd>Enter</kbd>
-                </div>
-                <div class="approval-decision always">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L7 17l-5-5M22 10l-7.5 7.5L13 16"/></svg>
-                  <span>Always</span>
-                  <kbd>Shift+Enter</kbd>
-                </div>
-              </div>
-            </div>
-          </div>
-        </article>
-
-        <article class="feature-card">
-          <div class="feature-card-body">
-            <div class="feature-icon cyan">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg>
-            </div>
-            <h3>通知中心提醒，双模式</h3>
-            <p>默认<strong>强制打断</strong>：请求到达时浮岛自动展开并置前。切换 <strong>仅通知</strong> 模式则不打断当前工作——发送系统通知，点通知或浮岛再展开审批，深度工作零打扰。</p>
-          </div>
-          <div class="feature-preview notify-preview" role="img" aria-label="系统通知：Claude 请求权限，点击展开审批">
-            <div class="notify-toast">
-              <span class="notify-toast-icon" aria-hidden="true">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg>
-              </span>
-              <span class="notify-toast-text">
-                <strong>Claude 请求权限</strong>
-                <span>$ npm test --run</span>
-              </span>
-              <span class="notify-toast-hint">点击展开审批</span>
-            </div>
-          </div>
-        </article>
-
-        <article class="feature-card">
-          <div class="feature-card-body">
-            <div class="feature-icon lime">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></svg>
-            </div>
-            <h3>全局快捷键</h3>
-            <p>系统级热键随时召回浮岛、批准或拒绝当前请求——听到通知声，热键直接批。内置录制器改键即时生效，热键冲突行内红字提示，总开关一键停用。</p>
-          </div>
-          <div class="feature-preview shortcuts-preview" role="img" aria-label="全局快捷键：召回浮岛 / 批准 / 拒绝">
-            <div class="shortcut-row">
-              <span class="shortcut-action">召回浮岛</span>
-              <span class="shortcut-keys"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>Space</kbd></span>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-action">批准当前请求</span>
-              <span class="shortcut-keys"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>Y</kbd></span>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-action">拒绝当前请求</span>
-              <span class="shortcut-keys"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>N</kbd></span>
-            </div>
-          </div>
-        </article>
-
-        <article class="feature-card">
-          <div class="feature-card-body">
-            <div class="feature-icon violet">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
-            </div>
-            <h3>Token 用量追踪</h3>
-            <p>解析 JSONL 会话记录，实时展示 Token 消耗热力图、Agent 占比与 30 天趋势。更新后历史用量也会保留。</p>
-          </div>
-          <div class="feature-preview">
-            <img src="assets/token-heatmap-preview.svg" alt="Token 消耗热力图预览" width="420" loading="lazy" />
-          </div>
-        </article>
-
-        <article class="feature-card">
-          <div class="feature-card-body">
-            <div class="feature-icon lime">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-            </div>
-            <h3>开机自启动</h3>
-            <p>Settings → General 开启 Launch at login，登录 macOS 或 Windows 后自动启动 Atoll。v0.1.28 起支持，macOS 使用 SMAppService 注册登录项。</p>
-          </div>
-          <div class="feature-preview feature-preview--note" aria-hidden="true">
-            <span class="plan-note">Launch at login · Settings → General</span>
-          </div>
-        </article>
-
-        <article class="feature-card">
-          <div class="feature-card-body">
-            <div class="feature-icon cyan">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-            </div>
-            <h3>Now Playing 音乐卡片</h3>
-            <p>显示当前曲目、封面与播放状态，紧凑态指标器同步显示；支持上一首 / 下一首控制，不用切到音乐 App。</p>
-          </div>
-          <div class="feature-preview">
-            <img src="assets/now-playing-preview.svg" alt="Now Playing：紧凑态音乐指示器 + 展开态曲目卡片与控制" width="420" loading="lazy" />
-          </div>
-        </article>
-
-        <article class="feature-card">
-          <div class="feature-card-body">
-            <div class="feature-icon violet">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h6l2-4 4 8 2-4h4"/></svg>
-            </div>
-            <h3>滚动歌词</h3>
-            <p>紧凑胶囊中部展示当前歌词行，随播放进度自动滚动；v0.1.52 起支持，在 Settings 开启。</p>
-          </div>
-          <div class="feature-preview">
-            <img src="assets/lyrics-preview.svg" alt="滚动歌词：紧凑胶囊中部歌词行随播放进度滚动" width="420" loading="lazy" />
-          </div>
-        </article>
-
-        <article class="feature-card">
-          <div class="feature-card-body">
-            <div class="feature-icon coral">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><path d="M9 12h6"/></svg>
-            </div>
-            <h3>剪贴板历史</h3>
-            <p>跨平台剪贴板历史记录，关键词搜索秒回溯复制内容；隐私开关可暂停记录，敏感内容自动过滤。v0.1.50 起支持。</p>
-          </div>
-          <div class="feature-preview">
-            <img src="assets/clipboard-history-preview.svg" alt="剪贴板历史：搜索框 + 复制条目列表，支持已复制状态高亮" width="420" loading="lazy" />
-          </div>
-        </article>
-
-        <article class="feature-card">
-          <div class="feature-card-body">
-            <div class="feature-icon coral">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-            </div>
-            <h3>审批历史</h3>
-            <p>每次审批请求持久化到本地 SQLite，重启不丢。关键词、会话、Agent 与结果多维搜索筛选，一键导出 JSON / CSV，事后排查有据可查。</p>
-          </div>
-          <div class="feature-preview history-preview" role="img" aria-label="审批历史：搜索框 + 结果列表与状态徽标">
-            <div class="history-search" aria-hidden="true">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-              <span>搜索命令、项目或会话…</span>
-            </div>
-            <div class="history-row">
-              <code>$ rm -rf dist && npm run build</code>
-              <span class="history-badge approved">已批准</span>
-            </div>
-            <div class="history-row">
-              <code>$ git push --force origin main</code>
-              <span class="history-badge denied">已拒绝</span>
-            </div>
-            <div class="history-row">
-              <code>$ curl -fsSL https://… | bash</code>
-              <span class="history-badge elsewhere">别处处理</span>
-            </div>
-          </div>
-        </article>
-
-        <article class="feature-card">
-          <div class="feature-card-body">
-            <div class="feature-icon lime">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
-            </div>
-            <h3>Hook 健康检测</h3>
-            <p>自动检测并清理失效的竞争 Claude hooks，启动时补齐缺失的 lifecycle hooks、刷新过期 shim，保留你的自定义配置。</p>
-          </div>
-          <div class="feature-preview">
-            <img src="assets/hook-health-preview.svg" alt="Hook 健康检测：Agent hook 状态卡片 + 失效竞争 hook 警告与清理" width="420" loading="eager" />
-          </div>
-        </article>
+    <div class="container agent-strip"><span>与你熟悉的 Agent，一起工作</span><div><span>Claude Code</span><span>Codex</span><span>Cursor</span><span>ZCode</span><span>Gemini CLI</span><span>OpenCode</span></div></div>
+    <section class="container section" id="features">
+      <div class="section-heading reveal"><span class="section-label">01 / STAY IN FLOW</span><h2>工作向前，<br /><span class="muted">注意力不必来回。</span></h2><p>从一个权限请求，到一个完整计划。<br />浮岛把需要你的时刻，带到你眼前。</p></div>
+      <div class="workflow-grid">
+        <article class="workflow-card workflow-main reveal" data-motion-zone><div class="workflow-copy"><span class="feature-number">01 — APPROVE</span><h3>一个决定。<br />继续向前。</h3><p>看清命令，批准、拒绝，或永久放行。<br />多会话并行，也能从容处理。</p><a class="text-link" href="#top" data-launch="approve">体验权限审批 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a></div><div class="approval-art"><div class="art-island-bar"><svg class="brand-mark" viewBox="0 0 64 44" aria-hidden="true"><path fill="#38bdd8" d="M4 4h56v36H4z"/><path fill="#7de5ed" d="M4 4h56v7H4z"/><path fill="#0c1317" d="M17 15h6v15h-6zm24 0h6v15h-6z"/></svg><span class="status-dot"></span><span>Claude Code</span><span class="art-pending">1</span></div><div class="art-panel"><span class="art-kicker">PERMISSION REQUEST</span><h4>准备运行测试</h4><code>$ npm test --run</code><div class="art-actions"><span>Deny</span><span>Approve <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></span><span>Always</span></div><p><kbd>Enter</kbd> 批准 <span>·</span> <kbd>Delete</kbd> 拒绝</p></div></div></article>
+        <article class="workflow-card reveal" id="plan"><span class="feature-number">02 — PLAN</span><h3>先达成共识，<br />再开始构建。</h3><p>在浮岛里回答规划问题、阅读 Markdown 计划，再决定是否开始执行。</p><div class="plan-art"><div><span class="plan-step complete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></span><span>回答规划问题</span><span class="art-tag">已确认</span></div><div><span class="plan-step">2</span><span>预览执行计划</span></div><div><span class="plan-step">3</span><span>Agree to Build</span><span class="plan-arrow">↗</span></div></div><a class="text-link" href="#top" data-launch="plan">体验 Plan 问答 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a><details><summary>了解详情 <span>+</span></summary><div class="detail-copy">支持多选、Other 与自由回复，Markdown / GFM 计划预览；Continue Planning 继续规划，Agree to Build 确认执行。通过 AskUserQuestion 与 ExitPlanMode 事件接入。</div></details></article>
+        <article class="workflow-card reveal" id="subagents"><span class="feature-number">03 — TRACK</span><h3>任务跑在后台，<br />进展就在眼前。</h3><p>追踪子 Agent 的状态、执行详情与完成时间，把协作的每一步串起来。</p><div class="subagent-art"><div><span class="task-icon coral">E</span><strong>explore</strong><span class="task-state running">运行中</span></div><div><span class="task-icon mint">S</span><strong>shell</strong><span class="task-state done">已完成</span></div><div><span class="task-icon violet">G</span><strong>generalPurpose</strong><span class="task-state running">运行中</span></div></div><a class="text-link" href="#top" data-launch="subagents">查看后台任务 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a><details><summary>了解详情 <span>+</span></summary><div class="detail-copy">支持 Claude Code、Codex 与 Cursor 上报的 Subagent 生命周期。会话 chip 预览、完整列表、transcript 详情与已完成项批量归档；可配置显示数量与自动清理时长，归档时保留运行中的任务。</div></details></article>
       </div>
+      <div class="workflow-footnote reveal"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> 顶栏随内容展开，处理后自动收回</span><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> 刘海屏 Mac 原生贴合</span><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> Windows 工作区顶部驻留</span></div>
+      <details class="platform-detail"><summary>了解浮岛与屏幕的贴合方式 <span>+</span></summary><div class="detail-copy">macOS 菜单栏 / Windows 工作区顶部，紧凑胶囊显示在线状态、活跃会话、待审批数量与 token 用量。有请求时自动展开，展示命令、Plan 或 subagent 状态。<br /><br />有刘海的 MacBook 上与实体刘海像素级咬合：折叠胶囊锚定刘海居中，展开态贴顶并向两侧对称延伸、随内容自适应加宽——顶栏内容不落入摄像头模组区域，展开动画零平移。</div></details>
+      <div class="subsection-heading reveal"><h3>好的工作流，也照顾每个细节。</h3><p>把重复操作交给规则，把主动权留给你。</p></div>
+      <div class="utility-grid"><article class="utility-card reveal"><span class="utility-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg></span><h3>审批规则引擎，自动放行</h3><p>常用命令自动放行，风险操作留给你决定。</p><details><summary>了解详情 <span aria-hidden="true">+</span></summary><div class="detail-copy">按 Agent、工具、命令通配符与项目路径配置持久化的放行 / 拦截规则，命中即零等待自动执行，历史单独标记、可筛选。默认开启<strong>风险命令保护</strong>——<code>rm -rf</code>、<code>sudo</code> 等危险命令命中规则也会回落人工审批；审批卡「Always ▾」当场把当前命令存为规则。</div></details></article><article class="utility-card reveal"><span class="utility-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg></span><h3>通知中心提醒，双模式</h3><p>主动展开或仅通知，用你的节奏处理请求。</p><details><summary>了解详情 <span aria-hidden="true">+</span></summary><div class="detail-copy">默认<strong>强制打断</strong>：请求到达时浮岛自动展开并置前。切换 <strong>仅通知</strong> 模式则不打断当前工作——发送系统通知，点通知或浮岛再展开审批，深度工作零打扰。</div></details></article><article class="utility-card reveal"><span class="utility-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></svg></span><h3>全局快捷键</h3><p>一个热键召回，批准与拒绝都不用切窗口。</p><details><summary>了解详情 <span aria-hidden="true">+</span></summary><div class="detail-copy">系统级热键随时召回浮岛、批准或拒绝当前请求——听到通知声，热键直接批。内置录制器改键即时生效，热键冲突行内红字提示，总开关一键停用。</div></details></article><article class="utility-card reveal"><span class="utility-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg></span><h3>Token 用量追踪</h3><p>热力图、Agent 占比与趋势，用量一眼掌握。</p><details><summary>了解详情 <span aria-hidden="true">+</span></summary><div class="detail-copy">解析 JSONL 会话记录，实时展示 Token 消耗热力图、Agent 占比与 30 天趋势。更新后历史用量也会保留。</div></details></article><article class="utility-card reveal"><span class="utility-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span><h3>审批历史</h3><p>每次决定都有记录，搜索、筛选与导出随时可用。</p><details><summary>了解详情 <span aria-hidden="true">+</span></summary><div class="detail-copy">每次审批请求持久化到本地 SQLite，重启不丢。关键词、会话、Agent 与结果多维搜索筛选，一键导出 JSON / CSV，事后排查有据可查。</div></details></article><article class="utility-card reveal"><span class="utility-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span><h3>Hook 健康检测</h3><p>自动检查 Hook 状态，连接问题及时发现。</p><details><summary>了解详情 <span aria-hidden="true">+</span></summary><div class="detail-copy">自动检测并清理失效的竞争 Claude hooks，启动时补齐缺失的 lifecycle hooks、刷新过期 shim，保留你的自定义配置。</div></details></article></div>
     </section>
-
-    <!-- Plan mode -->
-    <section id="plan" class="container reveal">
-      <span class="section-label">Plan 模式</span>
-      <h2 class="section-title">规划问题与构建审批，不用离开顶栏</h2>
-      <p class="section-desc">
-        Agent 进入 Plan 模式时，Atoll 会识别 <code>AskUserQuestion</code> 与 <code>ExitPlanMode</code> 事件——在浮岛里回答规划问题、预览 Markdown 计划，再决定是否开始构建。
-      </p>
-
-      <div class="plan-layout">
-        <div class="plan-copy">
-          <div class="plan-phase">
-            <div class="plan-phase-icon cyan">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01"/></svg>
-            </div>
-            <div>
-              <h3>Plan questions</h3>
-              <p>Agent 发起多选题或自由文本问题时，在顶栏选择选项、填写 Other，或切换 Reply freely 直接回复。</p>
-            </div>
-          </div>
-          <div class="plan-phase">
-            <div class="plan-phase-icon lime">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
-            </div>
-            <div>
-              <h3>Build approval</h3>
-              <p>规划完成后展示 Markdown 预览。Continue Planning 继续打磨，Agree to Build 一键放行进入执行阶段。</p>
-            </div>
-          </div>
-          <p class="plan-note">支持多选、Other 与自由回复 · Markdown / GFM 计划预览</p>
-        </div>
-
-        <div class="plan-demo">
-          <div class="demo-frame">
-            <img src="assets/plan-demo.gif" alt="Plan 模式演示：回答问题 → 预览计划 → 同意构建" width="580" loading="lazy" />
-          </div>
-          <p class="demo-caption">Plan questions → 选择范围 → Build approval → Agree to Build</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- Subagents -->
-    <section id="subagents" class="container reveal">
-      <span class="section-label">Subagent</span>
-      <h2 class="section-title">子 agent 跑在后台，顶栏里一眼掌握</h2>
-      <p class="section-desc">
-        Claude Code、Codex 或 Cursor 上报 subagent 生命周期时，Atoll 通过 Hook 追踪启动与完成——在会话列表以彩色 chip 预览，进入列表查看全部，点进详情阅读 transcript。
-      </p>
-
-      <div class="plan-layout">
-        <div class="plan-copy">
-          <div class="plan-phase">
-            <div class="plan-phase-icon coral">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-            </div>
-            <div>
-              <h3>会话内 chip 预览</h3>
-              <p>每个 subagent 有独立 mascot 与色调，运行中与已完成状态一目了然。超出显示上限时可一键进入完整列表。</p>
-            </div>
-          </div>
-          <div class="plan-phase">
-            <div class="plan-phase-icon cyan">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>
-            </div>
-            <div>
-              <h3>列表视图与批量归档</h3>
-              <p>查看某会话下全部 subagent 的状态与时间，点击进入 transcript 详情。已完成项可一键归档，Settings 可调显示数量与自动清理时长。</p>
-            </div>
-          </div>
-          <div class="plan-phase">
-            <div class="plan-phase-icon lime">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-            </div>
-            <div>
-              <h3>高并发也顺滑</h3>
-              <p>后端增量合并 snapshot、缩短锁持有时间；前端减少全量重渲染，归档已完成项时保留仍在运行的 sibling。</p>
-            </div>
-          </div>
-          <p class="plan-note">v0.1.53 已加入 Now Playing、滚动歌词、剪贴板历史与 hook 健康检测</p>
-        </div>
-
-        <div class="plan-demo">
-          <div class="demo-frame demo-frame--subtle">
-            <div class="subagent-preview" role="img" aria-label="Subagent chips 与会话列表示意">
-              <div class="subagent-preview-session">
-                <span class="subagent-preview-mascot">
-                  <span class="mascot-slot" data-agent="claude" data-mood="happy"></span>
-                </span>
-                <div class="subagent-preview-info">
-                  <span class="subagent-preview-name">my-app</span>
-                  <div class="subagent-preview-chips">
-                    <span class="subagent-preview-chip coral">explore</span>
-                    <span class="subagent-preview-chip cyan is-done">shell</span>
-                    <span class="subagent-preview-chip lime">generalPurpose</span>
-                  </div>
-                </div>
-              </div>
-              <div class="subagent-preview-list">
-                <div class="subagent-preview-row">
-                  <span class="subagent-preview-chip coral">explore</span>
-                  <span class="subagent-preview-status running">Running</span>
-                </div>
-                <div class="subagent-preview-row">
-                  <span class="subagent-preview-chip cyan is-done">shell</span>
-                  <span class="subagent-preview-status done">Done</span>
-                </div>
-                <div class="subagent-preview-row">
-                  <span class="subagent-preview-chip lime">generalPurpose</span>
-                  <span class="subagent-preview-status running">Running</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <p class="demo-caption">Session chips → 查看全部 → 详情 / 归档</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- Architecture -->
-    <section id="architecture" class="container reveal">
-      <span class="section-label">工作原理</span>
-      <h2 class="section-title">三层本地桥接，数据不出本机</h2>
-      <p class="section-desc">
-        Atoll 不替代 Agent，也不上传会话内容。Hook 把权限事件送到本机 bridge，顶栏浮岛读取状态并回传你的决定——全程在 <code>127.0.0.1</code> 闭环。
-      </p>
-
-      <div class="arch-diagram">
-        <img src="assets/architecture.svg" alt="Atoll 架构：Agent → Hook shim → Hook bridge → 顶栏浮岛" width="960" loading="lazy" />
-      </div>
-
-      <div class="arch-grid">
-        <article class="arch-card">
-          <div class="arch-card-icon coral">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-          </div>
-          <h3>Agent 发起事件</h3>
-          <p>Claude Code / Codex / Cursor / ZCode 触发 <code>PermissionRequest</code>、Plan 模式的 <code>AskUserQuestion</code> / <code>ExitPlanMode</code>、subagent 生命周期，以及 <code>PostToolUse</code>、<code>Stop</code> 等 Hook 事件。</p>
-        </article>
-        <article class="arch-card">
-          <div class="arch-card-icon cyan">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
-          </div>
-          <h3>Hook → 本地 Bridge</h3>
-          <p>应用内一键安装的 Hook shim 写入 Agent 配置，通过 Node.js 把事件 POST 到 Rust 实现的本地 HTTP bridge，维护 session、subagent 与 Token 状态。</p>
-        </article>
-        <article class="arch-card">
-          <div class="arch-card-icon violet">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M9 3v18"/></svg>
-          </div>
-          <h3>浮岛 UI 回传决定</h3>
-          <p>React 浮岛自动展开，展示命令、Plan 内容或 subagent 详情。你的 Approve / Deny / Submit 经 bridge 写回 Hook，Agent 在同一终端继续执行，无需切窗口。</p>
-        </article>
-      </div>
-    </section>
-
-    <!-- Install -->
-    <section id="install" class="container reveal">
-      <span class="section-label">安装</span>
-      <h2 class="section-title">一行命令，即刻上手</h2>
-      <p class="section-desc">推荐一行安装脚本；也可从 GitHub Releases 手动下载。</p>
-
-      <div class="install-panel">
-        <div class="install-tabs" role="tablist">
-          <button class="install-tab active" role="tab" aria-selected="true" data-tab="macos">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-            macOS
-          </button>
-          <button class="install-tab" role="tab" aria-selected="false" data-tab="windows">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5L10.5 4.5V11.5H3V5.5M10.5 19.5L3 18.5V12.5H10.5V19.5M20.5 11.5H12V4.2L20.5 3V11.5M20.5 20.5L12 19.2V12.5H20.5V20.5Z"/></svg>
-            Windows
-          </button>
-        </div>
-
-        <div class="install-body">
-          <div class="install-pane active" id="pane-macos" role="tabpanel">
-            <h3>推荐 — 一行命令</h3>
-            <p>在终端中运行以下命令，自动下载并安装最新版 Atoll。</p>
-            <div class="code-block">
-              <button class="copy-btn" data-copy="curl -fsSL https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.sh | bash">复制</button>
-              <code>curl -fsSL https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.sh | bash</code>
-            </div>
-            <div class="code-block">
-              <button class="copy-btn" data-copy="brew tap sheepbooy/tap && brew install --cask --no-quarantine atoll">复制</button>
-              <code>brew tap sheepbooy/tap &amp;&amp; brew install --cask --no-quarantine atoll</code>
-            </div>
-            <p class="install-note">应用尚未公证。首次启动若被拦截，在 Applications 中右键「打开」一次即可。也可从 <a href="https://github.com/sheepbooy/Atoll/releases" style="color:var(--accent-cyan)">Releases</a> 下载 DMG 手动安装。</p>
-          </div>
-
-          <div class="install-pane" id="pane-windows" role="tabpanel">
-            <h3>推荐 — PowerShell 一行安装</h3>
-            <p>在 cmd、PowerShell 或 Windows 终端中运行：</p>
-            <div class="code-block">
-              <button class="copy-btn" data-copy="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex&quot;">复制</button>
-              <code>powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex"</code>
-            </div>
-            <p class="install-note">首次运行若被 SmartScreen 拦截，选择「更多信息」→「仍要运行」。Hook 安装需要本机已安装 Node.js 且在 PATH 中。也可从 <a href="https://github.com/sheepbooy/Atoll/releases" style="color:var(--accent-cyan)">Releases</a> 下载 MSI 手动安装。</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Agents -->
-    <section id="agents" class="container reveal">
-      <span class="section-label">接入 Agent</span>
-      <h2 class="section-title">现已支持 Claude Code、Codex、Cursor、ZCode &amp; Gemini CLI</h2>
-      <p class="section-desc">面向本地 Coding Agent 的工作流浮岛，更多 Agent 持续接入中。Hook 注册权限、Plan、subagent 与 lifecycle 事件，写入本地配置文件。</p>
-
-      <div class="agents-layout">
-        <div class="agents-demo">
-          <img src="assets/setup.gif" alt="首次安装 Hook 全流程" width="560" loading="lazy" />
-        </div>
-        <div class="agent-cards">
+    <section class="section everyday-section" id="everyday"><div class="container">
+      <div class="section-heading reveal"><span class="section-label">02 / A LITTLE MORE EVERYDAY</span><h2>工作之外，<br /><span class="muted">也是你的桌面小伙伴。</span></h2><p>暂存文件，听听音乐，找回刚复制的内容。<br />那些顺手的小事，也有一个舒服的位置。</p></div>
+      <div class="everyday-showcase">
+        <article class="everyday-main reveal"> <span class="feature-number">DROP. KEEP. GO.</span><h3>把文件，投喂给浮岛。</h3><p>拖入暂存、搜索、多选复制，再拖到需要的地方。</p><div class="product-media"><img src="assets/file-station.png" alt="文件中转站：搜索、暂存与拖出文件" loading="lazy" /><span class="media-fallback" hidden>文件中转站：搜索、暂存与拖出文件</span></div><details><summary>了解文件中转站 <span>+</span></summary><div class="detail-copy">把文件拖到浮岛上：岛会张嘴待喂、按存量分档播放「吃掉」动画。文件以引用方式记录，绝不移动 / 复制 / 删除原文件；面板内搜索、多选复制、在访达中显示，拖出即发起原生拖拽。</div></details></article>
+        <div class="everyday-side"><article class="music-showcase reveal"><div class="music-art"><span>♪</span><i></i><i></i><i></i><i></i><i></i></div><span class="feature-number">NOW PLAYING</span><h3>好音乐，不用切窗口。</h3><p>当前曲目与播放控制常驻手边，歌词随播放进度滚动。</p><div class="music-controls" aria-hidden="true"><span>◀</span><span>Ⅱ</span><span>▶</span></div><details><summary>了解音乐与歌词 <span>+</span></summary><div class="detail-copy">显示当前曲目、封面与播放状态，紧凑态指标器同步显示；支持上一首 / 下一首控制，不用切到音乐 App。<br /><br />紧凑胶囊中部展示当前歌词行，随播放进度自动滚动；v0.1.52 起支持，在 Settings 开启。</div></details></article>
+        <article class="battery-showcase reveal"><span class="feature-number">ALWAYS IN THE LOOP</span><h3>电量，心里有数。</h3><div class="battery-preview" role="img" aria-label="鼠标电量82%，键盘38%，耳机16%"><figure class="battery-ring mint"><div class="ring-wrap"><svg class="ring-chart" viewBox="0 0 40 40" aria-hidden="true"><circle class="track" cx="20" cy="20" r="16"/><circle class="arc" cx="20" cy="20" r="16" pathLength="100" stroke-dasharray="82 100"/></svg><span class="battery-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="5"/><path d="M12 6v4"/></svg></span></div><figcaption>鼠标<strong>82%</strong></figcaption></figure><figure class="battery-ring gold"><div class="ring-wrap"><svg class="ring-chart" viewBox="0 0 40 40" aria-hidden="true"><circle class="track" cx="20" cy="20" r="16"/><circle class="arc" cx="20" cy="20" r="16" pathLength="100" stroke-dasharray="38 100"/></svg><span class="battery-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg></span></div><figcaption>键盘<strong>38%</strong></figcaption></figure><figure class="battery-ring coral"><div class="ring-wrap"><svg class="ring-chart" viewBox="0 0 40 40" aria-hidden="true"><circle class="track" cx="20" cy="20" r="16"/><circle class="arc" cx="20" cy="20" r="16" pathLength="100" stroke-dasharray="16 100"/></svg><span class="battery-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="13" width="4" height="8" rx="2"/><rect x="17" y="13" width="4" height="8" rx="2"/></svg></span></div><figcaption>耳机<strong>16%</strong></figcaption></figure></div><details><summary>了解蓝牙电量 <span>+</span></summary><div class="detail-copy">折叠浮岛为每台已连接蓝牙设备亮出一枚环形电量：环内是设备类型图标，弧线即电量，最低电量排最前。GATT 直读 macOS 不上报电量的第三方外设，跌破阈值自动提醒一次。</div></details></article></div>
+      </div><div class="utility-grid everyday-utilities"><article class="utility-card reveal"><span class="utility-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><path d="M9 12h6"/></svg></span><h3>剪贴板历史</h3><p>找回刚刚复制的内容，支持搜索与隐私开关。</p><details><summary>了解详情 <span aria-hidden="true">+</span></summary><div class="detail-copy">跨平台剪贴板历史记录，关键词搜索秒回溯复制内容；隐私开关可暂停记录，敏感内容自动过滤。v0.1.50 起支持。</div></details></article><article class="utility-card reveal"><span class="utility-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9 8.5l3 3.5 3-3.5M12 12v5M9.5 13.5h5M9.5 16h5"/></svg></span><h3>秒薪计数器</h3><p>让当日收入逐秒累积，工作也有小小的成就感。</p><details><summary>了解详情 <span aria-hidden="true">+</span></summary><div class="detail-copy">Token 计数器可切换为「秒薪」模式：按月薪与工作时长逐秒累积当日收入，价签式货币前缀（¥/$/€），收入按天持久化——热力图页随之切换为每日收入统计与 30 天趋势。</div></details></article><article class="utility-card reveal"><span class="utility-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg></span><h3>开机自启动</h3><p>登录即就绪，让浮岛自然融入每天的工作。</p><details><summary>了解详情 <span aria-hidden="true">+</span></summary><div class="detail-copy">Settings → General 开启 Launch at login，登录 macOS 或 Windows 后自动启动 Atoll。v0.1.28 起支持，macOS 使用 SMAppService 注册登录项。</div></details></article></div>
+    </div></section>
+    <section class="container section" id="agents"><div class="section-heading reveal"><span class="section-label">03 / BETTER TOGETHER</span><h2>你的 Agent，<br /><span class="muted">熟悉的工作方式。</span></h2><p>在应用内安装对应 Hook，即可接入。<br />每个 Agent 的支持能力，都清楚写在这里。</p></div><div class="agent-cards">
           <article class="agent-card">
             <img src="assets/agent-claude.png" alt="Claude" width="48" height="48" />
             <div>
@@ -642,26 +153,54 @@
               <p>Settings → Agent hooks → Install Gemini。BeforeTool 阻断式审批，仅拦有副作用的工具；安装后在 Gemini 中 /hooks 信任 Atoll hook。</p>
             </div>
           </article>
+          <article class="agent-card">
+            <div class="agent-card-mascot" aria-hidden="true">
+              <span class="mascot-slot" data-agent="opencode"></span>
+            </div>
+            <div>
+              <h3>OpenCode</h3>
+              <p>Settings → Agent hooks → Install OpenCode。OpenCode 没有 hooks 配置文件——Atoll 在其插件目录部署进程内桥接插件；Atoll 不在线时 OpenCode 自带确认自动兜底。</p>
+            </div>
+          </article></div><details class="setup-details"><summary>查看首次接入演示 <span>+</span></summary><div class="product-media"><img src="assets/setup.gif" alt="首次安装 Hook 的操作演示" loading="lazy" /><span class="media-fallback" hidden>首次安装 Hook 的操作演示</span></div></details></section>
+    <section class="container section" id="architecture"><div class="privacy-card reveal"><div><span class="section-label">LOCAL BY DESIGN</span><h2>你的工作，<br />留在你的电脑里。</h2><p>Agent、Hook 与浮岛通过本机桥接通信。<br />会话内容与审批数据留在本地。</p><div class="privacy-badges"><span>本地桥接</span><span>开源可审查</span><span>无追踪</span></div></div><div class="bridge-diagram" role="img" aria-label="Agent 通过 Hook 与本地 Bridge 通信，浮岛回传决定"><div class="bridge-node"><span>01</span><strong>Coding Agent</strong><small>发起事件</small></div><div class="bridge-connector">↓ <code>127.0.0.1:47777</code></div><div class="bridge-node"><span>02</span><strong>Hook → Local Bridge</strong><small>维护会话与工作状态</small></div><div class="bridge-connector">↓ <span>你的决定，原路返回</span></div><div class="bridge-node"><span>03</span><strong>Atoll Island</strong><small>审批 · 计划 · 任务</small></div></div></div><details class="platform-detail"><summary>了解本地工作原理 <span>+</span></summary><div class="detail-copy">Hook shim 写入 Agent 配置，通过 Node.js 向 Rust 本地 HTTP bridge 发送事件。浮岛读取会话、Subagent 与 Token 状态，再将你的决定回传 Agent。所有工作流数据在本机闭环；应用更新、安装下载等操作会访问网络。Atoll 不替代 Agent，也不上传会话内容。</div></details></section>
+    <section class="container section" id="install"><div class="install-layout"><div class="section-heading reveal"><span class="section-label">04 / MAKE IT YOURS</span><h2>给顶栏，<br /><span class="muted">一个新的住客。</span></h2><p>一行命令安装，几步完成接入。<br />下一次 Agent 需要你，浮岛就在那里。</p><a class="text-link" href="https://github.com/sheepbooy/Atoll/releases" target="_blank" rel="noopener">从 Releases 手动下载 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a></div><div class="install-panel reveal">
+        <div class="install-tabs" role="tablist">
+          <button class="install-tab active" id="tab-macos" aria-controls="pane-macos" role="tab" aria-selected="true" data-tab="macos">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+            macOS
+          </button>
+          <button class="install-tab" id="tab-windows" aria-controls="pane-windows" role="tab" aria-selected="false" data-tab="windows">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5L10.5 4.5V11.5H3V5.5M10.5 19.5L3 18.5V12.5H10.5V19.5M20.5 11.5H12V4.2L20.5 3V11.5M20.5 20.5L12 19.2V12.5H20.5V20.5Z"/></svg>
+            Windows
+          </button>
         </div>
-      </div>
 
-      <div style="margin-top: 48px; text-align: center;" class="reveal">
-        <p style="color: var(--text-tertiary); font-size: 0.875rem; margin-bottom: 20px;">快捷键</p>
-        <div class="shortcuts">
-          <div class="shortcut"><kbd>Enter</kbd> 批准</div>
-          <div class="shortcut"><kbd>Delete</kbd> 拒绝</div>
-          <div class="shortcut"><kbd>Shift</kbd> + <kbd>Enter</kbd> 永久放行</div>
-        </div>
-      </div>
-    </section>
+        <div class="install-body">
+          <div class="install-pane active" id="pane-macos" aria-labelledby="tab-macos" role="tabpanel">
+            <h3>推荐 — 一行命令</h3>
+            <p>在终端中运行以下命令，自动下载并安装最新版 Atoll。</p>
+            <div class="code-block">
+              <button class="copy-btn" data-copy="curl -fsSL https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.sh | bash">复制</button>
+              <code>curl -fsSL https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.sh | bash</code>
+            </div>
+            <div class="code-block">
+              <button class="copy-btn" data-copy="brew tap sheepbooy/tap && brew install --cask --no-quarantine atoll">复制</button>
+              <code>brew tap sheepbooy/tap &amp;&amp; brew install --cask --no-quarantine atoll</code>
+            </div>
+            <p class="install-note">应用尚未公证。首次启动若被拦截，在 Applications 中右键「打开」一次即可。也可从 <a href="https://github.com/sheepbooy/Atoll/releases" style="color:var(--accent-cyan)">Releases</a> 下载 DMG 手动安装。</p>
+          </div>
 
-    <!-- Visual -->
-    <section id="visual" class="container reveal">
-      <span class="section-label">视觉</span>
-      <h2 class="section-title">Agent 形象，状态一目了然</h2>
-      <p class="section-desc">菜单栏 Logo 反映 App 全局状态；Claude 仍是像素风 Clawd，Codex 与 Cursor 使用官方图标，ZCode 是天蓝渐变、白色斜体 Z 的官方方块形象，Gemini 是官方四角星 spark 渐变形象。</p>
-
-      <div class="visual-showcase">
+          <div class="install-pane" id="pane-windows" aria-labelledby="tab-windows" role="tabpanel">
+            <h3>推荐 — PowerShell 一行安装</h3>
+            <p>在 cmd、PowerShell 或 Windows 终端中运行：</p>
+            <div class="code-block">
+              <button class="copy-btn" data-copy="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex&quot;">复制</button>
+              <code>powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/sheepbooy/Atoll/main/scripts/install.ps1 | iex"</code>
+            </div>
+            <p class="install-note">首次运行若被 SmartScreen 拦截，选择「更多信息」→「仍要运行」。Hook 安装优先使用本机 Node.js，系统没有 Node 时自动回退应用内置运行时。也可从 <a href="https://github.com/sheepbooy/Atoll/releases" style="color:var(--accent-cyan)">Releases</a> 下载 MSI 手动安装。</p>
+          </div>
+        </div></div></div></section>
+    <section class="container section" id="visual" data-motion-zone><div class="section-heading reveal"><span class="section-label">05 / SMALL ISLAND, BIG PERSONALITY</span><h2>认真工作，<br /><span class="muted">也认真放空。</span></h2><p>忙碌时告诉你状态，空闲时过自己的小日子。<br />钓鱼、观星、喝咖啡，总有一点小惊喜。</p></div><div class="visual-showcase reveal">
         <div class="state-grid">
           <div class="state-item state-idle">
             <div class="state-mascot">
@@ -760,134 +299,15 @@
               <div class="agent-mascot-slot" data-agent="gemini"></div>
               <figcaption>Gemini</figcaption>
             </figure>
+            <figure class="agent-mascot-card" data-agent="opencode">
+              <div class="agent-mascot-slot" data-agent="opencode"></div>
+              <figcaption>OpenCode</figcaption>
+            </figure>
           </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Updates -->
-    <section id="updates" class="container reveal">
-      <span class="section-label">更新</span>
-      <h2 class="section-title">自动检查更新，持续演进</h2>
-      <p class="section-desc">Atoll 还在快速迭代。近期加入全局快捷键、审批历史、通知双模式提醒、Gemini CLI 适配与 Windows Now Playing；v0.1.53 起有 Now Playing 音乐卡片、滚动歌词、剪贴板历史与 hook 健康检测。应用启动时会自动检测 GitHub 新版本，有新版本时在三点菜单显示更新入口，可一键下载安装并重启。</p>
-
-      <div class="update-grid">
-        <article class="update-card">
-          <div class="update-card-icon cyan">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v6h-6"/></svg>
-          </div>
-          <h3>启动自动检测</h3>
-          <p>后台对比 GitHub Release，无需手动查版本号。</p>
-        </article>
-        <article class="update-card">
-          <div class="update-card-icon coral">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-          </div>
-          <h3>Hook 自动升级</h3>
-          <p>启动时补齐缺失 lifecycle hooks，刷新过期 shim，并保留用户自定义配置。</p>
-        </article>
-        <article class="update-card">
-          <div class="update-card-icon lime">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-          </div>
-          <h3>Subagent 稳定性</h3>
-          <p>增量合并、虚拟列表与安全归档，让大量后台任务也能顺滑查看。</p>
-        </article>
-      </div>
-    </section>
-
-    <!-- CTA -->
-    <section class="container cta reveal">
-      <div class="cta-card">
-        <h2>终端里写代码，<br />拒绝为每个 y/n 切窗口</h2>
-        <p>Built for developers who live in the terminal but refuse to context-switch for every permission prompt.</p>
-        <div class="hero-actions">
-          <a href="#install" class="btn btn-primary">立即安装 Atoll</a>
-          <a href="https://github.com/sheepbooy/Atoll/releases" class="btn btn-ghost" target="_blank" rel="noopener">查看 Releases</a>
-        </div>
-      </div>
-    </section>
-
-    <!-- Footer -->
-    <footer class="footer">
-      <div class="container footer-inner">
-        <div class="footer-brand">
-          <img src="assets/logo.svg" alt="" width="24" height="27" />
-          Atoll · MIT License
-        </div>
-        <ul class="footer-links">
-          <li><a href="https://github.com/sheepbooy/Atoll" target="_blank" rel="noopener">GitHub</a></li>
-          <li><a href="https://github.com/sheepbooy/Atoll/releases" target="_blank" rel="noopener">Releases</a></li>
-          <li><a href="https://github.com/sheepbooy/Atoll/blob/main/CHANGELOG.md" target="_blank" rel="noopener">更新日志</a></li>
-        </ul>
-        <p class="footer-copy">© 2026 Atoll. 100% local, 100% open source.</p>
-      </div>
-    </footer>
-  </div>
-
-  <script>
-    // Nav scroll effect
-    const nav = document.getElementById('nav');
-    window.addEventListener('scroll', () => {
-      nav.classList.toggle('scrolled', window.scrollY > 20);
-    }, { passive: true });
-
-    // Mobile nav toggle
-    const navToggle = document.getElementById('nav-toggle');
-    const navLinks = document.getElementById('nav-links');
-    navToggle.addEventListener('click', () => {
-      navLinks.classList.toggle('open');
-    });
-    navLinks.querySelectorAll('a').forEach(a => {
-      a.addEventListener('click', () => navLinks.classList.remove('open'));
-    });
-
-    // Install tabs
-    document.querySelectorAll('.install-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.install-tab').forEach(t => {
-          t.classList.remove('active');
-          t.setAttribute('aria-selected', 'false');
-        });
-        document.querySelectorAll('.install-pane').forEach(p => p.classList.remove('active'));
-        tab.classList.add('active');
-        tab.setAttribute('aria-selected', 'true');
-        document.getElementById('pane-' + tab.dataset.tab).classList.add('active');
-      });
-    });
-
-    // Copy buttons
-    document.querySelectorAll('.copy-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const text = btn.dataset.copy;
-        try {
-          await navigator.clipboard.writeText(text);
-          btn.textContent = '已复制';
-          btn.classList.add('copied');
-          setTimeout(() => {
-            btn.textContent = '复制';
-            btn.classList.remove('copied');
-          }, 2000);
-        } catch {
-          btn.textContent = '失败';
-        }
-      });
-    });
-
-    // Scroll reveal
-    const revealEls = document.querySelectorAll('.reveal');
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('visible');
-          observer.unobserve(entry.target);
-        }
-      });
-    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
-    revealEls.forEach(el => observer.observe(el));
-  </script>
-  <script src="js/atoll-logo.js"></script>
-  <script src="js/cursor-mascot.js"></script>
-  <script src="js/agent-mascots.js"></script>
+        </div></div></section>
+    <section class="container section updates-section" id="updates"><div class="updates-heading reveal"><span class="section-label">ALWAYS GETTING BETTER</span><h2>小岛，还在长大。</h2><p>v0.1.68 · 刘海屏 Mac 全面适配</p><a class="text-link" href="https://github.com/sheepbooy/Atoll/blob/main/CHANGELOG.md" target="_blank" rel="noopener">查看更新日志 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a></div><div class="updates-grid"><article class="reveal"><span>↻</span><h3>应用自动更新</h3><p>启动检查新版本，一键下载安装并重启；遵循系统代理设置。</p></article><article class="reveal"><span>⌁</span><h3>Hook 自动维护</h3><p>补齐生命周期事件，刷新过期 shim；没有 Node.js 时回退内置运行时。</p></article><article class="reveal"><span>⌘</span><h3>贴合每块屏幕</h3><p>支持多显示器驻留，刘海屏浮岛对称展开，显示参数变化自动重排。</p></article></div></section>
+    <section class="container closing-cta reveal"><span class="atoll-logo-slot" data-activity="coffee" aria-hidden="true"></span><h2>少一点切换。<br /><span>多一点心流。</span></h2><a class="btn btn-primary" href="#install">让 Atoll 住进顶栏 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a><p>免费 · 开源 · 为本地 AI 工作流而造</p></section>
+  </main>
+  <footer class="footer container"><a class="nav-brand" href="#top"><svg class="brand-mark" viewBox="0 0 64 44" aria-hidden="true"><path fill="#38bdd8" d="M4 4h56v36H4z"/><path fill="#7de5ed" d="M4 4h56v7H4z"/><path fill="#0c1317" d="M17 15h6v15h-6zm24 0h6v15h-6z"/></svg> Atoll</a><p>© 2026 Atoll · MIT License</p><div><a href="https://github.com/sheepbooy/Atoll" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/sheepbooy/Atoll/releases" target="_blank" rel="noopener">Releases</a><a href="#install">安装</a></div></footer>
 </body>
 </html>

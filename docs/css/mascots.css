@@ -308,3 +308,35 @@
   transform-box: fill-box;
   transform-origin: center bottom;
 }
+
+/* OpenCode pixel-ring mascot */
+.agent-mascot-slot .opencode,
+.mascot-slot .opencode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 88px;
+  height: 79px;
+  line-height: 0;
+  will-change: transform;
+}
+
+.agent-mascot-slot .opencode-svg,
+.mascot-slot .opencode-svg {
+  overflow: visible;
+  width: 100%;
+  height: 100%;
+}
+
+.agent-mascot-slot .opencode-body {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}
+
+.agent-mascot-slot .opencode.is-alert .opencode-mark {
+  animation: official-mark-pulse 0.85s ease-in-out infinite;
+}
+
+.agent-mascot-card[data-agent="opencode"] figcaption {
+  color: #70d8c8;
+}

@@ -23,6 +23,10 @@
       type: "zcode",
       mood: "calm",
     },
+    opencode: {
+      type: "opencode",
+      mood: "calm",
+    },
   };
 
   function slotMascotSize(slot) {
@@ -162,6 +166,48 @@
     </span>`;
   }
 
+  // OpenCode: pixel ring "o" from the official wordmark (teal brand gradient).
+  const OPENCODE_RING_PATH = "M24 0H0V24H24V0ZM18 6H6V18H18V6Z";
+  const OPENCODE_BLOCK_PATH = "M6 10H18V18H6V10Z";
+  let opencodeGradientSeq = 0;
+
+  function renderOpencode(mood) {
+    const gradientId = `opencode-ring-gradient-${++opencodeGradientSeq}`;
+    const stops =
+      mood === "dead"
+        ? ["#55585e", "#3a3d42"]
+        : mood === "worried"
+          ? ["#4a5a66", "#35434d"]
+          : mood === "sleeping"
+            ? ["#46655f", "#2e4540"]
+            : ["#70d8c8", "#2aa896"];
+    const block =
+      mood === "dead"
+        ? "#c8ccd2"
+        : mood === "worried"
+          ? "#7cb97c"
+          : mood === "sleeping"
+            ? "#dbe7ee"
+            : "#ffffff";
+    return `<span class="opencode is-${mood}" aria-hidden="true">
+      <svg class="opencode-svg" viewBox="${VIEWBOX}" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <linearGradient id="${gradientId}" x1="0" y1="0" x2="0.35" y2="1">
+            <stop offset="0" stop-color="${stops[0]}"/>
+            <stop offset="1" stop-color="${stops[1]}"/>
+          </linearGradient>
+        </defs>
+        <ellipse class="opencode-shadow" cx="68" cy="92" rx="32" ry="4" fill="rgba(0,0,0,0.18)"/>
+        <g class="opencode-body">
+          <g class="opencode-mark" transform="translate(56 39) scale(3.15) translate(-12 -12)">
+            <path fill="url(#${gradientId})" fill-rule="evenodd" clip-rule="evenodd" d="${OPENCODE_RING_PATH}"/>
+            <path fill="${block}" d="${OPENCODE_BLOCK_PATH}"/>
+          </g>
+        </g>
+      </svg>
+    </span>`;
+  }
+
   function renderAgent(agentId, moodOverride, size) {
     const config = AGENTS[agentId];
     if (!config) return "";
@@ -181,6 +227,10 @@
 
     if (config.type === "gemini") {
       return renderGemini(mood);
+    }
+
+    if (config.type === "opencode") {
+      return renderOpencode(mood);
     }
 
     return renderClawd(clawdPalette(config.accent, config.accentDark), mood);

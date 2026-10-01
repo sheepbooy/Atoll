@@ -257,15 +257,40 @@
     // 眯眼/闭眼姿态（napping/music）不做眨眼
     if (logo.classList.contains("is-napping") || logo.classList.contains("is-music")) return;
 
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let inView = false;
     let timer;
+    let blinkTimer;
+    const stop = () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(blinkTimer);
+      logo.classList.remove("is-blinking");
+    };
     const loop = () => {
+      if (!inView || document.hidden || reducedMotion.matches) return;
       logo.classList.add("is-blinking");
-      window.setTimeout(() => {
+      blinkTimer = window.setTimeout(() => {
         logo.classList.remove("is-blinking");
         timer = window.setTimeout(loop, 2800 + Math.random() * 2800);
       }, 130);
     };
-    timer = window.setTimeout(loop, 2000 + Math.random() * 1500);
+    const update = () => {
+      stop();
+      if (inView && !document.hidden && !reducedMotion.matches) {
+        timer = window.setTimeout(loop, 2000 + Math.random() * 1500);
+      }
+    };
+    if ("IntersectionObserver" in window) {
+      new IntersectionObserver(([entry]) => {
+        inView = entry.isIntersecting;
+        update();
+      }).observe(slot);
+    } else {
+      inView = true;
+      update();
+    }
+    document.addEventListener("visibilitychange", update);
+    reducedMotion.addEventListener("change", update);
   }
 
   function init() {
