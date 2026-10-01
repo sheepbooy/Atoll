@@ -12,6 +12,7 @@ import {
   usesMicroIsland,
   usesMicroIslandSync,
   onIslandHoverChanged,
+  onNotchMetricsChanged,
   onIslandOpenRequested,
   onIslandPresentationSettled,
   type IslandSnapshot,
@@ -334,14 +335,41 @@ export function useIslandPresentation({
       return Promise.resolve();
     }),
   );
-    return () => {
-      unsubscribeHover();
-      unsubscribeOpen();
-      unsubscribeSettled();
-      clearTransitionWork();
-      clearIdleTimer();
-    };
-  }, []);
+  const unsubscribeNotch = manageAsyncUnlisten(
+    onNotchMetricsChanged((notch) => {
+      setNotchMetrics(notch);
+      applyWindowMetrics(notch);
+      // Re-anchor the collapsed island onto the refreshed geometry with a
+      // snap — the animated path would re-derive its target from the stale
+      // home center. Expanded states re-derive on their next transition.
+      if (
+        phaseRef.current !== "expanded" &&
+        phaseRef.current !== "opening" &&
+        phaseRef.current !== "closing"
+      ) {
+        const mode: "micro" | "compact" | "dormant" = phaseRef.current;
+        setIslandPresentation(
+          mode,
+          mode === "micro"
+            ? microPresentationWidthRef.current
+            : collapsedWindowWidthRef.current,
+          undefined,
+          mode === "compact" ? compactLeftPaneWidthRef.current : 0,
+          false,
+          true,
+        ).catch(() => undefined);
+      }
+    }),
+  );
+  return () => {
+    unsubscribeHover();
+    unsubscribeOpen();
+    unsubscribeSettled();
+    unsubscribeNotch();
+    clearTransitionWork();
+    clearIdleTimer();
+  };
+}, []);
 
   function setPresentationPhase(next: PresentationPhase) {
     phaseRef.current = next;
@@ -369,9 +397,15 @@ export function useIslandPresentation({
     compactLeftWidth?: number,
     expandedPlan?: boolean,
     expandedSettings?: boolean,
+    forceSnap?: boolean,
   ) {
+    // forceSnap: collapsed-mode transitions on notched displays land the
+    // native frame in the same commit as the new column widths — an animated
+    // resize would draw the notch spacer off the physical housing.
     const snap =
-      !notchMetricsHydrated || !initialNativePresentationSyncedRef.current;
+      forceSnap === true ||
+      !notchMetricsHydrated ||
+      !initialNativePresentationSyncedRef.current;
     return setIslandPresentation(
       mode,
       compactWidth,

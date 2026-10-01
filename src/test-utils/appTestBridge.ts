@@ -297,6 +297,7 @@ export let emitIslandHover:
 export let emitIslandOpen: ((source: "summon" | "focus") => void) | null = null;
 export let emitSnapshot: ((snapshot: IslandSnapshot) => void) | null = null;
 export let emitPresentationSettled: ((mode: string) => void) | null = null;
+let presentationSettledListeners: Array<(mode: string) => void> = [];
 
 /** The shared `beforeEach` body for every App test file: real timers, clean
  *  localStorage, fresh emit wiring, and the default mock responses. */
@@ -308,6 +309,7 @@ export function resetAppTestBridge() {
   emitIslandOpen = null;
   emitSnapshot = null;
   emitPresentationSettled = null;
+  presentationSettledListeners = [];
   bridge.getSnapshot.mockResolvedValue({
     online: true,
     pendingCount: 1,
@@ -329,8 +331,20 @@ export function resetAppTestBridge() {
     return () => undefined;
   });
   bridge.onIslandPresentationSettled.mockImplementation(async (callback) => {
-    emitPresentationSettled = callback;
-    return () => undefined;
+    // Tauri's listen() fans out to every registered listener (the FSM's
+    // settle finalize and the expanded-wing re-measure both subscribe), so
+    // the mock dispatches to all of them instead of keeping only the last.
+    presentationSettledListeners.push(callback);
+    emitPresentationSettled = (mode) => {
+      for (const listener of [...presentationSettledListeners]) {
+        listener(mode);
+      }
+    };
+    return () => {
+      presentationSettledListeners = presentationSettledListeners.filter(
+        (listener) => listener !== callback,
+      );
+    };
   });
   bridge.onCaptureCollapseRequested.mockResolvedValue(() => undefined);
   bridge.onCaptureOpenHooksRequested.mockResolvedValue(() => undefined);

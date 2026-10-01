@@ -8,6 +8,7 @@ import {
   COMPACT_HEADER_GAP,
   COMPACT_METRICS_GAP,
   COMPACT_NOTCH_INNER_GAP,
+  compactOuterPadding,
   computeMicroWindowWidth,
 } from "./compactLayout";
 import {
@@ -98,6 +99,14 @@ export function applyWindowMetrics(notch: NotchMetrics) {
   root.style.setProperty(
     "--compact-header-gap",
     `${notch.hasNotch ? 0 : COMPACT_HEADER_GAP}px`,
+  );
+  // Outer padding of the collapsed capsule: notched displays fuse with the
+  // camera housing and need more breathing room at the outer corners. The
+  // width budgets in compactLayout.ts reserve the same value — keep in sync
+  // via compactOuterPadding().
+  root.style.setProperty(
+    "--compact-outer-padding",
+    `${compactOuterPadding(notch)}px`,
   );
   root.style.setProperty("--compact-metrics-gap", `${COMPACT_METRICS_GAP}px`);
   root.classList.toggle("has-notch", notch.hasNotch);

@@ -21,6 +21,8 @@ pub(crate) async fn set_island_presentation(
     mode: IslandWindowMode,
     compact_width: Option<f64>,
     compact_left_width: Option<f64>,
+    expanded_wing_left: Option<f64>,
+    expanded_wing_right: Option<f64>,
     expanded_idle: Option<bool>,
     expanded_plan: Option<bool>,
     expanded_settings: Option<bool>,
@@ -57,6 +59,28 @@ pub(crate) async fn set_island_presentation(
         };
     }
 
+    // Expanded header wing widths measured by the webview (notched displays);
+    // clamp and persist so the next apply/animate sizes the wings to the
+    // actual header content instead of the fallback.
+    if let Some(left) = expanded_wing_left {
+        if left.is_finite() {
+            let mut stored = state
+                .expanded_wing_left
+                .lock()
+                .map_err(|error| error.to_string())?;
+            *stored = left.clamp(EXPANDED_WING_MIN_WIDTH, EXPANDED_WING_MAX_WIDTH);
+        }
+    }
+    if let Some(right) = expanded_wing_right {
+        if right.is_finite() {
+            let mut stored = state
+                .expanded_wing_right
+                .lock()
+                .map_err(|error| error.to_string())?;
+            *stored = right.clamp(EXPANDED_WING_MIN_WIDTH, EXPANDED_WING_MAX_WIDTH);
+        }
+    }
+
     // Reduced-motion users get the snap path: no per-frame window resizing,
     // the island jumps straight to its target presentation.
     let reduced_motion = platform::prefers_reduced_motion();
@@ -72,6 +96,16 @@ pub(crate) async fn set_island_presentation(
                 .compact_left_width
                 .lock()
                 .map_err(|error| error.to_string())?;
+            let expanded_wings = (
+                *state
+                    .expanded_wing_left
+                    .lock()
+                    .map_err(|error| error.to_string())?,
+                *state
+                    .expanded_wing_right
+                    .lock()
+                    .map_err(|error| error.to_string())?,
+            );
             let expanded_idle = expanded_idle.unwrap_or(false);
             let expanded_plan = expanded_plan.unwrap_or(false);
             let expanded_settings = expanded_settings.unwrap_or(false);
@@ -95,6 +129,7 @@ pub(crate) async fn set_island_presentation(
                         expanded_idle,
                         expanded_plan,
                         expanded_settings,
+                        expanded_wings,
                     )
                     .map_err(|error| error.to_string());
                     let _ = sync_tx.send(result);
@@ -134,8 +169,22 @@ pub(crate) async fn set_island_presentation(
         .compact_left_width
         .lock()
         .map_err(|error| error.to_string())?;
+    let expanded_wings = (
+        *state
+            .expanded_wing_left
+            .lock()
+            .map_err(|error| error.to_string())?,
+        *state
+            .expanded_wing_right
+            .lock()
+            .map_err(|error| error.to_string())?,
+    );
     let home_bounds = *state
         .home_bounds
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let notch_metrics = *state
+        .notch_metrics
         .lock()
         .map_err(|error| error.to_string())?;
     let expanded_idle = expanded_idle.unwrap_or(false);
@@ -149,8 +198,10 @@ pub(crate) async fn set_island_presentation(
             generation,
             &presentation_generation,
             home_bounds,
+            notch_metrics,
             presentation_width,
             compact_left_width,
+            expanded_wings,
             expanded_idle,
             expanded_plan,
             expanded_settings,
@@ -172,6 +223,28 @@ pub(crate) fn resolve_animation_duration(duration_ms: Option<u64>) -> Duration {
         Some(ms) if ms > 0 => Duration::from_millis(ms.min(2000)),
         _ => WINDOW_ANIMATION_DURATION,
     }
+}
+
+/// Top-left target for a cosmetic shape pulse. The top edge never moves: the
+/// island hangs from the physical screen top, and growing upward would push
+/// the capsule into the off-screen camera-housing band. Notched collapsed
+/// capsules (compact/dormant) also keep their left edge — the notch sits at a
+/// fixed offset from it — so width changes extend the right wing only; the
+/// screen-centered expanded window pulses around its center. Non-notched
+/// pulses stay horizontally centered.
+pub(crate) fn pulse_target_position(
+    start_position: LogicalPosition<f64>,
+    start_size: LogicalSize<f64>,
+    target_size: LogicalSize<f64>,
+    notch: NotchMetrics,
+) -> LogicalPosition<f64> {
+    let collapsed = start_size.height <= collapsed_band_height(&notch) + 1.0;
+    let x = if notch.has_notch && collapsed {
+        start_position.x
+    } else {
+        start_position.x - (target_size.width - start_size.width) / 2.0
+    };
+    LogicalPosition::new(x, start_position.y)
 }
 
 /// Cosmetic island shape pulse: grow/shrink the window by `width_delta` x
@@ -256,15 +329,16 @@ fn animate_island_shape_pulse(
     let start_position = window.outer_position()?.to_logical::<f64>(scale_factor);
     let start_size = window.outer_size()?.to_logical::<f64>(scale_factor);
     // Floor the target so a negative pulse can never collapse the window to
-    // nonsense; the top edge stays pinned (Tauri positions are top-left, so
-    // growth extends downward only — the island hangs from the menu bar).
+    // nonsense.
     let target_size = LogicalSize::new(
         (start_size.width + width_delta).max(80.0),
         (start_size.height + height_delta).max(20.0),
     );
-    let target_position = LogicalPosition::new(
-        start_position.x - (target_size.width - start_size.width) / 2.0,
-        start_position.y - (target_size.height - start_size.height),
+    let target_position = pulse_target_position(
+        start_position,
+        start_size,
+        target_size,
+        home_bounds.map(|home| home.notch).unwrap_or_default(),
     );
     let animation_frame = platform::display_animation_frame_interval(window);
     let total = out + back;
@@ -578,6 +652,7 @@ pub(crate) fn apply_island_window_mode(
     expanded_idle: bool,
     expanded_plan: bool,
     expanded_settings: bool,
+    expanded_wings: (f64, f64),
 ) -> tauri::Result<Option<HomeWindowBounds>> {
     let monitor = resolve_island_monitor(window, preferred_monitor);
     let Some(monitor) = monitor else {
@@ -590,8 +665,14 @@ pub(crate) fn apply_island_window_mode(
     let scale_factor = monitor.scale_factor();
     let monitor_position = monitor.position().to_logical::<f64>(scale_factor);
     let monitor_size = monitor.size().to_logical::<f64>(scale_factor);
+    let monitor_name = monitor.name();
     let monitor_top = platform::monitor_top_y(window, &monitor);
-    let notch = platform::detect_notch_metrics(window, monitor_position.x, monitor_size.width);
+    let notch = platform::detect_notch_metrics(
+        window,
+        monitor_name.map(String::as_str),
+        monitor_position.x,
+        monitor_size.width,
+    );
 
     window.set_size(island_window_logical_size(
         mode,
@@ -600,6 +681,7 @@ pub(crate) fn apply_island_window_mode(
         expanded_idle,
         expanded_plan,
         expanded_settings,
+        expanded_wings,
     ))?;
     platform::set_island_cursor_events_ignored(window, is_collapsed_pass_through_mode(mode));
 
@@ -611,8 +693,11 @@ pub(crate) fn apply_island_window_mode(
         expanded_idle,
         expanded_plan,
         expanded_settings,
+        expanded_wings,
     );
     let logical_window_size = window_size.to_logical::<f64>(scale_factor);
+    // The compact capsule anchors its left pane against the notch's left
+    // edge; the expanded window is screen-centered with symmetric wings.
     let left_pane_width = if compact_left_width > 0.0 {
         compact_left_width
     } else {
@@ -630,6 +715,15 @@ pub(crate) fn apply_island_window_mode(
     // height inside the web view. On non-notched screens this is unchanged.
     let centered_y = monitor_top;
     let position = LogicalPosition::new(centered_x, centered_y);
+    if platform::notch_debug_enabled() {
+        eprintln!(
+            "[Atoll] island mode {mode:?}: size {}x{} at ({},{}) left_pane={left_pane_width} notch {notch:?}",
+            logical_window_size.width,
+            logical_window_size.height,
+            position.x,
+            position.y,
+        );
+    }
     let home = HomeWindowBounds {
         position,
         // Fixed reference size for animation scale-factor recovery:
@@ -645,6 +739,7 @@ pub(crate) fn apply_island_window_mode(
         notch,
         screen_geometry: platform::screen_geometry_for_monitor(
             window,
+            monitor_name.map(String::as_str),
             monitor_position.x,
             monitor_size.width,
         ),
@@ -666,8 +761,10 @@ pub(crate) fn animate_island_window_mode(
     generation: u64,
     presentation_generation: &Arc<AtomicU64>,
     home_bounds: Option<HomeWindowBounds>,
+    notch: NotchMetrics,
     compact_width: f64,
     compact_left_width: f64,
+    expanded_wings: (f64, f64),
     expanded_idle: bool,
     expanded_plan: bool,
     expanded_settings: bool,
@@ -688,7 +785,15 @@ pub(crate) fn animate_island_window_mode(
     let start_position = window.outer_position()?.to_logical::<f64>(scale_factor);
     let start_size = window.outer_size()?;
     let start_logical_size = start_size.to_logical::<f64>(scale_factor);
-    let notch = home_bounds.map(|home| home.notch).unwrap_or_default();
+    // Live notch metrics from AppState (kept current by the snap path and the
+    // display-change monitor). Falling back to NotchMetrics::default() here
+    // would silently size an expanded window without the extra_top camera-
+    // housing band, clipping its content.
+    let notch = if notch.has_notch {
+        notch
+    } else {
+        home_bounds.map(|home| home.notch).unwrap_or_default()
+    };
     let target_size = island_window_physical_size(
         mode,
         scale_factor,
@@ -697,6 +802,7 @@ pub(crate) fn animate_island_window_mode(
         expanded_idle,
         expanded_plan,
         expanded_settings,
+        expanded_wings,
     );
     let target_logical_size = target_size.to_logical::<f64>(scale_factor);
     // Center the target window on the screen center.  Using monitor_center_x
@@ -705,6 +811,9 @@ pub(crate) fn animate_island_window_mode(
     // vs compact 460px).
     let (target_x, target_y) = home_bounds
         .map(|home| {
+            // The compact capsule anchors its left pane against the notch's
+            // left edge; the expanded window is screen-centered with
+            // symmetric wings (no drift during the resize animation).
             let left_pane_width = if compact_left_width > 0.0 {
                 compact_left_width
             } else {
@@ -754,6 +863,8 @@ pub(crate) fn animate_island_window_mode(
         };
         // Interpolate in logical points so 2× Retina displays move in
         // fractional 0.5 pt steps instead of quantized whole physical pixels.
+        // Symmetric wings keep both endpoints centered on the screen, so a
+        // single eased progress grows both edges outward evenly — no drift.
         let size = LogicalSize::new(
             interpolate_f64(start_logical_size.width, target_logical_size.width, eased),
             interpolate_f64(start_logical_size.height, target_logical_size.height, eased),
@@ -873,13 +984,9 @@ pub(crate) fn island_window_logical_size(
     expanded_idle: bool,
     expanded_plan: bool,
     expanded_settings: bool,
+    expanded_wings: (f64, f64),
 ) -> LogicalSize<f64> {
     let compact_width = sanitize_compact_width(compact_width);
-    let extra_top = if notch.has_notch {
-        notch.height + NOTCH_COVER_PADDING
-    } else {
-        0.0
-    };
     let min_notch_width = if notch.has_notch { notch.width } else { 0.0 };
     match mode {
         // Windows-only super-collapsed strip; keeps a minimal top-edge footprint
@@ -913,7 +1020,37 @@ pub(crate) fn island_window_logical_size(
             LogicalSize::new(w, collapsed_band_height(&notch))
         }
         IslandWindowMode::Expanded => {
-            let w = expanded_window_width(expanded_plan, expanded_settings).max(min_notch_width);
+            // On notched displays the header row stays beside the housing with
+            // SYMMETRIC wings: each wing = max(measured left need, measured
+            // right need), the window is screen-centered, so the notch column
+            // always sits exactly on the housing and the resize animation is
+            // drift-free (both edges grow outward evenly). Wider panel
+            // variants (plan/settings 680) still win when larger.
+            let base = expanded_window_width(expanded_plan, expanded_settings);
+            let w = if notch.has_notch {
+                let left_wing = if expanded_wings.0 > 0.0 {
+                    expanded_wings.0
+                } else {
+                    EXPANDED_WING_FALLBACK_WIDTH
+                };
+                let right_wing = if expanded_wings.1 > 0.0 {
+                    expanded_wings.1
+                } else {
+                    EXPANDED_WING_FALLBACK_WIDTH
+                };
+                let wing = left_wing.max(right_wing);
+                base.max(min_notch_width + 2.0 * wing)
+            } else {
+                base
+            };
+            // extra_top covers the camera-housing band; the header shares it
+            // with the notch (three-column wing layout in panel.css), so the
+            // panel body starts below the band with the full expanded height.
+            let extra_top = if notch.has_notch {
+                notch.height + NOTCH_COVER_PADDING
+            } else {
+                0.0
+            };
             LogicalSize::new(
                 w,
                 expanded_window_height(expanded_idle, expanded_plan, expanded_settings) + extra_top,
@@ -929,6 +1066,7 @@ pub(crate) fn island_window_physical_size(
     expanded_idle: bool,
     expanded_plan: bool,
     expanded_settings: bool,
+    expanded_wings: (f64, f64),
 ) -> PhysicalSize<u32> {
     let logical_size = island_window_logical_size(
         mode,
@@ -937,6 +1075,7 @@ pub(crate) fn island_window_physical_size(
         expanded_idle,
         expanded_plan,
         expanded_settings,
+        expanded_wings,
     );
 
     PhysicalSize::new(
@@ -1091,6 +1230,9 @@ pub(crate) fn compact_window_origin_x(
     left_pane_width: f64,
     mode: IslandWindowMode,
 ) -> f64 {
+    // The compact capsule anchors its left pane against the notch's left
+    // edge; the expanded window is screen-centered with symmetric wings, so
+    // its resize animation never drifts; dormant/micro stay centered too.
     if notch.has_notch && matches!(mode, IslandWindowMode::Compact) {
         monitor_center_x - notch.width / 2.0 - left_pane_width.max(0.0)
     } else {

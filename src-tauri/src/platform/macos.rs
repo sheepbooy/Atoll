@@ -1,13 +1,14 @@
 use std::process::Command;
 use std::time::Duration;
 
-use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewWindow};
+use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewWindow};
 
 use super::ScreenGeometry;
 use crate::{
-    collapsed_band_height, collapsed_corner_radius, AppState, HomeWindowBounds, NotchMetrics,
-    EXPANDED_WINDOW_CORNER_RADIUS, EXPANDED_WINDOW_HEIGHT, FALLBACK_NOTCH_CORNER_RADIUS,
-    FALLBACK_NOTCH_HEIGHT, FALLBACK_NOTCH_WIDTH,
+    collapsed_band_height, collapsed_corner_radius, lock_state, AppState, HomeWindowBounds,
+    NotchMetrics, EXPANDED_WINDOW_CORNER_RADIUS, EXPANDED_WINDOW_HEIGHT,
+    FALLBACK_NOTCH_CORNER_RADIUS, FALLBACK_NOTCH_HEIGHT, FALLBACK_NOTCH_WIDTH,
+    NOTCH_WIDTH_SLOP,
 };
 
 mod panel_store {
@@ -281,9 +282,17 @@ fn has_camera_housing(frame_width: f64, aux_left_width: f64, aux_right_width: f6
         && aux_left_width + aux_right_width < frame_width - 1.0
 }
 
-/// Notch width in logical points, derived from the gap between the auxiliary
-/// menu-bar areas (matches ping-island's detection). Falls back when the
-/// auxiliary areas are unavailable.
+/// True when ATOLL_DEBUG_NOTCH is set — gates verbose notch/window-frame
+/// diagnostics on stderr.
+pub fn notch_debug_enabled() -> bool {
+    std::env::var("ATOLL_DEBUG_NOTCH")
+        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+/// Notch width in logical points: auxiliary-area gap + cover slop. The flat
+/// fallback applies only when the auxiliary areas are unreadable — flooring a
+/// real measurement would visibly widen the capsule past narrower housings.
 fn notch_logical_width(
     frame_width: f64,
     aux_left_width: f64,
@@ -291,8 +300,7 @@ fn notch_logical_width(
     fallback: f64,
 ) -> f64 {
     if aux_left_width > 0.0 && aux_right_width > 0.0 {
-        let detected = (frame_width - aux_left_width - aux_right_width + 4.0).ceil();
-        detected.max(fallback)
+        (frame_width - aux_left_width - aux_right_width + NOTCH_WIDTH_SLOP).ceil()
     } else {
         fallback
     }
@@ -300,6 +308,7 @@ fn notch_logical_width(
 
 fn with_nsscreen_for_monitor<R>(
     window: &tauri::WebviewWindow,
+    monitor_name: Option<&str>,
     monitor_x: f64,
     monitor_width: f64,
     inspect: impl FnOnce(&objc2_app_kit::NSScreen) -> R,
@@ -309,6 +318,18 @@ fn with_nsscreen_for_monitor<R>(
 
     if let Some(main_thread_marker) = MainThreadMarker::new() {
         let screens = NSScreen::screens(main_thread_marker);
+        // 1) Match by display name — scale-independent, so it stays correct on
+        //    mixed-DPI arrangements where tao's rescaled logical geometry
+        //    disagrees with NSScreen points.
+        if let Some(name) = monitor_name.filter(|name| !name.is_empty()) {
+            if let Some(screen) = screens
+                .iter()
+                .find(|screen| screen.localizedName().to_string() == name)
+            {
+                return Some(inspect(&screen));
+            }
+        }
+        // 2) Fall back to a geometry match (logical points on both sides).
         if let Some(screen) = screens.iter().find(|screen| {
             let frame = screen.frame();
             (frame.origin.x - monitor_x).abs() < 1.0
@@ -316,6 +337,25 @@ fn with_nsscreen_for_monitor<R>(
         }) {
             return Some(inspect(&screen));
         }
+        // The match failed. A silent miss here degrades every notched display
+        // to "no notch" (capsule centered under the housing), so dump the
+        // candidates when debugging and warn unconditionally.
+        if notch_debug_enabled() {
+            for screen in screens.iter() {
+                let frame = screen.frame();
+                eprintln!(
+                    "[Atoll] notch screen candidate: name={:?} frame=({},{},{},{})",
+                    screen.localizedName().to_string(),
+                    frame.origin.x,
+                    frame.origin.y,
+                    frame.size.width,
+                    frame.size.height
+                );
+            }
+        }
+        eprintln!(
+            "[Atoll] warning: no NSScreen match for monitor name={monitor_name:?} x={monitor_x} width={monitor_width}; falling back to the island window's screen"
+        );
     }
 
     let ns_window = window.ns_window().ok()?;
@@ -331,39 +371,160 @@ fn with_nsscreen_for_monitor<R>(
 
 pub fn detect_notch_metrics(
     window: &tauri::WebviewWindow,
+    monitor_name: Option<&str>,
     monitor_x: f64,
     monitor_width: f64,
 ) -> NotchMetrics {
-    with_nsscreen_for_monitor(window, monitor_x, monitor_width, |screen| {
-        let safe_top = screen.safeAreaInsets().top;
-        let frame = screen.frame();
-        let aux_left_width = screen.auxiliaryTopLeftArea().size.width;
-        let aux_right_width = screen.auxiliaryTopRightArea().size.width;
-        let has_housing = has_camera_housing(frame.size.width, aux_left_width, aux_right_width);
+    let metrics = with_nsscreen_for_monitor(
+        window,
+        monitor_name,
+        monitor_x,
+        monitor_width,
+        |screen| {
+            let safe_top = screen.safeAreaInsets().top;
+            let frame = screen.frame();
+            let aux_left_width = screen.auxiliaryTopLeftArea().size.width;
+            let aux_right_width = screen.auxiliaryTopRightArea().size.width;
+            let has_housing = has_camera_housing(frame.size.width, aux_left_width, aux_right_width);
 
-        if safe_top <= 0.0 && !has_housing {
-            return NotchMetrics::default();
-        }
+            if safe_top <= 0.0 && !has_housing {
+                return NotchMetrics::default();
+            }
 
-        NotchMetrics {
-            has_notch: true,
-            width: notch_logical_width(
-                frame.size.width,
-                aux_left_width,
-                aux_right_width,
-                FALLBACK_NOTCH_WIDTH,
-            ),
-            height: if safe_top > 0.0 {
-                safe_top.ceil()
-            } else {
-                FALLBACK_NOTCH_HEIGHT
-            },
-            left_area_width: aux_left_width,
-            right_area_width: aux_right_width,
-            corner_radius: FALLBACK_NOTCH_CORNER_RADIUS,
+            NotchMetrics {
+                has_notch: true,
+                width: notch_logical_width(
+                    frame.size.width,
+                    aux_left_width,
+                    aux_right_width,
+                    FALLBACK_NOTCH_WIDTH,
+                ),
+                height: if safe_top > 0.0 {
+                    safe_top.ceil()
+                } else {
+                    FALLBACK_NOTCH_HEIGHT
+                },
+                left_area_width: aux_left_width,
+                right_area_width: aux_right_width,
+                corner_radius: FALLBACK_NOTCH_CORNER_RADIUS,
+            }
+        },
+    );
+    match metrics {
+        Some(metrics) => {
+            if notch_debug_enabled() {
+                eprintln!(
+                    "[Atoll] notch metrics for monitor {monitor_name:?} (x={monitor_x} width={monitor_width}): {metrics:?}"
+                );
+            }
+            metrics
         }
-    })
-    .unwrap_or_default()
+        None => {
+            eprintln!(
+                "[Atoll] warning: notch detection failed entirely (no NSScreen available); assuming no notch"
+            );
+            NotchMetrics::default()
+        }
+    }
+}
+
+mod display_change {
+    //! Re-derive the notch metrics when macOS rearranges displays (plug /
+    //! unplug / resolution change — NSApplicationDidChangeScreenParameters).
+    //! The fresh metrics are stored and mirrored to the webview, which then
+    //! re-snaps the collapsed island onto the new geometry.
+
+    use std::sync::OnceLock;
+
+    use objc2::rc::Retained;
+    use objc2::runtime::{AnyClass, AnyObject, NSObject};
+    use objc2::{define_class, msg_send, ClassType};
+    use objc2_foundation::NSString;
+    use tauri::AppHandle;
+
+    use super::handle_screen_parameters_changed;
+
+    pub(super) static DISPLAY_CHANGE_APP: OnceLock<AppHandle> = OnceLock::new();
+
+    define_class!(
+        #[unsafe(super(NSObject))]
+        #[name = "AtollDisplayChangeObserver"]
+        struct AtollDisplayChangeObserver;
+
+        impl AtollDisplayChangeObserver {
+            #[unsafe(method(atollDisplayDidChange:))]
+            fn atoll_display_did_change(&self, _notification: Option<&AnyObject>) {
+                handle_screen_parameters_changed();
+            }
+        }
+    );
+
+    pub fn install(app: AppHandle) {
+        static OBSERVER: OnceLock<Retained<AtollDisplayChangeObserver>> = OnceLock::new();
+        let observer = OBSERVER.get_or_init(|| unsafe {
+            let observer: Retained<AtollDisplayChangeObserver> =
+                msg_send![AtollDisplayChangeObserver::class(), new];
+            let Some(center_class) = AnyClass::get(c"NSNotificationCenter") else {
+                return observer;
+            };
+            let center: *mut AnyObject = msg_send![center_class, defaultCenter];
+            if center.is_null() {
+                return observer;
+            }
+            let selector = objc2::sel!(atollDisplayDidChange:);
+            let ns_name =
+                NSString::from_str("NSApplicationDidChangeScreenParametersNotification");
+            let _: () = msg_send![
+                center,
+                addObserver: &*observer,
+                selector: selector,
+                name: &*ns_name,
+                object: std::ptr::null_mut::<AnyObject>()
+            ];
+            observer
+        });
+        let _ = DISPLAY_CHANGE_APP.set(app);
+        let _ = observer;
+    }
+}
+
+/// Watch for display rearrangements and keep the notch metrics current.
+/// No-op after the first call.
+pub fn start_display_change_monitor(app: AppHandle) {
+    display_change::install(app);
+}
+
+/// NSApplicationDidChangeScreenParametersNotification fires on the main
+/// thread. Re-detect the notch for the island's monitor; when the metrics
+/// changed, persist them and tell the webview (which re-snaps the island).
+fn handle_screen_parameters_changed() {
+    let Some(app) = display_change::DISPLAY_CHANGE_APP.get() else {
+        return;
+    };
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let state = app.state::<AppState>();
+    let preferred = lock_state(&state.preferred_monitor).clone();
+    let Some(monitor) = crate::window::resolve_island_monitor(&window, preferred.as_deref())
+    else {
+        return;
+    };
+    let scale_factor = monitor.scale_factor();
+    let position = monitor.position().to_logical::<f64>(scale_factor);
+    let size = monitor.size().to_logical::<f64>(scale_factor);
+    let notch = detect_notch_metrics(
+        &window,
+        monitor.name().map(String::as_str),
+        position.x,
+        size.width,
+    );
+    if *lock_state(&state.notch_metrics) == notch {
+        return;
+    }
+    *lock_state(&state.notch_metrics) = notch;
+    eprintln!("[Atoll] display change: notch metrics now {notch:?}");
+    let _ = app.emit("notch-metrics-changed", notch);
 }
 pub fn set_island_cursor_events_ignored(window: &tauri::WebviewWindow, ignore: bool) {
     apply_island_cursor_events(window, ignore, None);
@@ -884,16 +1045,23 @@ unsafe fn apply_content_view_corner_mask(ns_window: &objc2_app_kit::NSWindow, ra
 
 pub fn screen_geometry_for_monitor(
     window: &WebviewWindow,
+    monitor_name: Option<&str>,
     monitor_x: f64,
     monitor_width: f64,
 ) -> Option<ScreenGeometry> {
-    with_nsscreen_for_monitor(window, monitor_x, monitor_width, |screen| {
-        let frame = screen.frame();
-        ScreenGeometry {
-            origin_y: frame.origin.y,
-            height: frame.size.height,
-        }
-    })
+    with_nsscreen_for_monitor(
+        window,
+        monitor_name,
+        monitor_x,
+        monitor_width,
+        |screen| {
+            let frame = screen.frame();
+            ScreenGeometry {
+                origin_y: frame.origin.y,
+                height: frame.size.height,
+            }
+        },
+    )
 }
 
 /// Cursor position in AppKit global points (primary-display bottom-left

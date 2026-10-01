@@ -145,6 +145,8 @@ pub fn run() {
             risk_guard_enabled: Mutex::new(load_risk_guard_enabled()),
             compact_width: Mutex::new(COMPACT_WINDOW_WIDTH),
             compact_left_width: Mutex::new(0.0),
+            expanded_wing_left: Mutex::new(0.0),
+            expanded_wing_right: Mutex::new(0.0),
             presentation_generation: Arc::new(AtomicU64::new(0)),
             shape_pulse_generation: Arc::new(AtomicU64::new(0)),
             home_bounds: Mutex::new(None),
@@ -404,6 +406,7 @@ pub fn run() {
                     false,
                     false,
                     false,
+                    (0.0, 0.0),
                 ) {
                     eprintln!("[Atoll] step: island window mode applied");
                     if let Ok(mut home_bounds) = state.home_bounds.lock() {
@@ -412,6 +415,12 @@ pub fn run() {
                     if let Ok(mut notch_metrics) = state.notch_metrics.lock() {
                         *notch_metrics = home.notch;
                     };
+                }
+                // Keep the notch metrics current across display plug/unplug and
+                // resolution changes; the webview re-snaps on the emitted event.
+                platform::start_display_change_monitor(app.handle().clone());
+                if let Ok(notch_metrics) = state.notch_metrics.lock() {
+                    eprintln!("[Atoll] notch metrics: {notch_metrics:?}");
                 }
                 #[cfg(target_os = "windows")]
                 platform::show_island_on_top(&window);

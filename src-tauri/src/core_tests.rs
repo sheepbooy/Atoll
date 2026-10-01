@@ -10,6 +10,8 @@ pub(crate) fn test_app_state() -> AppState {
         risk_guard_enabled: Mutex::new(true),
         compact_width: Mutex::new(COMPACT_WINDOW_WIDTH),
         compact_left_width: Mutex::new(0.0),
+        expanded_wing_left: Mutex::new(0.0),
+        expanded_wing_right: Mutex::new(0.0),
         presentation_generation: Arc::new(AtomicU64::new(0)),
         shape_pulse_generation: Arc::new(AtomicU64::new(0)),
         home_bounds: Mutex::new(None),

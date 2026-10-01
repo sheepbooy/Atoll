@@ -1,5 +1,5 @@
 use super::*;
-use tauri::LogicalSize;
+use tauri::{LogicalPosition, LogicalSize};
 
 /// A display has a camera housing ("notch") when the two menu-bar halves
 /// (auxiliary top areas) don't span the full screen width — the gap between
@@ -11,9 +11,9 @@ fn has_camera_housing(frame_width: f64, aux_left_width: f64, aux_right_width: f6
         && aux_left_width + aux_right_width < frame_width - 1.0
 }
 
-/// Notch width in logical points, derived from the gap between the auxiliary
-/// menu-bar areas (matches ping-island's detection). Falls back when the
-/// auxiliary areas are unavailable.
+/// Notch width in logical points: auxiliary-area gap + cover slop. The flat
+/// fallback applies only when the auxiliary areas are unreadable. Mirror of
+/// platform::macos::notch_logical_width — keep the two in sync.
 #[cfg(test)]
 fn notch_logical_width(
     frame_width: f64,
@@ -22,11 +22,32 @@ fn notch_logical_width(
     fallback: f64,
 ) -> f64 {
     if aux_left_width > 0.0 && aux_right_width > 0.0 {
-        let detected = (frame_width - aux_left_width - aux_right_width + 4.0).ceil();
-        detected.max(fallback)
+        (frame_width - aux_left_width - aux_right_width + NOTCH_WIDTH_SLOP).ceil()
     } else {
         fallback
     }
+}
+
+/// Delegates to island_window_logical_size with unmeasured wings — 0.0 falls
+/// back to EXPANDED_WING_FALLBACK_WIDTH per wing on notched displays.
+#[cfg(test)]
+fn window_logical_size(
+    mode: IslandWindowMode,
+    compact_width: f64,
+    notch: NotchMetrics,
+    expanded_idle: bool,
+    expanded_plan: bool,
+    expanded_settings: bool,
+) -> LogicalSize<f64> {
+    island_window_logical_size(
+        mode,
+        compact_width,
+        notch,
+        expanded_idle,
+        expanded_plan,
+        expanded_settings,
+        (0.0, 0.0),
+    )
 }
 
 #[test]
@@ -56,8 +77,72 @@ fn approval_notification_copy_truncates_long_commands() {
 }
 
 #[test]
-fn expanded_window_is_560_by_320() {
+fn notched_expanded_window_widens_for_header_wings() {
+    let notch = NotchMetrics {
+        has_notch: true,
+        width: 224.0,
+        height: 38.0,
+        ..NotchMetrics::default()
+    };
+    let size = window_logical_size(
+        IslandWindowMode::Expanded,
+        132.0,
+        notch,
+        false,
+        false,
+        false,
+    );
+    // Wing layout: the header stays beside the housing, so the window widens
+    // to notch + 2 × 300pt wings; the height adds only the housing band
+    // (38 + 16 cover padding) above the full expanded body.
+    assert_eq!(size, LogicalSize::new(224.0 + 600.0, 320.0 + 38.0 + 16.0));
+
+    // The wider plan/settings variants fit inside the widened window.
+    let plan =
+        window_logical_size(IslandWindowMode::Expanded, 132.0, notch, false, true, false);
+    assert_eq!(plan.width, 224.0 + 600.0);
+    assert_eq!(plan.height, 680.0 + 38.0 + 16.0);
+}
+
+#[test]
+fn notched_expanded_window_symmetrizes_wings_from_content() {
+    let notch = NotchMetrics {
+        has_notch: true,
+        width: 224.0,
+        height: 38.0,
+        ..NotchMetrics::default()
+    };
+    // Measured wings are symmetrized to the larger need: the window is
+    // screen-centered (notch + 2 × wing), so the resize animation is drift-
+    // free — both edges grow outward evenly and the notch column always sits
+    // exactly on the housing.
     let size = island_window_logical_size(
+        IslandWindowMode::Expanded,
+        132.0,
+        notch,
+        false,
+        false,
+        false,
+        (160.0, 280.0),
+    );
+    assert_eq!(size.width, 224.0 + 2.0 * 280.0);
+
+    // The plan/settings body width (680) wins when the wings are narrower.
+    let plan = island_window_logical_size(
+        IslandWindowMode::Expanded,
+        132.0,
+        notch,
+        false,
+        true,
+        false,
+        (160.0, 280.0),
+    );
+    assert_eq!(plan.width, 784.0);
+}
+
+#[test]
+fn expanded_window_is_560_by_320() {
+    let size = window_logical_size(
         IslandWindowMode::Expanded,
         COMPACT_WINDOW_WIDTH,
         NotchMetrics::default(),
@@ -71,7 +156,7 @@ fn expanded_window_is_560_by_320() {
 
 #[test]
 fn expanded_idle_window_is_shorter() {
-    let size = island_window_logical_size(
+    let size = window_logical_size(
         IslandWindowMode::Expanded,
         COMPACT_WINDOW_WIDTH,
         NotchMetrics::default(),
@@ -85,7 +170,7 @@ fn expanded_idle_window_is_shorter() {
 
 #[test]
 fn expanded_plan_window_is_taller() {
-    let size = island_window_logical_size(
+    let size = window_logical_size(
         IslandWindowMode::Expanded,
         COMPACT_WINDOW_WIDTH,
         NotchMetrics::default(),
@@ -102,7 +187,7 @@ fn expanded_plan_window_is_taller() {
 
 #[test]
 fn expanded_settings_window_is_larger() {
-    let size = island_window_logical_size(
+    let size = window_logical_size(
         IslandWindowMode::Expanded,
         COMPACT_WINDOW_WIDTH,
         NotchMetrics::default(),
@@ -202,16 +287,66 @@ fn camera_housing_is_detected_from_auxiliary_top_areas() {
 }
 
 #[test]
-fn notch_width_never_drops_below_the_fallback_floor() {
-    // 1512 - 700 - 700 + 4 = 116, clamped up to the fallback floor.
+fn notch_width_tracks_the_auxiliary_gap_without_a_synthetic_floor() {
+    // A measured gap is reported with cover slop only — the old 200pt floor
+    // applied to real measurements visibly widened the capsule past narrower
+    // housings (e.g. 1512 - 700 - 700 = 112pt of housing reporting as 200).
     assert_eq!(
         notch_logical_width(1512.0, 700.0, 700.0, FALLBACK_NOTCH_WIDTH),
-        FALLBACK_NOTCH_WIDTH
+        116.0
     );
-    // A wider gap is reported verbatim once it exceeds the floor.
+    // A wide gap is reported verbatim.
     assert_eq!(notch_logical_width(1512.0, 600.0, 600.0, 200.0), 316.0);
-    // Without auxiliary areas we fall back.
+    // Real 16" fixture at 1800pt logical width (aux halves 790/790,
+    // 220pt housing): 220 + 4 slop = 224.
+    assert_eq!(notch_logical_width(1800.0, 790.0, 790.0, 200.0), 224.0);
+    // Without auxiliary areas we fall back to the flat width.
     assert_eq!(notch_logical_width(1512.0, 0.0, 0.0, 200.0), 200.0);
+}
+
+#[test]
+fn shape_pulse_keeps_the_notch_anchored_when_collapsed() {
+    let notch = NotchMetrics {
+        has_notch: true,
+        width: 224.0,
+        height: 38.0,
+        ..NotchMetrics::default()
+    };
+    let start = LogicalPosition::new(600.0, 0.0);
+    let start_size = LogicalSize::new(400.0, 38.0);
+    let target = LogicalSize::new(424.0, 62.0);
+
+    // Left edge pinned: the notch sits at a fixed offset from it, so growing
+    // leftward/centered would shift the capsule off the housing.
+    let position = pulse_target_position(start, start_size, target, notch);
+    assert_eq!(position.x, 600.0);
+    // Top edge pinned: the island hangs from the physical screen top — the
+    // old upward growth clipped the capsule into the off-screen band.
+    assert_eq!(position.y, 0.0);
+
+    // Non-notched displays keep the horizontally centered growth.
+    let position = pulse_target_position(start, start_size, target, NotchMetrics::default());
+    assert_eq!(position.x, 600.0 - 12.0);
+    assert_eq!(position.y, 0.0);
+}
+
+#[test]
+fn shape_pulse_stays_centered_when_expanded() {
+    let notch = NotchMetrics {
+        has_notch: true,
+        width: 224.0,
+        height: 38.0,
+        ..NotchMetrics::default()
+    };
+    let start = LogicalPosition::new(320.0, 0.0);
+    let start_size = LogicalSize::new(560.0, 374.0);
+    let target = LogicalSize::new(572.0, 398.0);
+    // The expanded window is screen-centered with symmetric wings, so a
+    // pulse grows around its center — left-anchoring would drift it off the
+    // screen center mid-pulse.
+    let position = pulse_target_position(start, start_size, target, notch);
+    assert_eq!(position.x, 320.0 - 6.0);
+    assert_eq!(position.y, 0.0);
 }
 
 #[test]
@@ -223,7 +358,7 @@ fn notched_display_widens_to_notch_width() {
         ..NotchMetrics::default()
     };
     let compact =
-        island_window_logical_size(IslandWindowMode::Compact, 132.0, notch, false, false, false);
+        window_logical_size(IslandWindowMode::Compact, 132.0, notch, false, false, false);
     // Compact sits in the menu-bar band (like dormant) — no extra_top. Its
     // height matches the notch so the pill bottom is flush with the housing.
     assert_eq!(compact.height, 38.0);
@@ -233,12 +368,12 @@ fn notched_display_widens_to_notch_width() {
 
     // Content wider than the notch keeps its own width.
     let wide =
-        island_window_logical_size(IslandWindowMode::Compact, 300.0, notch, false, false, false);
+        window_logical_size(IslandWindowMode::Compact, 300.0, notch, false, false, false);
     assert_eq!(wide.width, 300.0);
 
     // Dormant is slightly wider than the notch (padding on each side).
     let dormant =
-        island_window_logical_size(IslandWindowMode::Dormant, 132.0, notch, false, false, false);
+        window_logical_size(IslandWindowMode::Dormant, 132.0, notch, false, false, false);
     assert_eq!(dormant.width, 200.0 + 2.0 * DORMANT_NOTCH_PADDING);
     assert_eq!(dormant.height, 38.0);
 }
@@ -283,7 +418,7 @@ fn non_notched_display_uses_minimum_comfortable_width() {
     let no_notch = NotchMetrics::default();
 
     // Compact: content width is kept as-is on non-notched displays.
-    let compact = island_window_logical_size(
+    let compact = window_logical_size(
         IslandWindowMode::Compact,
         132.0,
         no_notch,
@@ -296,7 +431,7 @@ fn non_notched_display_uses_minimum_comfortable_width() {
     assert_eq!(compact.height, NOTCH_BAND_HEIGHT);
 
     // A compact_width that already exceeds the floor is kept as-is.
-    let wide = island_window_logical_size(
+    let wide = window_logical_size(
         IslandWindowMode::Compact,
         250.0,
         no_notch,
@@ -307,7 +442,7 @@ fn non_notched_display_uses_minimum_comfortable_width() {
     assert_eq!(wide.width, 250.0);
 
     // Dormant: uses the same FALLBACK_NOTCH_WIDTH reference + padding.
-    let dormant = island_window_logical_size(
+    let dormant = window_logical_size(
         IslandWindowMode::Dormant,
         132.0,
         no_notch,
@@ -360,7 +495,7 @@ fn collapsed_band_height_and_corner_radius_prefer_live_metrics() {
 
 #[test]
 fn micro_window_is_a_thin_top_strip() {
-    let wide = island_window_logical_size(
+    let wide = window_logical_size(
         IslandWindowMode::Micro,
         104.0,
         NotchMetrics::default(),
@@ -370,7 +505,7 @@ fn micro_window_is_a_thin_top_strip() {
     );
     assert_eq!(wide.width, 104.0);
     assert_eq!(wide.height, MICRO_WINDOW_HEIGHT);
-    let narrow = island_window_logical_size(
+    let narrow = window_logical_size(
         IslandWindowMode::Micro,
         48.0,
         NotchMetrics::default(),

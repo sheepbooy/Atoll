@@ -114,39 +114,66 @@ pub fn show_island_on_top(window: &WebviewWindow) {
     windows::show_island_on_top(window);
 }
 
+/// True when ATOLL_DEBUG_NOTCH is set (macOS notch/window-frame diagnostics).
+pub fn notch_debug_enabled() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        return macos::notch_debug_enabled();
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+/// Watch for display rearrangements so the notch metrics never go stale
+/// (macOS only; no-op elsewhere).
+pub fn start_display_change_monitor(app: AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        macos::start_display_change_monitor(app);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+    }
+}
+
 pub fn detect_notch_metrics(
     window: &WebviewWindow,
+    monitor_name: Option<&str>,
     monitor_x: f64,
     monitor_width: f64,
 ) -> NotchMetrics {
     #[cfg(target_os = "macos")]
     {
-        return macos::detect_notch_metrics(window, monitor_x, monitor_width);
+        return macos::detect_notch_metrics(window, monitor_name, monitor_x, monitor_width);
     }
     #[cfg(target_os = "windows")]
     {
-        let _ = (window, monitor_x, monitor_width);
+        let _ = (window, monitor_name, monitor_x, monitor_width);
         return NotchMetrics::default();
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        let _ = (window, monitor_x, monitor_width);
+        let _ = (window, monitor_name, monitor_x, monitor_width);
         NotchMetrics::default()
     }
 }
 
 pub fn screen_geometry_for_monitor(
     window: &WebviewWindow,
+    monitor_name: Option<&str>,
     monitor_x: f64,
     monitor_width: f64,
 ) -> Option<ScreenGeometry> {
     #[cfg(target_os = "macos")]
     {
-        return macos::screen_geometry_for_monitor(window, monitor_x, monitor_width);
+        return macos::screen_geometry_for_monitor(window, monitor_name, monitor_x, monitor_width);
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (window, monitor_x, monitor_width);
+        let _ = (window, monitor_name, monitor_x, monitor_width);
         None
     }
 }

@@ -32,6 +32,8 @@ export async function setIslandPresentation(
   expandedPlan?: boolean,
   expandedSettings?: boolean,
   durationMs?: number,
+  expandedWingLeft?: number,
+  expandedWingRight?: number,
 ) {
   if (!isTauriRuntime()) {
     return;
@@ -41,6 +43,8 @@ export async function setIslandPresentation(
     mode,
     compactWidth,
     compactLeftWidth,
+    expandedWingLeft,
+    expandedWingRight,
     expandedIdle,
     expandedPlan,
     expandedSettings,
@@ -157,6 +161,20 @@ export async function onIslandOpenRequested(
 
   return listen<string | null>("island-open-requested", (event) =>
     callback(event.payload === "summon" ? "summon" : "focus"),
+  );
+}
+
+/** Fires when macOS rearranges displays (plug/unplug, resolution change) and
+ * the native notch metrics changed. Payload mirrors `get_notch_metrics`. */
+export async function onNotchMetricsChanged(
+  callback: (notch: NotchMetrics) => void | Promise<void>,
+) {
+  if (!isTauriRuntime()) {
+    return () => undefined;
+  }
+
+  return listen<NotchMetrics>("notch-metrics-changed", (event) =>
+    callback(event.payload),
   );
 }
 

@@ -9,6 +9,7 @@ import {
   computeCollapsedWindowWidth,
   computeCompactHeaderLayout,
   computeCompactLeftPaneWidth,
+  compactOuterPadding,
   computeMaxCompactIconLimit,
   type CompactHeaderLayout,
 } from "../compactLayout";
@@ -174,8 +175,12 @@ export function useCompactLayout({
   ]);
 
   const computedLeftPaneWidth = useMemo(
-    () => computeCompactLeftPaneWidth(compactHeaderLayout),
-    [compactHeaderLayout],
+    () =>
+      computeCompactLeftPaneWidth(
+        compactHeaderLayout,
+        compactOuterPadding(notchMetrics),
+      ),
+    [compactHeaderLayout, notchMetrics],
   );
   const stableLeftWidthRef = useRef(computedLeftPaneWidth);
   const compactLeftPaneWidth = useMemo(() => {

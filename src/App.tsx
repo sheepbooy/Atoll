@@ -18,9 +18,11 @@ import {
   setPreferredMonitor,
   openAgentApp,
   stageClipboardEntries,
+  onIslandPresentationSettled,
   type IslandSnapshot,
   type PermissionRequest,
 } from "./tauri";
+import { manageAsyncUnlisten } from "./asyncUnlisten";
 import {
   analyzeHookHealth,
   deriveHeaderLogoDisplay,
@@ -686,6 +688,160 @@ export function App() {
     microPresentationWidthRef,
   });
 
+  // Expanded header wing sizing on notched displays: measure the live header
+  // content (logo + agent tabs on the left, token counter + actions on the
+  // right) and let the native window size its symmetric wings to it —
+  // window = notch + 2 × max(left need, right need), screen-centered, so the
+  // resize animation is drift-free and the wider wing's surplus is the tab
+  // bar's growth headroom. Re-measured on phase changes and webview resizes;
+  // sent only when the measured need changes, so the window resize cannot
+  // loop back into measurement.
+  const expandedWingsSentRef = useRef<{ left: number; right: number }>({
+    left: 0,
+    right: 0,
+  });
+  useEffect(() => {
+    // Expanded-only: during "opening" the expanded chrome (tabs, actions,
+    // token counter) is not mounted yet — measuring it there reads ~0, sent
+    // the expand at a too-narrow wing, and left the counter under the housing
+    // until the post-settle correction produced the second-stage growth. The
+    // expand targets the stored wings (last measurement) instead, and the
+    // observers below correct while expanded.
+    if (phase !== "expanded") return;
+    const measure = () => {
+      const tabbar = document.querySelector<HTMLElement>(
+        ".is-expanded .agent-tabbar",
+      );
+      const actions = document.querySelector<HTMLElement>(
+        ".is-expanded .header-actions",
+      );
+      const counter = document.querySelector<HTMLElement>(
+        ".is-expanded .token-counter-wrap--expanded",
+      );
+      // offsetWidth/scrollWidth read the layout box and ignore the entrance
+      // transforms: the actions cluster transitions in from scale(0.94), so
+      // getBoundingClientRect would measure the mid-transition width, undersize
+      // the wing, and leave the counter under the housing until a late
+      // correction produced the second-stage growth. The token counter hangs
+      // left of the actions cluster (absolute, right: calc(100% + 5px)) —
+      // outside its box — so its width and the 5pt gap add on top.
+      const tabsWidth = tabbar ? tabbar.scrollWidth : 0;
+      const actionsWidth = actions ? actions.offsetWidth : 0;
+      const counterWidth = counter ? counter.offsetWidth : 0;
+      // 14pt header padding + 42pt logo zone + tabs on the left; 12pt header
+      // padding + counter + 5pt gap + actions + an 8pt margin on the right.
+      // Rust symmetrizes the pair (wing = max(left, right)) and falls back to
+      // its wing defaults before the first measurement lands.
+      const leftWing = Math.max(64, Math.ceil(14 + 42 + tabsWidth + 6));
+      const rightWing = Math.max(
+        80,
+        Math.ceil(
+          12 + counterWidth + (counterWidth > 0 ? 5 : 0) + actionsWidth + 8,
+        ),
+      );
+      const sent = expandedWingsSentRef.current;
+      if (
+        phaseRef.current !== "expanded" &&
+        phaseRef.current !== "opening"
+      ) {
+        return;
+      }
+      if (
+        Math.abs(leftWing - sent.left) > 2 ||
+        Math.abs(rightWing - sent.right) > 2
+      ) {
+        expandedWingsSentRef.current = { left: leftWing, right: rightWing };
+        try {
+          window.localStorage.setItem(
+            "atoll:expanded-wings",
+            JSON.stringify({ left: leftWing, right: rightWing }),
+          );
+        } catch {
+          // storage disabled: the wings just re-measure next session
+        }
+        void setIslandPresentation(
+          "expanded",
+          collapsedWindowWidthRef.current,
+          undefined,
+          compactLeftPaneWidthRef.current,
+          true,
+          false,
+          undefined,
+          undefined,
+          undefined,
+          leftWing,
+          rightWing,
+        ).catch(() => undefined);
+      }
+    };
+    measure();
+    // The wings must follow live content changes while expanded — the token
+    // counter ticks wider through the day and tabs open/close — or the
+    // actions cluster overflows its wing under the housing. The observed
+    // boxes are content-sized (max-content), so window resizes cannot loop
+    // back through the observer.
+    const observed = [
+      document.querySelector<HTMLElement>(
+        ".is-expanded .token-counter-wrap--expanded",
+      ),
+      document.querySelector<HTMLElement>(".is-expanded .header-actions"),
+      document.querySelector<HTMLElement>(".is-expanded .agent-tabbar"),
+    ].filter((element): element is HTMLElement => element !== null);
+    // jsdom (tests) has no ResizeObserver; the resize + settled listeners
+    // cover those runs.
+    const observer =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(measure)
+        : undefined;
+    for (const element of observed) observer?.observe(element);
+    const unsubscribeSettled = manageAsyncUnlisten(
+      onIslandPresentationSettled(() => measure()),
+    );
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      unsubscribeSettled();
+      window.removeEventListener("resize", measure);
+    };
+  }, [phase, notchMetrics, compactLeftPaneWidth]);
+
+  // Seed the expanded wings from the previous session's measurement so the
+  // FIRST expand after launch is single-stage: the expanded chrome is
+  // unmounted while collapsed, so there is nothing to measure before it.
+  useEffect(() => {
+    let raw: string | null = null;
+    try {
+      raw = window.localStorage.getItem("atoll:expanded-wings");
+    } catch {
+      return;
+    }
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as { left?: number; right?: number };
+      const left = typeof parsed.left === "number" ? parsed.left : 0;
+      const right = typeof parsed.right === "number" ? parsed.right : 0;
+      if (left < 64 || right < 80) return;
+      expandedWingsSentRef.current = { left, right };
+      // Fire-and-forget persist (animate:false, snap:false) — the command
+      // stores the wings without touching the window.
+      void setIslandPresentation(
+        "compact",
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+        undefined,
+        undefined,
+        undefined,
+        left,
+        right,
+      ).catch(() => undefined);
+    } catch {
+      // malformed payload: keep the wing fallbacks
+    }
+  }, []);
+
   useEffect(() => {
     if (!hookHealthHydrated) return;
     setConfiguredHookAgents(seedConfiguredFromHookHealth(snapshot.hookHealth));
@@ -879,6 +1035,7 @@ export function App() {
     nativeExpandedPlan,
     nativeExpandedSettings,
     notchMetricsHydrated,
+    notchHasNotch: notchMetrics.hasNotch,
   });
 
   return (

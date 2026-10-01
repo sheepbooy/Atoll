@@ -662,7 +662,9 @@
   width: 100%;
   height: 100%;
   justify-content: flex-start;
-  padding-left: 7px;
+  /* DORMANT_NOTCH_PADDING (42) reserves room for the 34pt logo slot plus
+     outer padding — the logo must stay clear of the camera housing. */
+  padding-left: 8px;
 }
 
 /* Dormant collapse: pin the header to the menu-bar band while window height
@@ -1299,17 +1301,8 @@
   width: auto;
 }
 
-/* Expanded agent tabs: stay in the left safe area on notched MacBooks. */
-.tauri-runtime.has-notch .is-expanded .header-main.has-agent-tabs .header-agent-tabs {
-  max-width: min(
-    100%,
-    calc(var(--notch-left-area-width, 280px) - 42px - var(--compact-notch-inner-gap, 6px))
-  );
-  padding-right: 6px;
-  box-sizing: border-box;
-}
-
-.tauri-runtime.has-notch .is-expanded .header-main.has-agent-tabs .agent-tabbar {
-  max-width: 100%;
-}
+/* Expanded header on notched MacBooks: no width clamps on tabs or actions —
+   the native window hugs the measured header content instead (dynamic wings;
+   see the notch section in panel.css), so the .more-menu dropdown is never
+   clipped. */
 

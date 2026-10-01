@@ -170,8 +170,40 @@
   display: none;
 }
 
-/* Notch margin removed for expanded header — menu bar shares the top band with
-   the logo; only panel content is pushed below the housing. */
+/* Expanded header on notched displays: the menu-bar row stays at the physical
+   top as three symmetric wing columns — [logo + tabs] [camera housing]
+   [actions]. The webview measures the live header content and the native
+   window is sized to notch + 2 × max(left need, right need), screen-centered,
+   so the notch column always sits exactly on the physical housing and the
+   resize animation is drift-free (both edges grow outward evenly); the wider
+   wing's surplus is the tab bar's growth headroom. Panel body stretches to
+   the full window width. */
+.tauri-runtime.has-notch .is-expanded .island-header,
+.tauri-runtime.has-notch .island.is-opening .island-header {
+  grid-template-columns: minmax(0, 1fr) var(--notch-width, 0px) minmax(0, 1fr);
+}
+
+.tauri-runtime.has-notch .is-expanded .header-main {
+  grid-column: 1;
+}
+
+.tauri-runtime.has-notch .is-expanded .header-actions {
+  /* Shrink to content so the wing measurement reads the real need and the
+     cluster hugs the window's right edge. */
+  width: max-content;
+  justify-self: end;
+}
+
+.tauri-runtime.has-notch .is-expanded .header-agent-tabs .agent-tabbar {
+  /* Content-sized so the left-wing measurement tracks the actual tabs; the
+     absolute tabs container still scrolls when they overflow the wing. */
+  width: max-content;
+}
+
+.tauri-runtime.has-notch .is-expanded .island-panel {
+  width: 100%;
+}
+
 .tauri-runtime.has-notch .island-panel {
   top: max(var(--compact-height), var(--notch-height, 0px));
   height: calc(100% - max(var(--compact-height), var(--notch-height, 0px)));
@@ -202,7 +234,10 @@
   grid-column: 1;
   justify-content: flex-start;
   min-width: 0;
-  padding-left: 0;
+  /* Outer padding mirrors the width budget (compactOuterPadding): notched
+     capsules fuse with the housing and need more breathing room at their
+     outer corners than the 8pt non-notch row. */
+  padding-left: var(--compact-outer-padding, 8px);
   padding-right: var(--compact-notch-inner-gap, 4px);
   /* Clip so no left-wing content can ever spill under the camera housing. */
   overflow: hidden;
@@ -217,7 +252,7 @@
 .tauri-runtime.has-notch .is-closing:not(.is-dormant) .header-metrics {
   grid-column: 3;
   min-width: max-content;
-  padding-right: 8px;
+  padding-right: var(--compact-outer-padding, 8px);
   padding-left: var(--compact-notch-inner-gap, 4px);
   /* Clip so no right-wing content can ever spill under the camera housing. */
   overflow: hidden;

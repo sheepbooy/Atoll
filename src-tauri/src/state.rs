@@ -28,6 +28,14 @@ pub(crate) const MICRO_WINDOW_WIDTH: f64 = 72.0;
 pub(crate) const MICRO_WINDOW_HEIGHT: f64 = 24.0;
 pub(crate) const EXPANDED_WINDOW_WIDTH: f64 = 560.0;
 pub(crate) const EXPANDED_WINDOW_HEIGHT: f64 = 320.0;
+// Expanded header wings on notched displays: the menu-bar row stays beside the
+// camera housing, and the webview measures its live header content (logo +
+// agent tabs left, token counter + action buttons right) to size each wing —
+// so the island hugs its content instead of reserving fixed dead space. These
+// bound the measured values; the fallback applies before the first measurement.
+pub(crate) const EXPANDED_WING_FALLBACK_WIDTH: f64 = 300.0;
+pub(crate) const EXPANDED_WING_MIN_WIDTH: f64 = 64.0;
+pub(crate) const EXPANDED_WING_MAX_WIDTH: f64 = 600.0;
 pub(crate) const EXPANDED_IDLE_WINDOW_HEIGHT: f64 = 240.0;
 pub(crate) const EXPANDED_PLAN_WINDOW_WIDTH: f64 = 680.0;
 pub(crate) const EXPANDED_PLAN_WINDOW_HEIGHT: f64 = 680.0;
@@ -35,7 +43,9 @@ pub(crate) const EXPANDED_SETTINGS_WINDOW_WIDTH: f64 = 680.0;
 pub(crate) const EXPANDED_SETTINGS_WINDOW_HEIGHT: f64 = 680.0;
 pub(crate) const MIN_COMPACT_WINDOW_WIDTH: f64 = 72.0;
 // Dormant pill width spans the notch + side padding on notched displays.
-pub(crate) const DORMANT_NOTCH_PADDING: f64 = 30.0;
+// 42pt fits the 34pt logo slot plus outer padding so the logo never reaches
+// into the camera housing.
+pub(crate) const DORMANT_NOTCH_PADDING: f64 = 42.0;
 pub(crate) const MAX_ACTIVE_SUBAGENTS: usize = 512;
 pub(crate) const WINDOW_ANIMATION_DURATION: Duration = Duration::from_millis(420);
 
@@ -59,6 +69,12 @@ pub(crate) static APPROVAL_RULES_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 #[cfg(test)]
 pub(crate) static SALARY_HISTORY_ENV_LOCK: Mutex<()> = Mutex::new(());
+// Extra logical points added to the auxiliary-area gap so the reported notch
+// width fully covers the physical camera housing. The AppKit gap tracks the
+// housing within ~2pt on either side; +4 guarantees overlap without visibly
+// widening the capsule. Only applied when auxiliary areas are readable — the
+// FALLBACK_NOTCH_WIDTH floor below is for the no-aux fallback path only.
+pub(crate) const NOTCH_WIDTH_SLOP: f64 = 4.0;
 // Fallback notch width (logical pt) used when the auxiliary menu-bar areas
 // can't be read but a notch height is reported.
 pub(crate) const FALLBACK_NOTCH_WIDTH: f64 = 200.0;
@@ -318,6 +334,10 @@ pub(crate) struct AppState {
     pub(crate) risk_guard_enabled: Mutex<bool>,
     pub(crate) compact_width: Mutex<f64>,
     pub(crate) compact_left_width: Mutex<f64>,
+    /// Expanded header wing widths (logical pt) measured from the live header
+    /// content by the webview; 0 = unmeasured → EXPANDED_WING_FALLBACK_WIDTH.
+    pub(crate) expanded_wing_left: Mutex<f64>,
+    pub(crate) expanded_wing_right: Mutex<f64>,
     pub(crate) presentation_generation: Arc<AtomicU64>,
     /// Bumped to abort an in-flight cosmetic shape pulse (new pulse or any
     /// presentation change wins over a running one).
@@ -430,7 +450,7 @@ pub(crate) struct HomeWindowBounds {
 /// Camera-housing ("notch") geometry for the display the island lives on, in
 /// logical points. On non-notched displays `has_notch` is false and the island
 /// keeps its original top-edge layout.
-#[derive(Debug, Clone, Copy, Default, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct NotchMetrics {
     pub(crate) has_notch: bool,

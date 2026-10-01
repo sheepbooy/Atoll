@@ -16,6 +16,11 @@ export const COMPACT_LISTENER_SLOT = 10;
 export const COMPACT_SIDE_MIN = 56;
 export const COMPACT_OVERFLOW_SLOT = 28;
 export const COMPACT_OUTER_PADDING = 8;
+/** Outer padding on notched displays: the capsule fuses with the camera
+ *  housing, so its outer corners need more breathing room than the 8pt
+ *  non-notch menu-bar row. Rendered via --compact-outer-padding (set in
+ *  islandLayout.applyWindowMetrics) — keep the two in sync. */
+export const COMPACT_NOTCH_OUTER_PADDING = 14;
 export const COMPACT_NOTCH_INNER_GAP = 6;
 /** Space between left sessions and right metrics on non-notched displays. */
 export const COMPACT_HEADER_GAP = 8;
@@ -73,6 +78,17 @@ export function compactMetricsSessionTokenGap(
   return rightIconCount > 0 && hasToken ? COMPACT_METRICS_GAP : 0;
 }
 
+/** Outer padding for the collapsed capsule on the given display: notched
+ *  capsules fuse with the camera housing and need more breathing room at
+ *  their outer corners. */
+export function compactOuterPadding(
+  notchMetrics: Pick<NotchMetrics, "hasNotch">,
+): number {
+  return notchMetrics.hasNotch
+    ? COMPACT_NOTCH_OUTER_PADDING
+    : COMPACT_OUTER_PADDING;
+}
+
 function notchPaneBudgets(notchMetrics: NotchMetrics) {
   if (!notchMetrics.hasNotch) return null;
   const leftArea = notchMetrics.leftAreaWidth || notchMetrics.width;
@@ -95,13 +111,14 @@ export function computeCompactLeftPaneWidth(
     CompactHeaderLayout,
     "leftIconCount" | "rightIconCount" | "overflowCount"
   >,
+  outerPadding: number = COMPACT_OUTER_PADDING,
 ): number {
   const overflowOnLeft =
     layout.overflowCount > 0 && layout.rightIconCount === 0;
   return (
     COMPACT_ATOLL_LOGO_SLOT +
     COMPACT_LISTENER_SLOT +
-    COMPACT_OUTER_PADDING +
+    outerPadding +
     iconRowWidth(layout.leftIconCount) +
     (overflowOnLeft ? COMPACT_OVERFLOW_SLOT : 0) +
     COMPACT_NOTCH_INNER_GAP
@@ -146,9 +163,10 @@ export function computeCompactHeaderLayout(
   const hasToken = tokenTotal > 0;
   const pendingExtra =
     pendingCount > 0 ? COMPACT_PENDING_BADGE_SLOT + COMPACT_METRICS_GAP : 0;
+  const outerPadding = compactOuterPadding(notchMetrics);
   const leftBase =
-    COMPACT_ATOLL_LOGO_SLOT + COMPACT_LISTENER_SLOT + COMPACT_OUTER_PADDING;
-  const rightColumnBase = COMPACT_OUTER_PADDING + pendingExtra;
+    COMPACT_ATOLL_LOGO_SLOT + COMPACT_LISTENER_SLOT + outerPadding;
+  const rightColumnBase = outerPadding + pendingExtra;
 
   const paneBudgets = notchPaneBudgets(notchMetrics);
 
@@ -308,11 +326,12 @@ export function computeCollapsedWindowWidth(
 
   const overflowOnLeft = layout.overflowCount > 0 && layout.rightIconCount === 0;
   const overflowOnRight = layout.overflowCount > 0 && layout.rightIconCount > 0;
+  const outerPadding = compactOuterPadding(notchMetrics);
 
   const leftWidth =
     COMPACT_ATOLL_LOGO_SLOT +
     COMPACT_LISTENER_SLOT +
-    COMPACT_OUTER_PADDING +
+    outerPadding +
     iconRowWidth(layout.leftIconCount) +
     (overflowOnLeft ? COMPACT_OVERFLOW_SLOT : 0);
 
@@ -334,7 +353,7 @@ export function computeCollapsedWindowWidth(
     (pendingCount > 0 ? COMPACT_PENDING_BADGE_SLOT + COMPACT_METRICS_GAP : 0) +
     (showMediaIndicator && hasMediaArtwork ? COMPACT_MEDIA_THUMB_SLOT : 0) +
     batteryRingsSlot(batteryRingCount) +
-    COMPACT_OUTER_PADDING;
+    outerPadding;
 
   const notchWidth = notchMetrics.hasNotch ? notchMetrics.width : 0;
   const outerGaps = notchMetrics.hasNotch
