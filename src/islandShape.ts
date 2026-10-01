@@ -1,6 +1,54 @@
 import { ISLAND_SHAPE_MS, type IslandShapeBeat } from "./atollTransitions";
 import { motionDelay, prefersReducedMotion } from "./animationTiming";
 
+export type CancelMotion = () => void;
+const noMotion: CancelMotion = () => undefined;
+
+function createMotionScope() {
+  let active = true;
+  const timers = new Set<number>();
+  const animations = new Set<Animation>();
+  const nodes = new Set<HTMLElement>();
+  const disposers = new Set<() => void>();
+  const query = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+  const cancel = () => {
+    if (!active) return;
+    active = false;
+    for (const timer of timers) window.clearTimeout(timer);
+    for (const animation of animations) {
+      animation.onfinish = null;
+      animation.cancel();
+    }
+    for (const node of nodes) node.remove();
+    for (const dispose of disposers) dispose();
+    query?.removeEventListener?.("change", onPreferenceChange);
+    timers.clear(); animations.clear(); nodes.clear(); disposers.clear();
+  };
+  const onPreferenceChange = () => { if (query?.matches) cancel(); };
+  query?.addEventListener?.("change", onPreferenceChange);
+  return {
+    cancel,
+    dispose(fn: () => void) { disposers.add(fn); },
+    later(fn: () => void, ms: number) {
+      const timer = window.setTimeout(() => {
+        timers.delete(timer);
+        if (active) fn();
+      }, ms);
+      timers.add(timer);
+    },
+    animate(node: HTMLElement, frames: Keyframe[], options: KeyframeAnimationOptions) {
+      nodes.add(node);
+      const animation = node.animate(frames, options);
+      animations.add(animation);
+      return animation;
+    },
+    onFinish(animation: Animation, fn: () => void) {
+      animation.onfinish = () => { if (active) fn(); };
+    },
+  };
+}
+type MotionScope = ReturnType<typeof createMotionScope>;
+
 /** 方向向量（CSS px / deg），由调用方从真实拖拽方向换算：
  *  - dx/dy：弹射/摆动的位移方向与幅度；
  *  - skew：挤压时的倾斜角（符号即拖入侧）。 */
@@ -25,7 +73,7 @@ const BEAT_CLASS: Record<IslandShapeBeat, string> = {
 
 /** 每个岛元素按拍点分键跟踪摘除定时器：新拍点只清自己的旧定时器，
  *  不会误取消上一个拍点的摘除（否则上一个 class 会卡死在形变里）。 */
-const activeTimers = new WeakMap<HTMLElement, Map<IslandShapeBeat, number>>();
+const activeTimers = new WeakMap<HTMLElement, Map<IslandShapeBeat, CancelMotion>>();
 
 /**
  * 整岛形变编排器：把拍点 class + 方向变量挂到 `.island` 上，播完自动摘除。
@@ -41,13 +89,13 @@ export function playIslandShape(
   island: HTMLElement | null,
   beat: IslandShapeBeat,
   options?: PlayIslandShapeOptions,
-): void {
+): CancelMotion {
   if (!island || prefersReducedMotion()) {
-    return;
+    return noMotion;
   }
   const duration = motionDelay(options?.durationMs ?? ISLAND_SHAPE_MS[beat]);
   if (duration <= 0) {
-    return;
+    return noMotion;
   }
   let timers = activeTimers.get(island);
   if (!timers) {
@@ -56,11 +104,10 @@ export function playIslandShape(
   }
   const previousTimer = timers.get(beat);
   if (previousTimer !== undefined) {
-    window.clearTimeout(previousTimer);
+    previousTimer();
   }
   island.classList.remove(BEAT_CLASS[beat]);
-  // 强制 reflow：同一拍点连续触发时让 keyframes 立即重启动画。
-  void island.offsetWidth;
+
   if (options?.direction) {
     const { dx = 0, dy = 0, skew = 0 } = options.direction;
     island.style.setProperty("--shape-dx", `${dx.toFixed(2)}px`);
@@ -68,13 +115,18 @@ export function playIslandShape(
     island.style.setProperty("--shape-skew", `${skew.toFixed(2)}deg`);
   }
   island.classList.add(BEAT_CLASS[beat]);
-  timers.set(
-    beat,
-    window.setTimeout(() => {
-      island.classList.remove(BEAT_CLASS[beat]);
-      timers.delete(beat);
-    }, duration),
-  );
+  for (const animation of island.getAnimations?.() ?? []) {
+    if ((animation as CSSAnimation).animationName === `island-shape-${beat}`) animation.currentTime = 0;
+  }
+  const scope = createMotionScope();
+  scope.dispose(() => {
+    if (timers.get(beat) !== scope.cancel) return;
+    island.classList.remove(BEAT_CLASS[beat]);
+    timers.delete(beat);
+  });
+  timers.set(beat, scope.cancel);
+  scope.later(scope.cancel, duration);
+  return scope.cancel;
 }
 
 const FLY_MS = 380;
@@ -156,39 +208,39 @@ function clampFlightDistance(
 }
 
 /** 像素拖尾：在路径 fraction 处生成一枚快速消散的小方块。 */
-function spawnTrail(island: HTMLElement, x: number, y: number): void {
+function spawnTrail(scope: MotionScope, island: HTMLElement, x: number, y: number): void {
   const dot = document.createElement("div");
   dot.className = "stash-fly-trail";
   dot.style.left = `${x.toFixed(1)}px`;
   dot.style.top = `${y.toFixed(1)}px`;
   island.appendChild(dot);
-  const animation = dot.animate(
+  const animation = scope.animate(dot,
     [
       { transform: "translate(-50%, -50%) scale(1)", opacity: 0.75 },
       { transform: "translate(-50%, -50%) scale(0.4)", opacity: 0 },
     ],
     { duration: 280, easing: "ease-out", fill: "both" },
   );
-  animation.onfinish = () => dot.remove();
-  window.setTimeout(() => dot.remove(), 480);
+  scope.onFinish(animation, () => dot.remove());
+  scope.later(() => dot.remove(), 480);
 }
 
 /** 命中闪块：文件入嘴处在吉祥物位置弹出一枚像素星光。 */
-function spawnHitSpark(island: HTMLElement, x: number, y: number): void {
+function spawnHitSpark(scope: MotionScope, island: HTMLElement, x: number, y: number): void {
   const spark = document.createElement("div");
   spark.className = "stash-fly-spark";
   spark.style.left = `${x.toFixed(1)}px`;
   spark.style.top = `${y.toFixed(1)}px`;
   island.appendChild(spark);
-  const animation = spark.animate(
+  const animation = scope.animate(spark,
     [
       { transform: "translate(-50%, -50%) scale(0.3) rotate(0deg)", opacity: 0.95 },
       { transform: "translate(-50%, -50%) scale(1.35) rotate(45deg)", opacity: 0 },
     ],
     { duration: 260, easing: "cubic-bezier(0.2, 0.6, 0.3, 1)", fill: "both" },
   );
-  animation.onfinish = () => spark.remove();
-  window.setTimeout(() => spark.remove(), 460);
+  scope.onFinish(animation, () => spark.remove());
+  scope.later(() => spark.remove(), 460);
 }
 
 /**
@@ -196,7 +248,7 @@ function spawnHitSpark(island: HTMLElement, x: number, y: number): void {
  * 文件全程保持醒目大小（起飞先弹一下），只在进嘴最后一瞬缩掉；
  * 路径上撒像素拖尾，每枚命中时弹一枚命中闪块。
  * DOM 一次性节点 + WAAPI，不经过 React。
- * reduced-motion 时跳过飞行但立即回调 onFirstHit（保持脉冲/涟漪语义）。
+ * reduced-motion skips this visual-only choreography.
  */
 export function flyStashFiles(
   island: HTMLElement | null,
@@ -204,14 +256,14 @@ export function flyStashFiles(
   fromPoint: { x: number; y: number } | null,
   count: number,
   options?: FlyStashFilesOptions,
-): void {
+): CancelMotion {
   if (!island) {
-    return;
+    return noMotion;
   }
   if (prefersReducedMotion()) {
-    options?.onFirstHit?.();
-    return;
+    return noMotion;
   }
+  const scope = createMotionScope();
   const islandRect = island.getBoundingClientRect();
   const to = logoCenterIn(islandRect, logoEl);
   const from = clampInside(
@@ -233,10 +285,10 @@ export function flyStashFiles(
     const delay = i * FLY_STAGGER;
     if (!firstHitFired) {
       firstHitFired = true;
-      window.setTimeout(() => options?.onFirstHit?.(), delay + FLY_MS);
+      scope.later(() => options?.onFirstHit?.(), delay + FLY_MS);
     }
     const glyph = stashGlyph(island, startX, fromY);
-    const animation = glyph.animate(
+    const animation = scope.animate(glyph,
       [
         { transform: "translate(-50%, -50%) scale(1) rotate(20deg)", opacity: 1 },
         {
@@ -261,20 +313,22 @@ export function flyStashFiles(
         fill: "both",
       },
     );
-    animation.onfinish = () => {
+    scope.onFinish(animation, () => {
       glyph.remove();
-      spawnHitSpark(island, to.x, to.y);
-    };
-    window.setTimeout(() => glyph.remove(), delay + FLY_MS + 200);
+      spawnHitSpark(scope, island, to.x, to.y);
+    });
+    scope.later(() => glyph.remove(), delay + FLY_MS + 200);
     // 拖尾：沿同一路径在 22%/48%/74% 处撒小方块。
     for (const fraction of [0.22, 0.48, 0.74]) {
       const point = flyPathPoint(startX, fromY, dx, dy, fraction);
-      window.setTimeout(
-        () => spawnTrail(island, point.x, point.y),
+      scope.later(
+        () => spawnTrail(scope, island, point.x, point.y),
         delay + FLY_MS * fraction,
       );
     }
   }
+  scope.later(scope.cancel, Math.max(0, count - 1) * FLY_STAGGER + FLY_MS + 600);
+  return scope.cancel;
 }
 
 /**
@@ -287,10 +341,11 @@ export function flySpitFiles(
   logoEl: HTMLElement | null,
   angleDeg: number,
   count: number,
-): void {
+): CancelMotion {
   if (!island || prefersReducedMotion()) {
-    return;
+    return noMotion;
   }
+  const scope = createMotionScope();
   const islandRect = island.getBoundingClientRect();
   const from = logoCenterIn(islandRect, logoEl);
   for (let i = 0; i < count; i++) {
@@ -310,7 +365,7 @@ export function flySpitFiles(
     const fy = dy * scale;
     const delay = i * 55;
     const glyph = stashGlyph(island, from.x, from.y);
-    const animation = glyph.animate(
+    const animation = scope.animate(glyph,
       [
         { transform: "translate(-50%, -50%) scale(0.35) rotate(0deg)", opacity: 0 },
         {
@@ -330,9 +385,11 @@ export function flySpitFiles(
         fill: "both",
       },
     );
-    animation.onfinish = () => glyph.remove();
-    window.setTimeout(() => glyph.remove(), delay + 480 + 200);
+    scope.onFinish(animation, () => glyph.remove());
+    scope.later(() => glyph.remove(), delay + 480 + 200);
   }
+  scope.later(scope.cancel, Math.max(0, count - 1) * 55 + 800);
+  return scope.cancel;
 }
 
 /**
@@ -342,23 +399,26 @@ export function flySpitFiles(
 export function playSwallowRipple(
   island: HTMLElement | null,
   xLocal: number,
-): void {
+): CancelMotion {
   if (!island || prefersReducedMotion()) {
-    return;
+    return noMotion;
   }
+  const scope = createMotionScope();
   const ripple = document.createElement("div");
   ripple.className = "stash-gulp-ripple";
   ripple.style.left = `${Math.min(Math.max(xLocal, 0), island.clientWidth || 0).toFixed(1)}px`;
   island.appendChild(ripple);
-  const animation = ripple.animate(
+  const animation = scope.animate(ripple,
     [
       { transform: "translateX(-50%) scaleX(0.02)", opacity: 0.9 },
       { transform: "translateX(-50%) scaleX(1)", opacity: 0 },
     ],
     { duration: 620, easing: "cubic-bezier(0.2, 0.6, 0.3, 1)" },
   );
-  animation.onfinish = () => ripple.remove();
-  window.setTimeout(() => ripple.remove(), 900);
+  scope.onFinish(animation, () => ripple.remove());
+  scope.later(() => ripple.remove(), 900);
+  scope.later(scope.cancel, 900);
+  return scope.cancel;
 }
 
 /**
@@ -370,10 +430,11 @@ export function flyCopyGlyph(
   island: HTMLElement | null,
   logoEl: HTMLElement | null,
   originRect: DOMRect | null,
-): void {
+): CancelMotion {
   if (!island || !originRect || prefersReducedMotion()) {
-    return;
+    return noMotion;
   }
+  const scope = createMotionScope();
   const islandRect = island.getBoundingClientRect();
   const fromX = originRect.left - islandRect.left + originRect.width / 2;
   const fromY = originRect.top - islandRect.top + originRect.height / 2;
@@ -381,7 +442,7 @@ export function flyCopyGlyph(
   const dx = to.x - fromX;
   const dy = to.y - fromY;
   const glyph = stashGlyph(island, fromX, fromY);
-  const animation = glyph.animate(
+  const animation = scope.animate(glyph,
     [
       { transform: "translate(-50%, -50%) scale(1) rotate(0deg)", opacity: 1 },
       {
@@ -396,6 +457,8 @@ export function flyCopyGlyph(
     ],
     { duration: motionDelay(520), easing: "cubic-bezier(0.3, 0.5, 0.3, 1)" },
   );
-  animation.onfinish = () => glyph.remove();
-  window.setTimeout(() => glyph.remove(), motionDelay(900));
+  scope.onFinish(animation, () => glyph.remove());
+  scope.later(() => glyph.remove(), motionDelay(900));
+  scope.later(scope.cancel, 900);
+  return scope.cancel;
 }

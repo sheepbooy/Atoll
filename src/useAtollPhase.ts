@@ -2,14 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import type { AtollActivity } from "./AtollLogo";
 import { isAppStatePose } from "./logoStates";
 import { ATOLL_ENTER_MS, ATOLL_EXIT_MS, type AtollPhase } from "./atollTransitions";
-import { motionDelay } from "./animationTiming";
+import { motionDelay, useReducedMotion } from "./animationTiming";
 
 function initialPhase(targetAct: AtollActivity): AtollPhase {
   if (targetAct === "idle" || isAppStatePose(targetAct)) return "loop";
   return "enter";
 }
 
-export function useAtollPhase(targetAct: AtollActivity) {
+export function useAtollPhase(targetAct: AtollActivity, motionPaused = false) {
+  const reducedMotion = useReducedMotion();
   const [renderAct, setRenderAct] = useState<AtollActivity>(targetAct);
   const [phase, setPhase] = useState<AtollPhase>(() => initialPhase(targetAct));
   const enterTimerRef = useRef<number | null>(null);
@@ -33,21 +34,34 @@ export function useAtollPhase(targetAct: AtollActivity) {
   };
 
   useEffect(() => {
-    if (phase !== "enter") return;
+    if (phase !== "enter" || motionPaused || reducedMotion) return;
     clearEnterTimer();
     enterTimerRef.current = window.setTimeout(() => {
       enterTimerRef.current = null;
       setPhase("loop");
     }, motionDelay(ATOLL_ENTER_MS));
     return clearEnterTimer;
-  }, [phase]);
+  }, [phase, motionPaused, reducedMotion]);
 
   useEffect(() => {
     const prev = prevTargetRef.current;
     prevTargetRef.current = targetAct;
-    if (prev === targetAct) return;
+    if (reducedMotion) {
+      clearEnterTimer();
+      clearTransitionTimer();
+      setRenderAct(targetAct);
+      setPhase("loop");
+      return;
+    }
+    if (motionPaused) {
+      prevTargetRef.current = prev;
+      clearTransitionTimer();
+      return;
+    }
+    if (prev === targetAct && phase !== "exit") return;
 
     clearTransitionTimer();
+    clearEnterTimer();
 
     if (targetAct === "idle") {
       if (renderActRef.current === "idle") {
@@ -75,7 +89,7 @@ export function useAtollPhase(targetAct: AtollActivity) {
 
     setRenderAct(targetAct);
     setPhase("enter");
-  }, [targetAct]);
+  }, [targetAct, motionPaused, reducedMotion]);
 
   useEffect(
     () => () => {

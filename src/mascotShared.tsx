@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
+import { useReducedMotion } from "./animationTiming";
 
 export type ClawdMood =
   | "sleeping"
@@ -65,9 +66,10 @@ export function mascotSizeStyle(size?: number): CSSProperties | undefined {
 
 export function useMascotBlink(animated: boolean, mood: ClawdMood): boolean {
   const [blinking, setBlinking] = useState(false);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
-    if (!animated || mood === "sleeping" || mood === "dead") {
+    if (!animated || reducedMotion || mood === "sleeping" || mood === "dead") {
       setBlinking(false);
       return;
     }
@@ -83,7 +85,7 @@ export function useMascotBlink(animated: boolean, mood: ClawdMood): boolean {
       window.clearTimeout(loopTimer);
       window.clearTimeout(blinkTimer);
     };
-  }, [animated, mood]);
+  }, [animated, mood, reducedMotion]);
 
   return blinking;
 }

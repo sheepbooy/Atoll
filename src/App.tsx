@@ -15,6 +15,7 @@ import {
   getClipboardHistory,
   copyStagedPathsToClipboard,
   setIslandPresentation,
+  updateIslandLayoutMetrics,
   setPreferredMonitor,
   openAgentApp,
   stageClipboardEntries,
@@ -41,7 +42,7 @@ import {
 } from "./logoStates";
 import { useAtollReaction } from "./useAtollReaction";
 import { useFileStation } from "./hooks/useFileStation";
-import { flyCopyGlyph, playIslandShape } from "./islandShape";
+import { flyCopyGlyph, playIslandShape, type CancelMotion } from "./islandShape";
 import { prefersReducedMotion } from "./animationTiming";
 import { AtollLogo } from "./AtollLogo";
 import { stashBellyLevel } from "./fileStationTiers";
@@ -272,6 +273,7 @@ export function App() {
   });
 
   const {
+    presentationReady,
     phase,
     phaseRef,
     supportsMicroIsland,
@@ -279,8 +281,6 @@ export function App() {
     notchMetrics,
     notchMetricsHydrated,
     usesMicroIslandRef,
-    suppressPostCollapseSyncRef,
-    holdCompactAfterSubviewOpenRef,
     frozenCollapseWidthRef,
     suppressHoverExpandRef,
     dismissedPlanRequestIdsRef,
@@ -311,6 +311,7 @@ export function App() {
   } = useIslandPresentation({
     snapshotRef,
     setSnapshot,
+    collapsedModeRef,
     collapsedWindowWidthRef,
     compactLeftPaneWidthRef,
     microPresentationWidthRef,
@@ -385,16 +386,16 @@ export function App() {
         snapshotRef.current.pendingCount === 0 &&
         snapshotRef.current.sessions.length === 0;
       const planExpanded = snapshotHasPlanPending(snapshotRef.current);
-      await setIslandPresentation(
-        "expanded",
-        collapsedWindowWidthRef.current,
-        idleExpanded,
-        compactLeftPaneWidthRef.current,
-        false,
-        true,
-        planExpanded && !settingsExpanded,
-        settingsExpanded,
-      ).catch(() => undefined);
+      await setIslandPresentation({
+        mode: "expanded",
+        compactWidth: collapsedWindowWidthRef.current,
+        expandedIdle: idleExpanded,
+        compactLeftWidth: compactLeftPaneWidthRef.current,
+        animate: false,
+        snap: true,
+        expandedPlan: planExpanded && !settingsExpanded,
+        expandedSettings: settingsExpanded,
+      }).catch(() => undefined);
       // The new display may have different notch metrics; the snap re-derived
       // them on the backend, so mirror the refresh in the webview layout.
       await refreshNotchMetrics();
@@ -574,6 +575,7 @@ export function App() {
     stashReaction,
     stashReactionKey,
     lastStageResult,
+    motionPaused: phase === "opening" || phase === "closing" || panelExiting,
     islandRef,
     atollIndicatorRef,
     dropPointRef,
@@ -582,13 +584,23 @@ export function App() {
   });
   // 复制飞行：文件缩略从行位置飞向 header logo 嘴里，岛身轻压一下"接住"
   // （点击复制与拖出锚定失败的复制回退共用）。
+  const copyMotionsRef = useRef<CancelMotion[]>([]);
+  useEffect(() => {
+    return () => {
+      copyMotionsRef.current.forEach((cancel) => cancel());
+      copyMotionsRef.current = [];
+    };
+  }, [phase, panelExiting]);
   function handleStagedCopyFly(originRect: DOMRect | null) {
     const islandEl = islandRef.current;
     if (!islandEl || prefersReducedMotion()) {
       return;
     }
-    flyCopyGlyph(islandEl, atollIndicatorRef.current, originRect);
-    playIslandShape(islandEl, "squash", { durationMs: 260 });
+    copyMotionsRef.current.forEach((cancel) => cancel());
+    copyMotionsRef.current = [
+      flyCopyGlyph(islandEl, atollIndicatorRef.current, originRect),
+      playIslandShape(islandEl, "squash", { durationMs: 260 }),
+    ];
   }
   const headerLogo = useMemo(
     () =>
@@ -680,8 +692,6 @@ export function App() {
     phaseRef,
     usesMicroIslandRef,
     supportsMicroIsland,
-    suppressPostCollapseSyncRef,
-    holdCompactAfterSubviewOpenRef,
     collapsedModeRef,
     collapsedWindowWidthRef,
     compactLeftPaneWidthRef,
@@ -693,7 +703,7 @@ export function App() {
   // right) and let the native window size its symmetric wings to it —
   // window = notch + 2 × max(left need, right need), screen-centered, so the
   // resize animation is drift-free and the wider wing's surplus is the tab
-  // bar's growth headroom. Re-measured on phase changes and webview resizes;
+  // bar's growth headroom. Re-measured on navigation and webview resizes;
   // sent only when the measured need changes, so the window resize cannot
   // loop back into measurement.
   const expandedWingsSentRef = useRef<{ left: number; right: number }>({
@@ -707,7 +717,16 @@ export function App() {
     // until the post-settle correction produced the second-stage growth. The
     // expand targets the stored wings (last measurement) instead, and the
     // observers below correct while expanded.
-    if (phase !== "expanded") return;
+    // Session navigation only changes panel content. Its header omits the
+    // home tabs/actions/counter, so measuring it would shrink the native
+    // window and overwrite the home wings. Keep those wings through detail
+    // views, then resume live measurement when the home header returns.
+    if (
+      phase !== "expanded" ||
+      panelView.kind === "session" ||
+      panelView.kind === "subagent" ||
+      panelView.kind === "subagentList"
+    ) return;
     const measure = () => {
       const tabbar = document.querySelector<HTMLElement>(
         ".is-expanded .agent-tabbar",
@@ -759,27 +778,33 @@ export function App() {
         } catch {
           // storage disabled: the wings just re-measure next session
         }
-        void setIslandPresentation(
-          "expanded",
-          collapsedWindowWidthRef.current,
-          undefined,
-          compactLeftPaneWidthRef.current,
-          true,
-          false,
-          undefined,
-          undefined,
-          undefined,
-          leftWing,
-          rightWing,
-        ).catch(() => undefined);
+        const settings = panelViewRef.current.kind !== "home" &&
+          ["settings", "clipboard", "fileStation", "history"].includes(panelViewRef.current.kind);
+        void syncNativeIslandPresentation({
+          mode: "expanded",
+          compactWidth: collapsedWindowWidthRef.current,
+          compactLeftWidth: compactLeftPaneWidthRef.current,
+          expandedIdle: snapshotRef.current.sessions.length === 0 && snapshotRef.current.pendingCount === 0,
+          expandedPlan: snapshotHasPlanPending(snapshotRef.current) && !settings,
+          expandedSettings: settings,
+          expandedWingLeft: leftWing,
+          expandedWingRight: rightWing,
+        }).catch(() => { expandedWingsSentRef.current = sent; });
       }
     };
     measure();
+    let measureFrame = 0;
+    const scheduleMeasure = () => {
+      if (measureFrame) return;
+      measureFrame = requestAnimationFrame(() => { measureFrame = 0; measure(); });
+    };
     // The wings must follow live content changes while expanded — the token
     // counter ticks wider through the day and tabs open/close — or the
     // actions cluster overflows its wing under the housing. The observed
     // boxes are content-sized (max-content), so window resizes cannot loop
-    // back through the observer.
+    // back through the observer. Navigation replaces these nodes (session
+    // views omit home tabs/actions/counter); rebind on return, and when the
+    // agent count changes enough to mount/unmount the home tab bar.
     const observed = [
       document.querySelector<HTMLElement>(
         ".is-expanded .token-counter-wrap--expanded",
@@ -791,19 +816,20 @@ export function App() {
     // cover those runs.
     const observer =
       typeof ResizeObserver !== "undefined"
-        ? new ResizeObserver(measure)
+        ? new ResizeObserver(scheduleMeasure)
         : undefined;
     for (const element of observed) observer?.observe(element);
     const unsubscribeSettled = manageAsyncUnlisten(
-      onIslandPresentationSettled(() => measure()),
+      onIslandPresentationSettled(() => scheduleMeasure()),
     );
-    window.addEventListener("resize", measure);
+    window.addEventListener("resize", scheduleMeasure);
     return () => {
       observer?.disconnect();
+      cancelAnimationFrame(measureFrame);
       unsubscribeSettled();
-      window.removeEventListener("resize", measure);
+      window.removeEventListener("resize", scheduleMeasure);
     };
-  }, [phase, notchMetrics, compactLeftPaneWidth]);
+  }, [phase, notchMetrics, compactLeftPaneWidth, panelView.kind, tabAgents.length]);
 
   // Seed the expanded wings from the previous session's measurement so the
   // FIRST expand after launch is single-stage: the expanded chrome is
@@ -822,21 +848,12 @@ export function App() {
       const right = typeof parsed.right === "number" ? parsed.right : 0;
       if (left < 64 || right < 80) return;
       expandedWingsSentRef.current = { left, right };
-      // Fire-and-forget persist (animate:false, snap:false) — the command
-      // stores the wings without touching the window.
-      void setIslandPresentation(
-        "compact",
-        undefined,
-        undefined,
-        undefined,
-        false,
-        false,
-        undefined,
-        undefined,
-        undefined,
-        left,
-        right,
-      ).catch(() => undefined);
+      // Seed layout metrics without changing the native presentation.
+      void updateIslandLayoutMetrics({
+        expandedWingLeft: left,
+        expandedWingRight: right,
+      })
+        .catch(() => undefined);
     } catch {
       // malformed payload: keep the wing fallbacks
     }
@@ -999,8 +1016,6 @@ export function App() {
     panelView,
     collapsedMode,
     usesMicroIsland: usesMicroIslandRef.current,
-    suppressPostCollapseSync: suppressPostCollapseSyncRef.current,
-    holdCompactAfterSubviewOpen: holdCompactAfterSubviewOpenRef.current,
     sessions,
     pendingCount: snapshot.pendingCount,
     isPlanExpanded,
@@ -1022,7 +1037,6 @@ export function App() {
   useNativePresentationSync({
     phase,
     phaseRef,
-    suppressPostCollapseSyncRef,
     microPresentationWidthRef,
     lastNativePresentationKeyRef,
     syncNativeIslandPresentation,
@@ -1166,6 +1180,7 @@ export function App() {
           >
             <div key={panelAnimKey} className="island-panel-content">
                           <IslandPanelRouter
+              presentationReady={presentationReady}
               panelView={panelView}
               sessions={sessions}
               sessionRequests={sessionRequests}

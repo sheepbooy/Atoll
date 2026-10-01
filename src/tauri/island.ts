@@ -22,36 +22,50 @@ export async function setImeActive(active: boolean) {
   return invoke<void>("set_ime_active", { active });
 }
 
-export async function setIslandPresentation(
-  mode: "micro" | "compact" | "expanded" | "dormant",
-  compactWidth?: number,
-  expandedIdle?: boolean,
-  compactLeftWidth?: number,
-  animate = true,
-  snap = false,
-  expandedPlan?: boolean,
-  expandedSettings?: boolean,
-  durationMs?: number,
-  expandedWingLeft?: number,
-  expandedWingRight?: number,
-) {
-  if (!isTauriRuntime()) {
-    return;
-  }
+export type IslandWindowMode = "micro" | "compact" | "expanded" | "dormant";
 
+export interface IslandLayoutMetrics {
+  compactWidth?: number;
+  compactLeftWidth?: number;
+  expandedWingLeft?: number;
+  expandedWingRight?: number;
+}
+
+export interface IslandPresentationOptions extends IslandLayoutMetrics {
+  mode: IslandWindowMode;
+  expandedIdle?: boolean;
+  expandedPlan?: boolean;
+  expandedSettings?: boolean;
+  animate?: boolean;
+  snap?: boolean;
+  durationMs?: number;
+  transitionId?: number;
+}
+
+export interface IslandPresentationSettled {
+  mode: IslandWindowMode;
+  transitionId: number;
+}
+
+let transitionSequence = 0;
+export function nextIslandTransitionId(): number {
+  return ++transitionSequence;
+}
+
+export async function setIslandPresentation(options: IslandPresentationOptions) {
+  if (!isTauriRuntime()) return;
   return invoke<void>("set_island_presentation", {
-    mode,
-    compactWidth,
-    compactLeftWidth,
-    expandedWingLeft,
-    expandedWingRight,
-    expandedIdle,
-    expandedPlan,
-    expandedSettings,
-    animate,
-    snap,
-    durationMs,
+    animate: true,
+    snap: false,
+    ...options,
+    transitionId: options.transitionId ?? nextIslandTransitionId(),
   });
+}
+
+/** Metrics persistence never changes presentation, including reduced motion. */
+export async function updateIslandLayoutMetrics(metrics: IslandLayoutMetrics) {
+  if (!isTauriRuntime()) return;
+  return invoke<void>("update_island_layout_metrics", { ...metrics });
 }
 
 /** Cosmetic window pulse for the file-station choreography: grow/shrink the
@@ -92,12 +106,7 @@ export async function setCompactLayout(
     return;
   }
 
-  return invoke<void>("set_island_presentation", {
-    mode: "compact",
-    compactWidth,
-    compactLeftWidth,
-    animate: false,
-  });
+  return updateIslandLayoutMetrics({ compactWidth, compactLeftWidth });
 }
 
 export interface NotchMetrics {
@@ -180,13 +189,13 @@ export async function onNotchMetricsChanged(
 
 /** Fires when the native window animation finishes or snaps to its target. */
 export async function onIslandPresentationSettled(
-  callback: (mode: string) => void | Promise<void>,
+  callback: (event: IslandPresentationSettled) => void | Promise<void>,
 ) {
   if (!isTauriRuntime()) {
     return () => undefined;
   }
 
-  return listen<string>("island-presentation-settled", (event) =>
+  return listen<IslandPresentationSettled>("island-presentation-settled", (event) =>
     callback(event.payload),
   );
 }

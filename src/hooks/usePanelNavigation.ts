@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getSessionRequests, type PermissionRequest, type SessionSummary } from "../tauri";
 import { PANEL_EXIT_MS } from "../islandPresentation";
+import { motionDelay, useReducedMotion } from "../animationTiming";
 import type { PanelView, SettingsPage } from "../appTypes";
 
 interface UsePanelNavigationOptions {
@@ -36,7 +37,15 @@ export function usePanelNavigation({
   const [panelExiting, setPanelExiting] = useState(false);
   const panelExitTimerRef = useRef<number | null>(null);
   const panelExitingRef = useRef(false);
+  const pendingExitRef = useRef<(() => void) | null>(null);
+  const reducedMotion = useReducedMotion();
   panelExitingRef.current = panelExiting;
+  useEffect(() => {
+    if (!reducedMotion || !pendingExitRef.current) return;
+    const finish = pendingExitRef.current;
+    cancelPanelExit();
+    finish();
+  }, [reducedMotion]);
 
   useEffect(() => {
     if (panelView.kind === "session") {
@@ -118,7 +127,7 @@ export function usePanelNavigation({
     if (panelView.kind === "settings" && panelView.page === "tokens") return;
     // Kick off the settings-size resize before mounting the tokens page so the
     // native animation starts with a light DOM. TokenHeatmapView further defers
-    // its dense grid/charts until COLLAPSE_ANIMATION_MS elapses.
+    // its dense grid/charts until the native presentation is ready.
     if (panelView.kind !== "settings") {
       ensureExpandedSettingsPresentation();
     }
@@ -248,19 +257,25 @@ export function usePanelNavigation({
   // Fade panel content out before the native window shrink starts. Called by
   // the island FSM's collapse path; `onExited` continues the collapse.
   function tryBeginPanelExit(onExited: () => void): boolean {
+    if (reducedMotion) return false;
     if (panelExitingRef.current) {
-      return false;
+      return true;
     }
+    panelExitingRef.current = true;
+    pendingExitRef.current = onExited;
     setPanelExiting(true);
     panelExitTimerRef.current = window.setTimeout(() => {
       panelExitTimerRef.current = null;
+      pendingExitRef.current = null;
+      panelExitingRef.current = false;
       setPanelExiting(false);
       onExited();
-    }, PANEL_EXIT_MS);
+    }, motionDelay(PANEL_EXIT_MS));
     return true;
   }
 
   function cancelPanelExit() {
+    pendingExitRef.current = null;
     if (panelExitTimerRef.current !== null) {
       window.clearTimeout(panelExitTimerRef.current);
       panelExitTimerRef.current = null;
@@ -272,6 +287,7 @@ export function usePanelNavigation({
   }
 
   function clearPanelExitTimer() {
+    pendingExitRef.current = null;
     if (panelExitTimerRef.current !== null) {
       window.clearTimeout(panelExitTimerRef.current);
       panelExitTimerRef.current = null;

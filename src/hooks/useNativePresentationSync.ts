@@ -8,22 +8,14 @@ import {
   expandedPresentationKey,
 } from "../islandLayout";
 import type { PresentationPhase } from "../islandPresentation";
+import type { IslandPresentationOptions } from "../tauri";
 
 interface UseNativePresentationSyncOptions {
   phase: PresentationPhase;
   phaseRef: { current: PresentationPhase };
-  suppressPostCollapseSyncRef: { current: boolean };
   microPresentationWidthRef: { current: number };
   lastNativePresentationKeyRef: { current: string | null };
-  syncNativeIslandPresentation: (
-    mode: "micro" | "compact" | "dormant" | "expanded",
-    width?: number,
-    idleExpanded?: boolean,
-    leftPaneWidth?: number,
-    planExpanded?: boolean,
-    settingsExpanded?: boolean,
-    forceSnap?: boolean,
-  ) => Promise<void>;
+  syncNativeIslandPresentation: (options: IslandPresentationOptions) => Promise<void>;
   collapsedMode: "micro" | "compact" | "dormant";
   collapsedWindowWidth: number;
   compactLeftPaneWidth: number;
@@ -42,7 +34,6 @@ interface UseNativePresentationSyncOptions {
 export function useNativePresentationSync({
   phase,
   phaseRef,
-  suppressPostCollapseSyncRef,
   microPresentationWidthRef,
   lastNativePresentationKeyRef,
   syncNativeIslandPresentation,
@@ -78,25 +69,16 @@ export function useNativePresentationSync({
       return;
     }
 
-    if (suppressPostCollapseSyncRef.current) {
-      suppressPostCollapseSyncRef.current = false;
-      return;
-    }
-
     if (phase === "micro") {
       const microWidth = microPresentationWidthRef.current;
       const key = compactPresentationKey("micro", microWidth, 0);
       if (lastNativePresentationKeyRef.current === key) return;
       lastNativePresentationKeyRef.current = key;
-      syncNativeIslandPresentation(
-        "micro",
-        microWidth,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        notchHasNotch && collapsedModeChanged,
-      ).catch(() => undefined);
+      syncNativeIslandPresentation({
+        mode: "micro",
+        compactWidth: microWidth,
+        snap: notchHasNotch && collapsedModeChanged,
+      }).catch(() => undefined);
       return;
     }
 
@@ -109,25 +91,17 @@ export function useNativePresentationSync({
       if (lastNativePresentationKeyRef.current === key) return;
       lastNativePresentationKeyRef.current = key;
       if (collapsedMode === "dormant") {
-        syncNativeIslandPresentation(
-          "dormant",
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          notchHasNotch && collapsedModeChanged,
-        ).catch(() => undefined);
+        syncNativeIslandPresentation({
+          mode: "dormant",
+          snap: notchHasNotch && collapsedModeChanged,
+        }).catch(() => undefined);
       } else {
-        syncNativeIslandPresentation(
-          "compact",
-          collapsedWindowWidth,
-          undefined,
-          compactLeftPaneWidth,
-          undefined,
-          undefined,
-          notchHasNotch && collapsedModeChanged,
-        ).catch(() => undefined);
+        syncNativeIslandPresentation({
+          mode: "compact",
+          compactWidth: collapsedWindowWidth,
+          compactLeftWidth: compactLeftPaneWidth,
+          snap: notchHasNotch && collapsedModeChanged,
+        }).catch(() => undefined);
       }
       return;
     }
@@ -141,14 +115,12 @@ export function useNativePresentationSync({
       if (lastNativePresentationKeyRef.current === key) return;
       const previousKey = lastNativePresentationKeyRef.current;
       lastNativePresentationKeyRef.current = key;
-      syncNativeIslandPresentation(
-        "expanded",
-        undefined,
-        isIdleExpanded,
-        undefined,
-        nativeExpandedPlan,
-        nativeExpandedSettings,
-      ).catch(() => {
+      syncNativeIslandPresentation({
+        mode: "expanded",
+        expandedIdle: isIdleExpanded,
+        expandedPlan: nativeExpandedPlan,
+        expandedSettings: nativeExpandedSettings,
+      }).catch(() => {
         lastNativePresentationKeyRef.current = previousKey;
       });
     }

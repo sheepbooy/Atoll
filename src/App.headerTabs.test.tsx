@@ -59,7 +59,83 @@ describe("App", () => {
     resetAppTestBridge();
   });
 
-  it("keeps compact width when opening Claude from a session subview", async () => {
+  it.each([1, 2])("keeps the expanded width through session navigation with %i agents", async (agentCount) => {
+    let actionsWidth = 180;
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("agent-tabbar") ? 360 : 0;
+    });
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains("header-actions")) return actionsWidth;
+      if (this.classList.contains("token-counter-wrap--expanded")) return 120;
+      return 0;
+    });
+    const sessions = [
+      { ...makeSession([makeSubagent(1, { agentType: "worker-alpha" }), makeSubagent(2)]), cwd: "/tmp/claude-project" },
+      { ...makeSession([]), sessionId: "session-codex", agent: "codex" as const, cwd: "/tmp/codex-project" },
+    ].slice(0, agentCount);
+    bridge.getSnapshot.mockResolvedValue({ ...emptySnapshot, online: true, sessions, hookHealth: connectedHookHealth });
+    bridge.getNotchMetrics.mockResolvedValue({ hasNotch: true, width: 200, height: 38 });
+    bridge.getSessionRequests.mockResolvedValue([]);
+    bridge.getSessionTranscript.mockResolvedValue([]);
+    const { container } = render(<App />);
+    await waitForExpandedPanel(container);
+    const homeWings = { expandedWingLeft: agentCount > 1 ? 422 : 64, expandedWingRight: 325 };
+    await waitFor(() => expect(bridge.setIslandPresentation).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "expanded", ...homeWings }),
+    ));
+
+    bridge.setIslandPresentation.mockClear();
+
+    // Detail headers omit the home tabs/counter/actions. Even resize/settled
+    // events must retain the home wings instead of measuring absent elements.
+    for (let visit = 0; visit < 2; visit += 1) {
+      fireEvent.click(screen.getByRole("button", { name: /claude-project/i }));
+      await screen.findByRole("button", { name: "Back" });
+      await act(async () => {
+        fireEvent(window, new Event("resize"));
+        emitPresentationSettled?.("expanded");
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      });
+      expect(bridge.setIslandPresentation).not.toHaveBeenCalled();
+      expect(JSON.parse(window.localStorage.getItem("atoll:expanded-wings")!)).toEqual({
+        left: homeWings.expandedWingLeft, right: homeWings.expandedWingRight,
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      expect(container.querySelector(".is-session-subview")).toBeNull();
+      expect(container.querySelector(".header-actions")).not.toBeNull();
+      expect(bridge.setIslandPresentation).not.toHaveBeenCalled();
+    }
+    expect(JSON.parse(window.localStorage.getItem("atoll:expanded-wings")!)).toEqual({
+      left: homeWings.expandedWingLeft, right: homeWings.expandedWingRight,
+    });
+
+    fireEvent.click(screen.getByTitle("View all subagents"));
+    expect(screen.getByText("Subagents (2)")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent(window, new Event("resize"));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+    expect(bridge.setIslandPresentation).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /worker-alpha/i }));
+    expect(screen.getByRole("heading", { name: "worker-alpha" })).toBeInTheDocument();
+    await act(async () => {
+      fireEvent(window, new Event("resize"));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+    expect(bridge.setIslandPresentation).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(bridge.setIslandPresentation).not.toHaveBeenCalled();
+
+    // Keeping detail widths must not disable live sizing after returning home.
+    actionsWidth = 300;
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(bridge.setIslandPresentation).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "expanded", expandedWingRight: 445 }),
+    ));
+  });
+
+  it("collapses directly to the latest compact width when opening Claude", async () => {
     const session = {
       sessionId: "session-1",
       agent: "claude" as const,
@@ -141,10 +217,12 @@ describe("App", () => {
     await emitSettledPhase("compact");
 
     const compactAnimatedCalls = bridge.setIslandPresentation.mock.calls.filter(
-      (call) => call[0] === "compact" && call[4] !== false,
+      (call) => call[0].mode === "compact" && call[0].animate !== false,
     );
     expect(compactAnimatedCalls).toHaveLength(1);
-    expect(compactAnimatedCalls[0]?.[1]).toBe(expectedCompactWidth);
+    const latestWidth = computeCollapsedWindowWidth(noNotch, 1, 3, 0, 0);
+    expect(compactAnimatedCalls[0]?.[0].compactWidth).toBe(latestWidth);
+    expect(latestWidth).toBeLessThan(expectedCompactWidth);
     expect(container.querySelector(".is-compact")).not.toBeNull();
     vi.useRealTimers();
   });

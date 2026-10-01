@@ -6,7 +6,6 @@ import type { UsageDisplayMode } from "./displayPrefs";
 import { formatSalaryEarnings } from "./salaryFormat";
 import { DEFAULT_SALARY_SETTINGS, type SalarySettings } from "./salarySettings";
 import { useSalaryTicker } from "./hooks/useSalaryTicker";
-import { COLLAPSE_ANIMATION_MS } from "./islandPresentation";
 import { resolveIntlLocale } from "./i18n";
 import type { ModelRate } from "./pricing";
 import { byModelCostUsd } from "./pricing";
@@ -65,6 +64,7 @@ const AGENT_LABEL: Record<string, string> = {
 };
 
 interface TokenHeatmapViewProps {
+  presentationReady?: boolean;
   todayTokens: TokenUsage;
   todayTokensByModel?: Record<string, TokenUsage>;
   displayMode?: UsageDisplayMode;
@@ -73,6 +73,7 @@ interface TokenHeatmapViewProps {
 }
 
 export function TokenHeatmapView({
+  presentationReady = true,
   todayTokens,
   todayTokensByModel = {},
   displayMode = "tokens",
@@ -97,19 +98,17 @@ export function TokenHeatmapView({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    const readyTimer = window.setTimeout(() => {
-      if (!cancelled) setChartsReady(true);
-    }, COLLAPSE_ANIMATION_MS);
-    const settleTimer = window.setTimeout(() => {
-      if (!cancelled) setSettled(true);
-    }, COLLAPSE_ANIMATION_MS + 32);
+    if (!presentationReady) {
+      setChartsReady(false);
+      setSettled(false);
+      return;
+    }
+    setChartsReady(true);
+    const settleFrame = requestAnimationFrame(() => setSettled(true));
     return () => {
-      cancelled = true;
-      window.clearTimeout(readyTimer);
-      window.clearTimeout(settleTimer);
+      cancelAnimationFrame(settleFrame);
     };
-  }, []);
+  }, [presentationReady]);
 
   useEffect(() => {
     let cancelled = false;

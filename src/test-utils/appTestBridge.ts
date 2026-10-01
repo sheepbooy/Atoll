@@ -250,6 +250,7 @@ export const bridge = {
   resolvePermissionRequest: vi.fn(),
   resolvePermissionWithInput: vi.fn(),
   setIslandPresentation: vi.fn(),
+  updateIslandLayoutMetrics: vi.fn(),
   setImeActive: vi.fn(),
   setCompactLayout: vi.fn(),
   usesMicroIsland: vi.fn(),
@@ -296,8 +297,8 @@ export let emitIslandHover:
   | null = null;
 export let emitIslandOpen: ((source: "summon" | "focus") => void) | null = null;
 export let emitSnapshot: ((snapshot: IslandSnapshot) => void) | null = null;
-export let emitPresentationSettled: ((mode: string) => void) | null = null;
-let presentationSettledListeners: Array<(mode: string) => void> = [];
+export let emitPresentationSettled: ((mode: string, transitionId?: number) => void) | null = null;
+let presentationSettledListeners: Array<(event: { mode: string; transitionId: number }) => void> = [];
 
 /** The shared `beforeEach` body for every App test file: real timers, clean
  *  localStorage, fresh emit wiring, and the default mock responses. */
@@ -335,9 +336,10 @@ export function resetAppTestBridge() {
     // settle finalize and the expanded-wing re-measure both subscribe), so
     // the mock dispatches to all of them instead of keeping only the last.
     presentationSettledListeners.push(callback);
-    emitPresentationSettled = (mode) => {
+    emitPresentationSettled = (mode, transitionId) => {
       for (const listener of [...presentationSettledListeners]) {
-        listener(mode);
+        const calls = bridge.setIslandPresentation.mock.calls;
+        listener({ mode, transitionId: transitionId ?? calls[calls.length - 1]?.[0]?.transitionId ?? 0 });
       }
     };
     return () => {
@@ -350,6 +352,7 @@ export function resetAppTestBridge() {
   bridge.onCaptureOpenHooksRequested.mockResolvedValue(() => undefined);
   bridge.onCaptureScreenshotRequested.mockResolvedValue(() => undefined);
   bridge.setIslandPresentation.mockResolvedValue(undefined);
+  bridge.updateIslandLayoutMetrics.mockResolvedValue(undefined);
   bridge.setImeActive.mockResolvedValue(undefined);
   bridge.setCompactLayout.mockResolvedValue(undefined);
   bridge.usesMicroIsland.mockResolvedValue(false);

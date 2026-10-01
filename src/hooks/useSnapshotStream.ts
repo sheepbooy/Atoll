@@ -178,14 +178,13 @@ export function useSnapshotStream({
 
         const phase = phaseRef.current;
         if (phase === "compact" && collapsedModeRef.current !== "dormant") {
-          await setIslandPresentation(
-            "compact",
-            collapsedWindowWidthRef.current,
-            undefined,
-            compactLeftPaneWidthRef.current,
-            false,
-            true,
-          );
+          await setIslandPresentation({
+            mode: "compact",
+            compactWidth: collapsedWindowWidthRef.current,
+            compactLeftWidth: compactLeftPaneWidthRef.current,
+            animate: false,
+            snap: true,
+          });
         } else if (phase === "expanded") {
           const idleExpanded =
             snapshotRef.current.pendingCount === 0 &&
@@ -196,16 +195,16 @@ export function useSnapshotStream({
             panelViewRef.current.kind === "clipboard" ||
             panelViewRef.current.kind === "fileStation" ||
             panelViewRef.current.kind === "history";
-          await setIslandPresentation(
-            "expanded",
-            collapsedWindowWidthRef.current,
-            idleExpanded,
-            compactLeftPaneWidthRef.current,
-            false,
-            true,
-            planExpanded && !settingsExpanded,
-            settingsExpanded,
-          );
+          await setIslandPresentation({
+            mode: "expanded",
+            compactWidth: collapsedWindowWidthRef.current,
+            expandedIdle: idleExpanded,
+            compactLeftWidth: compactLeftPaneWidthRef.current,
+            animate: false,
+            snap: true,
+            expandedPlan: planExpanded && !settingsExpanded,
+            expandedSettings: settingsExpanded,
+          });
         }
 
         await new Promise<void>((resolve) => {

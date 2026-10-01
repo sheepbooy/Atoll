@@ -18,6 +18,16 @@ function setTauriRuntime(enabled: boolean) {
 }
 
 describe("Tauri bridge", () => {
+  it("persists layout metrics without issuing a presentation transition", async () => {
+    setTauriRuntime(true);
+    const { updateIslandLayoutMetrics, setIslandPresentation } = await import("./tauri");
+    await updateIslandLayoutMetrics({ expandedWingLeft: 240, expandedWingRight: 300 });
+    expect(invoke).toHaveBeenCalledWith("update_island_layout_metrics", { expandedWingLeft: 240, expandedWingRight: 300 });
+    await setIslandPresentation({ mode: "expanded", expandedSettings: true });
+    expect(invoke).toHaveBeenLastCalledWith("set_island_presentation", expect.objectContaining({
+      mode: "expanded", expandedSettings: true, transitionId: expect.any(Number),
+    }));
+  });
   beforeEach(() => {
     vi.resetModules();
     invoke.mockReset();

@@ -10,6 +10,7 @@ import {
   type PermissionRequest,
 } from "../tauri";
 import { RESOLVE_FEEDBACK_MS } from "../islandPresentation";
+import { waitForMotion } from "../animationTiming";
 import type { AgentKind, Decision, PanelView } from "../appTypes";
 
 interface UseApprovalsOptions {
@@ -110,9 +111,7 @@ export function useApprovals({
       })();
       // Hold the snapshot update until the resolve feedback animation can play.
       const [, nextSnapshot] = await Promise.all([
-        new Promise<void>((resolve) => {
-          window.setTimeout(resolve, RESOLVE_FEEDBACK_MS);
-        }),
+        waitForMotion(RESOLVE_FEEDBACK_MS),
         resolveWork,
       ]);
       applySnapshot(nextSnapshot);

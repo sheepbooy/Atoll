@@ -85,7 +85,7 @@ describe("App", () => {
     expect(screen.getByText("Plan questions")).toBeInTheDocument();
     expect(
       bridge.setIslandPresentation.mock.calls.some(
-        (call) => call[0] === "expanded" && call[6] === true,
+        (call) => call[0].mode === "expanded" && call[0].expandedPlan === true,
       ),
     ).toBe(true);
   });

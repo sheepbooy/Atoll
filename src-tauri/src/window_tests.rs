@@ -98,8 +98,7 @@ fn notched_expanded_window_widens_for_header_wings() {
     assert_eq!(size, LogicalSize::new(224.0 + 600.0, 320.0 + 38.0 + 16.0));
 
     // The wider plan/settings variants fit inside the widened window.
-    let plan =
-        window_logical_size(IslandWindowMode::Expanded, 132.0, notch, false, true, false);
+    let plan = window_logical_size(IslandWindowMode::Expanded, 132.0, notch, false, true, false);
     assert_eq!(plan.width, 224.0 + 600.0);
     assert_eq!(plan.height, 680.0 + 38.0 + 16.0);
 }
@@ -357,8 +356,7 @@ fn notched_display_widens_to_notch_width() {
         height: 38.0,
         ..NotchMetrics::default()
     };
-    let compact =
-        window_logical_size(IslandWindowMode::Compact, 132.0, notch, false, false, false);
+    let compact = window_logical_size(IslandWindowMode::Compact, 132.0, notch, false, false, false);
     // Compact sits in the menu-bar band (like dormant) — no extra_top. Its
     // height matches the notch so the pill bottom is flush with the housing.
     assert_eq!(compact.height, 38.0);
@@ -367,13 +365,11 @@ fn notched_display_widens_to_notch_width() {
     assert_eq!(compact.width, 200.0);
 
     // Content wider than the notch keeps its own width.
-    let wide =
-        window_logical_size(IslandWindowMode::Compact, 300.0, notch, false, false, false);
+    let wide = window_logical_size(IslandWindowMode::Compact, 300.0, notch, false, false, false);
     assert_eq!(wide.width, 300.0);
 
     // Dormant is slightly wider than the notch (padding on each side).
-    let dormant =
-        window_logical_size(IslandWindowMode::Dormant, 132.0, notch, false, false, false);
+    let dormant = window_logical_size(IslandWindowMode::Dormant, 132.0, notch, false, false, false);
     assert_eq!(dormant.width, 200.0 + 2.0 * DORMANT_NOTCH_PADDING);
     assert_eq!(dormant.height, 38.0);
 }
@@ -563,4 +559,17 @@ fn appkit_frame_places_the_window_at_the_screen_top() {
 
     assert_eq!(appkit_window_origin_y(0.0, 1260.0, 28.0, 0.0, 0.0), 1232.0);
     assert_eq!(appkit_window_origin_y(0.0, 1260.0, 320.0, 0.0, 0.0), 940.0);
+}
+
+#[test]
+fn queued_animation_frames_are_invalidated_by_either_generation() {
+    let presentation = Arc::new(AtomicU64::new(4));
+    let pulse = Arc::new(AtomicU64::new(9));
+    let guards = vec![(Arc::clone(&presentation), 4), (Arc::clone(&pulse), 9)];
+    assert!(animation_generations_current(&guards));
+    presentation.fetch_add(1, Ordering::SeqCst);
+    assert!(!animation_generations_current(&guards));
+    presentation.store(4, Ordering::SeqCst);
+    pulse.fetch_add(1, Ordering::SeqCst);
+    assert!(!animation_generations_current(&guards));
 }

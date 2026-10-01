@@ -124,11 +124,11 @@ describe("App", () => {
     expect(container.querySelector(".is-compact")).toBeNull();
     expect(
       bridge.setIslandPresentation.mock.calls.some(
-        (call) => call[0] === "micro" && call[5] === true,
+        (call) => call[0].mode === "micro",
       ),
     ).toBe(true);
     expect(
-      bridge.setIslandPresentation.mock.calls.some((call) => call[0] === "compact"),
+      bridge.setIslandPresentation.mock.calls.some((call) => call[0].mode === "compact"),
     ).toBe(false);
 
     vi.useRealTimers();
@@ -168,17 +168,9 @@ describe("App", () => {
     const { container } = render(<App />);
 
     expect(container.querySelector(".is-micro")).not.toBeNull();
-    expect(bridge.setIslandPresentation.mock.calls[0]?.[0]).not.toBe("dormant");
+    expect(bridge.setIslandPresentation.mock.calls[0]?.[0].mode).not.toBe("dormant");
     await waitFor(() =>
-      expect(bridge.setIslandPresentation).toHaveBeenCalledWith(
-        "micro",
-        72,
-        undefined,
-        undefined,
-        expect.any(Boolean),
-        expect.any(Boolean),
-        undefined,
-        undefined,
+      expect(bridge.setIslandPresentation).toHaveBeenCalledWith(expect.objectContaining({ mode: "micro", compactWidth: 72, animate: expect.any(Boolean), snap: expect.any(Boolean) })
       ),
     );
 
@@ -214,7 +206,7 @@ describe("App", () => {
 
     expect(container.querySelector(".is-compact")).not.toBeNull();
     expect(container.querySelector(".is-micro")).toBeNull();
-    expect(bridge.setIslandPresentation.mock.calls[0]?.[0]).not.toBe("dormant");
+    expect(bridge.setIslandPresentation.mock.calls[0]?.[0].mode).not.toBe("dormant");
 
     Object.defineProperty(navigator, "userAgent", {
       configurable: true,
@@ -276,7 +268,7 @@ describe("App", () => {
     bridge.setIslandPresentation.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Collapse Atoll" }));
     await waitFor(() =>
-      expect(bridge.setIslandPresentation).toHaveBeenCalledWith("micro", 72),
+      expect(bridge.setIslandPresentation).toHaveBeenCalledWith(expect.objectContaining({ mode: "micro", compactWidth: 72 })),
     );
 
     Object.defineProperty(navigator, "userAgent", {
@@ -472,11 +464,11 @@ describe("App", () => {
 
     await waitFor(() => {
       const microCalls = bridge.setIslandPresentation.mock.calls.filter(
-        (call) => call[0] === "micro",
+        (call) => call[0].mode === "micro",
       );
       expect(
         microCalls.some(
-          (call) => typeof call[1] === "number" && call[1] > 72,
+          (call) => typeof call[0].compactWidth === "number" && call[0].compactWidth > 72,
         ),
       ).toBe(true);
     });
@@ -553,7 +545,7 @@ describe("App", () => {
     });
 
     expect(
-      bridge.setIslandPresentation.mock.calls.some((call) => call[0] === "micro"),
+      bridge.setIslandPresentation.mock.calls.some((call) => call[0].mode === "micro"),
     ).toBe(false);
 
     vi.useRealTimers();

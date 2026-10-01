@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ATOLL_ENTER_MS, ATOLL_EXIT_MS, ATOLL_REACTION_MS } from "./atollTransitions";
-import { prefersReducedMotion } from "./animationTiming";
+import { useReducedMotion } from "./animationTiming";
 import { IDLE_EASTER_EGG_ACTIVITIES } from "./logoStates";
 import { useAtollPhase } from "./useAtollPhase";
 
@@ -161,7 +161,9 @@ function MascotBody({ baseVariant, altVariants, blinking, eyeOffsetX }: MascotBo
         <ellipse cx="47" cy="34" rx="4" ry="2" fill="#ffb4b4" shapeRendering="auto" />
       </g>
       <g className="atoll-eyes atoll-eyes-base">
-        <EyeSet variant={baseVariant} blinking={blinking && blinkable} offsetX={eyeOffsetX} />
+        <g className="atoll-eye-scan">
+          <EyeSet variant={baseVariant} blinking={blinking && blinkable} offsetX={eyeOffsetX} />
+        </g>
       </g>
       {altVariants.map((variant) => (
         <g key={variant} className={`atoll-eyes atoll-eyes-alt atoll-eyes-${variant}`}>
@@ -211,17 +213,20 @@ export function AtollLogo({
 }: AtollLogoProps) {
   const [playAct, setPlayAct] = useState<AtollActivity | null>(null);
   const [blinking, setBlinking] = useState(false);
-  const [scanX, setScanX] = useState(0);
+  const reducedMotion = useReducedMotion();
+  const logoRef = useRef<HTMLSpanElement>(null);
+  const restartedReactionRef = useRef<string | null>(null);
+  const reactionEventRef = useRef<{ reaction: AtollReaction; key: number; expiresAt: number; consumed: boolean } | null>(null);
   const [micro, setMicro] = useState<AtollMicroMotion | null>(null);
   const [reactionActive, setReactionActive] = useState<AtollReaction | null>(null);
 
   const targetAct = activity === "idle" ? (playAct ?? "idle") : activity;
-  const { renderAct, phase } = useAtollPhase(targetAct);
+  const { renderAct, phase } = useAtollPhase(targetAct, motionPaused);
 
   // 彩蛋：仅当 props.activity 为「空闲」idle 时，按设置间隔随机播放（不连续重复同一个）。
   const lastEggRef = useRef<AtollActivity | null>(null);
   useEffect(() => {
-    if (motionPaused || prefersReducedMotion() || activity !== "idle") {
+    if (motionPaused || reducedMotion || activity !== "idle") {
       setPlayAct(null);
       return;
     }
@@ -261,11 +266,11 @@ export function AtollLogo({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [activity, idleIntervalSec, idleDurationSec, motionPaused]);
+  }, [activity, idleIntervalSec, idleDurationSec, motionPaused, reducedMotion]);
 
   // 眨眼：普通 130ms，偶尔双眨（活泼）或慢眨（慵懒）。
   useEffect(() => {
-    if (motionPaused || prefersReducedMotion()) {
+    if (motionPaused || reducedMotion) {
       setBlinking(false);
       return;
     }
@@ -302,37 +307,12 @@ export function AtollLogo({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [renderAct, motionPaused]);
-
-  // reading：视线沿书行往复扫描。
-  useEffect(() => {
-    if (renderAct !== "reading" || prefersReducedMotion()) {
-      setScanX(0);
-      return;
-    }
-    let timer: number;
-    let dir = 1;
-    let pos = 0;
-    const tick = () => {
-      pos += dir * 2;
-      if (pos >= 4) {
-        pos = 4;
-        dir = -1;
-      } else if (pos <= -4) {
-        pos = -4;
-        dir = 1;
-      }
-      setScanX(pos);
-      timer = window.setTimeout(tick, 55);
-    };
-    timer = window.setTimeout(tick, 200);
-    return () => window.clearTimeout(timer);
-  }, [renderAct]);
+  }, [renderAct, motionPaused, reducedMotion]);
 
   // 微动作：idle 循环中每 20–45s 随机插入一个一次性小动作（不连续重复）。
   useEffect(() => {
     if (microMotion !== null) return;
-    if (motionPaused || prefersReducedMotion() || renderAct !== "idle" || phase !== "loop") {
+    if (motionPaused || reducedMotion || renderAct !== "idle" || phase !== "loop") {
       setMicro(null);
       return;
     }
@@ -358,18 +338,47 @@ export function AtollLogo({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [renderAct, phase, motionPaused, microMotion]);
+  }, [renderAct, phase, motionPaused, microMotion, reducedMotion]);
 
   // 一次性状态反应。
   useEffect(() => {
-    if (!reaction || motionPaused || prefersReducedMotion()) {
+    if (!reaction) {
+      reactionEventRef.current = null;
+      restartedReactionRef.current = null;
       setReactionActive(null);
       return;
     }
-    setReactionActive(reaction);
-    const timer = window.setTimeout(() => setReactionActive(null), ATOLL_REACTION_MS[reaction]);
+    let event = reactionEventRef.current;
+    if (!event || event.reaction !== reaction || event.key !== reactionKey) {
+      event = { reaction, key: reactionKey, expiresAt: Date.now() + ATOLL_REACTION_MS[reaction], consumed: false };
+      reactionEventRef.current = event;
+      if (motionPaused) setReactionActive(null);
+    }
+    const remaining = event.expiresAt - Date.now();
+    if (reducedMotion || remaining <= 0) {
+      event.consumed = true;
+      setReactionActive(null);
+      return;
+    }
+    if (!motionPaused && !event.consumed) {
+      event.consumed = true;
+      setReactionActive(reaction);
+    }
+    const timer = window.setTimeout(() => setReactionActive(null), remaining);
     return () => window.clearTimeout(timer);
-  }, [reaction, reactionKey, motionPaused]);
+  }, [reaction, reactionKey, motionPaused, reducedMotion]);
+
+  // Restart only reaction timelines; keep the SVG body and looping poses mounted.
+  useLayoutEffect(() => {
+    if (!reactionActive || reactionActive !== reaction || motionPaused || reducedMotion) return;
+    const eventKey = `${reactionActive}:${reactionKey}`;
+    if (restartedReactionRef.current === eventKey) return;
+    restartedReactionRef.current = eventKey;
+    for (const animation of logoRef.current?.getAnimations?.({ subtree: true }) ?? []) {
+      const name = (animation as CSSAnimation).animationName ?? "";
+      if (/^atoll-(reaction-|eat-|spit-)/.test(name)) animation.currentTime = 0;
+    }
+  }, [reactionActive, reaction, reactionKey, motionPaused, reducedMotion]);
 
   const eyes = ACTIVITY_EYES[renderAct];
   const activeMicro = microMotion ?? micro;
@@ -386,13 +395,14 @@ export function AtollLogo({
       baseVariant={eyes.base}
       altVariants={eyes.alt}
       blinking={showBlinking}
-      eyeOffsetX={renderAct === "reading" ? scanX : 0}
+      eyeOffsetX={0}
     />
   );
 
   return (
     <span
-      className={`atoll-logo is-${renderAct} is-phase-${phase}${blinking ? " is-blinking" : ""}${activeMicro ? ` is-micro-${activeMicro}` : ""}${reactionActive ? ` is-reaction-${reactionActive}` : ""}${stashLevel > 0 ? ` is-stash-${Math.min(Math.round(stashLevel), 3)}` : ""}${mouthOpen ? " is-mouth-open" : ""}${className ? ` ${className}` : ""}`}
+      ref={logoRef}
+      className={`atoll-logo${motionPaused ? " is-motion-paused" : ""} is-${renderAct} is-phase-${phase}${blinking ? " is-blinking" : ""}${activeMicro ? ` is-micro-${activeMicro}` : ""}${reactionActive ? ` is-reaction-${reactionActive}` : ""}${stashLevel > 0 ? ` is-stash-${Math.min(Math.round(stashLevel), 3)}` : ""}${mouthOpen ? " is-mouth-open" : ""}${className ? ` ${className}` : ""}`}
       style={wrapperStyle}
       aria-hidden="true"
     >

@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import {
   ATOLL_ENTER_MS,
   ATOLL_EXIT_MS,
@@ -32,6 +33,32 @@ export function prefersReducedMotion(): boolean {
 /** JS 编排定时器的时长：降级时归零，与 CSS 侧 1ms 降级行为对齐。 */
 export function motionDelay(ms: number): number {
   return prefersReducedMotion() ? 0 : ms;
+}
+
+function subscribeMotionPreference(onChange: () => void): () => void {
+  if (typeof window === "undefined" || !window.matchMedia) return () => undefined;
+  const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+  query.addEventListener?.("change", onChange);
+  return () => query.removeEventListener?.("change", onChange);
+}
+
+export function useReducedMotion(): boolean {
+  return useSyncExternalStore(subscribeMotionPreference, prefersReducedMotion, () => false);
+}
+
+/** Finish animation-only waits immediately if the preference changes mid-flight. */
+export function waitForMotion(ms: number): Promise<void> {
+  if (prefersReducedMotion()) return Promise.resolve();
+  return new Promise((resolve) => {
+    let unsubscribe: () => void = () => undefined;
+    const finish = () => {
+      window.clearTimeout(timer);
+      unsubscribe();
+      resolve();
+    };
+    const timer = window.setTimeout(finish, ms);
+    unsubscribe = subscribeMotionPreference(() => { if (prefersReducedMotion()) finish(); });
+  });
 }
 
 const ms = (value: number) => `${value}ms`;

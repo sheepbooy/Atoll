@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { PixelDigitDisplay } from "./PixelDigitDisplay";
+import { useReducedMotion } from "./animationTiming";
 import { manageAsyncUnlisten } from "./asyncUnlisten";
 import {
   buildDigitReelStrip,
@@ -371,7 +372,9 @@ export function TokenCounter({
       : displayMode === "salary"
         ? formatSalaryEarnings(nextValue, salarySettings.currency, level, effectiveValue)
         : formatCompactTokenCount(nextValue, level, value);
-  const animateDigits = !suppressAnimations && displayMode !== "cost";
+  const reducedMotion = useReducedMotion();
+  const animationsSuppressed = suppressAnimations || reducedMotion;
+  const animateDigits = !animationsSuppressed && displayMode !== "cost";
   const [displayText, setDisplayText] = useState(() => formatValue(effectiveValue));
   const [energy, setEnergy] = useState<TokenCounterEnergy>("idle");
   const [deltaText, setDeltaText] = useState<string | null>(null);
@@ -459,7 +462,7 @@ export function TokenCounter({
     if (
       incomingDelta > 0 &&
       isCollapsedVariant &&
-      !suppressAnimations
+      !animationsSuppressed
     ) {
       setDeltaText(`+${formatValue(incomingDelta, compactLevel)}`);
       setDeltaKey((key) => key + 1);
@@ -471,7 +474,8 @@ export function TokenCounter({
       setDeltaText(null);
     }
 
-    if (suppressAnimations) {
+    if (animationsSuppressed) {
+      setDeltaText(null);
       publishDisplay(effectiveValue);
       setEnergy("idle");
       return clearTimers;
@@ -520,7 +524,7 @@ export function TokenCounter({
       }
       clearTimers();
     };
-  }, [effectiveValue, compactLevel, variant, suppressAnimations, displayMode]);
+  }, [effectiveValue, compactLevel, variant, animationsSuppressed, displayMode]);
 
   function handlePointerEnter() {
     pointerHoverRef.current = true;

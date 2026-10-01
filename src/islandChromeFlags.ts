@@ -16,8 +16,6 @@ interface IslandChromeFlagsInput {
   panelView: PanelView;
   collapsedMode: "micro" | "compact" | "dormant";
   usesMicroIsland: boolean;
-  suppressPostCollapseSync: boolean;
-  holdCompactAfterSubviewOpen: boolean;
   sessions: SessionSummary[];
   pendingCount: number;
   isPlanExpanded: boolean;
@@ -38,8 +36,6 @@ export function deriveIslandChromeFlags({
   panelView,
   collapsedMode,
   usesMicroIsland,
-  suppressPostCollapseSync,
-  holdCompactAfterSubviewOpen,
   sessions,
   pendingCount,
   isPlanExpanded,
@@ -66,8 +62,6 @@ export function deriveIslandChromeFlags({
   const isDormant =
     !isExpanded &&
     !isMicro &&
-    !suppressPostCollapseSync &&
-    !holdCompactAfterSubviewOpen &&
     (collapsedMode === "dormant" ||
       (usesMicroIsland &&
         phase === "compact" &&

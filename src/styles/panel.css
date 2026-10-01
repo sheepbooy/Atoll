@@ -2,6 +2,7 @@
 /* ─── Island Panel ────────────────────────────────────────────── */
 
 .island-panel {
+  --panel-offset-x: 0px;
   position: relative;
   height: calc(100% - 36px);
   padding: 12px 16px 16px;
@@ -29,15 +30,13 @@
   padding-top: 8px;
   opacity: 0;
   transform: translate3d(0, 12px, 0);
-  transition:
-    opacity var(--duration-normal) var(--ease-out) 80ms,
-    transform var(--duration-normal) var(--ease-out) 80ms;
 }
 
 /* The footer slides in once the panel is visible (not during transitions). */
 .is-expanded:not(.is-opening):not(.is-closing) .island-panel-footer {
   opacity: 1;
   transform: translate3d(0, 0, 0);
+  animation: panel-footer-enter var(--duration-normal) var(--ease-out) 80ms both;
 }
 
 /* Soft film grain — static CSS noise (no SVG feTurbulence; that filter
@@ -95,6 +94,7 @@
 }
 
 .tauri-runtime .island-panel {
+  --panel-offset-x: -50%;
   position: absolute;
   top: 36px;
   left: 50%;
@@ -108,7 +108,7 @@
   opacity: 1;
   pointer-events: auto;
   transform: translate3d(0, 0, 0);
-  transition-delay: 80ms;
+  animation: panel-enter var(--duration-normal) var(--ease-out) both;
 }
 
 .tauri-runtime .is-expanded .island-panel {
@@ -257,4 +257,3 @@
   /* Clip so no right-wing content can ever spill under the camera housing. */
   overflow: hidden;
 }
-

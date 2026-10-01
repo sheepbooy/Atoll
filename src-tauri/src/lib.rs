@@ -220,6 +220,7 @@ pub fn run() {
             archive_session,
             pin_session,
             set_island_presentation,
+            update_island_layout_metrics,
             pulse_island_shape,
             list_monitors,
             get_preferred_monitor,

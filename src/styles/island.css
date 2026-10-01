@@ -450,6 +450,8 @@
 }
 
 .is-expanded.is-idle .island-panel {
+  /* Idle panels start at left: 0; their animation must keep that anchor. */
+  --panel-offset-x: 0px;
   position: absolute;
   inset: 0;
   top: 0;
@@ -1305,4 +1307,3 @@
    the native window hugs the measured header content instead (dynamic wings;
    see the notch section in panel.css), so the .more-menu dropdown is never
    clipped. */
-

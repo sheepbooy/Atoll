@@ -29,60 +29,30 @@ pub(crate) async fn set_island_presentation(
     animate: Option<bool>,
     snap: Option<bool>,
     duration_ms: Option<u64>,
+    transition_id: Option<u64>,
 ) -> Result<(), String> {
     let Some(window) = app.get_webview_window("main") else {
         return Ok(());
     };
-    // Any presentation change (animated or snap) supersedes a running
-    // cosmetic shape pulse.
-    state.shape_pulse_generation.fetch_add(1, Ordering::SeqCst);
 
-    if let Some(width) = compact_width {
-        if should_persist_compact_width(mode) {
-            let mut saved_width = state
-                .compact_width
-                .lock()
-                .map_err(|error| error.to_string())?;
-            *saved_width = sanitize_compact_width(width);
-        }
+    store_island_layout_metrics(
+        &state,
+        mode,
+        compact_width,
+        compact_left_width,
+        expanded_wing_left,
+        expanded_wing_right,
+    )?;
+    // Metrics-only calls must remain non-presentational under reduced motion.
+    if animate == Some(false) && snap != Some(true) {
+        return Ok(());
     }
-
-    if let Some(left_width) = compact_left_width {
-        let mut saved_left = state
-            .compact_left_width
-            .lock()
-            .map_err(|error| error.to_string())?;
-        *saved_left = if left_width.is_finite() {
-            left_width.max(0.0)
-        } else {
-            0.0
-        };
-    }
-
-    // Expanded header wing widths measured by the webview (notched displays);
-    // clamp and persist so the next apply/animate sizes the wings to the
-    // actual header content instead of the fallback.
-    if let Some(left) = expanded_wing_left {
-        if left.is_finite() {
-            let mut stored = state
-                .expanded_wing_left
-                .lock()
-                .map_err(|error| error.to_string())?;
-            *stored = left.clamp(EXPANDED_WING_MIN_WIDTH, EXPANDED_WING_MAX_WIDTH);
-        }
-    }
-    if let Some(right) = expanded_wing_right {
-        if right.is_finite() {
-            let mut stored = state
-                .expanded_wing_right
-                .lock()
-                .map_err(|error| error.to_string())?;
-            *stored = right.clamp(EXPANDED_WING_MIN_WIDTH, EXPANDED_WING_MAX_WIDTH);
-        }
-    }
-
+    let generation = state.presentation_generation.fetch_add(1, Ordering::SeqCst) + 1;
+    let presentation_generation = Arc::clone(&state.presentation_generation);
     // Reduced-motion users get the snap path: no per-frame window resizing,
     // the island jumps straight to its target presentation.
+    state.shape_pulse_generation.fetch_add(1, Ordering::SeqCst);
+    let transition_id = transition_id.unwrap_or(0);
     let reduced_motion = platform::prefers_reduced_motion();
     if animate == Some(false) || reduced_motion {
         if snap == Some(true) || reduced_motion {
@@ -116,10 +86,15 @@ pub(crate) async fn set_island_presentation(
                 .map_err(|error| error.to_string())?
                 .clone();
             let (sync_tx, sync_rx) =
-                std::sync::mpsc::sync_channel::<Result<Option<HomeWindowBounds>, String>>(0);
+                std::sync::mpsc::sync_channel::<Result<Option<HomeWindowBounds>, String>>(1);
             let frame_window = window.clone();
+            let frame_generation = Arc::clone(&presentation_generation);
             window
                 .run_on_main_thread(move || {
+                    if frame_generation.load(Ordering::SeqCst) != generation {
+                        let _ = sync_tx.send(Ok(None));
+                        return;
+                    }
                     let result = apply_island_window_mode(
                         &frame_window,
                         preferred_monitor.as_deref(),
@@ -138,6 +113,9 @@ pub(crate) async fn set_island_presentation(
             let home = sync_rx
                 .recv_timeout(Duration::from_secs(2))
                 .map_err(|error| format!("main-thread presentation timed out: {error}"))??;
+            if presentation_generation.load(Ordering::SeqCst) != generation {
+                return Ok(());
+            }
             if let Some(home) = home {
                 if let Ok(mut home_bounds) = state.home_bounds.lock() {
                     *home_bounds = Some(home);
@@ -153,13 +131,14 @@ pub(crate) async fn set_island_presentation(
             // Note: the outer `animate: false, snap: false` path (fire-and-forget
             // metrics update) intentionally skips this emit — callers wanting a
             // settled event must pass `snap: true`.
-            let _ = app.emit("island-presentation-settled", mode);
+            let _ = app.emit(
+                "island-presentation-settled",
+                json!({ "mode": mode, "transitionId": transition_id }),
+            );
         }
         return Ok(());
     }
 
-    let generation = state.presentation_generation.fetch_add(1, Ordering::SeqCst) + 1;
-    let presentation_generation = Arc::clone(&state.presentation_generation);
     let saved_compact_width = *state
         .compact_width
         .lock()
@@ -206,11 +185,85 @@ pub(crate) async fn set_island_presentation(
             expanded_plan,
             expanded_settings,
             resolve_animation_duration(duration_ms),
+            transition_id,
         )
         .map_err(|error| error.to_string())
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub(crate) fn update_island_layout_metrics(
+    state: State<'_, AppState>,
+    compact_width: Option<f64>,
+    compact_left_width: Option<f64>,
+    expanded_wing_left: Option<f64>,
+    expanded_wing_right: Option<f64>,
+) -> Result<(), String> {
+    store_island_layout_metrics(
+        &state,
+        IslandWindowMode::Compact,
+        compact_width,
+        compact_left_width,
+        expanded_wing_left,
+        expanded_wing_right,
+    )
+}
+
+fn store_island_layout_metrics(
+    state: &AppState,
+    mode: IslandWindowMode,
+    compact_width: Option<f64>,
+    compact_left_width: Option<f64>,
+    expanded_wing_left: Option<f64>,
+    expanded_wing_right: Option<f64>,
+) -> Result<(), String> {
+    if let Some(width) = compact_width {
+        if should_persist_compact_width(mode) {
+            let mut saved_width = state
+                .compact_width
+                .lock()
+                .map_err(|error| error.to_string())?;
+            *saved_width = sanitize_compact_width(width);
+        }
+    }
+
+    if let Some(left_width) = compact_left_width {
+        let mut saved_left = state
+            .compact_left_width
+            .lock()
+            .map_err(|error| error.to_string())?;
+        *saved_left = if left_width.is_finite() {
+            left_width.max(0.0)
+        } else {
+            0.0
+        };
+    }
+
+    // Expanded header wing widths measured by the webview (notched displays);
+    // clamp and persist so the next apply/animate sizes the wings to the
+    // actual header content instead of the fallback.
+    if let Some(left) = expanded_wing_left {
+        if left.is_finite() {
+            let mut stored = state
+                .expanded_wing_left
+                .lock()
+                .map_err(|error| error.to_string())?;
+            *stored = left.clamp(EXPANDED_WING_MIN_WIDTH, EXPANDED_WING_MAX_WIDTH);
+        }
+    }
+    if let Some(right) = expanded_wing_right {
+        if right.is_finite() {
+            let mut stored = state
+                .expanded_wing_right
+                .lock()
+                .map_err(|error| error.to_string())?;
+            *stored = right.clamp(EXPANDED_WING_MIN_WIDTH, EXPANDED_WING_MAX_WIDTH);
+        }
+    }
+
+    Ok(())
 }
 
 /// Per-call animation length: the frontend shortens the native resize for
@@ -351,7 +404,12 @@ fn animate_island_shape_pulse(
         {
             return Ok(());
         }
-        let elapsed = started_at.elapsed();
+        let reduced_motion = platform::prefers_reduced_motion();
+        let elapsed = if reduced_motion {
+            total
+        } else {
+            started_at.elapsed()
+        };
         // Out 阶段 spring 从基帧到峰值帧；back 阶段 cubic 从峰值帧回基帧。
         // 两段各自插值，手点处连续（spring(1)==1 且 cubic(0)==0 都落在峰值帧）。
         let (from_size, to_size, from_position, to_position, eased) = if elapsed < out {
@@ -380,18 +438,22 @@ fn animate_island_shape_pulse(
             interpolate_f64(from_position.y, to_position.y, eased),
         );
 
-        platform::set_island_window_frame(window, position, size, scale_factor, home_bounds)?;
-        #[cfg(target_os = "macos")]
-        {
-            // Same AppKit back-pressure as the presentation animation: one
-            // bounded wait, absolute-time progress catches up if the main
-            // thread is busy; the loop-top generation check aborts stale
-            // pulses before they can set further frames.
-            let (frame_tx, frame_rx) = std::sync::mpsc::sync_channel::<()>(0);
-            window.run_on_main_thread(move || {
-                let _ = frame_tx.send(());
-            })?;
-            let _ = frame_rx.recv_timeout(Duration::from_millis(120));
+        let frame_rx = queue_animation_frame(
+            window,
+            position,
+            size,
+            scale_factor,
+            home_bounds,
+            vec![
+                (Arc::clone(shape_pulse_generation), generation),
+                (
+                    Arc::clone(presentation_generation),
+                    presentation_generation_at_start,
+                ),
+            ],
+        )?;
+        if let Ok(result) = frame_rx.recv_timeout(Duration::from_millis(120)) {
+            result?;
         }
 
         if elapsed >= total {
@@ -403,6 +465,46 @@ fn animate_island_shape_pulse(
         }
     }
     Ok(())
+}
+
+/// Recheck on the UI thread: queued frames may outlive their animation worker.
+pub(crate) fn animation_generations_current(guards: &[(Arc<AtomicU64>, u64)]) -> bool {
+    guards
+        .iter()
+        .all(|(counter, expected)| counter.load(Ordering::SeqCst) == *expected)
+}
+
+fn queue_animation_frame(
+    window: &tauri::WebviewWindow,
+    position: LogicalPosition<f64>,
+    size: LogicalSize<f64>,
+    scale_factor: f64,
+    home: Option<HomeWindowBounds>,
+    guards: Vec<(Arc<AtomicU64>, u64)>,
+) -> tauri::Result<std::sync::mpsc::Receiver<tauri::Result<()>>> {
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    let frame_window = window.clone();
+    window.run_on_main_thread(move || {
+        let result = if animation_generations_current(&guards) {
+            if let Some(home) = home {
+                platform::set_island_window_frame_now(
+                    &frame_window,
+                    position,
+                    size,
+                    scale_factor,
+                    home,
+                )
+            } else {
+                frame_window
+                    .set_size(size)
+                    .and_then(|_| frame_window.set_position(position))
+            }
+        } else {
+            Ok(())
+        };
+        let _ = tx.send(result);
+    })?;
+    Ok(rx)
 }
 
 /// Displays available to the island selector, in OS enumeration order.
@@ -769,6 +871,7 @@ pub(crate) fn animate_island_window_mode(
     expanded_plan: bool,
     expanded_settings: bool,
     duration: Duration,
+    transition_id: u64,
 ) -> tauri::Result<()> {
     let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
     platform::ensure_island_on_top(window);
@@ -848,7 +951,11 @@ pub(crate) fn animate_island_window_mode(
             return Ok(());
         }
 
-        let progress = (started_at.elapsed().as_secs_f64() / duration.as_secs_f64()).min(1.0);
+        let progress = if platform::prefers_reduced_motion() {
+            1.0
+        } else {
+            (started_at.elapsed().as_secs_f64() / duration.as_secs_f64()).min(1.0)
+        };
         // Overshoot only when growing out of the menu-bar pill. Resizing between
         // already-expanded sizes (idle → settings/tokens) stays cubic so AppKit
         // never has to grow past the target and shrink back — that path felt
@@ -874,29 +981,24 @@ pub(crate) fn animate_island_window_mode(
             interpolate_f64(start_position.y, target_y, eased),
         );
 
-        platform::set_island_window_frame(window, position, size, scale_factor, home_bounds)?;
-        #[cfg(target_os = "macos")]
-        {
-            // Back-pressure AppKit frame delivery. Without this acknowledgement,
-            // rapid expand/collapse cycles can enqueue dozens of stale frames.
-            let (frame_tx, frame_rx) = std::sync::mpsc::sync_channel::<()>(0);
-            window.run_on_main_thread(move || {
-                let _ = frame_tx.send(());
-            })?;
-            // A busy main thread used to abort the animation mid-flight, which
-            // froze the island at a half-interpolated size. Instead keep waiting
-            // for the acknowledgement in slices (checking for cancellation) —
-            // the absolute-time progress catches up once the main thread drains.
-            loop {
-                if presentation_generation.load(Ordering::SeqCst) != generation {
-                    return Ok(());
-                }
-                if frame_rx.recv_timeout(Duration::from_millis(250)).is_ok() {
-                    break;
-                }
-                if started_at.elapsed() >= duration {
-                    break;
-                }
+        let frame_rx = queue_animation_frame(
+            window,
+            position,
+            size,
+            scale_factor,
+            home_bounds,
+            vec![(Arc::clone(presentation_generation), generation)],
+        )?;
+        loop {
+            if presentation_generation.load(Ordering::SeqCst) != generation {
+                return Ok(());
+            }
+            if let Ok(result) = frame_rx.recv_timeout(Duration::from_millis(120)) {
+                result?;
+                break;
+            }
+            if started_at.elapsed() >= duration {
+                break;
             }
         }
 
@@ -927,7 +1029,7 @@ pub(crate) fn animate_island_window_mode(
         }
     }
 
-    let (sync_tx, sync_rx) = std::sync::mpsc::sync_channel::<()>(0);
+    let (sync_tx, sync_rx) = std::sync::mpsc::sync_channel::<()>(1);
     let _ = window.run_on_main_thread(move || {
         let _ = sync_tx.send(());
     });
@@ -947,7 +1049,10 @@ pub(crate) fn animate_island_window_mode(
         Arc::clone(presentation_generation),
         generation,
     );
-    let _ = window.emit("island-presentation-settled", mode);
+    let _ = window.emit(
+        "island-presentation-settled",
+        json!({ "mode": mode, "transitionId": transition_id }),
+    );
     Ok(())
 }
 pub(crate) fn interpolate_f64(start: f64, end: f64, progress: f64) -> f64 {

@@ -15,10 +15,13 @@ import {
   onNotchMetricsChanged,
   onIslandOpenRequested,
   onIslandPresentationSettled,
+  nextIslandTransitionId,
   type IslandSnapshot,
+  type IslandPresentationOptions,
   type NotchMetrics,
 } from "../tauri";
 import {
+  COLLAPSE_ANIMATION_MS,
   beginCollapse,
   beginExpand,
   finishExpand,
@@ -44,6 +47,7 @@ import { EMPTY_NOTCH_METRICS } from "../snapshotDefaults";
 import { isPlanModeCommand, snapshotHasPlanPending } from "../planMode";
 import { isTextEntryActive } from "../imeHelpers";
 import { manageAsyncUnlisten } from "../asyncUnlisten";
+import { motionDelay, useReducedMotion } from "../animationTiming";
 import type { ArtworkBackdropOrigin, FoldedIslandSize, PanelView } from "../appTypes";
 
 interface UseIslandPresentationOptions {
@@ -51,6 +55,7 @@ interface UseIslandPresentationOptions {
   setSnapshot: (
     updater: IslandSnapshot | ((prev: IslandSnapshot) => IslandSnapshot),
   ) => void;
+  collapsedModeRef: { current: "micro" | "compact" | "dormant" };
   collapsedWindowWidthRef: { current: number };
   compactLeftPaneWidthRef: { current: number };
   microPresentationWidthRef: { current: number };
@@ -72,6 +77,7 @@ interface UseIslandPresentationOptions {
 export function useIslandPresentation({
   snapshotRef,
   setSnapshot,
+  collapsedModeRef,
   collapsedWindowWidthRef,
   compactLeftPaneWidthRef,
   microPresentationWidthRef,
@@ -84,6 +90,7 @@ export function useIslandPresentation({
   clearPanelExitTimer,
   closeMenu,
 }: UseIslandPresentationOptions) {
+  const reducedMotion = useReducedMotion();
   const initialSupportsMicroIsland = usesMicroIslandSync();
   const initialFoldedIslandSize = readFoldedIslandSize();
   const initialUsesMicro = shouldUseMicroIsland(
@@ -109,6 +116,8 @@ export function useIslandPresentation({
     foldedIslandSize,
   );
   const [notchMetricsHydrated, setNotchMetricsHydrated] = useState(false);
+  const [presentationReady, setPresentationReady] = useState(true);
+  const expandedResizeSeqRef = useRef(0);
   const initialNativePresentationSyncedRef = useRef(false);
   const hoveringRef = useRef(false);
   const cursorOverIslandRef = useRef(false);
@@ -129,20 +138,28 @@ export function useIslandPresentation({
   const idleTimerRef = useRef<number | null>(null);
   const frozenCollapseWidthRef = useRef<number | null>(null);
   const frozenCollapseLeftWidthRef = useRef<number | null>(null);
-  const suppressPostCollapseSyncRef = useRef(false);
-  const holdCompactAfterSubviewOpenRef = useRef(false);
   // Closures captured at transition start, run when the native window emits
   // `island-presentation-settled` (or the 2s fallback fires). Captured by value
   // so the listener sees the metrics that were current when the transition began.
   const pendingExpandRef = useRef<(() => Promise<void>) | null>(null);
   const pendingCollapseRef = useRef<(() => Promise<void>) | null>(null);
-  const expandCollapseAnchorRef = useRef<{
-    width: number;
-    leftWidth: number;
-  } | null>(null);
   const lastNativePresentationKeyRef = useRef<string | null>(null);
+  const activeTransitionIdRef = useRef(0);
+  const closingTargetKeyRef = useRef<string | null>(null);
+  const closingDeadlineRef = useRef(0);
 
   const [notchMetrics, setNotchMetrics] = useState<NotchMetrics>(EMPTY_NOTCH_METRICS);
+
+  useEffect(() => {
+    if (!reducedMotion) return;
+    if (transitionTimerRef.current !== null) {
+      window.clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = null;
+    }
+    // The invoke resolves after the native snap; retain its generation checks.
+    if (phaseRef.current === "opening") void runPendingExpand();
+    if (phaseRef.current === "closing") void runPendingCollapse();
+  }, [reducedMotion, phase]);
 
   // Rect of the compact media thumb (window coords) captured right before the
   // expand animation starts; drives the artwork backdrop grow-from-thumb origin.
@@ -219,14 +236,12 @@ export function useIslandPresentation({
     if (phaseRef.current === "expanded" && panelViewRef.current.kind !== "settings") {
       const previousKey = lastNativePresentationKeyRef.current;
       lastNativePresentationKeyRef.current = expandedPresentationKey(false, false, true);
-      syncNativeIslandPresentation(
-        "expanded",
-        undefined,
-        false,
-        undefined,
-        false,
-        true,
-      ).catch(() => {
+      syncNativeIslandPresentation({
+        mode: "expanded",
+        expandedIdle: false,
+        expandedPlan: false,
+        expandedSettings: true,
+      }).catch(() => {
         lastNativePresentationKeyRef.current = previousKey;
       });
     }
@@ -317,7 +332,8 @@ export function useIslandPresentation({
     }),
   );
   const unsubscribeSettled = manageAsyncUnlisten(
-    onIslandPresentationSettled((mode) => {
+    onIslandPresentationSettled(({ mode, transitionId }) => {
+      if (transitionId !== activeTransitionIdRef.current) return Promise.resolve();
       if (phaseRef.current === "opening" && mode === "expanded") {
         if (transitionTimerRef.current !== null) {
           window.clearTimeout(transitionTimerRef.current);
@@ -348,16 +364,13 @@ export function useIslandPresentation({
         phaseRef.current !== "closing"
       ) {
         const mode: "micro" | "compact" | "dormant" = phaseRef.current;
-        setIslandPresentation(
+        setIslandPresentation({
           mode,
-          mode === "micro"
-            ? microPresentationWidthRef.current
-            : collapsedWindowWidthRef.current,
-          undefined,
-          mode === "compact" ? compactLeftPaneWidthRef.current : 0,
-          false,
-          true,
-        ).catch(() => undefined);
+          compactWidth: mode === "micro" ? microPresentationWidthRef.current : collapsedWindowWidthRef.current,
+          compactLeftWidth: mode === "compact" ? compactLeftPaneWidthRef.current : 0,
+          animate: false,
+          snap: true,
+        }).catch(() => undefined);
       }
     }),
   );
@@ -372,6 +385,8 @@ export function useIslandPresentation({
 }, []);
 
   function setPresentationPhase(next: PresentationPhase) {
+    expandedResizeSeqRef.current++;
+    setPresentationReady(next === "expanded");
     phaseRef.current = next;
     setPhase(next);
     if (next === "expanded" || next === "compact") {
@@ -390,32 +405,24 @@ export function useIslandPresentation({
     }
   }
 
-  function syncNativeIslandPresentation(
-    mode: "micro" | "compact" | "expanded" | "dormant",
-    compactWidth?: number,
-    expandedIdle?: boolean,
-    compactLeftWidth?: number,
-    expandedPlan?: boolean,
-    expandedSettings?: boolean,
-    forceSnap?: boolean,
-  ) {
-    // forceSnap: collapsed-mode transitions on notched displays land the
+  function syncNativeIslandPresentation(options: IslandPresentationOptions) {
+    // Snap collapsed-mode transitions on notched displays to land the
     // native frame in the same commit as the new column widths — an animated
     // resize would draw the notch spacer off the physical housing.
     const snap =
-      forceSnap === true ||
+      options.snap === true ||
       !notchMetricsHydrated ||
       !initialNativePresentationSyncedRef.current;
-    return setIslandPresentation(
-      mode,
-      compactWidth,
-      expandedIdle,
-      compactLeftWidth,
-      !snap,
+    const resizeSeq = ++expandedResizeSeqRef.current;
+    if (options.mode === "expanded") setPresentationReady(false);
+    return setIslandPresentation({
+      ...options,
+      animate: !snap,
       snap,
-      expandedPlan,
-      expandedSettings,
-    ).finally(() => {
+    }).finally(() => {
+      if (expandedResizeSeqRef.current === resizeSeq && phaseRef.current === "expanded") {
+        setPresentationReady(true);
+      }
       if (notchMetricsHydrated) {
         initialNativePresentationSyncedRef.current = true;
       }
@@ -423,6 +430,8 @@ export function useIslandPresentation({
   }
 
   function clearTransitionWork() {
+    activeTransitionIdRef.current = nextIslandTransitionId();
+    shrinkInFlightRef.current = false;
     if (transitionTimerRef.current !== null) {
       window.clearTimeout(transitionTimerRef.current);
       transitionTimerRef.current = null;
@@ -442,8 +451,9 @@ export function useIslandPresentation({
 
   async function promoteToCompact(options?: { skipExpand?: boolean }) {
     if (phaseRef.current !== "micro") return;
-    holdCompactAfterSubviewOpenRef.current = false;
     clearIdleTimer();
+    clearTransitionWork();
+    const transitionId = activeTransitionIdRef.current;
 
     const idleCompact =
       snapshotRef.current.sessions.length === 0 &&
@@ -459,12 +469,13 @@ export function useIslandPresentation({
     );
 
     try {
-      await setIslandPresentation(
-        "compact",
+      await setIslandPresentation({
+        mode: "compact",
         compactWidth,
-        undefined,
         compactLeftWidth,
-      );
+        transitionId,
+      });
+      if (activeTransitionIdRef.current !== transitionId) return;
       if (
         !options?.skipExpand &&
         hoveringRef.current &&
@@ -473,13 +484,12 @@ export function useIslandPresentation({
         expandIsland();
       }
     } catch {
-      setPresentationPhase("micro");
+      if (activeTransitionIdRef.current === transitionId) setPresentationPhase("micro");
     }
   }
 
   async function shrinkToMicro() {
     if (phaseRef.current !== "compact") return;
-    if (holdCompactAfterSubviewOpenRef.current) return;
     if (
       !shouldRestInMicro(usesMicroIslandRef.current)
     ) {
@@ -487,6 +497,8 @@ export function useIslandPresentation({
     }
 
     clearIdleTimer();
+    clearTransitionWork();
+    const transitionId = activeTransitionIdRef.current;
     setPresentationPhase("micro");
     const microWidth = microPresentationWidthRef.current;
     lastNativePresentationKeyRef.current = compactPresentationKey(
@@ -496,18 +508,21 @@ export function useIslandPresentation({
     );
     shrinkInFlightRef.current = true;
     try {
-      await setIslandPresentation("micro", microWidth);
+      await setIslandPresentation({
+        mode: "micro",
+        compactWidth: microWidth,
+        transitionId,
+      });
     } catch {
-      setPresentationPhase("compact");
+      if (activeTransitionIdRef.current === transitionId) setPresentationPhase("compact");
     } finally {
-      shrinkInFlightRef.current = false;
+      if (activeTransitionIdRef.current === transitionId) shrinkInFlightRef.current = false;
     }
   }
 
   function scheduleShrinkToMicro() {
     clearIdleTimer();
     if (
-      holdCompactAfterSubviewOpenRef.current ||
       hoveringRef.current ||
       cursorOverIslandRef.current ||
       snapshotRef.current.pendingCount > 0 ||
@@ -551,7 +566,6 @@ export function useIslandPresentation({
 
   async function expandIsland(options?: { fast?: boolean }) {
     clearIdleTimer();
-    holdCompactAfterSubviewOpenRef.current = false;
     cancelPanelExit();
 
     const next = beginExpand(phaseRef.current);
@@ -585,6 +599,7 @@ export function useIslandPresentation({
 
   function startExpandTransition(durationMs?: number) {
     clearTransitionWork();
+    releaseFrozenCollapseMetrics();
     if (artworkBackdropExitFadeRef.current) {
       artworkBackdropExitFadeRef.current = false;
       setArtworkBackdropExitFade(false);
@@ -592,10 +607,6 @@ export function useIslandPresentation({
     if (artworkBackdropOriginRef.current === null) {
       captureArtworkBackdropOrigin();
     }
-    expandCollapseAnchorRef.current = {
-      width: collapsedWindowWidthRef.current,
-      leftWidth: compactLeftPaneWidthRef.current,
-    };
 
     const idleExpanded =
       snapshotRef.current.pendingCount === 0 &&
@@ -612,21 +623,24 @@ export function useIslandPresentation({
       settingsExpanded,
     );
     setPresentationPhase("opening");
-    const nativeTransition = setIslandPresentation(
-      "expanded",
-      collapsedWindowWidthRef.current,
-      idleExpanded,
-      compactLeftPaneWidthRef.current,
-      true,
-      false,
-      planExpanded && !settingsExpanded,
-      settingsExpanded,
+    const transitionId = activeTransitionIdRef.current;
+    const nativeTransition = setIslandPresentation({
+      mode: "expanded",
+      compactWidth: collapsedWindowWidthRef.current,
+      expandedIdle: idleExpanded,
+      compactLeftWidth: compactLeftPaneWidthRef.current,
+      animate: true,
+      snap: false,
+      expandedPlan: planExpanded && !settingsExpanded,
+      expandedSettings: settingsExpanded,
       durationMs,
-    );
+      transitionId,
+    });
     pendingExpandRef.current = async () => {
       if (phaseRef.current !== "opening") return;
       try {
         await nativeTransition;
+        if (activeTransitionIdRef.current !== transitionId) return;
         if (phaseRef.current === "opening") {
           if (notchMetricsHydrated) {
             initialNativePresentationSyncedRef.current = true;
@@ -634,6 +648,7 @@ export function useIslandPresentation({
           setPresentationPhase(finishExpand("opening"));
         }
       } catch {
+        if (activeTransitionIdRef.current !== transitionId) return;
         setPresentationPhase(usesMicroIslandRef.current ? "micro" : "compact");
       }
     };
@@ -643,7 +658,15 @@ export function useIslandPresentation({
       // event never arrives (e.g. the `animate: false, snap: false`
       // fire-and-forget presentation path).
       await runPendingExpand();
-    }, PRESENTATION_SETTLE_FALLBACK_MS);
+    }, motionDelay(PRESENTATION_SETTLE_FALLBACK_MS));
+    // Attach a rejection handler immediately, including when superseded before
+    // a completion event arrives and its pending closure has been discarded.
+    void nativeTransition.catch(() => {
+      if (activeTransitionIdRef.current !== transitionId) return;
+      if (transitionTimerRef.current !== null) window.clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = null;
+      void runPendingExpand();
+    });
   }
 
   function runPendingExpand() {
@@ -654,14 +677,10 @@ export function useIslandPresentation({
   }
 
   function collapsePresentationMode(): "micro" | "compact" | "dormant" {
-    const sessionCount = snapshotRef.current.sessions.length;
-    const pendingCount = snapshotRef.current.pendingCount;
-    if (shouldRestInMicro(usesMicroIslandRef.current)) {
-      return "micro";
-    }
+    if (shouldRestInMicro(usesMicroIslandRef.current)) return "micro";
     if (supportsMicroIslandRef.current) return "compact";
-    if (sessionCount === 0 && pendingCount === 0) return "dormant";
-    return "compact";
+    return collapsedModeRef.current;
+
   }
 
   function collapsedRestPhase(): PresentationPhase {
@@ -669,16 +688,9 @@ export function useIslandPresentation({
   }
 
   function resolveCollapseMetrics(): { width: number; leftWidth: number } {
-    const anchor = expandCollapseAnchorRef.current;
     return {
-      width: Math.max(
-        collapsedWindowWidthRef.current,
-        anchor?.width ?? 0,
-      ),
-      leftWidth: Math.max(
-        compactLeftPaneWidthRef.current,
-        anchor?.leftWidth ?? 0,
-      ),
+      width: collapsedWindowWidthRef.current,
+      leftWidth: compactLeftPaneWidthRef.current,
     };
   }
 
@@ -721,10 +733,10 @@ export function useIslandPresentation({
       planIds.length > 0 ? new Set(planIds) : null;
   }
 
-  function collapseIslandNow(releaseFocus = false) {
+  function collapseIslandNow(releaseFocus = false, retarget = false) {
     summonHoldRef.current = false;
     const next = beginCollapse(phaseRef.current);
-    if (next === phaseRef.current) {
+    if (next === phaseRef.current && !retarget) {
       if (releaseFocus) {
         focusedRef.current = false;
         if (document.activeElement instanceof HTMLElement) {
@@ -745,8 +757,8 @@ export function useIslandPresentation({
         document.activeElement.blur();
       }
     }
-    const leavingPanel = panelViewRef.current.kind;
     clearTransitionWork();
+    if (!retarget) closingDeadlineRef.current = performance.now() + COLLAPSE_ANIMATION_MS;
     const collapseMetrics = resolveCollapseMetrics();
     frozenCollapseWidthRef.current = collapseMetrics.width;
     frozenCollapseLeftWidthRef.current = collapseMetrics.leftWidth;
@@ -757,13 +769,7 @@ export function useIslandPresentation({
 
     const compactWidth = collapseCompactWidth();
     const compactLeftWidth = collapseCompactLeftWidth();
-    const naturalCollapseMode = collapsePresentationMode();
-    const wasSessionSubview =
-      leavingPanel === "session" || leavingPanel === "subagent" || leavingPanel === "subagentList";
-    const collapseMode =
-      wasSessionSubview && naturalCollapseMode === "dormant"
-        ? "compact"
-        : naturalCollapseMode;
+    const collapseMode = collapsePresentationMode();
     // The dormant island vanishes entirely, so its backdrop fades out instead
     // of shrinking back towards a thumb that will not reappear.
     const backdropExitFade = collapseMode === "dormant";
@@ -780,72 +786,33 @@ export function useIslandPresentation({
       compactLeftWidth,
     );
 
-    const nativeTransition =
-      collapseMode === "micro"
-        ? setIslandPresentation("micro", microPresentationWidthRef.current)
-        : collapseMode === "dormant"
-          ? setIslandPresentation("dormant")
-          : setIslandPresentation(
-              "compact",
-              compactWidth,
-              undefined,
-              compactLeftWidth,
-            );
+    closingTargetKeyRef.current = compactPresentationKey(collapseMode, collapsePresentationWidth, compactLeftWidth);
+    const durationMs = Math.max(1, closingDeadlineRef.current - performance.now());
+    const transitionId = activeTransitionIdRef.current;
+    const nativeTransition = setIslandPresentation({
+      mode: collapseMode,
+      durationMs: Math.round(durationMs),
+      compactWidth: collapseMode === "micro" ? microPresentationWidthRef.current : compactWidth,
+      compactLeftWidth: collapseMode === "compact" ? compactLeftWidth : undefined,
+      transitionId,
+    });
     pendingCollapseRef.current = async () => {
-      if (phaseRef.current !== "closing") return;
-
+      if (phaseRef.current !== "closing" || activeTransitionIdRef.current !== transitionId) return;
       try {
         await nativeTransition;
-        if (phaseRef.current === "closing") {
-          if (collapseMode === "micro") {
-            await setIslandPresentation(
-              "micro",
-              microPresentationWidthRef.current,
-              undefined,
-              undefined,
-              false,
-              true,
-            );
-          } else if (collapseMode === "dormant") {
-            await setIslandPresentation(
-              "dormant",
-              undefined,
-              undefined,
-              undefined,
-              false,
-              true,
-            );
-          } else {
-            await setIslandPresentation(
-              "compact",
-              compactWidth,
-              undefined,
-              compactLeftWidth,
-              false,
-              true,
-            );
-          }
-          lastNativePresentationKeyRef.current = compactPresentationKey(
-            collapseMode,
-            collapsePresentationWidth,
-            compactLeftWidth,
-          );
-          expandCollapseAnchorRef.current = {
-            width: compactWidth,
-            leftWidth: compactLeftWidth,
-          };
-          if (wasSessionSubview && naturalCollapseMode === "dormant") {
-            suppressPostCollapseSyncRef.current = true;
-          }
-          setPresentationPhase(collapseMode === "micro" ? "micro" : "compact");
-        }
+        if (phaseRef.current !== "closing" || activeTransitionIdRef.current !== transitionId) return;
+        lastNativePresentationKeyRef.current = compactPresentationKey(collapseMode, collapsePresentationWidth, compactLeftWidth);
+        releaseFrozenCollapseMetrics();
+        setPresentationPhase(collapseMode === "micro" ? "micro" : "compact");
       } catch {
+        if (activeTransitionIdRef.current !== transitionId) return;
         releaseFrozenCollapseMetrics();
         setPresentationPhase("expanded");
       } finally {
-        releaseFrozenCollapseMetrics();
-        pendingCollapseRef.current = null;
-        suppressHoverExpandRef.current = false;
+        if (activeTransitionIdRef.current === transitionId) {
+          pendingCollapseRef.current = null;
+          suppressHoverExpandRef.current = false;
+        }
       }
     };
     transitionTimerRef.current = window.setTimeout(async () => {
@@ -854,8 +821,23 @@ export function useIslandPresentation({
       // event never arrives (e.g. the `animate: false, snap: false`
       // fire-and-forget presentation path).
       await runPendingCollapse();
-    }, PRESENTATION_SETTLE_FALLBACK_MS);
+    }, motionDelay(PRESENTATION_SETTLE_FALLBACK_MS));
+    void nativeTransition.catch(() => {
+      if (activeTransitionIdRef.current !== transitionId) return;
+      if (transitionTimerRef.current !== null) window.clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = null;
+      void runPendingCollapse();
+    });
   }
+
+  // Snapshot changes retarget the existing close, rather than resizing after settlement.
+  useEffect(() => {
+    if (phaseRef.current !== "closing") return;
+    const mode = collapsePresentationMode();
+    const width = mode === "micro" ? microPresentationWidthRef.current : collapsedWindowWidthRef.current;
+    const key = compactPresentationKey(mode, width, compactLeftPaneWidthRef.current);
+    if (key !== closingTargetKeyRef.current) collapseIslandNow(false, true);
+  });
 
   function runPendingCollapse() {
     const finalize = pendingCollapseRef.current;
@@ -965,6 +947,7 @@ export function useIslandPresentation({
   }
 
   return {
+    presentationReady,
     phase,
     phaseRef,
     supportsMicroIsland,
@@ -972,8 +955,6 @@ export function useIslandPresentation({
     notchMetrics,
     notchMetricsHydrated,
     usesMicroIslandRef,
-    suppressPostCollapseSyncRef,
-    holdCompactAfterSubviewOpenRef,
     frozenCollapseWidthRef,
     suppressHoverExpandRef,
     dismissedPlanRequestIdsRef,

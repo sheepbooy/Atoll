@@ -45,7 +45,8 @@ export function HeaderLogo({
         agent={display.agent}
         mood={display.mood}
         size={size}
-        className="header-agent-logo"
+        className={`header-agent-logo${motionPaused ? " is-motion-paused" : ""}`}
+        animated={!motionPaused}
         accent={agentMascotAccent(display.agent)}
         accentDark={agentMascotDark(display.agent)}
       />

@@ -5,8 +5,9 @@ import type { RefObject } from "react";
 import type { TFunction } from "i18next";
 import type { AtollReaction } from "../AtollLogo";
 import { ATOLL_REACTION_MS, ISLAND_SHAPE_MS } from "../atollTransitions";
-import { motionDelay } from "../animationTiming";
+import { motionDelay, useReducedMotion } from "../animationTiming";
 import {
+  type CancelMotion,
   flySpitFiles,
   flyStashFiles,
   playIslandShape,
@@ -17,6 +18,7 @@ import { pulseIslandShape } from "../tauri";
 interface UseStashChoreographyOptions {
   stashReaction: AtollReaction | null;
   stashReactionKey: number;
+  motionPaused: boolean;
   lastStageResult: { added: number; evicted: number; skipped: number } | null;
   islandRef: RefObject<HTMLElement | null>;
   atollIndicatorRef: RefObject<HTMLSpanElement | null>;
@@ -39,91 +41,67 @@ const EAT_FLY_COUNT: Record<"eat1" | "eat2" | "eat3" | "eat4", number> = {
 export function useStashChoreography({
   stashReaction,
   stashReactionKey,
-  lastStageResult,
+  motionPaused,  lastStageResult,
   islandRef,
   atollIndicatorRef,
   dropPointRef,
   spitAngleRef,
   t,
 }: UseStashChoreographyOptions) {
-  const beatTimersRef = useRef<number[]>([]);
-  // reduced-motion 下 CSS/JS 全部降级，这里直接不编排（toast 仍显示）。
+  const reducedMotion = useReducedMotion();
+  const eventRef = useRef<{ reaction: AtollReaction; key: number; expiresAt: number; played: boolean } | null>(null);
   useEffect(() => {
-    if (!stashReaction) {
-      return;
+    if (!stashReaction) { eventRef.current = null; return; }
+    let event = eventRef.current;
+    if (!event || event.key !== stashReactionKey || event.reaction !== stashReaction) {
+      event = { reaction: stashReaction, key: stashReactionKey, expiresAt: Date.now() + ATOLL_REACTION_MS[stashReaction], played: false };
+      eventRef.current = event;
     }
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-      return;
-    }
+    if (reducedMotion) { event.played = true; return; }
+    if (motionPaused || event.played || event.expiresAt <= Date.now()) return;
     const islandEl = islandRef.current;
-    if (!islandEl) {
-      return;
-    }
+    if (!islandEl) return;
+    event.played = true;
+    let cancelled = false;
+    const timers: number[] = [];
+    const motions: CancelMotion[] = [];
+    const keep = (cancel: CancelMotion) => motions.push(cancel);
     const later = (fn: () => void, ms: number) => {
-      beatTimersRef.current.push(window.setTimeout(fn, motionDelay(ms)));
+      timers.push(window.setTimeout(() => { if (!cancelled) fn(); }, motionDelay(ms)));
     };
-
+    const cancel = () => {
+      cancelled = true;
+      timers.forEach((timer) => window.clearTimeout(timer));
+      motions.forEach((stop) => stop());
+    };
     if (stashReaction === "spit") {
       const angle = spitAngleRef.current ?? -31;
       const radians = (angle * Math.PI) / 180;
-      const direction = {
-        dx: Math.cos(radians) * 4,
-        dy: Math.sin(radians) * 4,
-        skew: Math.sin(radians) * 0.5,
-      };
-      playIslandShape(islandEl, "coil", { direction });
+      const direction = { dx: Math.cos(radians) * 4, dy: Math.sin(radians) * 4, skew: Math.sin(radians) * 0.5 };
+      keep(playIslandShape(islandEl, "coil", { direction }));
       later(() => {
-        playIslandShape(islandEl, "launch", { direction });
+        keep(playIslandShape(islandEl, "launch", { direction }));
         void pulseIslandShape({ heightDelta: -8, outMs: 100, backMs: 190 });
-        flySpitFiles(islandEl, atollIndicatorRef.current, angle, 3);
+        keep(flySpitFiles(islandEl, atollIndicatorRef.current, angle, 3));
       }, ISLAND_SHAPE_MS.coil);
-      later(() => {
-        playIslandShape(islandEl, "wobble", { direction });
-      }, ISLAND_SHAPE_MS.coil + 180);
-      return () => {
-        beatTimersRef.current.forEach((timer) => window.clearTimeout(timer));
-        beatTimersRef.current = [];
-      };
+      later(() => keep(playIslandShape(islandEl, "wobble", { direction })), ISLAND_SHAPE_MS.coil + 180);
+      return cancel;
     }
-
-    // 吃：命中下压 → 文件从真实 drop 点错峰飞向吉祥物；第一只命中时
-    // 原生窗口"咕咚"脉冲 + 岛底吞咽涟漪。满足眯眼由 CSS 时间线自行发生。
-    if (!Object.prototype.hasOwnProperty.call(EAT_FLY_COUNT, stashReaction)) {
-      return;
-    }
+    if (!Object.prototype.hasOwnProperty.call(EAT_FLY_COUNT, stashReaction)) return cancel;
     const flyCount = EAT_FLY_COUNT[stashReaction as keyof typeof EAT_FLY_COUNT];
     const drop = dropPointRef.current;
     const islandWidth = islandEl.clientWidth || 1;
-    const skew =
-      drop !== null
-        ? Math.max(-1, Math.min(1, (drop.x - islandWidth / 2) / (islandWidth / 2))) * 0.6
-        : 0;
-    playIslandShape(islandEl, "squash", { direction: { skew } });
-    flyStashFiles(
-      islandEl,
-      atollIndicatorRef.current,
-      drop,
-      flyCount,
-      {
-        onFirstHit: () => {
-          void pulseIslandShape({ heightDelta: 12, outMs: 130, backMs: 200 });
-          playSwallowRipple(islandEl, drop !== null ? drop.x : islandWidth / 2);
-        },
+    const skew = drop !== null ? Math.max(-1, Math.min(1, (drop.x - islandWidth / 2) / (islandWidth / 2))) * 0.6 : 0;
+    keep(playIslandShape(islandEl, "squash", { direction: { skew } }));
+    keep(flyStashFiles(islandEl, atollIndicatorRef.current, drop, flyCount, {
+      onFirstHit: () => {
+        if (cancelled) return;
+        void pulseIslandShape({ heightDelta: 12, outMs: 130, backMs: 200 });
+        keep(playSwallowRipple(islandEl, drop !== null ? drop.x : islandWidth / 2));
       },
-    );
-    return () => {
-      beatTimersRef.current.forEach((timer) => window.clearTimeout(timer));
-      beatTimersRef.current = [];
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stashReaction, stashReactionKey]);
-  useEffect(
-    () => () => {
-      beatTimersRef.current.forEach((timer) => window.clearTimeout(timer));
-      beatTimersRef.current = [];
-    },
-    [],
-  );
+    }));
+    return cancel;
+  }, [stashReaction, stashReactionKey, motionPaused, reducedMotion]);
 
   const [stashToast, setStashToast] = useState<{ text: string; key: number } | null>(null);
   const [stashToastLeaving, setStashToastLeaving] = useState(false);

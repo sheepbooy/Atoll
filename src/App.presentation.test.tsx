@@ -33,6 +33,7 @@ import {
   windowBridge,
 } from "./test-utils/appTestBridge";
 import { App } from "./App";
+import { mockMotionPreference } from "./test-utils/motionPreference";
 
 vi.mock("./appUpdate", () => ({
   checkAppUpdate: (...args: unknown[]) => appUpdateBridge.checkAppUpdate(...args),
@@ -76,6 +77,110 @@ describe("App", () => {
     resetAppTestBridge();
   });
 
+  it("keeps repeated collapse clicks inside the same panel exit", async () => {
+    bridge.getSnapshot.mockResolvedValue({ ...emptySnapshot, online: true, sessions: [makeSession([])], hookHealth: connectedHookHealth });
+    const { container } = render(<App />);
+    fireEvent.pointerEnter(screen.getByLabelText("Atoll"));
+    await waitFor(() => expect(container.querySelector(".is-opening")).not.toBeNull());
+    await emitSettledPhase("expanded");
+    vi.useFakeTimers();
+    try {
+      bridge.setIslandPresentation.mockClear();
+      const collapse = screen.getByRole("button", { name: "Collapse Atoll" });
+      fireEvent.click(collapse);
+      fireEvent.click(collapse);
+      expect(container.querySelector(".is-panel-exiting")).not.toBeNull();
+      expect(bridge.setIslandPresentation).not.toHaveBeenCalled();
+      await flushPanelExit();
+      expect(bridge.setIslandPresentation).toHaveBeenCalledOnce();
+      await emitSettledPhase("compact");
+      expect(container.querySelector(".is-closing")).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("settles immediately with reduced motion without waiting for a fallback event", async () => {
+    mockMotionPreference(true);
+    try {
+      bridge.getSnapshot.mockResolvedValue({ ...emptySnapshot, online: true, sessions: [makeSession([])], hookHealth: connectedHookHealth });
+      const { container } = render(<App />);
+      fireEvent.pointerEnter(screen.getByLabelText("Atoll"));
+      await waitFor(() => expect(container.querySelector(".island-panel")).not.toBeNull());
+      bridge.setIslandPresentation.mockClear();
+      fireEvent.click(screen.getByRole("button", { name: "Collapse Atoll" }));
+      await waitFor(() => expect(container.querySelector(".is-closing")).toBeNull());
+      expect(bridge.setIslandPresentation).toHaveBeenCalledOnce();
+      expect(container.querySelector(".is-compact")).not.toBeNull();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("ignores a rejected close after a hotkey has reopened the island", async () => {
+    bridge.getSnapshot.mockResolvedValue({ ...emptySnapshot, online: true, sessions: [makeSession([])], hookHealth: connectedHookHealth });
+    const { container } = render(<App />);
+    fireEvent.pointerEnter(screen.getByLabelText("Atoll"));
+    await waitFor(() => expect(container.querySelector(".is-opening")).not.toBeNull());
+    await emitSettledPhase("expanded");
+    let rejectClose: (reason: Error) => void = () => undefined;
+    bridge.setIslandPresentation.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { rejectClose = reject; }));
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Collapse Atoll" }));
+      await flushPanelExit();
+      expect(container.querySelector(".is-closing")).not.toBeNull();
+      await act(async () => { emitIslandOpen?.("summon"); });
+      await emitSettledPhase("expanded");
+      await act(async () => { rejectClose(new Error("superseded")); });
+      expect(container.querySelector(".island-panel")).not.toBeNull();
+      expect(container.querySelector(".is-closing")).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("retargets a closing island and ignores the superseded completion", async () => {
+    const session = makeSession([]);
+    const base = { ...emptySnapshot, online: true, sessions: [session], hookHealth: connectedHookHealth };
+    bridge.getSnapshot.mockResolvedValue(base);
+    const { container } = render(<App />);
+    fireEvent.pointerEnter(screen.getByLabelText("Atoll"));
+    await waitFor(() => expect(container.querySelector(".is-opening")).not.toBeNull());
+    await emitSettledPhase("expanded");
+    vi.useFakeTimers();
+    bridge.setIslandPresentation.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Atoll" }));
+    await flushPanelExit();
+    const first = bridge.setIslandPresentation.mock.calls[bridge.setIslandPresentation.mock.calls.length - 1][0];
+    expect(first.mode).toBe("compact");
+    await act(async () => { emitSnapshot?.({ ...base, sessions: [] }); });
+    const final = bridge.setIslandPresentation.mock.calls[bridge.setIslandPresentation.mock.calls.length - 1][0];
+    expect(final.mode).toBe("dormant");
+    expect(final.transitionId).not.toBe(first.transitionId);
+    await act(async () => { emitPresentationSettled?.("compact", first.transitionId); });
+    expect(container.querySelector(".is-closing")).not.toBeNull();
+    await emitSettledPhase("dormant");
+    expect(container.querySelector(".is-dormant")).not.toBeNull();
+    const callCount = bridge.setIslandPresentation.mock.calls.length;
+    await act(async () => {
+      emitSnapshot?.({ ...base, sessions: [] });
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+    expect(bridge.setIslandPresentation.mock.calls).toHaveLength(callCount);
+    vi.useRealTimers();
+  });
+
+  it("keeps the settings size when expanded header wings are remeasured", async () => {
+    const width = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(200);
+    bridge.getSnapshot.mockResolvedValue({ ...emptySnapshot, online: true, hookHealth: connectedHookHealth });
+    render(<App />);
+    fireEvent.pointerEnter(screen.getByLabelText("Atoll"));
+    await waitFor(() => expect(screen.getByTitle("Drag window")).toBeInTheDocument());
+    await emitSettledPhase("expanded");
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Settings" }));
+    width.mockReturnValue(300);
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(bridge.setIslandPresentation.mock.calls.some(([options]) =>
+      options.expandedWingRight && options.expandedSettings === true,
+    )).toBe(true));
+  });
+
   it("collapses to a persistent capsule that can be reopened", async () => {
     const { container } = render(<App />);
     await waitFor(() => expect(container.querySelector(".is-opening, .is-expanded")).not.toBeNull());
@@ -90,28 +195,13 @@ describe("App", () => {
     expect(container.querySelector(".is-closing")).not.toBeNull();
 
     await emitSettledPhase("compact");
-    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
-      "compact",
-      expect.any(Number),
-      undefined,
-      expect.any(Number),
-      false,
-      true,
+    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(expect.objectContaining({ mode: "compact", compactWidth: expect.any(Number), compactLeftWidth: expect.any(Number) })
     );
     expect(container.querySelector(".is-compact")).not.toBeNull();
 
     fireEvent.click(screen.getByLabelText("Atoll"));
     await emitSettledPhase("expanded");
-    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
-      "expanded",
-      expect.any(Number),
-      false,
-      expect.any(Number),
-      true,
-      false,
-      false,
-      false,
-      undefined,
+    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(expect.objectContaining({ mode: "expanded", compactWidth: expect.any(Number), expandedIdle: false, compactLeftWidth: expect.any(Number), animate: true, snap: false, expandedPlan: false, expandedSettings: false })
     );
     expect(container.querySelector(".is-expanded")).not.toBeNull();
     vi.useRealTimers();
@@ -293,10 +383,10 @@ describe("App", () => {
     await emitSettledPhase("compact");
 
     const compactAnimatedCalls = bridge.setIslandPresentation.mock.calls.filter(
-      (call) => call[0] === "compact" && call[4] !== false,
+      (call) => call[0].mode === "compact" && call[0].animate !== false,
     );
     expect(compactAnimatedCalls).toHaveLength(1);
-    expect(compactAnimatedCalls[0]?.[1]).toBe(expectedCompactWidth);
+    expect(compactAnimatedCalls[0]?.[0].compactWidth).toBe(expectedCompactWidth);
     expect(container.querySelector(".is-compact")).not.toBeNull();
     vi.useRealTimers();
   });
@@ -318,29 +408,14 @@ describe("App", () => {
     expect(container.querySelector(".is-closing")).not.toBeNull();
     await emitSettledPhase("compact");
 
-    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
-      "compact",
-      expect.any(Number),
-      undefined,
-      expect.any(Number),
-      false,
-      true,
+    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(expect.objectContaining({ mode: "compact", compactWidth: expect.any(Number), compactLeftWidth: expect.any(Number) })
     );
     expect(container.querySelector(".is-compact")).not.toBeNull();
 
     emitIslandHover?.({ hovering: false, cursorOverWindow: false });
     fireEvent.pointerEnter(screen.getByLabelText("Atoll"));
     await emitSettledPhase("expanded");
-    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
-      "expanded",
-      expect.any(Number),
-      false,
-      expect.any(Number),
-      true,
-      false,
-      false,
-      false,
-      undefined,
+    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(expect.objectContaining({ mode: "expanded", compactWidth: expect.any(Number), expandedIdle: false, compactLeftWidth: expect.any(Number), animate: true, snap: false, expandedPlan: false, expandedSettings: false })
     );
     vi.useRealTimers();
   });
@@ -519,13 +594,7 @@ describe("App", () => {
         await vi.advanceTimersByTimeAsync(RESOLVE_FEEDBACK_MS + PANEL_EXIT_MS);
       });
       await emitSettledPhase("dormant");
-      expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
-        "dormant",
-        undefined,
-        undefined,
-        undefined,
-        false,
-        true,
+      expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(expect.objectContaining({ mode: "dormant" })
       );
       expect(container.querySelector(".is-dormant")).not.toBeNull();
     } finally {
@@ -581,13 +650,7 @@ describe("App", () => {
     await flushPanelExit();
     await emitSettledPhase("dormant");
     // No active sessions → super-collapses into the dormant drawer.
-    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(
-      "dormant",
-      undefined,
-      undefined,
-      undefined,
-      false,
-      true,
+    expect(bridge.setIslandPresentation).toHaveBeenLastCalledWith(expect.objectContaining({ mode: "dormant" })
     );
     vi.useRealTimers();
     Reflect.deleteProperty(window, "__TAURI_INTERNALS__");

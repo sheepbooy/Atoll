@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ISLAND_SHAPE_MS } from "./atollTransitions";
-import { playIslandShape } from "./islandShape";
+import { flyStashFiles, playIslandShape } from "./islandShape";
+import { mockMotionPreference } from "./test-utils/motionPreference";
 
 function makeIsland() {
   const island = document.createElement("div");
@@ -9,6 +10,37 @@ function makeIsland() {
 }
 
 describe("islandShape", () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  it("cancels flights, trails and late hit callbacks together", () => {
+    vi.useFakeTimers();
+    const reduce = mockMotionPreference();
+    const animations: { cancel: ReturnType<typeof vi.fn>; onfinish: (() => void) | null }[] = [];
+    Object.defineProperty(HTMLElement.prototype, "animate", {
+      configurable: true, value: vi.fn(() => {
+        const animation = { cancel: vi.fn(), onfinish: null };
+        animations.push(animation);
+        return animation;
+      }),
+    });
+    try {
+      const island = makeIsland();
+      const hit = vi.fn();
+      const cancel = flyStashFiles(island, null, null, 3, { onFirstHit: hit });
+      vi.advanceTimersByTime(150);
+      expect(island.children.length).toBeGreaterThan(3);
+      reduce(true);
+      cancel();
+      expect(island.children).toHaveLength(0);
+      for (const animation of animations) expect(animation.cancel).toHaveBeenCalledOnce();
+      vi.advanceTimersByTime(2000);
+      expect(hit).not.toHaveBeenCalled();
+      expect(island.children).toHaveLength(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      Reflect.deleteProperty(HTMLElement.prototype, "animate");
+    }
+  });
   it("adds the beat class and removes it after the beat duration", () => {
     vi.useFakeTimers();
     try {

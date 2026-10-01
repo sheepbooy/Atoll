@@ -524,6 +524,7 @@
   *::before,
   *::after {
     animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
     transition-delay: 0ms !important;
@@ -753,4 +754,3 @@
 .is-closing.island-header.has-lyrics .compact-session-dot {
   animation: none;
 }
-

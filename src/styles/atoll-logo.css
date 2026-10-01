@@ -1408,6 +1408,22 @@
 .atoll-logo.is-mouth-open .atoll-body-group {
   transform: translateY(1%) scale(0.995, 1.025);
 }
+.atoll-logo.is-motion-paused,
+.atoll-logo.is-motion-paused * {
+  animation-play-state: paused !important;
+}
+
+.atoll-logo.is-reading.is-phase-loop .atoll-eye-scan {
+  animation: atoll-reading-scan 440ms steps(4, end) infinite alternate;
+}
+@keyframes atoll-reading-scan {
+  from { transform: translateX(-4px); }
+  to { transform: translateX(4px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .atoll-logo .atoll-eye-scan { animation: none !important; }
+}
+
 .atoll-logo .atoll-eyes-base {
   transform-box: fill-box;
   transform-origin: 50% 50%;

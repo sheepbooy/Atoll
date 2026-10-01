@@ -1,7 +1,6 @@
 // Compact/dormant layout derivation: collapsed width and left-pane width with
-// their animation-hold freeze semantics, the compact header layout, the
-// collapsed mode resolution, and the mirror refs the presentation FSM reads.
-// Extracted from App.tsx; behavior unchanged.
+// the compact header layout, collapsed mode, and refs the presentation FSM reads.
+// Freeze the rendered header during a resize while keeping native targets live.
 import { useEffect, useMemo, useRef } from "react";
 import type { NowPlayingTrack, NotchMetrics } from "../tauri";
 import type { LyricPayload } from "../tauri";
@@ -11,7 +10,6 @@ import {
   computeCompactLeftPaneWidth,
   compactOuterPadding,
   computeMaxCompactIconLimit,
-  type CompactHeaderLayout,
 } from "../compactLayout";
 import {
   microPresentationWidth,
@@ -38,8 +36,6 @@ interface UseCompactLayoutOptions {
   phaseRef: { current: PresentationPhase };
   usesMicroIslandRef: { current: boolean };
   supportsMicroIsland: boolean;
-  suppressPostCollapseSyncRef: { current: boolean };
-  holdCompactAfterSubviewOpenRef: { current: boolean };
   collapsedModeRef: { current: "micro" | "compact" | "dormant" };
   collapsedWindowWidthRef: { current: number };
   compactLeftPaneWidthRef: { current: number };
@@ -61,8 +57,6 @@ export function useCompactLayout({
   phaseRef,
   usesMicroIslandRef,
   supportsMicroIsland,
-  suppressPostCollapseSyncRef,
-  holdCompactAfterSubviewOpenRef,
   collapsedModeRef,
   collapsedWindowWidthRef,
   compactLeftPaneWidthRef,
@@ -98,26 +92,7 @@ export function useCompactLayout({
       bluetoothRingCount,
     ],
   );
-  const stableWidthRef = useRef(computedCollapsedWidth);
-  const hasActiveSessions = sessions.length > 0;
-  const collapsedWindowWidth = useMemo(() => {
-    if (!hasActiveSessions) {
-      if (
-        phaseRef.current === "expanded" ||
-        phaseRef.current === "opening" ||
-        phaseRef.current === "closing" ||
-        suppressPostCollapseSyncRef.current
-      ) {
-        return stableWidthRef.current;
-      }
-      stableWidthRef.current = computedCollapsedWidth;
-      return computedCollapsedWidth;
-    }
-    if (computedCollapsedWidth > stableWidthRef.current) {
-      stableWidthRef.current = computedCollapsedWidth;
-    }
-    return stableWidthRef.current;
-  }, [computedCollapsedWidth, hasActiveSessions]);
+  const collapsedWindowWidth = computedCollapsedWidth;
   const rawCollapsedMode = resolveCollapsedMode(
     usesMicroIslandRef.current,
     supportsMicroIsland,
@@ -130,77 +105,25 @@ export function useCompactLayout({
     // Same for the Bluetooth battery rings: they live in the compact header.
     bluetoothRingCount > 0,
   );
-  const collapsedMode: "micro" | "compact" | "dormant" =
-    (suppressPostCollapseSyncRef.current ||
-      holdCompactAfterSubviewOpenRef.current) &&
-    (rawCollapsedMode === "dormant" || rawCollapsedMode === "micro")
-      ? "compact"
-      : rawCollapsedMode;
+  const collapsedMode = rawCollapsedMode;
 
-  const stableHeaderLayoutRef = useRef(
-    computeCompactHeaderLayout(
-      notchMetrics,
-      sessions.length,
-      maxCompactIcons,
-      activeSessionTokenTotal,
-      pendingCount,
-    ),
-  );
-  const compactHeaderLayout = useMemo(() => {
-    const computed = computeCompactHeaderLayout(
-      notchMetrics,
-      sessions.length,
-      maxCompactIcons,
-      activeSessionTokenTotal,
-      pendingCount,
-    );
-    // Hold the pre-transition layout during opening/closing so a session
-    // resolving or pending count changing mid-animation cannot reflow the
-    // header icons. Mirrors the stableLeftWidthRef freeze below.
-    if (
-      phaseRef.current === "opening" ||
-      phaseRef.current === "closing"
-    ) {
-      return stableHeaderLayoutRef.current;
-    }
-    stableHeaderLayoutRef.current = computed;
-    return computed;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    notchMetrics,
-    sessions.length,
-    maxCompactIcons,
-    activeSessionTokenTotal,
-    pendingCount,
-  ]);
+  const liveHeaderLayout = useMemo(() => computeCompactHeaderLayout(
+    notchMetrics, sessions.length, maxCompactIcons, activeSessionTokenTotal, pendingCount,
+  ), [notchMetrics, sessions.length, maxCompactIcons, activeSessionTokenTotal, pendingCount]);
+  const stableHeaderLayoutRef = useRef(liveHeaderLayout);
+  const transitioning = phase === "opening" || phase === "closing";
+  if (!transitioning) stableHeaderLayoutRef.current = liveHeaderLayout;
+  const compactHeaderLayout = transitioning ? stableHeaderLayoutRef.current : liveHeaderLayout;
 
   const computedLeftPaneWidth = useMemo(
     () =>
       computeCompactLeftPaneWidth(
-        compactHeaderLayout,
+        liveHeaderLayout,
         compactOuterPadding(notchMetrics),
       ),
-    [compactHeaderLayout, notchMetrics],
+    [liveHeaderLayout, notchMetrics],
   );
-  const stableLeftWidthRef = useRef(computedLeftPaneWidth);
-  const compactLeftPaneWidth = useMemo(() => {
-    if (!hasActiveSessions) {
-      if (
-        phaseRef.current === "expanded" ||
-        phaseRef.current === "opening" ||
-        phaseRef.current === "closing" ||
-        suppressPostCollapseSyncRef.current
-      ) {
-        return stableLeftWidthRef.current;
-      }
-      stableLeftWidthRef.current = computedLeftPaneWidth;
-      return computedLeftPaneWidth;
-    }
-    if (computedLeftPaneWidth > stableLeftWidthRef.current) {
-      stableLeftWidthRef.current = computedLeftPaneWidth;
-    }
-    return stableLeftWidthRef.current;
-  }, [computedLeftPaneWidth, hasActiveSessions]);
+  const compactLeftPaneWidth = computedLeftPaneWidth;
 
   collapsedModeRef.current = collapsedMode;
   collapsedWindowWidthRef.current = collapsedWindowWidth;
@@ -208,7 +131,7 @@ export function useCompactLayout({
   microPresentationWidthRef.current = microPresentationWidth(
     sessions.length,
     activeSessionTokenTotal,
-    compactHeaderLayout.tokenCompactLevel,
+    liveHeaderLayout.tokenCompactLevel,
   );
 
   useEffect(() => {
@@ -237,4 +160,3 @@ export function useCompactLayout({
     compactLeftPaneWidth,
   };
 }
-

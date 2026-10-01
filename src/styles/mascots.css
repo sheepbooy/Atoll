@@ -358,3 +358,8 @@
   height: 30px;
 }
 
+
+.header-agent-logo.is-motion-paused,
+.header-agent-logo.is-motion-paused * {
+  animation-play-state: paused !important;
+}

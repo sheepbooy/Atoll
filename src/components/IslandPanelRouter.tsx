@@ -113,6 +113,7 @@ import type { AtollReaction } from "../AtollLogo";
 import type { BluetoothDeviceBattery, ShortcutAction } from "../tauri";
 
 interface IslandPanelRouterProps {
+  presentationReady: boolean;
   panelView: PanelView;
   sessions: SessionSummary[];
   sessionRequests: PermissionRequest[];
@@ -650,6 +651,7 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
     if (panelView.page === "tokens") {
       return (
         <TokenHeatmapView
+          presentationReady={props.presentationReady}
           todayTokens={dailyTokens}
           todayTokensByModel={dailyTokensByModel}
           displayMode={heatmapDisplay}
