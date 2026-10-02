@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   NowPlayingTrack,
+  getNowPlaying,
   getMediaCardEnabled,
   getArtworkBackdropEnabled,
   onNowPlayingChanged,
@@ -17,6 +18,9 @@ export function useNowPlaying() {
   const [artworkIsDark, setArtworkIsDark] = useState(false);
 
   useEffect(() => {
+    let received = false;
+    let cancelled = false;
+    getNowPlaying().then(track => { if (!received && !cancelled) setNowPlayingTrack(track); }).catch(() => undefined);
     getMediaCardEnabled()
       .then(setMediaCardEnabledState)
       .catch(() => undefined);
@@ -25,10 +29,12 @@ export function useNowPlaying() {
       .catch(() => undefined);
     const unsubscribe = manageAsyncUnlisten(
       onNowPlayingChanged((track) => {
+        received = true;
         setNowPlayingTrack(track);
       }),
     );
     return () => {
+      cancelled = true;
       unsubscribe();
     };
   }, []);

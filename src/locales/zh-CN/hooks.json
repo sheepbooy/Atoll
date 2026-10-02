@@ -17,7 +17,8 @@
     "connected": "已连接",
     "needsRetrust": "需重新信任",
     "shimMissing": "垫片缺失",
-    "notInstalled": "未安装"
+    "notInstalled": "未安装",
+    "configured": "配置已安装"
   },
   "summary": {
     "notConnected": "未连接",
@@ -54,27 +55,27 @@
   },
   "checklist": {
     "claudeTitle": "Claude Desktop 检查清单",
-    "claudeNode": "安装钩子前请在本机安装 Node.js。",
+    "claudeNode": "系统未安装 Node.js 时，Atoll 会自动使用内置运行时。",
     "claudePermissions": "在 Claude Desktop 中将权限设为 Ask permissions。",
     "claudeRestart": "安装钩子后退出并重新打开 Claude Desktop。",
     "claudeVerify": "在本地 Code 会话中触发一次 Bash 权限以验证。",
     "codexTitle": "Codex Desktop 检查清单",
-    "codexNode": "安装钩子前请在本机安装 Node.js。",
+    "codexNode": "系统未安装 Node.js 时，Atoll 会自动使用内置运行时。",
     "codexTrust": "在 Codex Desktop 或 CLI 中打开 /hooks 并信任 Atoll 钩子。",
     "codexRestart": "安装钩子后退出并重新打开 Codex Desktop。",
     "codexVerify": "在本地会话中触发一次 shell 权限以验证。",
     "cursorTitle": "Cursor 检查清单",
-    "cursorNode": "安装钩子前请在本机安装 Node.js。",
+    "cursorNode": "系统未安装 Node.js 时，Atoll 会自动使用内置运行时。",
     "cursorSettings": "在 Cursor 中打开 设置 → Hooks 并确认 Atoll 钩子已加载。",
     "cursorRestart": "安装钩子后重启 Cursor。",
     "cursorVerify": "在 Agent 或 Ask 模式中发送消息以验证。",
     "zcodeTitle": "ZCode 检查清单",
-    "zcodeNode": "安装钩子前请在本机安装 Node.js。",
+    "zcodeNode": "系统未安装 Node.js 时，Atoll 会自动使用内置运行时。",
     "zcodeEnable": "启用 Atoll 钩子会同时启用 ZCode 的配置文件钩子开关（hooks.enabled）。",
     "zcodeRestart": "安装钩子后退出并重新打开 ZCode。",
     "zcodeVerify": "在本地会话中触发一次 shell 权限以验证。",
     "geminiTitle": "Gemini CLI 检查清单",
-    "geminiNode": "安装钩子前请在本机安装 Node.js。",
+    "geminiNode": "系统未安装 Node.js 时，Atoll 会自动使用内置运行时。",
     "geminiTrust": "在 Gemini CLI 中打开 /hooks 并为你的项目信任 Atoll 钩子。",
     "geminiRestart": "安装钩子后重启 Gemini CLI。",
     "geminiVerify": "在本地会话中触发一次 shell 命令以验证；在 Atoll 中各执行一次批准与拒绝。",
@@ -84,7 +85,7 @@
   },
   "warning": {
     "scriptMissing": "应用包中缺少钩子脚本。若安装失败请重新安装 Atoll。",
-    "nodeNotFound": "在配置的钩子路径未找到 Node.js。请安装 Node.js 后重新安装钩子。",
+    "nodeNotFound": "Hook 配置中的运行时不可用。请重新安装 Hook 以使用 Atoll 自带的 Node.js；仅在自带运行时缺失时才需要另行安装 Node.js。",
     "devBuildPath": "钩子指向开发构建路径。请从 Atoll.app 重新安装钩子，然后在 Codex 中重新信任。"
   },
   "competing": {
@@ -113,5 +114,19 @@
     "uninstallPartial": "无法为以下 Agent 卸载钩子：{{agents}}。",
     "uninstallAllFailed": "钩子卸载失败：{{message}}",
     "cleanupFailed": "钩子清理失败：{{message}}"
+  },
+  "verify": {
+    "start": "验证连接",
+    "retry": "重新验证",
+    "installed": "配置已安装",
+    "notInstalled": "请先安装配置",
+    "waiting": "等待真实事件…",
+    "connected": "连接已验证",
+    "observerConnected": "观察连接已验证",
+    "permissionSeen": "权限请求已收到",
+    "timeout": "60 秒内未收到新事件",
+    "steps": "按需信任钩子，重启 {{agent}}，再发送消息或触发工具。验证不会自动启动 Agent 或执行命令。",
+    "lastEvent": "最近真实事件：{{event}} · {{time}}",
+    "lastPermission": "最近权限请求：{{time}}"
   }
 }

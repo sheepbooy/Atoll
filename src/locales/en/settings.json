@@ -188,5 +188,11 @@
     "justNow": "just now",
     "minutesAgo": "{{minutes}} min ago",
     "daysAgo": "{{days}}d ago"
+  },
+  "energy": {
+    "label": "Motion and energy",
+    "auto": "Automatic energy saving",
+    "full": "Always animate",
+    "desc": "After 10 seconds without interaction, decorative animations rest. Hover, shortcuts, file drops and new approvals wake the island."
   }
 }

@@ -8,7 +8,6 @@ const HOOK_ACTIVITY_IDLE_THRESHOLD: Duration = Duration::from_secs(30);
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
 
 use super::*;
@@ -22,11 +21,6 @@ pub(crate) const TOKEN_HISTORY_WRITE_INTERVAL: Duration = Duration::from_secs(2)
 /// (and risk rate limits) for lyric-less tracks.
 pub(crate) const LYRICS_MISS_RETRY_AFTER: Duration = Duration::from_secs(30);
 
-/// Polls the platform media source (macOS MediaRemote adapter, Windows SMTC)
-/// every 1s and emits `now-playing-changed` only when the track metadata or
-/// playing state actually changes. Also emits `now-playing-position` every
-/// poll so the frontend can calibrate its local playback clock for lyric
-/// sync. No-op on platforms without a media source.
 /// Position to report for the `now-playing-position` event, with paused
 /// creep removed. Some players (QQ Music) keep advancing elapsedTime while
 /// paused and snap it back on resume; while paused, hold the last adopted
@@ -53,65 +47,9 @@ pub(crate) fn sanitize_paused_position(
 }
 
 pub(crate) fn start_media_monitor(app: AppHandle) {
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    {
-        thread::spawn(move || {
-            // Let the app settle before the first fetch.
-            thread::sleep(Duration::from_secs(2));
-            let mut last: Option<NowPlayingTrack> = None;
-            let mut prev_raw: Option<f64> = None;
-            let mut held: Option<f64> = None;
-            loop {
-                thread::sleep(Duration::from_millis(1000));
-                let current = platform_now_playing();
-                let changed = match (&last, &current) {
-                    (None, None) => false,
-                    (None, Some(_)) | (Some(_), None) => true,
-                    (Some(a), Some(b)) => {
-                        a.title != b.title
-                            || a.artist != b.artist
-                            || a.playing != b.playing
-                            || a.artwork_base64 != b.artwork_base64
-                    }
-                };
-                if changed {
-                    last = current.clone();
-                    let _ = app.emit("now-playing-changed", &current);
-                }
-                // Push position every poll so the progress bar and lyric
-                // line stay tight; the frontend interpolates with the wall
-                // clock between polls.
-                if let Some(ref track) = current {
-                    let position = sanitize_paused_position(
-                        track.position,
-                        track.playing,
-                        prev_raw,
-                        &mut held,
-                    );
-                    prev_raw = track.position;
-                    let _ = app.emit(
-                        "now-playing-position",
-                        &serde_json::json!({
-                            "position": position,
-                            "playing": track.playing,
-                        }),
-                    );
-                } else {
-                    prev_raw = None;
-                    held = None;
-                }
-            }
-        });
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        let _ = app;
-    }
+    crate::shared_media::start(app);
 }
 
-/// How often to re-read Bluetooth battery levels. Batteries move slowly and
-/// each poll shells out to system_profiler, so this stays far below the 1s
-/// cadence of the other monitors.
 pub(crate) const BLUETOOTH_BATTERY_POLL_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Polls connected Bluetooth devices' battery levels every
@@ -328,114 +266,7 @@ pub(crate) fn start_clipboard_monitor(app: AppHandle) {
 /// (current index + next line time). No-op when lyrics are disabled or no
 /// media is playing.
 pub(crate) fn start_lyrics_monitor(app: AppHandle) {
-    thread::spawn(move || {
-        // Let the app settle before the first poll.
-        thread::sleep(Duration::from_secs(3));
-        let mut last_index: Option<usize> = None;
-        // Tracks we recently failed to find lyrics for, so lyric-less songs
-        // don't trigger a full search on every 1s poll.
-        let mut lyrics_miss_cache: HashMap<String, Instant> = HashMap::new();
-        loop {
-            thread::sleep(Duration::from_millis(1000));
-            let state = app.state::<AppState>();
-            let enabled = *lock_state(&state.lyrics_enabled);
-            if !enabled {
-                let was_some = lock_state(&state.lyrics).is_some();
-                if was_some {
-                    *lock_state(&state.lyrics) = None;
-                    *lock_state(&state.lyrics_track_key) = String::new();
-                    last_index = None;
-                    let _ = app.emit("lyrics-changed", Option::<lyrics::LyricPayload>::None);
-                }
-                continue;
-            }
-
-            // Fetch the current track from the platform media source
-            // (MediaRemote adapter on macOS, SMTC on Windows; None elsewhere).
-            let track: Option<NowPlayingTrack> = platform_now_playing();
-
-            let Some(track) = track else {
-                let was_some = lock_state(&state.lyrics).is_some();
-                if was_some {
-                    *lock_state(&state.lyrics) = None;
-                    *lock_state(&state.lyrics_track_key) = String::new();
-                    last_index = None;
-                    let _ = app.emit("lyrics-changed", Option::<lyrics::LyricPayload>::None);
-                }
-                continue;
-            };
-
-            let title = track.title.clone().unwrap_or_default();
-            let artist = track.artist.clone().unwrap_or_default();
-            let key = format!("{}|{}", artist, title);
-
-            // Refetch lyrics only when the track changes (and not for tracks
-            // we recently established have no lyrics).
-            let need_fetch = {
-                let prev = lock_state(&state.lyrics_track_key).clone();
-                prev != key
-                    && lyrics_miss_cache
-                        .get(&key)
-                        .map_or(true, |t| t.elapsed() >= LYRICS_MISS_RETRY_AFTER)
-            };
-            if need_fetch {
-                let lines = if title.is_empty() && artist.is_empty() {
-                    None
-                } else {
-                    lyrics::fetch_lyrics(&artist, &title, track.album.as_deref(), track.duration)
-                };
-                if let Some(lines) = lines {
-                    lyrics_miss_cache.remove(&key);
-                    *lock_state(&state.lyrics_track_key) = key.clone();
-                    *lock_state(&state.lyrics) = Some(lyrics::LyricPayload {
-                        current_index: 0,
-                        next_time_ms: lines.get(1).map(|l| l.time_ms),
-                        lines,
-                        track_title: track.title.clone(),
-                        track_artist: track.artist.clone(),
-                    });
-                    last_index = None; // force re-emit below
-                    let payload = lock_state(&state.lyrics).clone();
-                    let _ = app.emit("lyrics-changed", &payload);
-                } else {
-                    // No synced lyrics available — clear any stale payload and
-                    // remember the miss so we don't refetch every poll.
-                    lyrics_miss_cache.retain(|_, t| t.elapsed() < LYRICS_MISS_RETRY_AFTER);
-                    lyrics_miss_cache.insert(key.clone(), Instant::now());
-                    let was_some = lock_state(&state.lyrics).is_some();
-                    if was_some {
-                        *lock_state(&state.lyrics) = None;
-                        *lock_state(&state.lyrics_track_key) = String::new();
-                        last_index = None;
-                        let _ = app.emit("lyrics-changed", Option::<lyrics::LyricPayload>::None);
-                    }
-                    continue;
-                }
-            }
-
-            // Track current line from playback position.
-            let payload_guard = lock_state(&state.lyrics);
-            let Some(payload) = payload_guard.as_ref() else {
-                continue;
-            };
-            if payload.lines.is_empty() {
-                continue;
-            }
-            let pos = track.position.unwrap_or(0.0);
-            // Update current_index in state (for get_current_lyrics), but
-            // line tracking is done client-side via interpolated position.
-            let idx = lyrics::current_line_index(&payload.lines, pos);
-            if last_index != Some(idx) {
-                last_index = Some(idx);
-                let next_ms = payload.lines.get(idx + 1).map(|l| l.time_ms);
-                drop(payload_guard);
-                if let Some(p) = lock_state(&state.lyrics).as_mut() {
-                    p.current_index = idx;
-                    p.next_time_ms = next_ms;
-                }
-            }
-        }
-    });
+    crate::shared_media::start_lyrics(app);
 }
 
 pub(crate) fn start_token_history_writer(app: AppHandle) {

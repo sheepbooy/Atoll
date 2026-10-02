@@ -46,6 +46,8 @@ pub(crate) fn test_app_state() -> AppState {
         last_hook_activity: Mutex::new(Instant::now()),
         token_history_dirty: AtomicBool::new(false),
         transcript_cache: Mutex::new(TranscriptCache::default()),
+        hook_observations: Mutex::new(HashMap::new()),
+        media_state: Mutex::new(shared_media::MediaSnapshot::default()),
         media_card_enabled: Mutex::new(true),
         artwork_backdrop_enabled: Mutex::new(false),
         bluetooth_battery_card_enabled: Mutex::new(false),

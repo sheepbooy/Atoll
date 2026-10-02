@@ -234,5 +234,11 @@
   },
   "bluetooth": {
     "title": "Bluetooth battery"
+  },
+  "theater": {
+    "started": "Starting work",
+    "subagentStarted": "Teammate joined",
+    "subagentEnded": "Teammate finished",
+    "turnEnded": "Turn ended"
   }
 }

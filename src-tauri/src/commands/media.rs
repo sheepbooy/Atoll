@@ -21,8 +21,8 @@ pub(crate) fn platform_now_playing() -> Option<NowPlayingTrack> {
 }
 
 #[tauri::command]
-pub(crate) fn get_now_playing() -> Option<NowPlayingTrack> {
-    platform_now_playing()
+pub(crate) fn get_now_playing(state: State<'_, AppState>) -> Option<NowPlayingTrack> {
+    lock_state(&state.media_state).current()
 }
 
 #[tauri::command]
@@ -85,5 +85,13 @@ pub(crate) fn set_lyrics_enabled(
 
 #[tauri::command]
 pub(crate) fn get_current_lyrics(state: State<'_, AppState>) -> Option<lyrics::LyricPayload> {
-    lock_state(&state.lyrics).clone()
+    let mut payload = lock_state(&state.lyrics).clone()?;
+    let current = lock_state(&state.media_state).current()?;
+    if payload.track_title != current.title || payload.track_artist != current.artist {
+        return None;
+    }
+    let idx = lyrics::current_line_index(&payload.lines, current.position.unwrap_or(0.0));
+    payload.current_index = idx;
+    payload.next_time_ms = payload.lines.get(idx + 1).map(|line| line.time_ms);
+    Some(payload)
 }

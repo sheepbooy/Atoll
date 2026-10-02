@@ -36,29 +36,24 @@ export function lyricsMatchTrack(
 /**
  * Renders the current lyric line with a vertical fade-in transition.
  *
- * Sync strategy: the backend polls position every ~1s via the MediaRemote
- * adapter (`get --now`) and emits it. Between samples we interpolate with the
- * wall clock from `receivedAt` (same as the progress bar) and re-render on a
- * 250ms tick while playing, so line switches land on the real timestamps
- * instead of up to 1s late. Drift is bounded: each sample re-anchors the
- * interpolation.
+ * Shared media samples anchor the local clock. Between samples, wake at the
+ * next lyric boundary rather than repainting four times per second.
  */
 export function LyricsMarquee({ lines, sample }: LyricsMarqueeProps) {
   const [, setTick] = useState(0);
-
-  useEffect(() => {
-    if (!sample?.playing) {
-      return;
-    }
-    const interval = window.setInterval(() => setTick((n) => n + 1), 250);
-    return () => window.clearInterval(interval);
-  }, [sample?.playing]);
 
   let pos = sample?.position ?? 0;
   if (sample?.playing) {
     pos += (Date.now() - sample.receivedAt) / 1000 + LYRICS_SYNC_LEAD_S;
   }
   const currentIndex = lineIndexAt(lines, pos);
+  const nextTime = lines[currentIndex + 1]?.timeMs;
+  useEffect(() => {
+    if (!sample?.playing || nextTime === undefined) return;
+    const nowPosition = sample.position * 1000 + Date.now() - sample.receivedAt + LYRICS_SYNC_LEAD_S * 1000;
+    const timer = window.setTimeout(() => setTick(n => n + 1), Math.max(1, Math.min(2_147_483_647, nextTime - nowPosition)));
+    return () => window.clearTimeout(timer);
+  }, [sample, nextTime]);
   const line = lines[currentIndex];
   const text = line?.text.trim() ?? "";
 

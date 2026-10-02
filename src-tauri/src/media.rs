@@ -103,7 +103,11 @@ pub fn fetch_now_playing() -> Option<NowPlayingTrack> {
         return None;
     }
     let payload: AdapterPayload = serde_json::from_slice(&output.stdout).ok()?;
-    Some(NowPlayingTrack {
+    Some(track_from_payload(payload))
+}
+
+fn track_from_payload(payload: AdapterPayload) -> NowPlayingTrack {
+    NowPlayingTrack {
         title: payload.title,
         artist: payload.artist,
         album: payload.album,
@@ -112,7 +116,7 @@ pub fn fetch_now_playing() -> Option<NowPlayingTrack> {
         playing: payload.playing.unwrap_or(false),
         artwork_base64: payload.artwork_data,
         app: app_name_from_bundle(payload.bundle_identifier.as_deref()),
-    })
+    }
 }
 
 /// Send a media command. Returns false if the adapter is unavailable.
@@ -213,5 +217,166 @@ mod tests {
             Some("com.unknown.app".into())
         );
         assert_eq!(app_name_from_bundle(None), None);
+    }
+}
+
+/// A single long-lived adapter. Dropping it always reaps the child, including
+/// when the user disables every media consumer.
+pub(crate) struct MediaStream {
+    child: std::process::Child,
+    pub(crate) updates: std::sync::mpsc::Receiver<Result<Option<NowPlayingTrack>, String>>,
+}
+impl Drop for MediaStream {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+pub(crate) fn parse_stream_track(line: &str) -> Result<Option<NowPlayingTrack>, String> {
+    let envelope: serde_json::Value = serde_json::from_str(line).map_err(|e| e.to_string())?;
+    let mut value = if envelope.get("type").is_some() {
+        if envelope.get("type").and_then(|v| v.as_str()) != Some("data")
+            || envelope.get("diff").and_then(|v| v.as_bool()) == Some(true)
+        {
+            return Err("Unsupported media stream envelope".into());
+        }
+        envelope
+            .get("payload")
+            .cloned()
+            .ok_or("Media stream payload missing")?
+    } else {
+        envelope
+    };
+    if value.is_null() || value.as_object().is_some_and(|v| v.is_empty()) {
+        return Ok(None);
+    }
+    // --micros gives an unambiguous Unix anchor across adapter versions.
+    for (micros, seconds) in [
+        ("elapsedTimeMicros", "elapsedTime"),
+        ("durationMicros", "duration"),
+    ] {
+        if let Some(v) = value.get(micros).and_then(|v| v.as_f64()) {
+            value[seconds] = serde_json::json!(v / 1_000_000.0);
+        }
+    }
+    let payload: AdapterPayload =
+        serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+    let mut track = track_from_payload(payload);
+    if track.title.is_none() && track.artist.is_none() && track.app.is_none() {
+        return Ok(None);
+    }
+    // Stream elapsedTime is anchored at timestamp, unlike get --now.
+    let timestamp = value
+        .get("timestampEpochMicros")
+        .and_then(|v| v.as_i64())
+        .and_then(chrono::DateTime::from_timestamp_micros)
+        .or_else(|| {
+            value
+                .get("timestamp")
+                .and_then(|v| v.as_str())
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|at| at.with_timezone(&chrono::Utc))
+        });
+    if track.playing {
+        if let (Some(position), Some(at)) = (track.position, timestamp) {
+            track.position = Some(
+                (position
+                    + (chrono::Utc::now() - at.with_timezone(&chrono::Utc))
+                        .num_milliseconds()
+                        .max(0) as f64
+                        / 1000.0)
+                    .min(track.duration.unwrap_or(f64::MAX)),
+            );
+        }
+    }
+    Ok(Some(track))
+}
+
+pub(crate) fn start_stream() -> Option<MediaStream> {
+    use std::io::{BufRead, Read};
+    let (script, framework) = adapter_paths()?;
+    let mut child = Command::new("/usr/bin/perl")
+        .arg(script)
+        .arg(framework)
+        .arg("stream")
+        .arg("--no-diff")
+        .arg("--micros")
+        .arg("--debounce=100")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let stdout = child.stdout.take()?;
+    let (sender, updates) = std::sync::mpsc::sync_channel(16);
+    std::thread::spawn(move || {
+        let mut reader = std::io::BufReader::new(stdout);
+        loop {
+            // Artwork can be large, but never allow an unbounded line buffer.
+            let mut line = String::new();
+            let read = (&mut reader).take(8 * 1024 * 1024 + 1).read_line(&mut line);
+            let message = match read {
+                Ok(0) => Err("media stream ended".into()),
+                Ok(n) if n > 8 * 1024 * 1024 => Err("media stream line too large".into()),
+                Ok(_) => parse_stream_track(&line),
+                Err(e) => Err(e.to_string()),
+            };
+            let failed = message.is_err();
+            if sender.send(message).is_err() || failed {
+                break;
+            }
+        }
+    });
+    Some(MediaStream { child, updates })
+}
+
+#[cfg(test)]
+mod stream_tests {
+    use super::*;
+    #[test]
+    fn reads_actual_adapter_envelopes_and_rejects_partial_diffs() {
+        assert!(
+            parse_stream_track(r#"{"type":"data","diff":false,"payload":{}}"#)
+                .unwrap()
+                .is_none()
+        );
+        let track = parse_stream_track(r#"{"type":"data","diff":false,"payload":{"title":"Fixture","playing":true,"elapsedTimeMicros":12000000}}"#).unwrap().unwrap();
+        assert_eq!(track.title.as_deref(), Some("Fixture"));
+        assert_eq!(track.position, Some(12.0));
+        assert!(
+            parse_stream_track(r#"{"type":"data","diff":true,"payload":{"playing":false}}"#)
+                .is_err()
+        );
+        assert!(parse_stream_track(r#"{"type":"error","payload":"disconnected"}"#).is_err());
+    }
+    #[test]
+    fn microsecond_stream_anchor_interpolates_playback_without_creeping_when_paused() {
+        let value = serde_json::json!({ "title":"fixture", "durationMicros":120_000_000,
+            "elapsedTimeMicros":12_000_000, "timestampEpochMicros":chrono::Utc::now().timestamp_micros() - 2_000_000, "playing":true });
+        let track = parse_stream_track(&value.to_string()).unwrap().unwrap();
+        assert_eq!(track.duration, Some(120.0));
+        assert!((14.0..15.0).contains(&track.position.unwrap()));
+        let mut paused = value;
+        paused["playing"] = serde_json::json!(false);
+        assert_eq!(
+            parse_stream_track(&paused.to_string())
+                .unwrap()
+                .unwrap()
+                .position,
+            Some(12.0)
+        );
+    }
+    #[test]
+    fn handles_empty_and_corrupt_stream_updates() {
+        assert!(parse_stream_track("{}").unwrap().is_none());
+        assert!(parse_stream_track("null").unwrap().is_none());
+        assert!(parse_stream_track("garbage").is_err());
+        let track = parse_stream_track(
+            r#"{"title":"歌名","artist":"歌手","playing":false,"elapsedTime":12}"#,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(track.position, Some(12.0));
+        assert!(!track.playing);
     }
 }

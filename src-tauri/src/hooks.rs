@@ -34,6 +34,8 @@ pub(crate) struct CompetingHook {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct HookStatus {
+    #[serde(flatten, default)]
+    pub(crate) observation: crate::agent_events::HookObservation,
     pub(crate) installed: bool,
     pub(crate) script_found: bool,
     pub(crate) settings_path: String,
@@ -71,9 +73,20 @@ pub(crate) struct HookHealthSnapshot {
     pub(crate) opencode: HookStatus,
 }
 
+impl HookStatus {
+    pub(crate) fn with_observation(mut self, app: &AppHandle, agent: &str) -> Self {
+        self.observation = lock_state(&app.state::<AppState>().hook_observations)
+            .get(agent)
+            .map(crate::agent_events::HookObservation::evidence)
+            .unwrap_or_default();
+        self
+    }
+}
+
 impl Default for HookStatus {
     fn default() -> Self {
         Self {
+            observation: Default::default(),
             installed: false,
             script_found: false,
             settings_path: String::new(),
@@ -406,6 +419,7 @@ pub(crate) const CURSOR_HOOK_PROFILE: AgentHookProfile = AgentHookProfile {
 pub(crate) fn forced_uninstalled_status(app: &AppHandle, profile: &AgentHookProfile) -> HookStatus {
     let script_path = resolve_hook_script_path(app, profile.script_name).unwrap_or_default();
     HookStatus {
+        observation: Default::default(),
         installed: false,
         script_found: !script_path.is_empty() && std::path::Path::new(&script_path).exists(),
         settings_path: (profile.config_path)()
@@ -430,6 +444,7 @@ fn get_hook_status_for(profile: &AgentHookProfile, app: AppHandle) -> Result<Hoo
 /// to uninstall, and the trust record goes with it.
 fn not_installed_status(config_path: &std::path::Path) -> HookStatus {
     HookStatus {
+        observation: Default::default(),
         installed: false,
         script_found: false,
         settings_path: config_path.to_string_lossy().into(),
@@ -473,6 +488,7 @@ fn uninstall_hooks_for(profile: &AgentHookProfile, app: AppHandle) -> Result<Hoo
 
     if !config_path.exists() {
         hook_trust::clear_hook_installed(profile.key);
+        crate::agent_events::reset(&app, profile.key);
         return Ok(not_installed_status(&config_path));
     }
 
@@ -489,6 +505,7 @@ fn uninstall_hooks_for(profile: &AgentHookProfile, app: AppHandle) -> Result<Hoo
         .map_err(|e| format!("Cannot write {}: {e}", profile.io_label))?;
     hook_trust::clear_hook_installed(profile.key);
 
+    crate::agent_events::reset(&app, profile.key);
     emit_hook_snapshot_changed(&app)?;
 
     Ok((profile.status)(&app))
@@ -551,6 +568,7 @@ fn install_hooks_for(profile: &AgentHookProfile, app: AppHandle) -> Result<HookS
     if let Some(refresh) = profile.pre_snapshot_refresh {
         refresh(&app, &state);
     }
+    crate::agent_events::reset(&app, profile.key);
     emit_hook_snapshot_changed(&app)?;
 
     Ok((profile.status)(&app))

@@ -19,6 +19,7 @@ import {
 } from "../sessionDisplay";
 
 export interface CompactSessionStackProps {
+  animated?: boolean;
   sessions: SessionSummary[];
   overflowCount?: number;
   placement?: "left" | "right";
@@ -27,6 +28,7 @@ export interface CompactSessionStackProps {
 }
 
 export function CompactSessionStack({
+  animated = true,
   sessions,
   overflowCount = 0,
   placement = "left",
@@ -57,6 +59,7 @@ export function CompactSessionStack({
             )}`}
           >
             <AgentMascot
+              animated={animated}
               agent={session.agent}
               mood={deriveSessionMood(session, activeRequest, justResolved)}
               accent={sessionColor.accent}

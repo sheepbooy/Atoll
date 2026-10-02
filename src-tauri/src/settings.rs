@@ -49,6 +49,9 @@ pub(crate) fn load_persisted_subagent_retention_secs() -> u64 {
 }
 
 pub(crate) fn persist_settings(session_minutes: Option<u64>, subagent_minutes: Option<u64>) {
+    if crate::benchmark::enabled() {
+        return;
+    }
     let Some(path) = atoll_settings_path() else {
         return;
     };
@@ -90,6 +93,9 @@ pub(crate) fn load_media_card_enabled() -> bool {
 }
 
 pub(crate) fn persist_media_card_enabled(enabled: bool) {
+    if crate::benchmark::enabled() {
+        return;
+    }
     let Some(path) = atoll_settings_path() else {
         return;
     };
@@ -151,6 +157,9 @@ pub(crate) fn load_approval_notice_mode() -> String {
 }
 
 pub(crate) fn persist_settings_value(key: &str, value: Value) {
+    if crate::benchmark::enabled() {
+        return;
+    }
     let Some(path) = atoll_settings_path() else {
         return;
     };
@@ -172,6 +181,9 @@ pub(crate) fn persist_settings_value(key: &str, value: Value) {
 }
 
 pub(crate) fn persist_approval_notice_mode(mode: &str) {
+    if crate::benchmark::enabled() {
+        return;
+    }
     persist_settings_value("approvalNoticeMode", Value::from(mode));
 }
 
@@ -194,6 +206,9 @@ pub(crate) fn load_notification_language() -> String {
 }
 
 pub(crate) fn persist_notification_language(language: &str) {
+    if crate::benchmark::enabled() {
+        return;
+    }
     persist_settings_value("notificationLanguage", Value::from(language));
 }
 
@@ -214,6 +229,9 @@ pub(crate) fn load_artwork_backdrop_enabled() -> bool {
 }
 
 pub(crate) fn persist_artwork_backdrop_enabled(enabled: bool) {
+    if crate::benchmark::enabled() {
+        return;
+    }
     let Some(path) = atoll_settings_path() else {
         return;
     };
@@ -235,6 +253,9 @@ pub(crate) fn persist_artwork_backdrop_enabled(enabled: bool) {
 }
 
 pub(crate) fn persist_retention_minutes(minutes: u64) {
+    if crate::benchmark::enabled() {
+        return;
+    }
     persist_settings(Some(minutes.clamp(1, 60)), None);
 }
 
@@ -255,6 +276,9 @@ pub(crate) fn load_clipboard_history_enabled() -> bool {
 }
 
 pub(crate) fn persist_clipboard_history_enabled(enabled: bool) {
+    if crate::benchmark::enabled() {
+        return;
+    }
     let Some(path) = atoll_settings_path() else {
         return;
     };
@@ -292,6 +316,9 @@ pub(crate) fn load_clipboard_auto_stage() -> bool {
 }
 
 pub(crate) fn persist_clipboard_auto_stage(enabled: bool) {
+    if crate::benchmark::enabled() {
+        return;
+    }
     let Some(path) = atoll_settings_path() else {
         return;
     };
@@ -335,6 +362,9 @@ pub(crate) fn load_clipboard_history_limit() -> usize {
 }
 
 pub(crate) fn persist_clipboard_history_limit(limit: usize) {
+    if crate::benchmark::enabled() {
+        return;
+    }
     let Some(path) = atoll_settings_path() else {
         return;
     };
@@ -376,6 +406,9 @@ pub(crate) fn load_preferred_monitor_name() -> Option<String> {
 }
 
 pub(crate) fn persist_preferred_monitor_name(name: Option<&str>) {
+    if crate::benchmark::enabled() {
+        return;
+    }
     let Some(path) = atoll_settings_path() else {
         return;
     };
@@ -420,6 +453,9 @@ pub(crate) fn load_lyrics_enabled() -> bool {
 }
 
 pub(crate) fn persist_lyrics_enabled(enabled: bool) {
+    if crate::benchmark::enabled() {
+        return;
+    }
     let Some(path) = atoll_settings_path() else {
         return;
     };
@@ -459,6 +495,9 @@ pub(crate) fn load_risk_guard_enabled() -> bool {
 }
 
 pub(crate) fn persist_risk_guard_enabled(enabled: bool) {
+    if crate::benchmark::enabled() {
+        return;
+    }
     persist_settings_value("riskGuardEnabled", Value::from(enabled));
 }
 
@@ -467,6 +506,9 @@ pub(crate) fn load_bluetooth_battery_card_enabled() -> bool {
 }
 
 pub(crate) fn persist_bluetooth_battery_card_enabled(enabled: bool) {
+    if crate::benchmark::enabled() {
+        return;
+    }
     persist_settings_value("bluetoothBatteryCardEnabled", Value::from(enabled));
 }
 
@@ -475,6 +517,9 @@ pub(crate) fn load_bluetooth_battery_alert_enabled() -> bool {
 }
 
 pub(crate) fn persist_bluetooth_battery_alert_enabled(enabled: bool) {
+    if crate::benchmark::enabled() {
+        return;
+    }
     persist_settings_value("bluetoothBatteryAlertEnabled", Value::from(enabled));
 }
 
@@ -497,6 +542,9 @@ pub(crate) fn load_bluetooth_battery_alert_threshold() -> u8 {
 }
 
 pub(crate) fn persist_bluetooth_battery_alert_threshold(threshold: u8) {
+    if crate::benchmark::enabled() {
+        return;
+    }
     persist_settings_value(
         "bluetoothBatteryAlertThreshold",
         Value::from(bluetooth_battery::clamp_alert_threshold(threshold)),

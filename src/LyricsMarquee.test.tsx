@@ -88,7 +88,7 @@ describe("LyricsMarquee", () => {
     expect(screen.getByText("first line")).toBeTruthy();
   });
 
-  it("switches lines on the sub-second tick while playing", () => {
+  it("switches lines at the exact next boundary while playing", () => {
     vi.useFakeTimers();
     render(
       <LyricsMarquee
@@ -101,5 +101,17 @@ describe("LyricsMarquee", () => {
       vi.advanceTimersByTime(500);
     });
     expect(screen.getByText("second line")).toBeTruthy();
+  });
+  it("schedules one boundary wake, and cancels it when playback pauses or seeks", () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<LyricsMarquee lines={lines} sample={{ position: 10, playing: true, receivedAt: Date.now() }} />);
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => vi.advanceTimersByTime(30_000));
+    expect(screen.getByText("first line")).toBeTruthy();
+    rerender(<LyricsMarquee lines={lines} sample={{ position: 10, playing: false, receivedAt: Date.now() }} />);
+    expect(vi.getTimerCount()).toBe(0);
+    rerender(<LyricsMarquee lines={lines} sample={{ position: 70, playing: true, receivedAt: Date.now() }} />);
+    expect(screen.getByText("second line")).toBeTruthy();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

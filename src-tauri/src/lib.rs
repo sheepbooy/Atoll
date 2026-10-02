@@ -10,9 +10,11 @@ use serde_json::{json, Value};
 use tauri::utils::config::Color;
 use tauri::{AppHandle, Emitter, Manager};
 
+mod agent_events;
 mod approval_history;
 mod approval_rules;
 mod approval_spool;
+mod benchmark;
 // Compiled on every platform so the pure-logic unit tests run on any host;
 // the system_profiler/ioreg calls are cfg(macos) inside, hence the dead-code
 // allowance on non-macOS targets where only the tests reference the parsers.
@@ -66,6 +68,7 @@ mod token_usage;
 pub(crate) use token_usage::*;
 
 mod monitors;
+mod shared_media;
 
 pub(crate) use monitors::*;
 
@@ -134,6 +137,7 @@ mod zcode_hooks_tests;
 mod zcode_token_tests;
 
 pub fn run() {
+    benchmark::ensure_packaged_frontend();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
@@ -181,6 +185,8 @@ pub fn run() {
             last_hook_activity: Mutex::new(Instant::now()),
             token_history_dirty: AtomicBool::new(false),
             transcript_cache: Mutex::new(TranscriptCache::default()),
+            hook_observations: Mutex::new(HashMap::new()),
+            media_state: Mutex::new(shared_media::MediaSnapshot::default()),
             media_card_enabled: Mutex::new(load_media_card_enabled()),
             artwork_backdrop_enabled: Mutex::new(load_artwork_backdrop_enabled()),
             bluetooth_battery_card_enabled: Mutex::new(load_bluetooth_battery_card_enabled()),
@@ -203,6 +209,9 @@ pub fn run() {
             global_shortcuts: Mutex::new(shortcuts::GlobalShortcutsState::default()),
         })
         .invoke_handler(tauri::generate_handler![
+            agent_events::get_hook_observations,
+            get_energy_mode,
+            set_energy_mode,
             get_snapshot,
             get_session_requests,
             get_session_transcript,
@@ -332,19 +341,23 @@ pub fn run() {
             }
 
             build_tray(app.handle())?;
-            hook_bridge::start_server(app.handle().clone());
-            // Import permission requests spooled by hooks while Atoll was not
-            // running (they resolved in the agents' own UIs, so they land as
-            // answered_elsewhere history rows). Off the setup path: the DB
-            // write must not delay window creation.
-            std::thread::spawn(|| {
-                let imported = approval_spool::import_spooled_requests();
-                if imported > 0 {
-                    eprintln!("Atoll approval spool: imported {imported} offline request(s)");
-                }
-            });
-            #[cfg(desktop)]
-            shortcuts::startup(app.handle());
+            if !benchmark::enabled() {
+                hook_bridge::start_server(app.handle().clone());
+                // Import permission requests spooled by hooks while Atoll was not
+                // running (they resolved in the agents' own UIs, so they land as
+                // answered_elsewhere history rows). Off the setup path: the DB
+                // write must not delay window creation.
+                std::thread::spawn(|| {
+                    let imported = approval_spool::import_spooled_requests();
+                    if imported > 0 {
+                        eprintln!("Atoll approval spool: imported {imported} offline request(s)");
+                    }
+                });
+                #[cfg(desktop)]
+                shortcuts::startup(app.handle());
+            } else {
+                benchmark::setup(app.handle());
+            }
             start_island_hover_monitor(app.handle().clone());
             platform::start_activation_observer(app.handle().clone());
             if let Some(window) = app.get_webview_window("main") {
@@ -362,18 +375,23 @@ pub fn run() {
                 let sub_retention = load_persisted_subagent_retention_secs();
                 *lock_state(&state.subagent_retention_secs) = sub_retention;
             }
-            start_auto_archive_timer(app.handle().clone());
-            start_token_refresh_timer(app.handle().clone());
-            start_token_history_writer(app.handle().clone());
+            if !benchmark::enabled() {
+                start_auto_archive_timer(app.handle().clone());
+                start_token_refresh_timer(app.handle().clone());
+                start_token_history_writer(app.handle().clone());
+            }
             start_media_monitor(app.handle().clone());
-            start_bluetooth_battery_monitor(app.handle().clone());
-            start_clipboard_monitor(app.handle().clone());
+            if !benchmark::enabled() {
+                start_bluetooth_battery_monitor(app.handle().clone());
+                start_clipboard_monitor(app.handle().clone());
+            }
             start_lyrics_monitor(app.handle().clone());
-            start_initial_maintenance(app.handle().clone());
-            std::thread::spawn(|| {
-                pricing::maybe_refresh_pricing_catalog_on_startup();
-            });
-
+            if !benchmark::enabled() {
+                start_initial_maintenance(app.handle().clone());
+                std::thread::spawn(|| {
+                    pricing::maybe_refresh_pricing_catalog_on_startup();
+                });
+            }
             if capture::enabled() {
                 let state = app.state::<AppState>();
                 capture::seed_approval_demo(app.handle(), &state);

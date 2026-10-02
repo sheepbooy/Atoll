@@ -125,6 +125,10 @@ export interface CompetingHook {
 }
 
 export interface HookStatus {
+  generation?: number;
+  lastEventAt?: number | null;
+  lastEventName?: string | null;
+  lastPermissionAt?: number | null;
   installed: boolean;
   scriptFound: boolean;
   settingsPath: string;

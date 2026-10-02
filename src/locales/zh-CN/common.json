@@ -234,5 +234,11 @@
   },
   "bluetooth": {
     "title": "蓝牙电量"
+  },
+  "theater": {
+    "started": "开始码字",
+    "subagentStarted": "队友加入",
+    "subagentEnded": "队友收工",
+    "turnEnded": "本轮结束"
   }
 }

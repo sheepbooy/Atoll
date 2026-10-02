@@ -19,6 +19,7 @@
 
 <p align="center">
   <a href="https://sheepbooy.github.io/Atoll/">官网</a> ·
+  <a href="#开发版预览">开发版预览</a> ·
   <a href="#安装">安装</a> ·
   <a href="#接入-agent">接入 Agent</a> ·
   <a href="#视觉">视觉</a> ·
@@ -50,7 +51,7 @@
 - **Plan 模式** — 在顶栏回答规划问题、预览 Markdown 计划，再决定是否开始构建
 - **Subagent** — 追踪子 agent 生命周期，会话内 chip 预览、列表视图与 transcript 详情，支持批量归档
 - **Now Playing** — 音乐播放卡片显示当前曲目与封面，紧凑态指标器同步播放状态；支持上一首/下一首控制（macOS 经 MediaRemote 适配器 / Windows 经 SMTC 系统媒体接口）
-- **滚动歌词** — 紧凑胶囊中部展示当前歌词行，随播放进度自动滚动（macOS / Windows）
+- **滚动歌词** — 无刘海屏的紧凑胶囊中部展示当前歌词行，随播放进度自动滚动（macOS / Windows）
 - **剪贴板历史** — 跨平台剪贴板历史记录，关键词搜索 + 隐私开关，敏感内容自动过滤
 - **审批历史** — 审批请求持久化到本地 SQLite，重启不丢；支持关键词/会话搜索、Agent 与结果筛选，一键导出 JSON/CSV
 - **Token 热力图** — 持久化每日用量，重启后继续累计；展开态计数器可查看热力图、Agent 占比与 30 天趋势
@@ -68,6 +69,24 @@
 - **全程本地** — Hook 桥接 `127.0.0.1:47777`，数据不出本机
 
 目前支持 **Claude Code**（CLI 与 Desktop）、**Codex**（CLI 与 Desktop）、**Cursor IDE**、**ZCode**（CLI 与 Desktop）、**Gemini CLI** 和 **OpenCode**。
+
+## 开发版预览
+
+以下功能已在当前源码实现，随下次版本发布；现有 Release 安装包尚未包含。
+
+- **自动省电** — 设置 → 岛屿外观 → 动效与省电，默认 10 秒无交互后暂停装饰循环、彩蛋计时和数字动画。悬停、快捷键召回、文件拖拽或新审批立即恢复；也可选择「始终完整动效」。状态、计数、播放与歌词同步继续工作。音乐卡片、封面背景和歌词共享采样源，三项全部关闭后停止媒体采样；歌词按曲目缓存在 `~/.atoll/lyrics-cache`，切歌丢弃旧查询结果。
+- **接入验证** — 配置安装与真实连接分开呈现。点击「验证连接」后等待新的真实事件，60 秒无事件可查看检查步骤并重试；重装后需要重新验证。Cursor 显示「观察连接已验证」，权限请求另行确认；不会自动启动 Agent 或执行命令。
+- **Agent 小剧场** — 真实生命周期触发码字、子 Agent 挥手入队、离场和「本轮结束」短互动。复用 SVG 吉祥物，按可用空间最多显示三个角色，其余 `+N`；每次 2.4 秒，不回放历史、不积压队列、不主动展开，审批和拖拽优先。开启减弱动态效果时直接显示静态结果。
+
+同机固定场景对照，每组预热 30 秒、采样 60 秒；CPU 为主进程与所属 WebKit 合计，100% 表示一个核心：
+
+| 折叠、无交互场景 | 完整动效 → 自动省电 | CPU 降幅 |
+| --- | ---: | ---: |
+| 无会话，媒体关闭 | 0.893% → 0.302% | 66.2% |
+| 一个 Agent 工作会话 | 3.888% → 0.367% | 90.6% |
+| 音乐播放、歌词启用，刘海屏折叠态 | 0.818% → 0.318% | 61.1% |
+
+这是关闭后台维护、固定会话状态的受控对照；音乐适配器另计约 0.075% CPU，刘海屏折叠态不显示歌词。结果不能直接推算真实任务全程耗电或电池续航。[测试方法、原始数据与验收范围](docs/energy-benchmark.md)。
 
 ---
 
@@ -155,6 +174,8 @@ Atoll 通过应用内 **一键安装 Hook**，无需手动编辑配置文件。
 
 Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）、`~/.codex/hooks.json`、`~/.zcode/cli/config.json`、Cursor hooks 配置或 `~/.gemini/settings.json`；OpenCode 例外，见上表——部署的是进程内桥接插件而非 hooks 配置。安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`；系统没有 Node 时（如全新电脑）自动回退到 Atoll 自带的运行时，无需单独安装 Node.js。
 
+开发版安装后可点击对应 Agent 的「验证连接」：**配置已安装 → 等待真实事件 → 连接已验证**。按上表完成信任与重启后，在该 Agent 中发送消息并触发工具调用；旧事件或其他 Agent 的事件不会完成本次验证。支持权限接入的 Agent 收到新审批时另显示「权限请求已收到」，Cursor 仅确认观察连接。60 秒无事件可重试，重新安装后验证状态重置。
+
 > Gemini CLI 的 hook 按"项目路径 + hook 键"管理信任：安装后需在 Gemini 中执行 `/hooks` 信任 Atoll hook。Gemini 自身审批模式（如默认确认）仍会生效——Atoll 的拒绝先于 Gemini 确认生效，Atoll 的批准则在 Gemini 判定需要确认时仍走其原生确认。
 
 卸载：Settings → Agent hooks → Uninstall（仅移除 Atoll 条目，保留你的其他 hooks）。
@@ -190,7 +211,7 @@ Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事�
 | 工作中 | 有活跃 Agent 会话 |
 | 离线 | Hook 未就绪或 bridge 不可达 |
 
-空闲时还会随机播放彩蛋活动（钓鱼 / 观星 / 浇花 / 听歌 / 掌机 / 咖啡 / 读书 / 灯泡 / 摸鱼 / 睡觉），全部为多段式循环编排；状态切换时有 cheer / collapse / revive 一次性过场：
+完整动效下，空闲时还会随机播放彩蛋活动（钓鱼 / 观星 / 浇花 / 听歌 / 掌机 / 咖啡 / 读书 / 灯泡 / 摸鱼 / 睡觉），全部为多段式循环编排；状态切换时有 cheer / collapse / revive 一次性过场。开发版默认自动省电，无交互 10 秒后暂停装饰动效，交互时恢复：
 
 <p align="center">
   <img src="docs/assets/atoll-activities.png" alt="Atoll Logo 全部活动姿态" width="620" />
@@ -234,6 +255,16 @@ npm run clean        # 手动清理构建产物（--all 连同 src-tauri/generat
 **Windows 额外要求：** Visual Studio Build Tools（C++ 工作负载）、WebView2 Runtime、Node.js（Hook 脚本）。
 
 **macOS 额外要求：** Xcode Command Line Tools。
+
+macOS CPU 对照使用内嵌前端的构建，避免开发服务器与热更新影响采样：
+
+```bash
+npm run build
+cargo build --release --features tauri/custom-protocol --manifest-path src-tauri/Cargo.toml
+python3 scripts/benchmark-energy.py --scenes idle working --output /private/tmp/atoll-energy.json
+```
+
+音乐场景先开始系统播放器播放有匹配歌词的歌曲，再使用 `--scenes media`；播放或歌词未就绪时脚本拒绝采样。详见[基准说明](docs/energy-benchmark.md)。
 
 <details>
 <summary>项目结构 & 文档素材</summary>
@@ -285,6 +316,9 @@ npm run export:brand     # Logo 状态 + Agent 形象
 - [x] 新请求自动展开、通知中心提醒（强制打断 / 仅通知两种模式，Settings → Notifications）
 - [x] 审批历史持久化、导出、会话搜索
 - [x] 中英文双语 UI、多显示器驻留
+- [x] 自动省电与共享媒体采样（开发版）
+- [x] 真实事件接入验证与权限能力区分（开发版）
+- [x] Agent 生命周期小剧场（开发版）
 
 ---
 

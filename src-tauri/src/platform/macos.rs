@@ -7,8 +7,7 @@ use super::ScreenGeometry;
 use crate::{
     collapsed_band_height, collapsed_corner_radius, lock_state, AppState, HomeWindowBounds,
     NotchMetrics, EXPANDED_WINDOW_CORNER_RADIUS, EXPANDED_WINDOW_HEIGHT,
-    FALLBACK_NOTCH_CORNER_RADIUS, FALLBACK_NOTCH_HEIGHT, FALLBACK_NOTCH_WIDTH,
-    NOTCH_WIDTH_SLOP,
+    FALLBACK_NOTCH_CORNER_RADIUS, FALLBACK_NOTCH_HEIGHT, FALLBACK_NOTCH_WIDTH, NOTCH_WIDTH_SLOP,
 };
 
 mod panel_store {
@@ -375,12 +374,8 @@ pub fn detect_notch_metrics(
     monitor_x: f64,
     monitor_width: f64,
 ) -> NotchMetrics {
-    let metrics = with_nsscreen_for_monitor(
-        window,
-        monitor_name,
-        monitor_x,
-        monitor_width,
-        |screen| {
+    let metrics =
+        with_nsscreen_for_monitor(window, monitor_name, monitor_x, monitor_width, |screen| {
             let safe_top = screen.safeAreaInsets().top;
             let frame = screen.frame();
             let aux_left_width = screen.auxiliaryTopLeftArea().size.width;
@@ -408,8 +403,7 @@ pub fn detect_notch_metrics(
                 right_area_width: aux_right_width,
                 corner_radius: FALLBACK_NOTCH_CORNER_RADIUS,
             }
-        },
-    );
+        });
     match metrics {
         Some(metrics) => {
             if notch_debug_enabled() {
@@ -472,8 +466,7 @@ mod display_change {
                 return observer;
             }
             let selector = objc2::sel!(atollDisplayDidChange:);
-            let ns_name =
-                NSString::from_str("NSApplicationDidChangeScreenParametersNotification");
+            let ns_name = NSString::from_str("NSApplicationDidChangeScreenParametersNotification");
             let _: () = msg_send![
                 center,
                 addObserver: &*observer,
@@ -506,8 +499,7 @@ fn handle_screen_parameters_changed() {
     };
     let state = app.state::<AppState>();
     let preferred = lock_state(&state.preferred_monitor).clone();
-    let Some(monitor) = crate::window::resolve_island_monitor(&window, preferred.as_deref())
-    else {
+    let Some(monitor) = crate::window::resolve_island_monitor(&window, preferred.as_deref()) else {
         return;
     };
     let scale_factor = monitor.scale_factor();
@@ -1049,19 +1041,13 @@ pub fn screen_geometry_for_monitor(
     monitor_x: f64,
     monitor_width: f64,
 ) -> Option<ScreenGeometry> {
-    with_nsscreen_for_monitor(
-        window,
-        monitor_name,
-        monitor_x,
-        monitor_width,
-        |screen| {
-            let frame = screen.frame();
-            ScreenGeometry {
-                origin_y: frame.origin.y,
-                height: frame.size.height,
-            }
-        },
-    )
+    with_nsscreen_for_monitor(window, monitor_name, monitor_x, monitor_width, |screen| {
+        let frame = screen.frame();
+        ScreenGeometry {
+            origin_y: frame.origin.y,
+            height: frame.size.height,
+        }
+    })
 }
 
 /// Cursor position in AppKit global points (primary-display bottom-left

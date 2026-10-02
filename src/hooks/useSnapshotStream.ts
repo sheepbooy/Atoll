@@ -70,6 +70,8 @@ export function useSnapshotStream({
         )
       : normalized.hookHealth;
     const merged = { ...normalized, hookHealth };
+    // Identical observer refreshes must not rerender every mascot and panel.
+    if (JSON.stringify(snapshotRef.current) === JSON.stringify(merged)) return;
     snapshotRef.current = merged;
     if (phaseRef.current === "opening" || phaseRef.current === "closing") {
       // Hook health must update immediately after install — waiting for the

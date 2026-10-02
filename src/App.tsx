@@ -74,6 +74,7 @@ import {
 import {
   UpdateNotice,
 } from "./components/UpdateNotice";
+import { useEnergyMode } from "./hooks/useEnergyMode";
 import { useUpdater } from "./hooks/useUpdater";
 import { useLyrics } from "./hooks/useLyrics";
 import { useClipboardHistory } from "./hooks/useClipboardHistory";
@@ -102,6 +103,7 @@ import { useStashChoreography } from "./hooks/useStashChoreography";
 import { useImeSync } from "./hooks/useImeSync";
 import { useNativePresentationSync } from "./hooks/useNativePresentationSync";
 import { deriveIslandChromeFlags } from "./islandChromeFlags";
+import { useAgentTheater } from "./hooks/useAgentTheater";
 import { IslandHeader } from "./components/IslandHeader";
 import { ArtworkBackdrop } from "./components/ArtworkBackdrop";
 import { IslandPanelRouter } from "./components/IslandPanelRouter";
@@ -138,8 +140,6 @@ export function App() {
 
   const [sessionRequests, setSessionRequests] = useState<PermissionRequest[]>([]);
 
-  const { lyricsData, playbackPosition, lyricsEnabled, handleChangeLyricsEnabled } =
-    useLyrics();
   const {
     clipboardHistory,
     clipboardEnabled,
@@ -323,6 +323,9 @@ export function App() {
     cancelPanelExit,
     clearPanelExitTimer,
     closeMenu: () => setMenuOpen(false),
+  });
+  const { lyricsData, playbackPosition, lyricsEnabled, handleChangeLyricsEnabled } = useLyrics({
+    positionEnabled: (phase === "expanded" && mediaCardEnabled) || (!notchMetrics.hasNotch && phase !== "expanded" && phase !== "opening" && phase !== "closing" && phase !== "micro"),
   });
   fsmRef.current = {
     expandIsland,
@@ -551,6 +554,12 @@ export function App() {
   const logoReaction = stashReaction ?? atollReaction;
   const logoReactionKey = stashReaction ? stashReactionKey : atollReactionKey;
   const logoStashLevel = stashBellyLevel(stagedCount);
+  const { energyMode, energySaving, changeEnergyMode } = useEnergyMode({
+    phase, requestId: snapshot.activeRequest?.id, pendingCount: snapshot.pendingCount,
+    busy: dragOverIsland || phase === "opening" || phase === "closing" || panelExiting || Boolean(stashReaction),
+  });
+
+  const theater = useAgentTheater(snapshot.pendingCount > 0 || dragOverIsland || panelExiting || Boolean(stashReaction) || phase === "opening" || phase === "closing");
 
   // ── 文件中转站"岛即生物"编舞 ──
   // 拖入文件 → 分档 eat 反应；从面板行拖出文件 → spit。吉祥物只演眼睛，
@@ -1060,7 +1069,7 @@ export function App() {
     <main className="stage">
       <section
         ref={islandRef}
-        className={`island is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isPlanExpanded ? "is-plan" : ""} ${isSettingsExpanded ? "is-settings" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${logoStashLevel > 0 ? `is-stash-${Math.min(Math.round(logoStashLevel), 3)}` : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList" ? "is-session-subview" : ""}${panelExiting ? " is-panel-exiting" : ""}`}
+        className={`island${energySaving ? " is-energy-saving" : ""} is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isPlanExpanded ? "is-plan" : ""} ${isSettingsExpanded ? "is-settings" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${logoStashLevel > 0 ? `is-stash-${Math.min(Math.round(logoStashLevel), 3)}` : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList" ? "is-session-subview" : ""}${panelExiting ? " is-panel-exiting" : ""}`}
         style={{ "--panel-glow": panelGlow } as CSSProperties}
         aria-label={t("app.name")}
         tabIndex={0}
@@ -1085,6 +1094,8 @@ export function App() {
     panelView={panelView}
     isExpanded={isExpanded}
     isExpandedChrome={isExpandedChrome}
+    energySaving={energySaving}
+    theater={theater}
     isPresentationTransition={isPresentationTransition}
     isMicro={isMicro}
     isDormant={isDormant}
@@ -1185,6 +1196,8 @@ export function App() {
           >
             <div key={panelAnimKey} className="island-panel-content">
                           <IslandPanelRouter
+          energyMode={energyMode}
+          onChangeEnergyMode={changeEnergyMode}
               presentationReady={presentationReady}
               panelView={panelView}
               sessions={sessions}

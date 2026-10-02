@@ -35,6 +35,8 @@ export const MIN_IDLE_DURATION_MIN = 1;
 export const MAX_IDLE_DURATION_MIN = 60;
 
 export function IslandSettingsView({
+  energyMode = "auto",
+  onChangeEnergyMode,
   maxCompactIcons,
   maxCompactIconLimit,
   onChangeMaxCompactIcons,
@@ -49,6 +51,8 @@ export function IslandSettingsView({
   preferredMonitorName,
   onChangePreferredMonitor,
 }: {
+  energyMode?: "auto" | "full";
+  onChangeEnergyMode?: (mode: "auto" | "full") => void;
   maxCompactIcons: number;
   maxCompactIconLimit: number;
   onChangeMaxCompactIcons: (value: number) => void;
@@ -107,6 +111,17 @@ export function IslandSettingsView({
       <div className="settings-body">
         <div className="settings-section">
           <span className="settings-section-label">{t("section.display")}</span>
+          <div className="settings-card">
+            <div className="settings-card-head">
+              <span className="settings-card-title">{t("energy.label")}</span>
+              <select className="settings-select" value={energyMode} aria-label={t("energy.label")}
+                onChange={event => onChangeEnergyMode?.(event.target.value as "auto" | "full")}>
+                <option value="auto">{t("energy.auto")}</option>
+                <option value="full">{t("energy.full")}</option>
+              </select>
+            </div>
+            <span className="settings-card-desc">{t("energy.desc")}</span>
+          </div>
           {showCompactIndicator ? (
             <div className="settings-card">
               <div className="settings-card-head">

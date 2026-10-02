@@ -4,6 +4,9 @@ use crate::salary_history;
 
 #[tauri::command]
 pub(crate) fn record_salary_day(date: String, amount: f64) -> Result<(), String> {
+    if crate::benchmark::enabled() {
+        return Ok(());
+    }
     salary_history::record_salary_day(&date, amount).map(|_| ())
 }
 

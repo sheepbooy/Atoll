@@ -49,10 +49,30 @@ pub(crate) fn submit_blocking_permission_request(
     response_style: PermissionResponseStyle,
 ) -> Result<Value, String> {
     let request_id = uuid::Uuid::new_v4().to_string();
+    let evidence_received_at = crate::agent_events::now_ms();
+    let evidence_payload = payload.clone();
     let request = build_request(request_id.clone(), payload, iso_timestamp_now())
         .ok_or_else(|| "Unsupported hook event".to_string())?;
     let state = app.state::<AppState>();
     let agent_label = agent_resolved_label(&request.agent);
+    let agent_key = match request.agent {
+        AgentKind::Claude => "claude",
+        AgentKind::Codex => "codex",
+        AgentKind::Cursor => "cursor",
+        AgentKind::Zcode => "zcode",
+        AgentKind::Gemini => "gemini",
+        AgentKind::Opencode => "opencode",
+        AgentKind::Other => "other",
+    };
+    crate::agent_events::record(
+        &app,
+        agent_key,
+        hook_event_name,
+        &evidence_payload,
+        true,
+        crate::agent_events::generation(&app, agent_key),
+        evidence_received_at,
+    );
 
     // Persistent rules run before the session auto-approve list so a deny
     // rule can still block an auto-approved session.

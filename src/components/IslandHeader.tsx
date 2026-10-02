@@ -2,6 +2,8 @@
 // agent tabs, notch spacer, lyrics marquee, compact metrics row, and the
 // expanded chrome (token counter, quick actions, more menu). Extracted
 // verbatim from App.tsx.
+import { AgentTheater } from "./AgentTheater";
+import type { TheaterScene } from "../hooks/useAgentTheater";
 import type { RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -50,6 +52,8 @@ import type { PermissionRequest } from "../tauri";
 import type { CompactHeaderLayout } from "../compactLayout";
 
 interface IslandHeaderProps {
+  energySaving?: boolean;
+  theater?: TheaterScene | null;
   t: ReturnType<typeof useTranslation>["t"];
   phase: string;
   panelView: PanelView;
@@ -310,17 +314,17 @@ export function IslandHeader(props: IslandHeaderProps) {
             data-no-drag
           >
             <span className="atoll-indicator-inner">
-              <HeaderLogo
+              {props.theater && (isMicro || !showCollapsedActivityStrip) && panelView.kind === "home" ? <AgentTheater scene={props.theater} capacity={1} /> : <HeaderLogo
                 display={collapsedHeaderLogo}
                 size={menuBarLogoSize}
                 idleIntervalSec={idleIntervalMin * 60}
                 idleDurationSec={idleDurationMin * 60}
-                motionPaused={isPresentationTransition}
+                motionPaused={isPresentationTransition || props.energySaving === true}
                 reaction={logoReaction}
                 reactionKey={logoReactionKey}
                 stashLevel={logoStashLevel}
                 mouthOpen={dragOverIsland}
-              />
+              />}
             </span>
           </span>
         </span>
@@ -331,7 +335,8 @@ export function IslandHeader(props: IslandHeaderProps) {
               title={online ? t("header.listening") : t("header.offline")}
             />
             {!isMicro ? (
-              <CompactSessionStack
+              props.theater ? <AgentTheater scene={props.theater} capacity={Math.max(1, compactLeftSessions.length)} /> : <CompactSessionStack
+                animated={!props.energySaving}
                 sessions={compactLeftSessions}
                 overflowCount={compactLeftOverflow}
                 activeRequest={activeRequest}
@@ -522,6 +527,7 @@ export function IslandHeader(props: IslandHeaderProps) {
           ) : null}
           {showCompactHeaderMetrics && compactRightSessions.length > 0 ? (
             <CompactSessionStack
+              animated={!props.energySaving}
               placement="right"
               sessions={compactRightSessions}
               overflowCount={compactRightOverflow}
@@ -543,7 +549,7 @@ export function IslandHeader(props: IslandHeaderProps) {
               displayMode={foldedCounterDisplay}
               salary={salary}
               onCompactWidthChange={isMicro ? undefined : onCompactCounterWidthChange}
-              suppressAnimations={isPresentationTransition}
+              suppressAnimations={isPresentationTransition || props.energySaving === true}
               sessionCount={sessionsCount}
               maxCompactIcons={maxCompactIcons}
               compactTokenLevel={
@@ -596,6 +602,7 @@ export function IslandHeader(props: IslandHeaderProps) {
             }
             usage={dailyTokens}
             variant="expanded"
+            suppressAnimations={isPresentationTransition || props.energySaving === true}
             displayMode={expandedCounterDisplay}
             salary={salary}
             onClick={handleOpenTokensFromCounter}

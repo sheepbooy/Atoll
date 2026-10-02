@@ -2,6 +2,16 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { DEFAULT_GLOBAL_SHORTCUTS } from "../shortcuts";
 import { isTauriRuntime } from "./runtime";
+export type EnergyMode = "auto" | "full";
+export async function getEnergyMode(): Promise<EnergyMode> {
+  const value = isTauriRuntime() ? await invoke<string>("get_energy_mode") : localStorage.getItem("atoll.energyMode");
+  return value === "full" ? "full" : "auto";
+}
+export async function setEnergyMode(mode: EnergyMode): Promise<EnergyMode> {
+  if (isTauriRuntime()) return invoke<EnergyMode>("set_energy_mode", { mode });
+  localStorage.setItem("atoll.energyMode", mode);
+  return mode;
+}
 export type ApprovalNoticeMode = "interrupt" | "notify";
 
 const APPROVAL_NOTICE_MODES: ApprovalNoticeMode[] = ["interrupt", "notify"];

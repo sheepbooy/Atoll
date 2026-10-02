@@ -394,6 +394,8 @@ pub(crate) struct AppState {
     pub(crate) token_history_dirty: AtomicBool,
     pub(crate) transcript_cache: Mutex<TranscriptCache>,
     /// Whether the Now Playing media card is shown in the idle island.
+    pub(crate) hook_observations: Mutex<HashMap<String, crate::agent_events::HookObservation>>,
+    pub(crate) media_state: Mutex<crate::shared_media::MediaSnapshot>,
     pub(crate) media_card_enabled: Mutex<bool>,
     /// Whether the expanded island grows the now-playing artwork into a frosted backdrop.
     pub(crate) artwork_backdrop_enabled: Mutex<bool>,

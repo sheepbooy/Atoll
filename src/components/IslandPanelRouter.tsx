@@ -113,6 +113,8 @@ import type { AtollReaction } from "../AtollLogo";
 import type { BluetoothDeviceBattery, ShortcutAction } from "../tauri";
 
 interface IslandPanelRouterProps {
+  energyMode?: "auto" | "full";
+  onChangeEnergyMode?: (mode: "auto" | "full") => void;
   presentationReady: boolean;
   panelView: PanelView;
   sessions: SessionSummary[];
@@ -683,6 +685,8 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
     if (panelView.page === "island") {
       return (
         <IslandSettingsView
+          energyMode={props.energyMode}
+          onChangeEnergyMode={props.onChangeEnergyMode}
           maxCompactIcons={maxCompactIcons}
           maxCompactIconLimit={maxCompactIconLimit}
           onChangeMaxCompactIcons={(nextValue) =>

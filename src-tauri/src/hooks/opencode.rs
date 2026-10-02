@@ -37,6 +37,7 @@ pub(crate) fn opencode_hook_status(app: &AppHandle) -> HookStatus {
     if capture::force_hook_uninstalled() {
         let script_path = resolve_hook_script_path(app, OPENCODE_PLUGIN_SCRIPT).unwrap_or_default();
         return HookStatus {
+            observation: Default::default(),
             installed: false,
             script_found: !script_path.is_empty() && std::path::Path::new(&script_path).exists(),
             settings_path: opencode_plugins_dir()
@@ -53,6 +54,7 @@ pub(crate) fn opencode_hook_status(app: &AppHandle) -> HookStatus {
     let deployed = opencode_plugin_deployed_path().unwrap_or_default();
     let installed = !deployed.as_os_str().is_empty() && is_atoll_opencode_plugin(&deployed);
     HookStatus {
+        observation: Default::default(),
         installed,
         script_found: installed,
         settings_path: opencode_plugins_dir()
@@ -65,6 +67,7 @@ pub(crate) fn opencode_hook_status(app: &AppHandle) -> HookStatus {
         needs_retrust: false,
         competing_hooks: Vec::new(),
     }
+    .with_observation(app, "opencode")
 }
 
 #[tauri::command]
@@ -105,6 +108,7 @@ pub(crate) fn install_opencode_hooks(app: AppHandle) -> Result<HookStatus, Strin
     }
     hook_trust::record_hook_installed("opencode", &dest.to_string_lossy());
 
+    crate::agent_events::reset(&app, "opencode");
     emit_hook_snapshot_changed(&app)?;
 
     Ok(opencode_hook_status(&app))
@@ -120,6 +124,7 @@ pub(crate) fn uninstall_opencode_hooks(app: AppHandle) -> Result<HookStatus, Str
     }
     hook_trust::clear_hook_installed("opencode");
 
+    crate::agent_events::reset(&app, "opencode");
     emit_hook_snapshot_changed(&app)?;
 
     Ok(opencode_hook_status(&app))

@@ -25,6 +25,94 @@ pub struct LyricPayload {
     pub track_artist: Option<String>,
 }
 
+#[derive(Serialize, Deserialize)]
+struct CachedLyrics {
+    key: String,
+    lines: Vec<LyricLine>,
+}
+
+fn cache_path(key: &str) -> Option<std::path::PathBuf> {
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    key.hash(&mut hash);
+    if crate::benchmark::enabled() {
+        if let Some(root) = std::env::var_os("ATOLL_BENCHMARK_LYRICS_CACHE") {
+            return Some(
+                std::path::PathBuf::from(root).join(format!("{:016x}.json", hash.finish())),
+            );
+        }
+    }
+    dirs::home_dir().map(|p| {
+        p.join(".atoll/lyrics-cache")
+            .join(format!("{:016x}.json", hash.finish()))
+    })
+}
+fn read_cache(path: &std::path::Path, key: &str) -> Option<Vec<LyricLine>> {
+    let cached: CachedLyrics = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
+    (cached.key == key && !cached.lines.is_empty()).then_some(cached.lines)
+}
+pub(crate) fn fetch_cached_lyrics(
+    key: &str,
+    track: &crate::NowPlayingTrack,
+) -> Option<Vec<LyricLine>> {
+    let path = cache_path(key);
+    if let Some(ref p) = path {
+        if let Some(lines) = read_cache(p, key) {
+            return Some(lines);
+        }
+    }
+    let artist = track.artist.as_deref().unwrap_or("");
+    let title = track.title.as_deref().unwrap_or("");
+    if title.is_empty() && artist.is_empty() {
+        return None;
+    }
+    let lines = fetch_lyrics(artist, title, track.album.as_deref(), track.duration)?;
+    if lines.is_empty() {
+        return None;
+    }
+    if let Some(path) = path {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+            let temp = path.with_extension("tmp");
+            if let Ok(data) = serde_json::to_vec(&CachedLyrics {
+                key: key.into(),
+                lines: lines.clone(),
+            }) {
+                if std::fs::write(&temp, data).is_ok() {
+                    let _ = std::fs::rename(&temp, &path);
+                }
+            }
+            let mut files: Vec<_> = std::fs::read_dir(parent)
+                .into_iter()
+                .flatten()
+                .filter_map(Result::ok)
+                .filter(|f| f.path().extension().is_some_and(|ext| ext == "json"))
+                .collect();
+            files.sort_by_key(|f| f.metadata().and_then(|m| m.modified()).ok());
+            let excess = files.len().saturating_sub(256);
+            for file in files.into_iter().take(excess) {
+                let _ = std::fs::remove_file(file.path());
+            }
+        }
+    }
+    Some(lines)
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+    #[test]
+    fn corrupt_or_colliding_cache_does_not_reuse_wrong_lyrics() {
+        let p = std::env::temp_dir().join(format!("atoll-lyrics-{}.json", uuid::Uuid::new_v4()));
+        std::fs::write(&p, r#"{"key":"a","lines":[{"timeMs":0,"text":"hello"}]}"#).unwrap();
+        assert!(read_cache(&p, "b").is_none());
+        assert_eq!(read_cache(&p, "a").unwrap()[0].text, "hello");
+        std::fs::write(&p, "broken").unwrap();
+        assert!(read_cache(&p, "a").is_none());
+        let _ = std::fs::remove_file(p);
+    }
+}
+
 const LRCLIB_GET: &str = "https://lrclib.net/api/get";
 const LRCLIB_SEARCH: &str = "https://lrclib.net/api/search";
 

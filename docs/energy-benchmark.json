@@ -1,0 +1,100 @@
+[
+  {
+    "scene": "idle",
+    "mode": "full",
+    "warmupSeconds": 30,
+    "sampleSeconds": 60,
+    "meanCpuPercent": 0.893,
+    "minCpuPercent": 0.2,
+    "maxCpuPercent": 4.4,
+    "adapterMeanCpuPercent": 0,
+    "processMeans": {
+      "61300": 0.425,
+      "61304": 0.177,
+      "61305": 0.292,
+      "61307": 0.0
+    }
+  },
+  {
+    "scene": "idle",
+    "mode": "auto",
+    "warmupSeconds": 30,
+    "sampleSeconds": 60,
+    "meanCpuPercent": 0.302,
+    "minCpuPercent": 0.2,
+    "maxCpuPercent": 4.4,
+    "adapterMeanCpuPercent": 0,
+    "processMeans": {
+      "61627": 0.237,
+      "61630": 0.01,
+      "61631": 0.055,
+      "61632": 0.0
+    }
+  },
+  {
+    "scene": "working",
+    "mode": "full",
+    "warmupSeconds": 30,
+    "sampleSeconds": 60,
+    "meanCpuPercent": 3.888,
+    "minCpuPercent": 0.1,
+    "maxCpuPercent": 9.4,
+    "adapterMeanCpuPercent": 0,
+    "processMeans": {
+      "61806": 0.988,
+      "61809": 1.095,
+      "61810": 1.805,
+      "61811": 0.0
+    }
+  },
+  {
+    "scene": "working",
+    "mode": "auto",
+    "warmupSeconds": 30,
+    "sampleSeconds": 60,
+    "meanCpuPercent": 0.367,
+    "minCpuPercent": 0.2,
+    "maxCpuPercent": 6.9,
+    "adapterMeanCpuPercent": 0,
+    "processMeans": {
+      "62023": 0.247,
+      "62026": 0.035,
+      "62027": 0.085,
+      "62028": 0.0
+    }
+  },
+  {
+    "scene": "media",
+    "mode": "full",
+    "warmupSeconds": 30,
+    "sampleSeconds": 60,
+    "meanCpuPercent": 0.818,
+    "minCpuPercent": 0.2,
+    "maxCpuPercent": 3.6,
+    "adapterMeanCpuPercent": 0.075,
+    "processMeans": {
+      "62204": 0.413,
+      "62209": 0.142,
+      "62210": 0.263,
+      "62211": 0.0,
+      "62213": 0.075
+    }
+  },
+  {
+    "scene": "media",
+    "mode": "auto",
+    "warmupSeconds": 30,
+    "sampleSeconds": 60,
+    "meanCpuPercent": 0.318,
+    "minCpuPercent": 0.2,
+    "maxCpuPercent": 4.5,
+    "adapterMeanCpuPercent": 0.075,
+    "processMeans": {
+      "62413": 0.248,
+      "62416": 0.013,
+      "62417": 0.057,
+      "62418": 0.0,
+      "62420": 0.075
+    }
+  }
+]

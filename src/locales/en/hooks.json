@@ -17,7 +17,8 @@
     "connected": "Connected",
     "needsRetrust": "Needs re-trust",
     "shimMissing": "Shim missing",
-    "notInstalled": "Not installed"
+    "notInstalled": "Not installed",
+    "configured": "Configuration installed"
   },
   "summary": {
     "notConnected": "Not connected",
@@ -54,27 +55,27 @@
   },
   "checklist": {
     "claudeTitle": "Claude Desktop checklist",
-    "claudeNode": "Install Node.js on this machine before installing hooks.",
+    "claudeNode": "Atoll uses the bundled Node.js runtime when no system runtime is available.",
     "claudePermissions": "In Claude Desktop, set permissions to Ask permissions.",
     "claudeRestart": "Quit and reopen Claude Desktop after installing hooks.",
     "claudeVerify": "Trigger one Bash permission in a local Code session to verify.",
     "codexTitle": "Codex Desktop checklist",
-    "codexNode": "Install Node.js on this machine before installing hooks.",
+    "codexNode": "Atoll uses the bundled Node.js runtime when no system runtime is available.",
     "codexTrust": "In Codex Desktop or CLI, open /hooks and trust the Atoll hook.",
     "codexRestart": "Quit and reopen Codex Desktop after installing hooks.",
     "codexVerify": "Trigger one shell permission in a local session to verify.",
     "cursorTitle": "Cursor checklist",
-    "cursorNode": "Install Node.js on this machine before installing hooks.",
+    "cursorNode": "Atoll uses the bundled Node.js runtime when no system runtime is available.",
     "cursorSettings": "In Cursor, open Settings → Hooks and confirm Atoll hooks are loaded.",
     "cursorRestart": "Restart Cursor after installing hooks.",
     "cursorVerify": "Send a message in Agent or Ask mode to verify.",
     "zcodeTitle": "ZCode checklist",
-    "zcodeNode": "Install Node.js on this machine before installing hooks.",
+    "zcodeNode": "Atoll uses the bundled Node.js runtime when no system runtime is available.",
     "zcodeEnable": "Enabling Atoll hooks also enables ZCode's configuration-file hook runner (hooks.enabled).",
     "zcodeRestart": "Quit and reopen ZCode after installing hooks.",
     "zcodeVerify": "Trigger one shell permission in a local session to verify.",
     "geminiTitle": "Gemini CLI checklist",
-    "geminiNode": "Install Node.js on this machine before installing hooks.",
+    "geminiNode": "Atoll uses the bundled Node.js runtime when no system runtime is available.",
     "geminiTrust": "In Gemini CLI, open /hooks and trust the Atoll hook for your project.",
     "geminiRestart": "Restart Gemini CLI after installing hooks.",
     "geminiVerify": "Trigger one shell command in a local session to verify; approve and deny once from Atoll.",
@@ -84,7 +85,7 @@
   },
   "warning": {
     "scriptMissing": "Hook script missing from the app bundle. Reinstall Atoll if install fails.",
-    "nodeNotFound": "Node.js not found at the configured hook path. Install Node.js, then reinstall hooks.",
+    "nodeNotFound": "The configured Hook runtime is unavailable. Reinstall the Hook to use Atoll’s bundled Node.js; a separate Node installation is only needed if no bundled runtime is present.",
     "devBuildPath": "Hook points to a dev build path. Reinstall hooks from Atoll.app, then trust again in Codex."
   },
   "competing": {
@@ -113,5 +114,19 @@
     "uninstallPartial": "Could not uninstall hooks for: {{agents}}.",
     "uninstallAllFailed": "Hook uninstall failed: {{message}}",
     "cleanupFailed": "Hook cleanup failed: {{message}}"
+  },
+  "verify": {
+    "start": "Verify connection",
+    "retry": "Verify again",
+    "installed": "Configuration installed",
+    "notInstalled": "Install configuration first",
+    "waiting": "Waiting for a real event…",
+    "connected": "Connection verified",
+    "observerConnected": "Observer connection verified",
+    "permissionSeen": "Permission request received",
+    "timeout": "No new event received in 60 seconds",
+    "steps": "Trust the hook if required, restart {{agent}}, then send a message or trigger a tool. Verification does not start the agent or run commands.",
+    "lastEvent": "Last real event: {{event}} · {{time}}",
+    "lastPermission": "Last permission request: {{time}}"
   }
 }

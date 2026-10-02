@@ -83,7 +83,8 @@ describe("hookHealth", () => {
       nodePath: "/missing/node",
     };
     expect(isHookReady(nodeMissing)).toBe(false);
-    expect(hookStatusIssue(nodeMissing)).toContain("Node.js not found");
+    expect(hookStatusIssue(nodeMissing)).toContain("bundled Node.js");
+    expect(hookStatusIssue(nodeMissing)).toContain("Reinstall the Hook");
   });
 
   it("warns when hook script points at a dev build path", () => {

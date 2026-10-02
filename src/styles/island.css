@@ -1307,3 +1307,38 @@
    the native window hugs the measured header content instead (dynamic wings;
    see the notch section in panel.css), so the .more-menu dropdown is never
    clipped. */
+
+/* Automatic saving leaves live status and finite interaction feedback intact. */
+.island.is-energy-saving *, .island.is-energy-saving *::before, .island.is-energy-saving *::after {
+  animation-play-state: paused !important;
+}
+.island.is-energy-saving .agent-theater * {
+  animation-play-state: running !important;
+}
+.island.is-energy-saving .lyrics-marquee * {
+  animation: none !important;
+  will-change: auto;
+}
+
+/* Finite lifecycle feedback fits the existing mascot slots. */
+.agent-theater { position: relative; }
+.agent-theater .compact-session-overflow {
+  position: absolute; right: -2px; bottom: -3px;
+  min-width: 12px; padding: 0 2px; font-size: 8px; line-height: 10px;
+  background: var(--island-bg, #18181c); border-radius: 5px;
+}
+.agent-theater-actor.is-started { animation: theater-type 240ms ease-in-out 8; }
+.agent-theater-actor.is-subagentStarted { animation: theater-wave 420ms ease-in-out 4; }
+.agent-theater-actor.is-subagentEnded { animation: theater-exit 900ms ease-in 1 forwards; }
+.agent-theater-actor.is-turnEnded { animation: theater-stretch 1.2s ease-in-out 1; }
+@keyframes theater-type { 50% { transform: translateY(-1px) rotate(-4deg); } }
+@keyframes theater-wave { 25% { transform: rotate(-14deg); } 75% { transform: rotate(14deg); } }
+@keyframes theater-exit { to { transform: translateX(8px) scale(.8); opacity: .25; } }
+@keyframes theater-stretch { 50% { transform: translateY(-2px) scale(1.12, 1.04); } }
+@media (prefers-reduced-motion: reduce) {
+  .agent-theater-actor { animation: none !important; }
+  .agent-theater-actor.is-subagentEnded { opacity: .25; }
+}
+
+.agent-theater-actor { position: relative; }
+.theater-keyboard { position: absolute; bottom: -1px; left: 0; width: 18px; height: 6px; }

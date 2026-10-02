@@ -514,6 +514,10 @@ fn agent_hook_status(app: &AppHandle, profile: &AgentHookProfile) -> HookStatus 
         profile.marker,
         profile.key,
     );
+    status.observation = lock_state(&app.state::<AppState>().hook_observations)
+        .get(profile.key)
+        .map(crate::agent_events::HookObservation::evidence)
+        .unwrap_or_default();
     if let Some(post) = profile.post_status {
         post(&mut status, config.as_ref());
     }
@@ -1278,13 +1282,21 @@ pub(crate) fn host_from_claude_transcript_path(path: &str) -> Option<platform::S
 }
 
 pub(crate) fn host_from_codex_transcript_path(path: &str) -> Option<platform::SessionHost> {
+    let desktop_running = path.contains("/.codex/") && platform::is_codex_desktop_app_running();
+    classify_codex_transcript_host(path, desktop_running)
+}
+
+pub(crate) fn classify_codex_transcript_host(
+    path: &str,
+    desktop_running: bool,
+) -> Option<platform::SessionHost> {
     if path.contains("com.openai.codex")
         || (path.contains("/Application Support/") && path.contains("codex"))
     {
         return Some(platform::SessionHost::CodexDesktop);
     }
     if path.contains("/.codex/sessions/") || path.contains("/.codex/") {
-        if !platform::is_codex_desktop_app_running() {
+        if !desktop_running {
             return Some(platform::SessionHost::CodexCli);
         }
         return None;
@@ -2283,6 +2295,7 @@ fn build_hook_status(
     let needs_retrust = installed
         && hook_trust::needs_retrust(agent_key, &script_path, configured_script.as_deref());
     HookStatus {
+        observation: Default::default(),
         installed,
         script_found,
         settings_path,

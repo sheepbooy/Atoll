@@ -22,11 +22,63 @@ pub(crate) enum ObserverKind {
     Gemini,
 }
 
+fn observer_agent(kind: ObserverKind) -> &'static str {
+    match kind {
+        ObserverKind::Claude => "claude",
+        ObserverKind::Codex => "codex",
+        ObserverKind::Cursor => "cursor",
+        ObserverKind::Zcode => "zcode",
+        ObserverKind::Gemini => "gemini",
+    }
+}
+fn supported_observer_event(agent: &str, event: &str) -> bool {
+    match agent {
+        "cursor" => matches!(
+            event,
+            "sessionStart"
+                | "sessionEnd"
+                | "beforeSubmitPrompt"
+                | "afterAgentResponse"
+                | "afterAgentThought"
+                | "preToolUse"
+                | "postToolUse"
+                | "postToolUseFailure"
+                | "subagentStart"
+                | "subagentStop"
+                | "stop"
+        ),
+        "gemini" => matches!(
+            event,
+            "AfterAgent" | "SessionStart" | "SessionEnd" | "Notification" | "AfterTool"
+        ),
+        "claude" => matches!(
+            event,
+            "PostToolUse"
+                | "PostToolUseFailure"
+                | "Stop"
+                | "StopFailure"
+                | "SubagentStart"
+                | "SubagentStop"
+        ),
+        "codex" => matches!(
+            event,
+            "PostToolUse" | "Stop" | "SubagentStart" | "SubagentStop"
+        ),
+        "zcode" => matches!(
+            event,
+            "PostToolUse" | "PostToolUseFailure" | "Stop" | "SessionStart" | "UserPromptSubmit"
+        ),
+        _ => false,
+    }
+}
+
 pub(crate) struct ObserverJob {
     pub(crate) app: AppHandle,
     pub(crate) hook_event_name: String,
     pub(crate) payload: Value,
     pub(crate) kind: ObserverKind,
+    pub(crate) generation: u64,
+    pub(crate) received_at: u64,
 }
 
 pub(crate) struct ConnectionGuard;
@@ -43,6 +95,10 @@ pub(crate) fn start_observer_worker() {
         thread::spawn(move || {
             while let Ok(job) = receiver.recv() {
                 let event = job.hook_event_name.clone();
+                let evidence_app = job.app.clone();
+                let evidence_payload = job.payload.clone();
+                let expected_generation = job.generation;
+                let agent = observer_agent(job.kind);
                 let result = match job.kind {
                     ObserverKind::Claude => {
                         process_claude_observer_event(job.app, job.hook_event_name, job.payload)
@@ -60,6 +116,17 @@ pub(crate) fn start_observer_worker() {
                         process_gemini_observer_event(job.app, job.hook_event_name, job.payload)
                     }
                 };
+                if result.is_ok() && supported_observer_event(agent, &event) {
+                    crate::agent_events::record(
+                        &evidence_app,
+                        agent,
+                        &event,
+                        &evidence_payload,
+                        false,
+                        expected_generation,
+                        job.received_at,
+                    );
+                }
                 if let Err(error) = result {
                     eprintln!("Atoll {event} observer failed: {error}");
                 }
@@ -69,7 +136,9 @@ pub(crate) fn start_observer_worker() {
     });
 }
 
-pub(crate) fn enqueue_observer(job: ObserverJob) -> Result<(), String> {
+pub(crate) fn enqueue_observer(mut job: ObserverJob) -> Result<(), String> {
+    job.received_at = crate::agent_events::now_ms();
+    job.generation = crate::agent_events::generation(&job.app, observer_agent(job.kind));
     start_observer_worker();
     OBSERVER_SENDER
         .get()

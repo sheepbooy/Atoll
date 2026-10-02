@@ -15,6 +15,7 @@ import {
   deadCompetingHooks,
   type HookAgentKey,
 } from "../hookHealth";
+import { HookConnectionCheck } from "./HookConnectionCheck";
 import i18n from "../i18n";
 
 export interface HookMenuAgent {
@@ -118,7 +119,7 @@ export function HooksView({
                     {ready
                       ? needsRetrust
                         ? t("status.needsRetrust")
-                        : t("status.connected")
+                        : t("status.configured")
                       : installed
                         ? t("status.shimMissing")
                         : t("status.notInstalled")}
@@ -240,6 +241,7 @@ export function HooksView({
                     </button>
                   </div>
                 ) : null}
+                <HookConnectionCheck agent={agent.key} installed={installed && !scriptMissing} />
                 <div className="settings-hook-actions">
                   {installed ? (
                     <button

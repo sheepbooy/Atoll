@@ -246,7 +246,7 @@ fn host_from_claude_transcript_path_patterns() {
 #[test]
 fn host_from_codex_transcript_path_patterns() {
     assert_eq!(
-        host_from_codex_transcript_path("/Users/me/.codex/sessions/2026/06/23/rollout.jsonl"),
+        classify_codex_transcript_host("/Users/me/.codex/sessions/2026/06/23/rollout.jsonl", false),
         Some(platform::SessionHost::CodexCli),
     );
     assert_eq!(
@@ -254,6 +254,10 @@ fn host_from_codex_transcript_path_patterns() {
             "/Users/me/Library/Application Support/com.openai.codex/sessions/abc.jsonl"
         ),
         Some(platform::SessionHost::CodexDesktop),
+    );
+    assert_eq!(
+        classify_codex_transcript_host("/Users/me/.codex/sessions/rollout.jsonl", true),
+        None
     );
     assert_eq!(
         host_from_codex_transcript_path("/some/random/path/transcript.jsonl"),

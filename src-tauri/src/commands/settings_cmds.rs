@@ -110,3 +110,31 @@ pub(crate) fn set_subagent_retention(state: State<'_, AppState>, minutes: u64) -
     persist_settings(None, Some(clamped_minutes));
     secs
 }
+
+#[tauri::command]
+pub(crate) fn get_energy_mode() -> String {
+    if crate::benchmark::enabled() {
+        return if std::env::var("ATOLL_BENCHMARK_MODE").ok().as_deref() == Some("full") {
+            "full".into()
+        } else {
+            "auto".into()
+        };
+    }
+    atoll_settings_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| {
+            v.get("energyMode")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned)
+        })
+        .filter(|s| s == "full")
+        .unwrap_or_else(|| "auto".into())
+}
+
+#[tauri::command]
+pub(crate) fn set_energy_mode(mode: String) -> String {
+    let mode = if mode == "full" { "full" } else { "auto" };
+    persist_settings_value("energyMode", serde_json::Value::from(mode));
+    mode.into()
+}

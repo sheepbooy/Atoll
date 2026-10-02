@@ -51,6 +51,8 @@ pub(crate) fn route_claude_request(
                 hook_event_name,
                 payload,
                 kind: ObserverKind::Claude,
+                generation: 0,
+                received_at: 0,
             })?;
             Ok(json!({}))
         }
@@ -146,6 +148,8 @@ pub(crate) fn route_codex_request(
                 hook_event_name,
                 payload,
                 kind: ObserverKind::Codex,
+                generation: 0,
+                received_at: 0,
             })?;
             Ok(json!({}))
         }
@@ -239,6 +243,8 @@ pub(crate) fn route_zcode_request(
                 hook_event_name,
                 payload,
                 kind: ObserverKind::Zcode,
+                generation: 0,
+                received_at: 0,
             })?;
             Ok(json!({}))
         }
@@ -328,6 +334,8 @@ pub(crate) fn route_gemini_request(
                 hook_event_name,
                 payload,
                 kind: ObserverKind::Gemini,
+                generation: 0,
+                received_at: 0,
             })?;
             Ok(json!({}))
         }
@@ -593,6 +601,8 @@ pub(crate) fn route_cursor_request(
         hook_event_name: hook_event_name.clone(),
         payload,
         kind: ObserverKind::Cursor,
+        generation: 0,
+        received_at: 0,
     })?;
 
     match hook_event_name.as_str() {
