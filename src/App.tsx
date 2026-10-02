@@ -675,11 +675,15 @@ export function App() {
     collapsedMode,
     compactHeaderLayout,
     compactLeftPaneWidth,
+    onCompactCounterWidthChange,
   } = useCompactLayout({
     notchMetrics,
     sessions,
     maxCompactIcons,
     activeSessionTokenTotal,
+    activeSessionCostTotal,
+    foldedCounterDisplay,
+    salarySettings,
     pendingCount: snapshot.pendingCount,
     nowPlayingTrack,
     compactIndicator,
@@ -1142,6 +1146,7 @@ export function App() {
     nowPlayingTrack={nowPlayingTrack}
     playbackPosition={playbackPosition}
     compactHeaderLayout={compactHeaderLayout}
+    onCompactCounterWidthChange={onCompactCounterWidthChange}
     activeSessionTokens={activeSessionTokens}
     activeSessionTokenTotal={activeSessionTokenTotal}
     activeSessionCostTotal={activeSessionCostTotal}

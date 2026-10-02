@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { computeCollapsedWindowWidth } from "./compactLayout";
+import { computeCompactPresentation, estimateCompactCounterWidths } from "./compactLayout";
 import { markHookAgentConfigured } from "./hookAgentsConfigured";
 import {
   IDLE_COLLAPSE_DELAY_MS,
@@ -311,13 +311,14 @@ describe("App", () => {
       cacheCreationTokens: 0,
     };
     const noNotch = { hasNotch: false, width: 0, height: 0 };
-    const expectedCompactWidth = computeCollapsedWindowWidth(
+    const expectedCompactWidth = computeCompactPresentation(
       noNotch,
       1,
       3,
       lowTokens.inputTokens + lowTokens.outputTokens,
       0,
-    );
+      { counterWidths: estimateCompactCounterWidths("tokens", lowTokens.inputTokens + lowTokens.outputTokens) },
+    ).windowWidth;
 
     const baseSnapshot = {
       online: true,

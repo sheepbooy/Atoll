@@ -1,4 +1,8 @@
 import type { NotchMetrics } from "./tauri";
+import type { UsageDisplayMode } from "./displayPrefs";
+import type { SalaryCurrency } from "./salarySettings";
+import { formatCompactCost } from "./costFormat";
+import { formatSalaryEarnings } from "./salaryFormat";
 import {
   estimateTokenDisplayWidth,
   formatCompactTokenCount,
@@ -63,6 +67,78 @@ export interface CompactHeaderLayout {
   rightIconCount: number;
   overflowCount: number;
   tokenCompactLevel: number;
+}
+
+/** Counter body widths by formatting tier, including the inline scope mark.
+ * Salary keeps two decimals; its single tier cannot be abbreviated by layout. */
+export function estimateCompactCounterWidths(
+  mode: UsageDisplayMode,
+  value: number,
+  currency: SalaryCurrency = "¥",
+): number[] {
+  return (mode === "salary" ? [0] : [0, 1, 2]).map((level) => {
+    const text = mode === "salary"
+      ? formatSalaryEarnings(value, currency, 0, value)
+      : mode === "cost"
+        ? formatCompactCost(value, level, value)
+        : formatCompactTokenCount(value, level, value);
+    // Fixed odometer cells already include letter spacing. Reserve 4px for
+    // the mark and 5px for its gap; the salary prefix also has an auto-width
+    // glyph and a small margin, corrected by the mounted body measurement.
+    const prefixExtra = mode === "salary" ? 2 : 0;
+    return Math.ceil(estimateTokenDisplayWidth(text) + 9 + prefixExtra);
+  });
+}
+
+export interface CompactContentBudget {
+  /** Empty when hidden; one tier for salary, three tiers for tokens/cost. */
+  counterWidths?: readonly number[];
+  hasMediaArtwork?: boolean;
+  showMediaIndicator?: boolean;
+  showLyrics?: boolean;
+  batteryRingCount?: number;
+  metricsGap?: number;
+}
+
+function compactExtras(notch: NotchMetrics, pendingCount: number, content: CompactContentBudget) {
+  const gap = content.metricsGap ?? COMPACT_METRICS_GAP;
+  const rings = content.batteryRingCount ?? 0;
+  return {
+    right: (pendingCount > 0 ? COMPACT_PENDING_BADGE_SLOT + gap : 0) +
+      (content.showMediaIndicator && content.hasMediaArtwork ? 18 + gap : 0) +
+      (rings > 0 ? batteryRingsSlot(rings) - COMPACT_METRICS_GAP + gap : 0),
+    middle: content.showLyrics && !notch.hasNotch
+      ? COMPACT_LYRICS_COLUMN + COMPACT_HEADER_GAP
+      : 0,
+  };
+}
+
+function counterWidthAtLevel(tokenTotal: number, level: number, content: CompactContentBudget) {
+  return content.counterWidths !== undefined
+    ? content.counterWidths[level] ?? 0
+    : tokenTotal > 0
+      ? estimateTokenDisplayWidth(formatCompactTokenCount(tokenTotal, level, tokenTotal))
+      : 0;
+}
+
+function compactWingWidths(
+  notch: NotchMetrics,
+  layout: CompactHeaderLayout,
+  tokenTotal: number,
+  pendingCount: number,
+  content: CompactContentBudget,
+) {
+  const outerPadding = compactOuterPadding(notch);
+  const counterWidth = counterWidthAtLevel(tokenTotal, layout.tokenCompactLevel, content);
+  return {
+    left: COMPACT_ATOLL_LOGO_SLOT + COMPACT_LISTENER_SLOT + outerPadding +
+      iconRowWidth(layout.leftIconCount) +
+      (layout.overflowCount > 0 && layout.rightIconCount === 0 ? COMPACT_OVERFLOW_SLOT : 0),
+    right: iconRowWidth(layout.rightIconCount) +
+      (layout.overflowCount > 0 && layout.rightIconCount > 0 ? COMPACT_OVERFLOW_SLOT : 0) +
+      (layout.rightIconCount > 0 && counterWidth > 0 ? content.metricsGap ?? COMPACT_METRICS_GAP : 0) +
+      counterWidth + compactExtras(notch, pendingCount, content).right + outerPadding,
+  };
 }
 
 export function iconRowWidth(count: number): number {
@@ -153,20 +229,22 @@ export function computeCompactHeaderLayout(
   maxCompactIcons: number,
   tokenTotal: number,
   pendingCount: number,
+  content: CompactContentBudget = {},
 ): CompactHeaderLayout {
   const visibleTarget = Math.min(sessionCount, maxCompactIcons);
   const notchWidth = notchMetrics.hasNotch ? notchMetrics.width : 0;
   const outerGaps = notchMetrics.hasNotch
     ? COMPACT_NOTCH_INNER_GAP * 2
     : COMPACT_HEADER_GAP;
-  const contentBudget = COMPACT_MAX_WINDOW_WIDTH - notchWidth - outerGaps;
-  const hasToken = tokenTotal > 0;
-  const pendingExtra =
-    pendingCount > 0 ? COMPACT_PENDING_BADGE_SLOT + COMPACT_METRICS_GAP : 0;
+  const extras = compactExtras(notchMetrics, pendingCount, content);
+  const contentBudget = COMPACT_MAX_WINDOW_WIDTH - notchWidth - outerGaps - extras.middle;
+  const hasToken = content.counterWidths !== undefined
+    ? content.counterWidths.length > 0
+    : tokenTotal > 0;
   const outerPadding = compactOuterPadding(notchMetrics);
   const leftBase =
     COMPACT_ATOLL_LOGO_SLOT + COMPACT_LISTENER_SLOT + outerPadding;
-  const rightColumnBase = outerPadding + pendingExtra;
+  const rightColumnBase = outerPadding + extras.right;
 
   const paneBudgets = notchPaneBudgets(notchMetrics);
 
@@ -174,76 +252,76 @@ export function computeCompactHeaderLayout(
     leftIconCount: 0,
     rightIconCount: 0,
     overflowCount: sessionCount,
-    tokenCompactLevel: 2,
+    tokenCompactLevel: content.counterWidths?.length === 1 ? 0 : 2,
   };
   let bestScore = Number.NEGATIVE_INFINITY;
 
-  for (let left = visibleTarget; left >= 0; left -= 1) {
-    const right = visibleTarget - left;
-    const overflow = sessionCount - left - right;
-    if (overflow < 0) continue;
+  // Include smaller icon counts: optional metrics must fit before we commit
+  // the native width, rather than clipping a too-wide row at the window cap.
+  for (let visible = visibleTarget; visible >= 0; visible -= 1) {
+    for (let left = visible; left >= 0; left -= 1) {
+      const right = visible - left;
+      const overflow = sessionCount - left - right;
+      if (overflow < 0) continue;
 
-    const overflowOnLeft = overflow > 0 && right === 0;
-    const overflowOnRight = overflow > 0 && right > 0;
-    const leftWidth =
-      leftBase +
-      iconRowWidth(left) +
-      (overflowOnLeft ? COMPACT_OVERFLOW_SLOT : 0);
-    const rightIconsWidth =
-      iconRowWidth(right) + (overflowOnRight ? COMPACT_OVERFLOW_SLOT : 0);
-    const sessionTokenGap = compactMetricsSessionTokenGap(right, hasToken);
-    const tokenSpace =
-      contentBudget -
-      leftWidth -
-      rightIconsWidth -
-      sessionTokenGap -
-      rightColumnBase;
+      const overflowOnLeft = overflow > 0 && right === 0;
+      const overflowOnRight = overflow > 0 && right > 0;
+      const leftWidth =
+        leftBase +
+        iconRowWidth(left) +
+        (overflowOnLeft ? COMPACT_OVERFLOW_SLOT : 0);
+      const rightIconsWidth =
+        iconRowWidth(right) + (overflowOnRight ? COMPACT_OVERFLOW_SLOT : 0);
+      const sessionTokenGap = right > 0 && hasToken ? content.metricsGap ?? COMPACT_METRICS_GAP : 0;
+      const tokenSpace =
+        contentBudget -
+        leftWidth -
+        rightIconsWidth -
+        sessionTokenGap -
+        rightColumnBase;
 
-    if (tokenSpace < 20) continue;
+      if (tokenSpace < 0) continue;
 
-    const tokenLevel = pickTokenCompactLevelForWidth(
-      tokenTotal,
-      tokenSpace,
-      sessionCount,
-      maxCompactIcons,
-    );
-    const tokenText = formatCompactTokenCount(tokenTotal, tokenLevel, tokenTotal);
-    const tokenWidth = hasToken ? estimateTokenDisplayWidth(tokenText) : 0;
-    const rightWidth =
-      rightIconsWidth + sessionTokenGap + tokenWidth + rightColumnBase;
+      const tokenLevel = content.counterWidths !== undefined
+        ? Math.max(0, content.counterWidths.findIndex((width) => width <= tokenSpace))
+        : pickTokenCompactLevelForWidth(tokenTotal, tokenSpace, sessionCount, maxCompactIcons);
+      const tokenWidth = counterWidthAtLevel(tokenTotal, tokenLevel, content);
+      const rightWidth =
+        rightIconsWidth + sessionTokenGap + tokenWidth + rightColumnBase;
 
-    if (leftWidth + rightWidth > contentBudget + 0.5) continue;
+      if (leftWidth + rightWidth > contentBudget + 0.5) continue;
 
-    if (paneBudgets) {
-      if (leftWidth + COMPACT_NOTCH_INNER_GAP > paneBudgets.left + 0.5) continue;
-      if (rightWidth + COMPACT_NOTCH_INNER_GAP > paneBudgets.right + 0.5) continue;
-    }
+      if (paneBudgets) {
+        if (leftWidth + COMPACT_NOTCH_INNER_GAP > paneBudgets.left + 0.5) continue;
+        if (rightWidth + COMPACT_NOTCH_INNER_GAP > paneBudgets.right + 0.5) continue;
+      }
 
-    // Notch bars balance the rendered wing widths around the camera housing
-    // (the logo/listener live in the left wing, the token counter in the
-    // right, so equal icon counts alone are not visually symmetric).
-    // No-notch bars keep every session on the left so CSS can space them
-    // evenly in one row. The width penalty stays below one token-compression
-    // tier so readability still wins over perfect symmetry.
-    const sidePreference = notchMetrics.hasNotch
-      ? -Math.abs(leftWidth - rightWidth) * 20 - Math.abs(left - right)
-      : left * 1_000 + right * 100;
-    const score =
-      (left + right) * 1_000_000 -
-      overflow * 100_000 -
-      tokenLevel * 10_000 +
-      (tokenLevel === 0 ? 5_000 : 0) +
-      sidePreference -
-      (notchMetrics.hasNotch && overflowOnLeft ? 30_000 : 0);
+      // Notch bars balance the rendered wing widths around the camera housing
+      // (the logo/listener live in the left wing, the token counter in the
+      // right, so equal icon counts alone are not visually symmetric).
+      // No-notch bars keep every session on the left so CSS can space them
+      // evenly in one row. The width penalty stays below one token-compression
+      // tier so readability still wins over perfect symmetry.
+      const sidePreference = notchMetrics.hasNotch
+        ? -Math.abs(leftWidth - rightWidth) * 20 - Math.abs(left - right)
+        : left * 1_000 + right * 100;
+      const score =
+        (left + right) * 1_000_000 -
+        overflow * 100_000 -
+        tokenLevel * 10_000 +
+        (tokenLevel === 0 ? 5_000 : 0) +
+        sidePreference -
+        (notchMetrics.hasNotch && overflowOnLeft ? 30_000 : 0);
 
-    if (score > bestScore) {
-      bestScore = score;
-      best = {
-        leftIconCount: left,
-        rightIconCount: right,
-        overflowCount: overflow,
-        tokenCompactLevel: tokenLevel,
-      };
+      if (score > bestScore) {
+        bestScore = score;
+        best = {
+          leftIconCount: left,
+          rightIconCount: right,
+          overflowCount: overflow,
+          tokenCompactLevel: tokenLevel,
+        };
+      }
     }
   }
 
@@ -305,6 +383,44 @@ export function computeMaxCompactIconLimit(
   return MIN_MAX_COMPACT_ICONS;
 }
 
+/** One solution supplies both rendered icon placement and native geometry. */
+export function computeCompactPresentation(
+  notchMetrics: NotchMetrics,
+  sessionCount: number,
+  maxCompactIcons: number,
+  tokenTotal: number,
+  pendingCount: number,
+  content: CompactContentBudget = {},
+) {
+  // Only tighten metrics spacing after all available icon-overflow choices
+  // fail. This keeps full salary precision even at maximum wage with 4 rings.
+  const gaps = content.counterWidths !== undefined ? [COMPACT_METRICS_GAP, 4, 1] : [COMPACT_METRICS_GAP];
+  const paneBudgets = notchPaneBudgets(notchMetrics);
+  let result;
+  for (const metricsGap of gaps) {
+    const budget = { ...content, metricsGap };
+    const layout = computeCompactHeaderLayout(
+      notchMetrics, sessionCount, maxCompactIcons, tokenTotal, pendingCount, budget,
+    );
+    const wings = compactWingWidths(notchMetrics, layout, tokenTotal, pendingCount, budget);
+    const notchWidth = notchMetrics.hasNotch ? notchMetrics.width : 0;
+    const outerGaps = notchMetrics.hasNotch ? COMPACT_NOTCH_INNER_GAP * 2 : COMPACT_HEADER_GAP;
+    const contentWidth = notchWidth + wings.left + wings.right + outerGaps +
+      compactExtras(notchMetrics, pendingCount, budget).middle;
+    const distributeWidth = notchMetrics.hasNotch ? 0 : COMPACT_DISTRIBUTE_BUDGET;
+    result = {
+      layout,
+      windowWidth: Math.min(COMPACT_MAX_WINDOW_WIDTH, Math.ceil(contentWidth + distributeWidth)),
+      leftPaneWidth: computeCompactLeftPaneWidth(layout, compactOuterPadding(notchMetrics)),
+      metricsGap,
+    };
+    if (contentWidth <= COMPACT_MAX_WINDOW_WIDTH && (!paneBudgets ||
+      (wings.left + COMPACT_NOTCH_INNER_GAP <= paneBudgets.left &&
+        wings.right + COMPACT_NOTCH_INNER_GAP <= paneBudgets.right))) break;
+  }
+  return result!;
+}
+
 export function computeCollapsedWindowWidth(
   notchMetrics: NotchMetrics,
   sessionCount: number,
@@ -316,68 +432,10 @@ export function computeCollapsedWindowWidth(
   showLyrics = false,
   batteryRingCount = 0,
 ): number {
-  const layout = computeCompactHeaderLayout(
-    notchMetrics,
-    sessionCount,
-    maxCompactIcons,
-    tokenTotal,
-    pendingCount,
-  );
-
-  const overflowOnLeft = layout.overflowCount > 0 && layout.rightIconCount === 0;
-  const overflowOnRight = layout.overflowCount > 0 && layout.rightIconCount > 0;
-  const outerPadding = compactOuterPadding(notchMetrics);
-
-  const leftWidth =
-    COMPACT_ATOLL_LOGO_SLOT +
-    COMPACT_LISTENER_SLOT +
-    outerPadding +
-    iconRowWidth(layout.leftIconCount) +
-    (overflowOnLeft ? COMPACT_OVERFLOW_SLOT : 0);
-
-  const hasToken = tokenTotal > 0;
-  const tokenText = formatCompactTokenCount(
-    tokenTotal,
-    layout.tokenCompactLevel,
-    tokenTotal,
-  );
-  const sessionTokenGap = compactMetricsSessionTokenGap(
-    layout.rightIconCount,
-    hasToken,
-  );
-  const rightWidth =
-    iconRowWidth(layout.rightIconCount) +
-    (overflowOnRight ? COMPACT_OVERFLOW_SLOT : 0) +
-    sessionTokenGap +
-    (hasToken ? estimateTokenDisplayWidth(tokenText) : 0) +
-    (pendingCount > 0 ? COMPACT_PENDING_BADGE_SLOT + COMPACT_METRICS_GAP : 0) +
-    (showMediaIndicator && hasMediaArtwork ? COMPACT_MEDIA_THUMB_SLOT : 0) +
-    batteryRingsSlot(batteryRingCount) +
-    outerPadding;
-
-  const notchWidth = notchMetrics.hasNotch ? notchMetrics.width : 0;
-  const outerGaps = notchMetrics.hasNotch
-    ? COMPACT_NOTCH_INNER_GAP * 2
-    : COMPACT_HEADER_GAP;
-
-  if (notchMetrics.hasNotch) {
-    return Math.min(
-      COMPACT_MAX_WINDOW_WIDTH,
-      Math.ceil(notchWidth + leftWidth + rightWidth + outerGaps),
-    );
-  }
-
-  const contentWidth = leftWidth + rightWidth + outerGaps;
-  // Lyrics occupy a dedicated middle column on non-notched displays.
-  const lyricsWidth = showLyrics && !notchMetrics.hasNotch ? COMPACT_LYRICS_COLUMN : 0;
-  // Ensure space-between always has room to distribute as even spacing between
-  // the logo column and the metrics column on non-notched displays.
-  const minWidth = contentWidth + lyricsWidth + COMPACT_DISTRIBUTE_BUDGET;
-
-  return Math.min(
-    COMPACT_MAX_WINDOW_WIDTH,
-    Math.ceil(Math.max(contentWidth, minWidth)),
-  );
+  return computeCompactPresentation(
+    notchMetrics, sessionCount, maxCompactIcons, tokenTotal, pendingCount,
+    { hasMediaArtwork, showMediaIndicator, showLyrics, batteryRingCount },
+  ).windowWidth;
 }
 
 /** Keep in sync with MICRO_WINDOW_WIDTH in src-tauri/src/lib.rs. */

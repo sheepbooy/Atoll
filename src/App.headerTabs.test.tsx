@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { computeCollapsedWindowWidth } from "./compactLayout";
+import { computeCompactPresentation, estimateCompactCounterWidths } from "./compactLayout";
 import { markHookAgentConfigured } from "./hookAgentsConfigured";
 import {
   IDLE_COLLAPSE_DELAY_MS,
@@ -158,13 +158,14 @@ describe("App", () => {
       cacheCreationTokens: 0,
     };
     const noNotch = { hasNotch: false, width: 0, height: 0 };
-    const expectedCompactWidth = computeCollapsedWindowWidth(
+    const expectedCompactWidth = computeCompactPresentation(
       noNotch,
       1,
       3,
       wideTokens.inputTokens + wideTokens.outputTokens,
       0,
-    );
+      { counterWidths: estimateCompactCounterWidths("tokens", wideTokens.inputTokens + wideTokens.outputTokens) },
+    ).windowWidth;
 
     const baseSnapshot = {
       online: true,
@@ -220,7 +221,9 @@ describe("App", () => {
       (call) => call[0].mode === "compact" && call[0].animate !== false,
     );
     expect(compactAnimatedCalls).toHaveLength(1);
-    const latestWidth = computeCollapsedWindowWidth(noNotch, 1, 3, 0, 0);
+    const latestWidth = computeCompactPresentation(noNotch, 1, 3, 0, 0, {
+      counterWidths: estimateCompactCounterWidths("tokens", 0),
+    }).windowWidth;
     expect(compactAnimatedCalls[0]?.[0].compactWidth).toBe(latestWidth);
     expect(latestWidth).toBeLessThan(expectedCompactWidth);
     expect(container.querySelector(".is-compact")).not.toBeNull();

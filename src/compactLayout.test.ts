@@ -20,6 +20,11 @@ import {
   compactMetricsSessionTokenGap,
   computeCollapsedWindowWidth,
   computeCompactHeaderLayout,
+  computeCompactPresentation,
+  estimateCompactCounterWidths,
+  compactOuterPadding,
+  COMPACT_MEDIA_THUMB_SLOT,
+  COMPACT_LYRICS_COLUMN,
   computeCompactLeftPaneWidth,
   computeCompactLeftWidth,
   computeCompactSideColumnBudget,
@@ -412,5 +417,49 @@ describe("batteryRingsSlot", () => {
     const one = computeCollapsedWindowWidth(NO_NOTCH, 0, 8, 0, 0, false, false, false, 1);
     const two = computeCollapsedWindowWidth(NO_NOTCH, 0, 8, 0, 0, false, false, false, 2);
     expect(two - one).toBe(20 + 4);
+  });
+});
+
+describe("compact counter and media budgets", () => {
+  it.each(["¥", "$", "€"] as const)("reserves a full %s salary even with zero tokens", (currency) => {
+    const salaryWidths = estimateCompactCounterWidths("salary", 1234.56, currency);
+    expect(salaryWidths).toHaveLength(1);
+    const baseline = computeCompactPresentation(NOTCH_14, 1, 8, 0, 0, { counterWidths: [] });
+    const salary = computeCompactPresentation(NOTCH_14, 1, 8, 0, 0, {
+      counterWidths: salaryWidths, hasMediaArtwork: true, showMediaIndicator: true,
+    });
+    expect(salary.layout.tokenCompactLevel).toBe(0);
+    expect(salary.windowWidth - baseline.windowWidth).toBe(salaryWidths[0] + COMPACT_MEDIA_THUMB_SLOT);
+  });
+
+  it.each([NOTCH_14, NO_NOTCH])("fits all fixed metrics before allocating session icons ($hasNotch notch)", (notch) => {
+    const counterWidths = estimateCompactCounterWidths("salary", 239_999_999.99);
+    const presentation = computeCompactPresentation(notch, 12, 8, 0, 3, {
+      counterWidths, hasMediaArtwork: true, showMediaIndicator: true,
+      showLyrics: true, batteryRingCount: 4,
+    });
+    const { layout } = presentation;
+    expect(layout.leftIconCount + layout.rightIconCount).toBeLessThan(8);
+    expect(layout.leftIconCount + layout.rightIconCount + layout.overflowCount).toBe(12);
+    expect(layout.tokenCompactLevel).toBe(0);
+    const left = COMPACT_ATOLL_LOGO_SLOT + COMPACT_LISTENER_SLOT + compactOuterPadding(notch) +
+      iconRowWidth(layout.leftIconCount) + (layout.rightIconCount === 0 ? COMPACT_OVERFLOW_SLOT : 0);
+    const right = iconRowWidth(layout.rightIconCount) + (layout.rightIconCount > 0 ? COMPACT_OVERFLOW_SLOT : 0) +
+      (layout.rightIconCount > 0 ? presentation.metricsGap : 0) + counterWidths[0] +
+      COMPACT_PENDING_BADGE_SLOT + presentation.metricsGap + 18 + presentation.metricsGap +
+      batteryRingsSlot(4) - COMPACT_METRICS_GAP + presentation.metricsGap + compactOuterPadding(notch);
+    const required = left + right + (notch.hasNotch ? notch.width + COMPACT_NOTCH_INNER_GAP * 2
+      : COMPACT_HEADER_GAP * 2 + COMPACT_LYRICS_COLUMN);
+    // Checking required width separately catches a final-width clamp masking overflow.
+    expect(required).toBeLessThanOrEqual(presentation.windowWidth);
+    expect(presentation.windowWidth).toBeLessThanOrEqual(COMPACT_MAX_WINDOW_WIDTH);
+  });
+
+  it("uses cost formatting and includes the zero-valued counter body", () => {
+    const hidden = computeCompactPresentation(NO_NOTCH, 1, 8, 0, 0, { counterWidths: [] });
+    const costWidths = estimateCompactCounterWidths("cost", 0);
+    const cost = computeCompactPresentation(NO_NOTCH, 1, 8, 0, 0, { counterWidths: costWidths });
+    expect(cost.windowWidth - hidden.windowWidth).toBe(costWidths[0]);
+    expect(estimateCompactCounterWidths("cost", 1234.56)[0]).toBeGreaterThan(costWidths[0]);
   });
 });

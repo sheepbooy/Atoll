@@ -45,8 +45,8 @@
   height: 18px;
   border-radius: 5px;
   object-fit: cover;
-  flex-shrink: 1;
-  min-width: 0;
+  flex: 0 0 18px;
+  min-width: 18px;
   overflow: hidden;
 }
 

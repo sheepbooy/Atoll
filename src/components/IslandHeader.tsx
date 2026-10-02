@@ -136,6 +136,7 @@ interface IslandHeaderProps {
   playbackPosition: PlaybackPositionSample | null;
 
   compactHeaderLayout: CompactHeaderLayout;
+  onCompactCounterWidthChange: (width: number, level: number) => void;
   activeSessionTokens: NonNullable<IslandSnapshot["activeSessionTokens"]>;
   activeSessionTokenTotal: number;
   activeSessionCostTotal: number;
@@ -237,6 +238,7 @@ export function IslandHeader(props: IslandHeaderProps) {
     nowPlayingTrack,
     playbackPosition,
     compactHeaderLayout,
+    onCompactCounterWidthChange,
     activeSessionTokens,
     activeSessionTokenTotal,
     activeSessionCostTotal,
@@ -540,11 +542,12 @@ export function IslandHeader(props: IslandHeaderProps) {
               variant={isMicro ? "micro" : "compact"}
               displayMode={foldedCounterDisplay}
               salary={salary}
+              onCompactWidthChange={isMicro ? undefined : onCompactCounterWidthChange}
               suppressAnimations={isPresentationTransition}
               sessionCount={sessionsCount}
               maxCompactIcons={maxCompactIcons}
               compactTokenLevel={
-                foldedCounterDisplay === "salary"
+                isMicro && foldedCounterDisplay === "salary"
                   ? undefined
                   : compactHeaderLayout.tokenCompactLevel
               }

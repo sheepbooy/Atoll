@@ -14,7 +14,9 @@ export function useSalaryTicker(
   settings: SalarySettings | undefined,
   enabled: boolean,
 ): number {
-  const [earned, setEarned] = useState(0);
+  const [earned, setEarned] = useState(() =>
+    enabled && settings ? salaryEarnedToday(settings, new Date()) : 0,
+  );
 
   useEffect(() => {
     if (!enabled || !settings) {

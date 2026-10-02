@@ -337,6 +337,8 @@ export interface TokenCounterProps {
   compactTokenLevel?: number;
   /** Hold digits static during island open/close animations. */
   suppressAnimations?: boolean;
+  /** Compact body measurement excludes tooltips and floating deltas. */
+  onCompactWidthChange?: (width: number, compactLevel: number) => void;
   onClick?: () => void;
 }
 
@@ -352,6 +354,7 @@ export function TokenCounter({
   maxCompactIcons = DEFAULT_ICON_LIMIT,
   compactTokenLevel,
   suppressAnimations = false,
+  onCompactWidthChange,
   onClick,
 }: TokenCounterProps) {
   const { t } = useTranslation("tokens");
@@ -375,13 +378,16 @@ export function TokenCounter({
   const reducedMotion = useReducedMotion();
   const animationsSuppressed = suppressAnimations || reducedMotion;
   const animateDigits = !animationsSuppressed && displayMode !== "cost";
+  const formatKey = `${displayMode}:${compactLevel}:${isSalaryMode ? salarySettings.currency : ""}`;
   const [displayText, setDisplayText] = useState(() => formatValue(effectiveValue));
+  const [publishedFormatKey, setPublishedFormatKey] = useState(formatKey);
   const [energy, setEnergy] = useState<TokenCounterEnergy>("idle");
   const [deltaText, setDeltaText] = useState<string | null>(null);
   const [deltaKey, setDeltaKey] = useState(0);
   const [tooltipVisible, setTooltipVisible] = useState(false);
 
   const wrapRef = useRef<HTMLSpanElement>(null);
+  const bodyRef = useRef<HTMLSpanElement>(null);
   const pointerHoverRef = useRef(false);
   const displayTextRef = useRef(displayText);
   const animatedValueRef = useRef(value);
@@ -441,6 +447,7 @@ export function TokenCounter({
       const rounded =
         displayMode === "salary" ? nextValue : Math.round(nextValue);
       const nextText = formatValue(rounded, compactLevel);
+      if (publishedFormatKey !== formatKey) setPublishedFormatKey(formatKey);
       animatedValueRef.current = nextValue;
       if (nextText !== displayTextRef.current) {
         displayTextRef.current = nextText;
@@ -524,7 +531,27 @@ export function TokenCounter({
       }
       clearTimers();
     };
-  }, [effectiveValue, compactLevel, variant, animationsSuppressed, displayMode]);
+  }, [effectiveValue, compactLevel, variant, animationsSuppressed, displayMode, formatKey]);
+
+  useLayoutEffect(() => {
+    // A formatting change publishes text in the effect above. Do not label
+    // the previous text's width with the new mode/tier while it is pending.
+    if (variant !== "compact" || suppressAnimations || !onCompactWidthChange || publishedFormatKey !== formatKey) return;
+    const body = bodyRef.current;
+    if (!body) return;
+    let lastWidth = 0;
+    const measure = () => {
+      const width = Math.ceil(body.getBoundingClientRect().width);
+      if (width > 0 && width !== lastWidth) {
+        lastWidth = width;
+        onCompactWidthChange(width, compactLevel);
+      }
+    };
+    measure();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    observer?.observe(body);
+    return () => observer?.disconnect();
+  }, [variant, suppressAnimations, onCompactWidthChange, compactLevel, formatKey, publishedFormatKey]);
 
   function handlePointerEnter() {
     pointerHoverRef.current = true;
@@ -584,7 +611,7 @@ export function TokenCounter({
         displayMode={displayMode}
         salary={salarySettings}
       />
-      <span className={`token-counter-body token-counter-body--${variant}`}>
+      <span ref={bodyRef} className={`token-counter-body token-counter-body--${variant}`}>
         <TokenScopeMark variant={variant} displayMode={displayMode} />
         <span
           className={`token-counter${

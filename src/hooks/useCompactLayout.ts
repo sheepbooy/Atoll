@@ -1,21 +1,22 @@
 // Compact/dormant layout derivation: collapsed width and left-pane width with
 // the compact header layout, collapsed mode, and refs the presentation FSM reads.
 // Freeze the rendered header during a resize while keeping native targets live.
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NowPlayingTrack, NotchMetrics } from "../tauri";
 import type { LyricPayload } from "../tauri";
 import {
-  computeCollapsedWindowWidth,
+  computeCompactPresentation,
   computeCompactHeaderLayout,
-  computeCompactLeftPaneWidth,
-  compactOuterPadding,
+  estimateCompactCounterWidths,
   computeMaxCompactIconLimit,
 } from "../compactLayout";
 import {
   microPresentationWidth,
   resolveCollapsedMode,
 } from "../islandLayout";
-import type { CompactIndicatorMode } from "../displayPrefs";
+import type { CompactIndicatorMode, UsageDisplayMode } from "../displayPrefs";
+import type { SalarySettings } from "../salarySettings";
+import { salaryEarnedToday } from "../salaryFormat";
 import type { PresentationPhase } from "../islandPresentation";
 import { setCompactLayout } from "../tauri";
 import type { SessionSummary } from "../tauri/types";
@@ -25,6 +26,9 @@ interface UseCompactLayoutOptions {
   sessions: SessionSummary[];
   maxCompactIcons: number;
   activeSessionTokenTotal: number;
+  activeSessionCostTotal: number;
+  foldedCounterDisplay: UsageDisplayMode;
+  salarySettings: SalarySettings;
   pendingCount: number;
   nowPlayingTrack: NowPlayingTrack | null;
   compactIndicator: CompactIndicatorMode;
@@ -47,6 +51,9 @@ export function useCompactLayout({
   sessions,
   maxCompactIcons,
   activeSessionTokenTotal,
+  activeSessionCostTotal,
+  foldedCounterDisplay,
+  salarySettings,
   pendingCount,
   nowPlayingTrack,
   compactIndicator,
@@ -66,33 +73,49 @@ export function useCompactLayout({
     () => computeMaxCompactIconLimit(notchMetrics),
     [notchMetrics],
   );
-  const computedCollapsedWidth = useMemo(
-    () =>
-      computeCollapsedWindowWidth(
-        notchMetrics,
-        sessions.length,
-        maxCompactIcons,
-        activeSessionTokenTotal,
-        pendingCount,
-        nowPlayingTrack?.artworkBase64 != null,
-        compactIndicator === "media" || compactIndicator === "both",
-        lyricsEnabled && lyricsData != null && lyricsData.lines.length > 0,
-        bluetoothRingCount,
-      ),
-    [
-      notchMetrics,
-      sessions.length,
-      maxCompactIcons,
-      activeSessionTokenTotal,
-      pendingCount,
-      nowPlayingTrack?.artworkBase64,
-      compactIndicator,
-      lyricsEnabled,
-      lyricsData,
-      bluetoothRingCount,
-    ],
-  );
-  const collapsedWindowWidth = computedCollapsedWidth;
+  const counterVisible = sessions.length > 0 &&
+    (compactIndicator === "tokens" || compactIndicator === "both");
+  const estimatedWidths = useMemo(() => estimateCompactCounterWidths(
+    foldedCounterDisplay,
+    foldedCounterDisplay === "salary" ? salaryEarnedToday(salarySettings, new Date())
+      : foldedCounterDisplay === "cost" ? activeSessionCostTotal : activeSessionTokenTotal,
+    salarySettings.currency,
+  ), [foldedCounterDisplay, salarySettings, activeSessionCostTotal, activeSessionTokenTotal, phase]);
+  // Measurements belong to a display format, not to every salary tick. Token
+  // and cost estimates invalidate them when the target's digit width changes.
+  const measurementKey = foldedCounterDisplay === "salary"
+    ? `salary:${salarySettings.currency}:${salarySettings.monthlyWage}:${salarySettings.workDaysPerMonth}:${salarySettings.workHoursPerDay}`
+    : `${foldedCounterDisplay}:${estimatedWidths.join(",")}`;
+  const [measurement, setMeasurement] = useState<{ key: string; widths: Partial<Record<number, number>> } | null>(null);
+  useEffect(() => {
+    setMeasurement((previous) => phase === "compact" && previous?.key === measurementKey ? previous : null);
+  }, [measurementKey, phase]);
+  const onCompactCounterWidthChange = useCallback((width: number, level: number) => {
+    if (phaseRef.current !== "compact" || !counterVisible || width <= 0) return;
+    setMeasurement((previous) => {
+      if (previous?.key === measurementKey && previous.widths[level] === width) return previous;
+      const widths = previous?.key === measurementKey ? previous.widths : {};
+      return { key: measurementKey, widths: { ...widths, [level]: width } };
+    });
+  }, [measurementKey, counterVisible, phaseRef]);
+  const contentBudget = useMemo(() => ({
+    counterWidths: counterVisible ? estimatedWidths.map((estimate, level) => {
+      const measuredWidth = measurement?.key === measurementKey ? measurement.widths[level] : undefined;
+      if (phase !== "compact" || measuredWidth === undefined) return estimate;
+      // Animated token digits can still be shorter than their target. Salary
+      // updates directly, so its measurement can shrink again at midnight.
+      return foldedCounterDisplay === "salary" ? measuredWidth : Math.max(estimate, measuredWidth);
+    }) : [],
+    hasMediaArtwork: nowPlayingTrack?.artworkBase64 != null,
+    showMediaIndicator: compactIndicator === "media" || compactIndicator === "both",
+    showLyrics: lyricsEnabled && lyricsData != null && lyricsData.lines.length > 0,
+    batteryRingCount: bluetoothRingCount,
+  }), [counterVisible, estimatedWidths, phase, measurement, measurementKey, foldedCounterDisplay,
+    nowPlayingTrack?.artworkBase64, compactIndicator, lyricsEnabled, lyricsData, bluetoothRingCount]);
+  const presentation = useMemo(() => computeCompactPresentation(
+    notchMetrics, sessions.length, maxCompactIcons, activeSessionTokenTotal, pendingCount, contentBudget,
+  ), [notchMetrics, sessions.length, maxCompactIcons, activeSessionTokenTotal, pendingCount, contentBudget]);
+  const collapsedWindowWidth = presentation.windowWidth;
   const rawCollapsedMode = resolveCollapsedMode(
     usesMicroIslandRef.current,
     supportsMicroIsland,
@@ -107,23 +130,16 @@ export function useCompactLayout({
   );
   const collapsedMode = rawCollapsedMode;
 
-  const liveHeaderLayout = useMemo(() => computeCompactHeaderLayout(
+  // Micro mode keeps its existing token-only geometry and formatting tiers.
+  const microHeaderLayout = useMemo(() => computeCompactHeaderLayout(
     notchMetrics, sessions.length, maxCompactIcons, activeSessionTokenTotal, pendingCount,
   ), [notchMetrics, sessions.length, maxCompactIcons, activeSessionTokenTotal, pendingCount]);
+  const liveHeaderLayout = phase === "micro" ? microHeaderLayout : presentation.layout;
   const stableHeaderLayoutRef = useRef(liveHeaderLayout);
   const transitioning = phase === "opening" || phase === "closing";
   if (!transitioning) stableHeaderLayoutRef.current = liveHeaderLayout;
   const compactHeaderLayout = transitioning ? stableHeaderLayoutRef.current : liveHeaderLayout;
-
-  const computedLeftPaneWidth = useMemo(
-    () =>
-      computeCompactLeftPaneWidth(
-        liveHeaderLayout,
-        compactOuterPadding(notchMetrics),
-      ),
-    [liveHeaderLayout, notchMetrics],
-  );
-  const compactLeftPaneWidth = computedLeftPaneWidth;
+  const compactLeftPaneWidth = presentation.leftPaneWidth;
 
   collapsedModeRef.current = collapsedMode;
   collapsedWindowWidthRef.current = collapsedWindowWidth;
@@ -131,16 +147,17 @@ export function useCompactLayout({
   microPresentationWidthRef.current = microPresentationWidth(
     sessions.length,
     activeSessionTokenTotal,
-    liveHeaderLayout.tokenCompactLevel,
+    microHeaderLayout.tokenCompactLevel,
   );
 
   useEffect(() => {
     if (typeof document === "undefined") return;
+    document.documentElement.style.setProperty("--compact-metrics-gap", `${presentation.metricsGap}px`);
     document.documentElement.style.setProperty(
       "--compact-left-pane-width",
       `${compactLeftPaneWidth}px`,
     );
-  }, [compactLeftPaneWidth]);
+  }, [compactLeftPaneWidth, presentation.metricsGap]);
 
   useEffect(() => {
     if (collapsedMode === "dormant" || phase === "micro") return;
@@ -158,5 +175,6 @@ export function useCompactLayout({
     collapsedMode,
     compactHeaderLayout,
     compactLeftPaneWidth,
+    onCompactCounterWidthChange,
   };
 }
