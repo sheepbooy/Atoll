@@ -43,9 +43,11 @@ export function useApprovals({
   busyRef.current = busyDecision;
   const [justResolved, setJustResolved] = useState(false);
   const prevPendingRef = useRef(0);
+  const panelRef = useRef(panelView); panelRef.current = panelView;
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      if (panelRef.current.kind === "reminders" || event.isComposing || (event.target as HTMLElement)?.closest?.(".reminder-alert")) return;
       if (busyRef.current) return;
       if (menuOpenRef.current) return;
       if ((event.target as HTMLElement).tagName === "INPUT" || (event.target as HTMLElement).tagName === "TEXTAREA") return;

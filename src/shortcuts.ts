@@ -10,7 +10,7 @@ import type { GlobalShortcutConfig, ShortcutAction } from "./tauri";
 
 export type ShortcutPlatform = "macos" | "other";
 
-export const SHORTCUT_ACTIONS: ShortcutAction[] = ["summon", "approve", "deny", "always"];
+export const SHORTCUT_ACTIONS: ShortcutAction[] = ["summon", "approve", "deny", "always", "reminder"];
 
 /**
  * Defaults match the Rust-side defaults before platform normalization:
@@ -24,6 +24,7 @@ export const DEFAULT_GLOBAL_SHORTCUTS: GlobalShortcutConfig = {
   approve: "CmdOrCtrl+Shift+Y",
   deny: "CmdOrCtrl+Shift+N",
   always: "CmdOrCtrl+Shift+A",
+  reminder: "CmdOrCtrl+Alt+R",
 };
 
 export function shortcutPlatform(platform: string = navigator.platform): ShortcutPlatform {

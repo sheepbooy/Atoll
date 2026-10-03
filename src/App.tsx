@@ -1,3 +1,9 @@
+import { useReminders } from "./hooks/useReminders";
+import { useReminderPresentation } from "./hooks/useReminderPresentation";
+import { RemindersView } from "./RemindersView";
+import { OccurrenceItems } from "./components/ReminderItems";
+import { pendingReminderOccurrences } from "./reminderFormat";
+import { updateReminder } from "./tauri/reminders";
 import {
   useCallback,
   useEffect,
@@ -209,6 +215,16 @@ export function App() {
 
   const [hookHealthHydrated, setHookHealthHydrated] = useState(false);
   const sessions = snapshot.sessions;
+  const { reminders, setReminders, reminderError, dueReminders, clearDueReminders } = useReminders();
+  const reminderHoldRef = useRef(false);
+  const compactUtilityRef = useRef(false);
+  const hasReminders = reminders.reminders.some(r => r.enabled && r.dueAt != null) || reminders.occurrences.some(o => o.completedAt == null);
+  compactUtilityRef.current = hasReminders;
+  const [reminderAlertBusy, setReminderAlertBusy] = useState(false);
+  const reminderAlertBusyRef = useRef(false);
+  const [reminderAlertError, setReminderAlertError] = useState("");
+  const [reminderSaved, setReminderSaved] = useState(false);
+  useEffect(() => { if (!reminderSaved) return; const timer = window.setTimeout(() => setReminderSaved(false), 1800); return () => window.clearTimeout(timer); }, [reminderSaved]);
 
   function refreshClipboardHistory() {
     getClipboardHistory()
@@ -309,6 +325,7 @@ export function App() {
     handleControlMouseDown,
     startWindowDrag,
   } = useIslandPresentation({
+    reminderHoldRef, compactUtilityRef,
     snapshotRef,
     setSnapshot,
     collapsedModeRef,
@@ -380,7 +397,7 @@ export function App() {
       panelViewRef.current.kind === "settings" ||
       panelViewRef.current.kind === "clipboard" ||
       panelViewRef.current.kind === "fileStation" ||
-      panelViewRef.current.kind === "history";
+      panelViewRef.current.kind === "history" || panelViewRef.current.kind === "reminders";
     if (
       settingsExpanded &&
       (phaseRef.current === "expanded" || phaseRef.current === "opening")
@@ -523,6 +540,21 @@ export function App() {
     lastStageResult,
   } = useFileStation();
 
+  const { openReminders, focusToken: reminderFocusToken, reminderAlertOpen, dismissReminderAlert, holdReminderAlert, reminderCreated } = useReminderPresentation({
+    due: dueReminders, clearDue: clearDueReminders, snapshot: reminders,
+    pendingCount: snapshot.pendingCount, dragging: dragOverIsland, phase,
+    panelViewRef, setPanelView, expand: expandIsland, resize: ensureExpandedSettingsPresentation,
+    collapse: collapseIsland, clearIdle: clearIdleTimer, holdRef: reminderHoldRef,
+  });
+  useEffect(() => { if (hasReminders && phase === "micro") void promoteToCompact(); }, [hasReminders, phase]);
+  async function reminderAlertAction(id: string, action: "complete" | "snooze" | "restart", minutes?: number) {
+    if (reminderAlertBusyRef.current) return;
+    reminderAlertBusyRef.current = true; setReminderAlertBusy(true); setReminderAlertError(""); holdReminderAlert();
+    try { const next = await updateReminder(id, action, minutes); setReminders(next); if (!pendingReminderOccurrences(next, Date.now()/1000).length) dismissReminderAlert(); }
+    catch (error) { setReminderAlertError(String(error)); }
+    finally { reminderAlertBusyRef.current = false; setReminderAlertBusy(false); }
+  }
+
   // 文件拖入悬停：展开走快速通道——缩短原生窗口动画，让拖放目标尽快就位，
   // 也让主线程及时响应 WKWebView 拖拽询问（抑制系统顶边多桌面条触发）。
   useEffect(() => {
@@ -556,7 +588,7 @@ export function App() {
   const logoStashLevel = stashBellyLevel(stagedCount);
   const { energyMode, energySaving, changeEnergyMode } = useEnergyMode({
     phase, requestId: snapshot.activeRequest?.id, pendingCount: snapshot.pendingCount,
-    busy: dragOverIsland || phase === "opening" || phase === "closing" || panelExiting || Boolean(stashReaction),
+    busy: reminderAlertOpen || dragOverIsland || phase === "opening" || phase === "closing" || panelExiting || Boolean(stashReaction),
   });
 
   const theater = useAgentTheater(snapshot.pendingCount > 0 || dragOverIsland || panelExiting || Boolean(stashReaction) || phase === "opening" || phase === "closing");
@@ -680,12 +712,14 @@ export function App() {
 
   const {
     maxCompactIconLimit,
+    reminderSmall,
     collapsedWindowWidth,
     collapsedMode,
     compactHeaderLayout,
     compactLeftPaneWidth,
     onCompactCounterWidthChange,
   } = useCompactLayout({
+    hasReminders,
     notchMetrics,
     sessions,
     maxCompactIcons,
@@ -792,7 +826,7 @@ export function App() {
           // storage disabled: the wings just re-measure next session
         }
         const settings = panelViewRef.current.kind !== "home" &&
-          ["settings", "clipboard", "fileStation", "history"].includes(panelViewRef.current.kind);
+          ["settings", "clipboard", "fileStation", "history", "reminders"].includes(panelViewRef.current.kind);
         void syncNativeIslandPresentation({
           mode: "expanded",
           compactWidth: collapsedWindowWidthRef.current,
@@ -1025,6 +1059,7 @@ export function App() {
     subviewSession,
     subviewSubagent,
   } = deriveIslandChromeFlags({
+    hasReminders,
     phase,
     panelView,
     collapsedMode,
@@ -1089,6 +1124,9 @@ export function App() {
           />
         ) : null}
         <IslandHeader
+    reminders={reminders}
+    reminderSmall={reminderSmall}
+    onOpenReminders={openReminders}
     t={t}
     phase={phase}
     panelView={panelView}
@@ -1189,7 +1227,7 @@ export function App() {
     sessionsCount={sessions.length}
         />
 
-        {!isPresentationTransition ? (
+        {!isPresentationTransition && panelView.kind !== "reminders" ? (
           <div
             className="island-panel"
             data-nav={navDirection ?? undefined}
@@ -1334,6 +1372,17 @@ export function App() {
             ) : null}
           </div>
         ) : null}
+        <div className="island-panel reminder-panel-host" style={{ display: isExpandedChrome && panelView.kind === "reminders" ? undefined : "none" }}>
+          <RemindersView snapshot={reminders} onChange={setReminders} focusToken={reminderFocusToken}
+            visible={isExpandedChrome && panelView.kind === "reminders"} onCreated={() => { reminderCreated(); setReminderSaved(true); }}
+            onAutostart={handleOpenSettings} loadError={reminderError}/>
+        </div>
+        {reminderAlertOpen && isExpandedChrome && snapshot.pendingCount === 0 && !dragOverIsland && <div className="reminder-alert" role="region" aria-label={t("reminders.title")} data-no-drag onPointerEnter={holdReminderAlert} onPointerDown={holdReminderAlert} onKeyDown={e => { holdReminderAlert(); e.stopPropagation(); }}>
+          <div className="reminder-alert-head">{t("reminders.title")}<button type="button" onClick={dismissReminderAlert} aria-label={t("reminders.close")}>×</button></div>
+          <OccurrenceItems snapshot={reminders} occurrences={pendingReminderOccurrences(reminders, Date.now()/1000)} busy={reminderAlertBusy} onAction={reminderAlertAction}/>
+          {reminderAlertError && <p className="reminder-alert-error" role="alert">{reminderAlertError}</p>}
+        </div>}
+        {reminderSaved && <div className="stash-toast" role="status" data-no-drag><span className="stash-toast-text">{t("reminders.saved")}</span></div>}
         {updateNotice ? (
           <UpdateNotice version={updateNotice} onDismiss={dismissUpdateNotice} />
         ) : null}

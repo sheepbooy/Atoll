@@ -13,7 +13,8 @@ export type PanelView =
   | { kind: "settings"; page: SettingsPage }
   | { kind: "clipboard" }
   | { kind: "fileStation" }
-  | { kind: "history" };
+  | { kind: "history" }
+  | { kind: "reminders" };
 export type SettingsPage =
   | "main"
   | "hooks"

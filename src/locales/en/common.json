@@ -240,5 +240,81 @@
     "subagentStarted": "Teammate joined",
     "subagentEnded": "Teammate finished",
     "turnEnded": "Turn ended"
+  },
+  "reminders": {
+    "title": "Reminders",
+    "timer": "Timer",
+    "inputLabel": "Create a reminder",
+    "placeholder": "in 20 minutes drink water / tomorrow at 3pm meeting",
+    "inputHint": "Type a time and a title · Enter to create",
+    "create": "Create reminder",
+    "minutes": "{{minutes}} min",
+    "pickDate": "Pick date & time",
+    "titleLabel": "Reminder title",
+    "titlePlaceholder": "What should I remind you about?",
+    "repeatLabel": "Repeat",
+    "date": "Date",
+    "time": "Time",
+    "weekday": "Day of week",
+    "duration": "Minutes",
+    "cancelEdit": "Cancel editing",
+    "done": "Done",
+    "later": "In {{minutes}} min",
+    "again": "Again",
+    "pause": "Pause",
+    "resume": "Resume",
+    "edit": "Edit",
+    "delete": "Delete",
+    "paused": "Paused",
+    "repeating": "Repeats",
+    "snoozed": "Snoozed",
+    "settings": "Reminder settings",
+    "sound": "Reminder sound",
+    "soundDesc": "Play one short sound when reminders are due.",
+    "notifyOnly": "Notifications only",
+    "notifyOnlyDesc": "Keep the island folded when a reminder is due.",
+    "runningHint": "Atoll must be running. Missed reminders appear when you return.",
+    "autostart": "Launch at login →",
+    "pendingCount": "{{count}} due",
+    "close": "Dismiss card",
+    "loadError": "Unable to load reminders",
+    "tabs": {
+      "pending": "Due",
+      "active": "Upcoming",
+      "completed": "Completed"
+    },
+    "empty": {
+      "pending": "All caught up.",
+      "active": "Start a timer or add your next reminder.",
+      "completed": "Completed reminders appear here for 30 days."
+    },
+    "repeat": {
+      "once": "Once",
+      "daily": "Every day",
+      "weekdays": "Weekdays",
+      "weekly": "Weekly",
+      "interval": "Every interval",
+      "timer": "Timer"
+    },
+    "days": {
+      "0": "Monday",
+      "1": "Tuesday",
+      "2": "Wednesday",
+      "3": "Thursday",
+      "4": "Friday",
+      "5": "Saturday",
+      "6": "Sunday"
+    },
+    "errors": {
+      "missingTime": "Add a clear time, e.g. “in 20 minutes drink water”.",
+      "invalidTime": "Choose a valid date and time.",
+      "pastTime": "That time has already passed.",
+      "invalidDuration": "Use a positive duration, up to 366 days.",
+      "titleTooLong": "Keep the title within 500 characters.",
+      "notFound": "This reminder has already changed.",
+      "invalidAction": "This action is unavailable.",
+      "invalidMode": "Choose a valid notification mode."
+    },
+    "saved": "Reminder added"
   }
 }

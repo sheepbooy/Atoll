@@ -47,7 +47,7 @@ export async function setNotificationLanguage(language: string): Promise<void> {
   await invoke("set_notification_language", { language });
 }
 
-export type ShortcutAction = "summon" | "approve" | "deny" | "always";
+export type ShortcutAction = "summon" | "approve" | "deny" | "always" | "reminder";
 
 export interface GlobalShortcutConfig {
   enabled: boolean;
@@ -55,6 +55,7 @@ export interface GlobalShortcutConfig {
   approve: string;
   deny: string;
   always: string;
+  reminder?: string;
 }
 
 /** Per-action error text from the last registration attempt; null/undefined = OK. */
@@ -63,6 +64,7 @@ export interface GlobalShortcutErrors {
   approve?: string | null;
   deny?: string | null;
   always?: string | null;
+  reminder?: string | null;
 }
 
 export interface GlobalShortcutView {

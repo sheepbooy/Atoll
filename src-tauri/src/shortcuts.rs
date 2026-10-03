@@ -39,14 +39,16 @@ pub(crate) enum ShortcutAction {
     Approve,
     Deny,
     Always,
+    Reminder,
 }
 
 impl ShortcutAction {
-    pub(crate) const ALL: [ShortcutAction; 4] = [
+    pub(crate) const ALL: [ShortcutAction; 5] = [
         ShortcutAction::Summon,
         ShortcutAction::Approve,
         ShortcutAction::Deny,
         ShortcutAction::Always,
+        ShortcutAction::Reminder,
     ];
 
     fn accel<'a>(self, config: &'a GlobalShortcutConfig) -> &'a str {
@@ -55,6 +57,7 @@ impl ShortcutAction {
             ShortcutAction::Approve => &config.approve,
             ShortcutAction::Deny => &config.deny,
             ShortcutAction::Always => &config.always,
+            ShortcutAction::Reminder => &config.reminder,
         }
     }
 
@@ -64,6 +67,7 @@ impl ShortcutAction {
             ShortcutAction::Approve => config.approve = value,
             ShortcutAction::Deny => config.deny = value,
             ShortcutAction::Always => config.always = value,
+            ShortcutAction::Reminder => config.reminder = value,
         }
     }
 }
@@ -76,6 +80,7 @@ pub(crate) struct GlobalShortcutConfig {
     pub approve: String,
     pub deny: String,
     pub always: String,
+    pub reminder: String,
 }
 
 impl Default for GlobalShortcutConfig {
@@ -86,6 +91,7 @@ impl Default for GlobalShortcutConfig {
             approve: default_accel(DEFAULT_APPROVE),
             deny: default_accel(DEFAULT_DENY),
             always: default_accel(DEFAULT_ALWAYS),
+            reminder: default_accel("CmdOrCtrl+Alt+R"),
         }
     }
 }
@@ -98,6 +104,7 @@ pub(crate) struct GlobalShortcutErrors {
     pub approve: Option<String>,
     pub deny: Option<String>,
     pub always: Option<String>,
+    pub reminder: Option<String>,
 }
 
 impl GlobalShortcutErrors {
@@ -106,6 +113,7 @@ impl GlobalShortcutErrors {
             || self.approve.is_some()
             || self.deny.is_some()
             || self.always.is_some()
+            || self.reminder.is_some()
     }
 
     fn slot(&mut self, action: ShortcutAction) -> &mut Option<String> {
@@ -114,6 +122,7 @@ impl GlobalShortcutErrors {
             ShortcutAction::Approve => &mut self.approve,
             ShortcutAction::Deny => &mut self.deny,
             ShortcutAction::Always => &mut self.always,
+            ShortcutAction::Reminder => &mut self.reminder,
         }
     }
 
@@ -355,6 +364,7 @@ fn load_config_from_path(path: &Path) -> GlobalShortcutConfig {
         approve: sanitized_accel(settings.get("approve"), &defaults.approve),
         deny: sanitized_accel(settings.get("deny"), &defaults.deny),
         always: sanitized_accel(settings.get("always"), &defaults.always),
+        reminder: sanitized_accel(settings.get("reminder"), &defaults.reminder),
     }
 }
 
@@ -466,6 +476,13 @@ fn dispatch(app: &AppHandle, action: ShortcutAction) {
         ShortcutAction::Approve => resolve_pending(app, crate::Decision::Approved, false),
         ShortcutAction::Deny => resolve_pending(app, crate::Decision::Denied, false),
         ShortcutAction::Always => resolve_pending(app, crate::Decision::Approved, true),
+        ShortcutAction::Reminder => {
+            use tauri::Emitter;
+            if let Some(window) = app.get_webview_window("main") {
+                crate::platform::finish_show_for_approval(&window, app, true);
+            }
+            let _ = app.emit("reminder-create-requested", ());
+        },
     }
 }
 
@@ -622,6 +639,7 @@ mod tests {
             approve: String::new(),
             deny: "Cmd+Shift+N".to_string(),
             always: "Cmd+Alt+A".to_string(),
+            reminder: default_accel("CmdOrCtrl+Alt+R"),
         };
         persist_config_to_path(&path, &config);
         let loaded = load_config_from_path(&path);

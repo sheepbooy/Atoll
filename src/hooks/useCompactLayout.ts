@@ -6,6 +6,7 @@ import type { NowPlayingTrack, NotchMetrics } from "../tauri";
 import type { LyricPayload } from "../tauri";
 import {
   computeCompactPresentation,
+  computeCompactReminderWidth,
   computeCompactHeaderLayout,
   estimateCompactCounterWidths,
   computeMaxCompactIconLimit,
@@ -36,6 +37,7 @@ interface UseCompactLayoutOptions {
   lyricsData: LyricPayload | null;
   /** Devices reporting a battery level (drives ring width + compact mode). */
   bluetoothRingCount: number;
+  hasReminders?: boolean;
   phase: PresentationPhase;
   phaseRef: { current: PresentationPhase };
   usesMicroIslandRef: { current: boolean };
@@ -60,6 +62,7 @@ export function useCompactLayout({
   lyricsEnabled,
   lyricsData,
   bluetoothRingCount,
+  hasReminders = false,
   phase,
   phaseRef,
   usesMicroIslandRef,
@@ -112,9 +115,14 @@ export function useCompactLayout({
     batteryRingCount: bluetoothRingCount,
   }), [counterVisible, estimatedWidths, phase, measurement, measurementKey, foldedCounterDisplay,
     nowPlayingTrack?.artworkBase64, compactIndicator, lyricsEnabled, lyricsData, bluetoothRingCount]);
+  const fittedContent = useMemo(() => ({
+    ...contentBudget,
+    reminderWidth: hasReminders ? computeCompactReminderWidth(notchMetrics, sessions.length,
+      maxCompactIcons, activeSessionTokenTotal, pendingCount, contentBudget) : 0,
+  }), [contentBudget, hasReminders, notchMetrics, sessions.length, maxCompactIcons, activeSessionTokenTotal, pendingCount]);
   const presentation = useMemo(() => computeCompactPresentation(
-    notchMetrics, sessions.length, maxCompactIcons, activeSessionTokenTotal, pendingCount, contentBudget,
-  ), [notchMetrics, sessions.length, maxCompactIcons, activeSessionTokenTotal, pendingCount, contentBudget]);
+    notchMetrics, sessions.length, maxCompactIcons, activeSessionTokenTotal, pendingCount, fittedContent,
+  ), [notchMetrics, sessions.length, maxCompactIcons, activeSessionTokenTotal, pendingCount, fittedContent]);
   const collapsedWindowWidth = presentation.windowWidth;
   const rawCollapsedMode = resolveCollapsedMode(
     usesMicroIslandRef.current,
@@ -128,7 +136,7 @@ export function useCompactLayout({
     // Same for the Bluetooth battery rings: they live in the compact header.
     bluetoothRingCount > 0,
   );
-  const collapsedMode = rawCollapsedMode;
+  const collapsedMode = hasReminders ? "compact" : rawCollapsedMode;
 
   // Micro mode keeps its existing token-only geometry and formatting tiers.
   const microHeaderLayout = useMemo(() => computeCompactHeaderLayout(
@@ -171,6 +179,7 @@ export function useCompactLayout({
 
   return {
     maxCompactIconLimit,
+    reminderSmall: fittedContent.reminderWidth === 32,
     collapsedWindowWidth,
     collapsedMode,
     compactHeaderLayout,

@@ -525,7 +525,7 @@ export function ShortcutSettingsView({
             onChange={onChangeEnabled}
           />
           {SHORTCUT_ACTIONS.map((action) => {
-            const value = config[action];
+            const value = config[action] ?? "";
             const error = errors[action];
             const isRecording = recording === action;
             return (

@@ -67,6 +67,8 @@ interface UseIslandPresentationOptions {
   cancelPanelExit: () => void;
   clearPanelExitTimer: () => void;
   closeMenu: () => void;
+  reminderHoldRef?: { current: boolean };
+  compactUtilityRef?: { current: boolean };
 }
 
 /**
@@ -89,6 +91,8 @@ export function useIslandPresentation({
   cancelPanelExit,
   clearPanelExitTimer,
   closeMenu,
+  reminderHoldRef,
+  compactUtilityRef,
 }: UseIslandPresentationOptions) {
   const reducedMotion = useReducedMotion();
   const initialSupportsMicroIsland = usesMicroIslandSync();
@@ -526,7 +530,7 @@ export function useIslandPresentation({
       hoveringRef.current ||
       cursorOverIslandRef.current ||
       snapshotRef.current.pendingCount > 0 ||
-      isTextEntryActive()
+      isTextEntryActive() || compactUtilityRef?.current
     ) {
       return;
     }
@@ -616,7 +620,7 @@ export function useIslandPresentation({
       panelViewRef.current.kind === "settings" ||
       panelViewRef.current.kind === "clipboard" ||
       panelViewRef.current.kind === "fileStation" ||
-      panelViewRef.current.kind === "history";
+      panelViewRef.current.kind === "history" || panelViewRef.current.kind === "reminders";
     lastNativePresentationKeyRef.current = expandedPresentationKey(
       idleExpanded,
       planExpanded && !settingsExpanded,
@@ -677,6 +681,7 @@ export function useIslandPresentation({
   }
 
   function collapsePresentationMode(): "micro" | "compact" | "dormant" {
+    if (compactUtilityRef?.current) return "compact";
     if (shouldRestInMicro(usesMicroIslandRef.current)) return "micro";
     if (supportsMicroIslandRef.current) return "compact";
     return collapsedModeRef.current;
@@ -847,6 +852,7 @@ export function useIslandPresentation({
   }
 
   function scheduleIdleCollapse() {
+    if (reminderHoldRef?.current) return;
     if (summonHoldRef.current) {
       // A hotkey summon is holding the island open.
       return;

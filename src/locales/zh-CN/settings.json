@@ -135,7 +135,9 @@
     "notSet": "未设置",
     "pressHint": "请按下组合键",
     "needsModifierHint": "请加上 Cmd、Ctrl、Alt 或 Shift 等修饰键",
-    "clearLabel": "清除"
+    "clearLabel": "清除",
+    "reminderLabel": "快速创建提醒",
+    "reminderDesc": "展开提醒并聚焦输入框。"
   },
   "usagePage": {
     "foldedCounterLabel": "折叠计数器",

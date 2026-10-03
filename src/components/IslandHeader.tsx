@@ -1,3 +1,5 @@
+import { CompactReminder } from "./CompactReminder";
+import type { ReminderSnapshot } from "../tauri/reminders";
 // The island header: app logo, collapsed activity strip / subview navs /
 // agent tabs, notch spacer, lyrics marquee, compact metrics row, and the
 // expanded chrome (token counter, quick actions, more menu). Extracted
@@ -52,6 +54,9 @@ import type { PermissionRequest } from "../tauri";
 import type { CompactHeaderLayout } from "../compactLayout";
 
 interface IslandHeaderProps {
+  reminders?: ReminderSnapshot;
+  reminderSmall?: boolean;
+  onOpenReminders?: () => void;
   energySaving?: boolean;
   theater?: TheaterScene | null;
   t: ReturnType<typeof useTranslation>["t"];
@@ -392,6 +397,8 @@ export function IslandHeader(props: IslandHeaderProps) {
               );
             }}
           />
+        ) : panelView.kind === "reminders" ? (
+          <SettingsPageNav onBack={navigateBack} backLabel={t("nav.back")} icon={<Bell size={14}/>} title={t("reminders.title")} />
         ) : panelView.kind === "clipboard" ? (
           <SettingsPageNav
             onBack={navigateBack}
@@ -517,6 +524,7 @@ export function IslandHeader(props: IslandHeaderProps) {
             isMicro ? " is-micro-metrics" : ""
           }${isPresentationTransition ? ` is-${phase}` : ""}`}
         >
+          {props.reminders && props.onOpenReminders && <CompactReminder snapshot={props.reminders} small={props.reminderSmall ?? false} onOpen={props.onOpenReminders}/>}
           {bluetoothBatteryEnabled &&
           !isPresentationTransition &&
           (showCompactHeaderMetrics || isMicro) ? (
@@ -631,6 +639,7 @@ export function IslandHeader(props: IslandHeaderProps) {
         >
           <ClipboardList size={16} />
         </button>
+        <button type="button" className="icon-button" onClick={props.onOpenReminders} onMouseDown={handleControlMouseDown} aria-label={t("reminders.title")} title={t("reminders.title")} tabIndex={isExpandedChrome ? 0 : -1} data-no-drag><Bell size={17}/></button>
         <button
           className="icon-button"
           type="button"

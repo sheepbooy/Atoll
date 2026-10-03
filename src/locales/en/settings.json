@@ -135,7 +135,9 @@
     "notSet": "Not set",
     "pressHint": "Press a key combination",
     "needsModifierHint": "Add a modifier such as Cmd, Ctrl, Alt, or Shift",
-    "clearLabel": "Clear"
+    "clearLabel": "Clear",
+    "reminderLabel": "Quick reminder",
+    "reminderDesc": "Open reminders and focus the input."
   },
   "usagePage": {
     "foldedCounterLabel": "Folded counter",

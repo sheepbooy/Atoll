@@ -40,6 +40,7 @@ mod media_windows;
 mod platform;
 mod pricing;
 mod risk_patterns;
+mod reminders;
 mod salary_history;
 mod shortcuts;
 mod token_history;
@@ -140,6 +141,7 @@ pub fn run() {
     benchmark::ensure_packaged_frontend();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .manage(reminders::ReminderService::default())
         .manage(AppState {
             requests: Mutex::new(Vec::new()),
             session_request_totals: Mutex::new(HashMap::new()),
@@ -267,6 +269,11 @@ pub fn run() {
             get_approval_notice_mode,
             set_approval_notice_mode,
             set_notification_language,
+            reminders::preview_reminder,
+            reminders::get_reminders,
+            reminders::create_reminder,
+            reminders::update_reminder,
+            reminders::set_reminder_settings,
             get_global_shortcut_config,
             set_global_shortcut_config,
             get_artwork_backdrop_enabled,
@@ -358,6 +365,7 @@ pub fn run() {
             } else {
                 benchmark::setup(app.handle());
             }
+            reminders::start(app.handle().clone());
             start_island_hover_monitor(app.handle().clone());
             platform::start_activation_observer(app.handle().clone());
             if let Some(window) = app.get_webview_window("main") {

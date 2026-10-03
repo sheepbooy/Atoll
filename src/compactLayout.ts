@@ -98,13 +98,14 @@ export interface CompactContentBudget {
   showLyrics?: boolean;
   batteryRingCount?: number;
   metricsGap?: number;
+  reminderWidth?: number;
 }
 
 function compactExtras(notch: NotchMetrics, pendingCount: number, content: CompactContentBudget) {
   const gap = content.metricsGap ?? COMPACT_METRICS_GAP;
   const rings = content.batteryRingCount ?? 0;
   return {
-    right: (pendingCount > 0 ? COMPACT_PENDING_BADGE_SLOT + gap : 0) +
+    right: (content.reminderWidth ? content.reminderWidth + gap : 0) + (pendingCount > 0 ? COMPACT_PENDING_BADGE_SLOT + gap : 0) +
       (content.showMediaIndicator && content.hasMediaArtwork ? 18 + gap : 0) +
       (rings > 0 ? batteryRingsSlot(rings) - COMPACT_METRICS_GAP + gap : 0),
     middle: content.showLyrics && !notch.hasNotch
@@ -419,6 +420,23 @@ export function computeCompactPresentation(
         wings.right + COMPACT_NOTCH_INNER_GAP <= paneBudgets.right))) break;
   }
   return result!;
+}
+
+/** Keep a readable time label when it fits; preserve the bell/count on crowded bars. */
+export function computeCompactReminderWidth(
+  notch: NotchMetrics, sessionCount: number, maxIcons: number,
+  tokens: number, pending: number, content: CompactContentBudget = {},
+): number {
+  const full = { ...content, reminderWidth: 104 };
+  const presentation = computeCompactPresentation(notch, sessionCount, maxIcons, tokens, pending, full);
+  const budget = { ...full, metricsGap: presentation.metricsGap };
+  const wings = compactWingWidths(notch, presentation.layout, tokens, pending, budget);
+  const panes = notchPaneBudgets(notch);
+  const width = (notch.hasNotch ? notch.width + COMPACT_NOTCH_INNER_GAP * 2 : COMPACT_HEADER_GAP)
+    + wings.left + wings.right + compactExtras(notch, pending, budget).middle;
+  return width > COMPACT_MAX_WINDOW_WIDTH || (panes &&
+    (wings.left + COMPACT_NOTCH_INNER_GAP > panes.left || wings.right + COMPACT_NOTCH_INNER_GAP > panes.right))
+    ? 32 : 104;
 }
 
 export function computeCollapsedWindowWidth(

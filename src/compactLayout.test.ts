@@ -21,6 +21,7 @@ import {
   computeCollapsedWindowWidth,
   computeCompactHeaderLayout,
   computeCompactPresentation,
+  computeCompactReminderWidth,
   estimateCompactCounterWidths,
   compactOuterPadding,
   COMPACT_MEDIA_THUMB_SLOT,
@@ -462,4 +463,12 @@ describe("compact counter and media budgets", () => {
     expect(cost.windowWidth - hidden.windowWidth).toBe(costWidths[0]);
     expect(estimateCompactCounterWidths("cost", 1234.56)[0]).toBeGreaterThan(costWidths[0]);
   });
+});
+
+it("keeps full reminder text on roomy bars and switches to a counted icon when crowded", () => {
+  expect(computeCompactReminderWidth(NO_NOTCH, 0, 4, 0, 0, {counterWidths: []})).toBe(104);
+  const crowded = { counterWidths: [90], batteryRingCount: 4, hasMediaArtwork: true, showMediaIndicator: true };
+  expect(computeCompactReminderWidth(NOTCH_14, 8, 8, 1_000_000, 1, crowded)).toBe(32);
+  const result = computeCompactPresentation(NOTCH_14, 8, 8, 1_000_000, 1, {...crowded, reminderWidth: 32});
+  expect(result.windowWidth).toBeLessThanOrEqual(COMPACT_MAX_WINDOW_WIDTH);
 });

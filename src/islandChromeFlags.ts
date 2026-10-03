@@ -13,6 +13,7 @@ import type { CompactHeaderLayout } from "./compactLayout";
 
 interface IslandChromeFlagsInput {
   phase: string;
+  hasReminders?: boolean;
   panelView: PanelView;
   collapsedMode: "micro" | "compact" | "dormant";
   usesMicroIsland: boolean;
@@ -33,6 +34,7 @@ interface IslandChromeFlagsInput {
 
 export function deriveIslandChromeFlags({
   phase,
+  hasReminders = false,
   panelView,
   collapsedMode,
   usesMicroIsland,
@@ -63,7 +65,7 @@ export function deriveIslandChromeFlags({
     !isExpanded &&
     !isMicro &&
     (collapsedMode === "dormant" ||
-      (usesMicroIsland &&
+      (!hasReminders && usesMicroIsland &&
         phase === "compact" &&
         sessions.length === 0 &&
         pendingCount === 0));
@@ -128,7 +130,7 @@ export function deriveIslandChromeFlags({
     (panelView.kind === "settings" ||
       panelView.kind === "clipboard" ||
       panelView.kind === "fileStation" ||
-      panelView.kind === "history");
+      panelView.kind === "history" || panelView.kind === "reminders");
   const nativeExpandedPlan = isPlanExpanded && !isSettingsExpanded;
   const nativeExpandedSettings = isSettingsExpanded;
   const isSubview = isExpandedChrome && panelView.kind !== "home";

@@ -240,5 +240,81 @@
     "subagentStarted": "队友加入",
     "subagentEnded": "队友收工",
     "turnEnded": "本轮结束"
+  },
+  "reminders": {
+    "title": "提醒",
+    "timer": "倒计时",
+    "inputLabel": "创建提醒",
+    "placeholder": "20分钟后喝水 / 明天下午3点开会",
+    "inputHint": "输入时间和内容，回车创建",
+    "create": "创建提醒",
+    "minutes": "{{minutes}} 分钟",
+    "pickDate": "选择日期时间",
+    "titleLabel": "提醒内容",
+    "titlePlaceholder": "要提醒你什么？",
+    "repeatLabel": "重复方式",
+    "date": "日期",
+    "time": "时间",
+    "weekday": "星期",
+    "duration": "分钟",
+    "cancelEdit": "取消编辑",
+    "done": "完成",
+    "later": "{{minutes}} 分钟后",
+    "again": "再来一次",
+    "pause": "暂停",
+    "resume": "继续",
+    "edit": "编辑",
+    "delete": "删除",
+    "paused": "已暂停",
+    "repeating": "重复提醒",
+    "snoozed": "稍后提醒",
+    "settings": "提醒设置",
+    "sound": "提醒声音",
+    "soundDesc": "到点时响一次短提示音。",
+    "notifyOnly": "仅通知",
+    "notifyOnlyDesc": "提醒到点时保持浮岛折叠，不自动展开。",
+    "runningHint": "需保持 Atoll 运行，错过的提醒会在恢复后补报。",
+    "autostart": "设置开机自启动 →",
+    "pendingCount": "{{count}} 条待处理",
+    "close": "收起提醒卡",
+    "loadError": "无法读取提醒",
+    "tabs": {
+      "pending": "待处理",
+      "active": "进行中",
+      "completed": "已完成"
+    },
+    "empty": {
+      "pending": "暂时没有待处理提醒。",
+      "active": "开启一个倒计时，或记下下一件事。",
+      "completed": "完成的提醒会在这里保留 30 天。"
+    },
+    "repeat": {
+      "once": "仅一次",
+      "daily": "每天",
+      "weekdays": "工作日",
+      "weekly": "每周",
+      "interval": "固定间隔",
+      "timer": "倒计时"
+    },
+    "days": {
+      "0": "星期一",
+      "1": "星期二",
+      "2": "星期三",
+      "3": "星期四",
+      "4": "星期五",
+      "5": "星期六",
+      "6": "星期日"
+    },
+    "errors": {
+      "missingTime": "请补充明确时间，例如“20分钟后喝水”。",
+      "invalidTime": "请选择有效的日期和时间。",
+      "pastTime": "这个时间已经过去了。",
+      "invalidDuration": "时长需大于零，最长 366 天。",
+      "titleTooLong": "内容不能超过 500 字。",
+      "notFound": "这条提醒已发生变化。",
+      "invalidAction": "当前提醒不支持这个操作。",
+      "invalidMode": "请选择有效的通知方式。"
+    },
+    "saved": "提醒已创建"
   }
 }
