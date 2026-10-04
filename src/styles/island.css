@@ -1312,6 +1312,11 @@
 .island.is-energy-saving *, .island.is-energy-saving *::before, .island.is-energy-saving *::after {
   animation-play-state: paused !important;
 }
+/* A newly mounted (or restored after theater) session must not freeze at
+   the entrance animation's transparent first frame or staggered delay. */
+.island.is-energy-saving .compact-session-dot:not(.agent-theater-actor) {
+  animation: none;
+}
 .island.is-energy-saving .agent-theater * {
   animation-play-state: running !important;
 }
