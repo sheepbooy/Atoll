@@ -1,3 +1,5 @@
+import { MascotEnvironmentProvider } from "./mascotMotion";
+import { useAgentActivity } from "./hooks/useAgentActivity";
 import { useReminders } from "./hooks/useReminders";
 import { useReminderPresentation } from "./hooks/useReminderPresentation";
 import { RemindersView } from "./RemindersView";
@@ -470,7 +472,7 @@ export function App() {
     setPanelView,
   });
 
-  const { busyDecision, justResolved, resolveActive, resolveRequest } = useApprovals({
+  const { busyDecision, justResolved, mascotFeedback, resolveActive, resolveRequest } = useApprovals({
     snapshot,
     snapshotRef,
     panelView,
@@ -523,7 +525,7 @@ export function App() {
     [snapshot.online, snapshot.pendingCount, sessions.length],
   );
   const { reaction: atollReaction, reactionKey: atollReactionKey } =
-    useAtollReaction(appLogoState);
+    useAtollReaction(appLogoState, mascotFeedback?.decision);
   const {
     stagedFiles,
     stagedCount,
@@ -592,6 +594,7 @@ export function App() {
   });
 
   const theater = useAgentTheater(snapshot.pendingCount > 0 || dragOverIsland || panelExiting || Boolean(stashReaction) || phase === "opening" || phase === "closing");
+  const workingSessions = useAgentActivity();
 
   // ── 文件中转站"岛即生物"编舞 ──
   // 拖入文件 → 分档 eat 反应；从面板行拖出文件 → spit。吉祥物只演眼睛，
@@ -1101,6 +1104,7 @@ export function App() {
   });
 
   return (
+    <MascotEnvironmentProvider ambientPaused={energySaving || phase === "opening" || phase === "closing"} feedback={mascotFeedback} workingSessions={workingSessions}>
     <main className="stage">
       <section
         ref={islandRef}
@@ -1402,5 +1406,6 @@ export function App() {
         ) : null}
       </section>
     </main>
+    </MascotEnvironmentProvider>
   );
 }

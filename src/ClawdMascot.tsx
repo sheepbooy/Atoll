@@ -1,3 +1,4 @@
+import { useMascotMotion, type MascotMotionProps } from "./mascotMotion";
 import {
   BLUSH,
   DEAD_BODY,
@@ -25,7 +26,7 @@ const BODY = "#c27c5c";
 const BODY_TOP = "#d08a68";
 const DARK = "#8b5a42";
 
-interface ClawdMascotProps {
+interface ClawdMascotProps extends MascotMotionProps {
   mood: ClawdMood;
   size?: number;
   className?: string;
@@ -41,8 +42,10 @@ export function ClawdMascot({
   accent,
   accentDark,
   animated = true,
+  ...motionProps
 }: ClawdMascotProps) {
-  const blinking = useMascotBlink(animated, mood);
+  const motion = useMascotMotion({ mood, animated, size, ...motionProps });
+  const blinking = useMascotBlink(motion.ambientEnabled, mood);
   const isDead = mood === "dead";
   const isSick = mood === "worried";
   const body = isDead ? DEAD_BODY : isSick ? SICK : accent ?? BODY;
@@ -51,8 +54,9 @@ export function ClawdMascot({
 
   return (
     <span
-      className={`clawd is-${mood}${animated ? "" : " is-static"}${className ? ` ${className}` : ""}`}
-      style={mascotSizeStyle(size)}
+      ref={motion.ref}
+      className={`clawd is-${mood} ${motion.motionClassName}${animated ? "" : " is-static"}${className ? ` ${className}` : ""}`}
+      style={{ ...mascotSizeStyle(size), ...motion.motionStyle }}
       aria-hidden="true"
     >
       <svg
@@ -66,16 +70,20 @@ export function ClawdMascot({
         <MascotShadow className="clawd-shadow" />
 
         <g className="clawd-body">
-          <MascotClaws classPrefix="clawd" fill={body} />
           <rect x={MASCOT_BODY.x} y={MASCOT_BODY.y} width={MASCOT_BODY.w} height={MASCOT_BODY.h} fill={body} />
           <rect x={MASCOT_BODY.x} y={MASCOT_BODY.y} width={MASCOT_BODY.w} height={MASCOT_BODY.topH} fill={bodyTop} />
-          <MascotFace
-            mood={mood}
-            blinking={blinking}
-            eyeFill={isDead ? DEAD_EYE : EYE}
-            blushFill={BLUSH}
-          />
+          <MascotClaws classPrefix="clawd" fill={body} />
+          <g className="clawd-eyes" data-part="eyes">
+            <MascotFace
+              mood={mood}
+              blinking={blinking}
+              eyeFill={isDead ? DEAD_EYE : EYE}
+              blushFill={BLUSH}
+            />
+          </g>
           <MascotLegs classPrefix="clawd" fill={dark} />
+        </g>
+        <g className="mascot-extras">
           <MascotExtras mood={mood} classPrefix="clawd" />
         </g>
       </svg>

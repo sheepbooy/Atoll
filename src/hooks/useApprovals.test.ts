@@ -387,34 +387,46 @@ describe("useApprovals", () => {
     });
   });
 
-  describe("justResolved flash", () => {
-    it("flashes when the pending queue drains, then clears", async () => {
-      const options = buildOptions({ snapshot: makeSnapshot({ pendingCount: 1 }) });
-      const { result, rerender } = renderHook((props) => useApprovals(props), {
-        initialProps: options,
-      });
-      expect(result.current.justResolved).toBe(false);
-
-      rerender(buildOptions({ snapshot: makeSnapshot({ pendingCount: 0 }) }));
-      expect(result.current.justResolved).toBe(true);
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(1400);
-      });
+  describe("session decision feedback", () => {
+    it("expires even if another session receives a request during the feedback", async () => {
+      const request = makeRequest();
+      const options = buildOptions({ snapshot: makeSnapshot({ pendingCount: 1, activeRequest: request }) });
+      const { result, rerender } = renderHook(props => useApprovals(props), { initialProps: options });
+      await act(async () => { await result.current.resolveRequest(request.id, "approved"); });
+      expect(result.current.mascotFeedback).toMatchObject({ sessionId: request.session, decision: "approved" });
+      act(() => vi.advanceTimersByTime(500));
+      const next = makeRequest({ id: "new", session: "other-session" });
+      rerender(buildOptions({ snapshot: makeSnapshot({ pendingCount: 1, activeRequest: next }) }));
+      act(() => vi.advanceTimersByTime(900));
+      expect(result.current.mascotFeedback).toBeNull();
       expect(result.current.justResolved).toBe(false);
     });
 
-    it("does not flash when the queue stays empty", async () => {
-      const { result, rerender } = renderHook((props) => useApprovals(props), {
-        initialProps: buildOptions({ snapshot: makeSnapshot({ pendingCount: 0 }) }),
+    it("retracts old feedback immediately for a new request in the same session", async () => {
+      const request = makeRequest();
+      const { result, rerender } = renderHook(props => useApprovals(props), {
+        initialProps: buildOptions({ snapshot: makeSnapshot({ pendingCount: 1, activeRequest: request }) }),
       });
+      await act(async () => { await result.current.resolveRequest(request.id, "denied"); });
+      expect(result.current.mascotFeedback?.decision).toBe("denied");
+      rerender(buildOptions({ snapshot: makeSnapshot({ pendingCount: 1, activeRequest: makeRequest({ id: "new" }) }) }));
+      expect(result.current.mascotFeedback).toBeNull();
+    });
 
+    it("does not infer a successful decision from queue changes", () => {
+      const { result, rerender } = renderHook(props => useApprovals(props), {
+        initialProps: buildOptions({ snapshot: makeSnapshot({ pendingCount: 1 }) }),
+      });
       rerender(buildOptions({ snapshot: makeSnapshot({ pendingCount: 0 }) }));
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(100);
-      });
+      expect(result.current.mascotFeedback).toBeNull();
+    });
 
-      expect(result.current.justResolved).toBe(false);
+    it("never emits feedback for a failed decision", async () => {
+      const request = makeRequest();
+      vi.mocked(resolvePermissionRequest).mockRejectedValue(new Error("bridge down"));
+      const { result } = renderHook(props => useApprovals(props), { initialProps: buildOptions({ snapshot: makeSnapshot({ activeRequest: request }) }) });
+      await act(async () => { await expect(result.current.resolveRequest(request.id, "approved")).rejects.toThrow("bridge down"); });
+      expect(result.current.mascotFeedback).toBeNull();
     });
   });
 });

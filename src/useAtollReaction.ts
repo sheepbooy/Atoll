@@ -11,18 +11,19 @@ import type { AppLogoState } from "./logoStates";
 export function deriveAtollReaction(
   prev: AppLogoState,
   next: AppLogoState,
+  decision?: "approved" | "denied",
 ): AtollReaction | null {
   if (prev === next) return null;
   if (next === "offline") return "collapse";
   if (prev === "offline") return "revive";
-  if (next === "idle") return "cheer";
+  if (next === "idle") return decision === "denied" ? null : "cheer";
   return null;
 }
 
 /**
  * 跟踪 app 状态变化并派生一次性反应；重复触发同一反应时 reactionKey 递增以重放。
  */
-export function useAtollReaction(state: AppLogoState): {
+export function useAtollReaction(state: AppLogoState, decision?: "approved" | "denied"): {
   reaction: AtollReaction | null;
   reactionKey: number;
 } {
@@ -34,12 +35,12 @@ export function useAtollReaction(state: AppLogoState): {
     const prev = prevRef.current;
     prevRef.current = state;
     if (prev === null) return;
-    const next = deriveAtollReaction(prev, state);
+    const next = deriveAtollReaction(prev, state, decision);
     if (next) {
       setReaction(next);
       setKey((k) => k + 1);
     }
-  }, [state]);
+  }, [state, decision]);
 
   return { reaction, reactionKey: key };
 }

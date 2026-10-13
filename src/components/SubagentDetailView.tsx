@@ -111,6 +111,8 @@ export function SubagentDetailView({
         <div className="subagent-detail-title-row">
           <AgentMascot
             agent={agent}
+            instanceKey={agentId}
+            activity={completedAt ? "rest" : "working"}
             size={20}
             mood={subagentMood}
             accent={subagentColor.accent}

@@ -5,6 +5,7 @@ import { GeminiMascot } from "./GeminiMascot";
 import { OpencodeMascot } from "./OpencodeMascot";
 import { ZcodeMascot } from "./ZcodeMascot";
 import type { AgentKind } from "./tauri";
+import { useMascotEnvironment, type MascotMotionProps } from "./mascotMotion";
 
 export type AgentMascotMood = ClawdMood;
 
@@ -18,7 +19,9 @@ export const AGENT_ACCENT: Record<AgentKind, { accent?: string; accentDark?: str
   other: { accent: "#c9bcff", accentDark: "#9182d1" },
 };
 
-interface AgentMascotProps {
+export type { MascotAction, MascotMotionProps } from "./mascotMotion";
+
+export interface AgentMascotProps extends MascotMotionProps {
   agent: AgentKind;
   mood: AgentMascotMood;
   size?: number;
@@ -26,90 +29,23 @@ interface AgentMascotProps {
   accent?: string;
   accentDark?: string;
   animated?: boolean;
+  /** Brand tabs summarize sessions; individual avatars keep session-local feedback. */
+  feedbackScope?: "session" | "agent";
 }
 
-export function AgentMascot({
-  agent,
-  mood,
-  size,
-  className,
-  accent,
-  accentDark,
-  animated = true,
-}: AgentMascotProps) {
-  if (agent === "codex") {
-    return (
-      <CodexMascot
-        mood={mood}
-        size={size}
-        className={className}
-        accent={accent}
-        accentDark={accentDark}
-        animated={animated}
-      />
-    );
-  }
+const CHARACTERS = { claude: ClawdMascot, codex: CodexMascot, cursor: CursorMascot,
+  zcode: ZcodeMascot, gemini: GeminiMascot, opencode: OpencodeMascot, other: ClawdMascot };
 
-  if (agent === "cursor") {
-    return (
-      <CursorMascot
-        mood={mood}
-        size={size}
-        className={className}
-        accent={accent}
-        accentDark={accentDark}
-        animated={animated}
-      />
-    );
+export function AgentMascot({ agent, feedbackScope = "session", ...props }: AgentMascotProps) {
+  const { feedback, workingSessions } = useMascotEnvironment();
+  const Character = CHARACTERS[agent];
+  const working = workingSessions.has(`${agent}:${props.instanceKey}`) ||
+    (props.instanceKey === agent && [...workingSessions].some(key => key.startsWith(`${agent}:`)));
+  const characterProps = props.activity === undefined && working ? { ...props, activity: "working" as const } : props;
+  if (props.action === undefined && feedback && feedback.agent === agent &&
+      (feedbackScope === "agent" || feedback.sessionId === props.instanceKey) &&
+      props.mood !== "alert" && props.mood !== "worried") {
+    return <Character {...characterProps} action={feedback.decision} actionKey={feedback.eventId} />;
   }
-
-  if (agent === "zcode") {
-    return (
-      <ZcodeMascot
-        mood={mood}
-        size={size}
-        className={className}
-        accent={accent}
-        accentDark={accentDark}
-        animated={animated}
-      />
-    );
-  }
-
-  if (agent === "gemini") {
-    return (
-      <GeminiMascot
-        mood={mood}
-        size={size}
-        className={className}
-        accent={accent}
-        accentDark={accentDark}
-        animated={animated}
-      />
-    );
-  }
-
-  if (agent === "opencode") {
-    return (
-      <OpencodeMascot
-        mood={mood}
-        size={size}
-        className={className}
-        accent={accent}
-        accentDark={accentDark}
-        animated={animated}
-      />
-    );
-  }
-
-  return (
-    <ClawdMascot
-      mood={mood}
-      size={size}
-      className={className}
-      accent={accent}
-      accentDark={accentDark}
-      animated={animated}
-    />
-  );
+  return <Character {...characterProps} />;
 }

@@ -1,8 +1,9 @@
+import { useMascotMotion, type MascotMotionProps } from "./mascotMotion";
 import type { ClawdMood } from "./ClawdMascot";
-import { MASCOT_VIEWBOX_ATTR, MascotExtras, MascotShadow, mascotSizeStyle } from "./mascotShared";
+import { brandMascotViewBox, MascotExtras, MascotShadow, mascotSizeStyle } from "./mascotShared";
 import { OpencodeOfficialMark } from "./officialMarks";
 
-interface OpencodeMascotProps {
+interface OpencodeMascotProps extends MascotMotionProps {
   mood: ClawdMood;
   size?: number;
   className?: string;
@@ -18,7 +19,9 @@ export function OpencodeMascot({
   accent,
   accentDark,
   animated = true,
+  ...motionProps
 }: OpencodeMascotProps) {
+  const motion = useMascotMotion({ mood, animated, size, character: "opencode", ...motionProps });
   const extras =
     mood === "dead"
       ? { sparkle: "#b0b8bc", sweat: "#9aa0a4" }
@@ -31,26 +34,29 @@ export function OpencodeMascot({
 
   return (
     <span
-      className={`opencode is-${mood}${animated ? "" : " is-static"}${className ? ` ${className}` : ""}`}
-      style={mascotSizeStyle(size)}
+      ref={motion.ref}
+      className={`opencode is-${mood} ${motion.motionClassName}${animated ? "" : " is-static"}${className ? ` ${className}` : ""}`}
+      style={{ ...mascotSizeStyle(size), ...motion.motionStyle }}
       aria-hidden="true"
     >
       <svg
         className="opencode-svg"
         width="100%"
         height="100%"
-        viewBox={MASCOT_VIEWBOX_ATTR}
+        viewBox={brandMascotViewBox(size, "opencode")}
         preserveAspectRatio="xMidYMid meet"
       >
         <MascotShadow className="opencode-shadow" />
 
-        <g className="opencode-body">
+        <g className="opencode-body" data-part="body">
           <OpencodeOfficialMark
             mood={mood}
             accent={accent}
             accentDark={accentDark}
             className="opencode-mark"
           />
+        </g>
+        <g className="mascot-extras">
           <MascotExtras
             mood={mood}
             classPrefix="opencode"

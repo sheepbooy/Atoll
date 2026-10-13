@@ -57,12 +57,11 @@ export function localizedRiskLabel(risk: RiskLevel): string {
 export function deriveSessionMood(
   session: SessionSummary,
   activeRequest: PermissionRequest | null,
-  justResolved: boolean,
+  _justResolved: boolean,
 ): ClawdMood {
   if (activeRequest && activeRequest.session === session.sessionId) {
     return assessRisk(activeRequest.command) === "danger" ? "worried" : "alert";
   }
   if (session.pendingCount > 0) return "alert";
-  if (justResolved) return "happy";
   return "calm";
 }

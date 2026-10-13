@@ -1,0 +1,434 @@
+/* Clawd retains its choreography. Brand bodies lead expressive gestures; parts follow. */
+@keyframes agent-idle-look { 0%, 72%, 100% { transform: translateX(0); } 77%, 81% { transform: translateX(-4px); } 86%, 90% { transform: translateX(4px); } }
+@keyframes agent-idle-scratch { 0%, 78%, 96%, 100% { transform: rotate(0); } 82%, 89% { transform: translate(3px,-7px) rotate(-34deg); } 85%, 92% { transform: translate(2px,-5px) rotate(-22deg); } }
+@keyframes agent-idle-stretch { 0%, 83%, 100% { transform: scaleY(1); } 89%, 93% { transform: scaleY(1.13); } }
+@keyframes agent-work-tap { 0%, 24%, 55%, 100% { transform: rotate(0); } 8%, 18%, 37%, 47% { transform: translateY(-3px) rotate(-18deg); } 13%, 42% { transform: rotate(-5deg); } }
+@keyframes agent-work-support { 0%, 55%, 100% { transform: translateY(0); } 12%, 42% { transform: translateY(-2px); } }
+@keyframes agent-remind-wave { 0%, 72%, 100% { transform: rotate(0); } 80%, 88% { transform: translateY(-6px) rotate(-32deg); } 84%, 92% { transform: translateY(-4px) rotate(-16deg); } }
+@keyframes agent-shot-wave { 0%, 100% { transform: rotate(0); } 25%, 58% { transform: translateY(-7px) rotate(-36deg); } 42%, 75% { transform: translateY(-4px) rotate(-17deg); } }
+@keyframes agent-shot-claw-open { 0%, 100% { transform: rotate(0); } 28%, 60% { transform: translateY(-4px) rotate(-28deg); } }
+@keyframes agent-shot-claw-right { 0%, 100% { transform: rotate(0); } 36%, 64% { transform: translateY(-4px) rotate(28deg); } }
+@keyframes agent-shot-tiptoe { 0%, 100% { transform: scaleY(1); } 35%, 65% { transform: scaleY(1.16); } }
+@keyframes agent-shot-squint { 0%, 100% { transform: scaleY(1); } 25%, 70% { transform: scaleY(.25); } }
+@keyframes agent-shot-claw-close { 0%, 100% { transform: rotate(0); } 32%, 65% { transform: translateX(4px) rotate(16deg); } }
+@keyframes agent-shot-claw-close-right { 0%, 100% { transform: rotate(0); } 32%, 65% { transform: translateX(-4px) rotate(-16deg); } }
+@keyframes agent-shot-rest-legs { 0%, 100% { transform: scaleY(1); } 30%, 60% { transform: scaleY(.84); } }
+@keyframes agent-shot-work-tap { 0%, 24%, 55%, 100% { transform: rotate(0); } 8%, 18%, 37%, 47% { transform: translateY(-3px) rotate(-18deg); } 13%, 42% { transform: rotate(-5deg); } }
+@keyframes agent-shot-work-support { 0%, 55%, 100% { transform: translateY(0); } 12%, 42% { transform: translateY(-2px); } }
+@keyframes agent-shot-alert-eyes { 0%, 100% { transform: translateY(0); } 22%, 65% { transform: translateY(-3px); } }
+@keyframes agent-shot-sleep-claw-left { from { transform: none; } to { transform: translateX(3px) rotate(14deg); } }
+@keyframes agent-shot-sleep-claw-right { from { transform: none; } to { transform: translateX(-3px) rotate(-14deg); } }
+@keyframes agent-shot-sleep-eyes { from { height: 16px; y: 12px; } to { height: 2.4px; y: 16px; } }
+.clawd.is-loop-idle [data-part="eyes"] { --part-animation: agent-idle-look var(--agent-idle-ms, 12s) ease-in-out calc(var(--agent-phase, 0ms) + 0ms) infinite; }
+.clawd.is-loop-idle [data-part="claw-left"] { --part-animation: agent-idle-scratch var(--agent-idle-ms, 12s) ease-in-out calc(var(--agent-phase, 0ms) + 0ms) infinite; }
+.clawd.is-loop-idle [data-part="leg-0"] { --part-animation: agent-idle-stretch var(--agent-idle-ms, 12s) ease-in-out calc(var(--agent-phase, 0ms) + 0ms) infinite; }
+.clawd.is-loop-idle [data-part="leg-3"] { --part-animation: agent-idle-stretch var(--agent-idle-ms, 12s) ease-in-out calc(var(--agent-phase, 0ms) + 80ms) infinite; }
+.clawd.is-loop-working [data-part="claw-left"] { --part-animation: agent-work-tap var(--agent-work-ms, 3.2s) ease-in-out calc(var(--agent-phase, 0ms) + 0ms) infinite; }
+.clawd.is-loop-working [data-part="claw-right"] { --part-animation: agent-work-tap var(--agent-work-ms, 3.2s) ease-in-out calc(var(--agent-phase, 0ms) + 180ms) infinite; }
+.clawd.is-loop-working [data-part="leg-0"] { --part-animation: agent-work-support var(--agent-work-ms, 3.2s) ease-in-out calc(var(--agent-phase, 0ms) + 0ms) infinite; }
+.clawd.is-loop-working [data-part="leg-3"] { --part-animation: agent-work-support var(--agent-work-ms, 3.2s) ease-in-out calc(var(--agent-phase, 0ms) + 180ms) infinite; }
+.clawd.is-loop-attention [data-part="claw-left"] { --part-animation: agent-remind-wave var(--agent-remind-ms, 4s) ease-in-out calc(var(--agent-phase, 0ms) + 0ms) infinite; }
+.clawd.is-action-attention [data-part="claw-left"] { --part-animation: agent-shot-wave calc(var(--agent-shot-ms) - 0ms) ease-in-out 0ms 1 both; }
+.clawd.is-action-attention [data-part="eyes"] { --part-animation: agent-shot-alert-eyes calc(var(--agent-shot-ms) - 0ms) ease-in-out 0ms 1 both; }
+.clawd.is-action-approved [data-part="claw-left"] { --part-animation: agent-shot-claw-open calc(var(--agent-shot-ms) - 0ms) ease-in-out 0ms 1 both; }
+.clawd.is-action-approved [data-part="claw-right"] { --part-animation: agent-shot-claw-right calc(var(--agent-shot-ms) - 0ms) ease-in-out 0ms 1 both; }
+.clawd.is-action-approved [data-part="eyes"] { --part-animation: agent-shot-squint calc(var(--agent-shot-ms) - 0ms) ease-in-out 0ms 1 both; }
+.clawd.is-action-approved [data-part="leg-0"] { --part-animation: agent-shot-tiptoe calc(var(--agent-shot-ms) - 0ms) ease-in-out 0ms 1 both; }
+.clawd.is-action-approved [data-part="leg-1"] { --part-animation: agent-shot-tiptoe calc(var(--agent-shot-ms) - 25ms) ease-in-out 25ms 1 both; }
+.clawd.is-action-approved [data-part="leg-2"] { --part-animation: agent-shot-tiptoe calc(var(--agent-shot-ms) - 50ms) ease-in-out 50ms 1 both; }
+.clawd.is-action-approved [data-part="leg-3"] { --part-animation: agent-shot-tiptoe calc(var(--agent-shot-ms) - 75ms) ease-in-out 75ms 1 both; }
+.clawd.is-action-denied [data-part="claw-left"] { --part-animation: agent-shot-claw-close calc(var(--agent-shot-ms) - 0ms) ease-in-out 0ms 1 both; }
+.clawd.is-action-denied [data-part="claw-right"] { --part-animation: agent-shot-claw-close-right calc(var(--agent-shot-ms) - 0ms) ease-in-out 0ms 1 both; }
+.clawd.is-action-turnEnded [data-part="leg-0"] { --part-animation: agent-shot-rest-legs calc(var(--agent-shot-ms) - 0ms) ease-in-out 0ms 1 both; }
+.clawd.is-action-turnEnded [data-part="leg-1"] { --part-animation: agent-shot-rest-legs calc(var(--agent-shot-ms) - 25ms) ease-in-out 25ms 1 both; }
+.clawd.is-action-turnEnded [data-part="leg-2"] { --part-animation: agent-shot-rest-legs calc(var(--agent-shot-ms) - 50ms) ease-in-out 50ms 1 both; }
+.clawd.is-action-turnEnded [data-part="leg-3"] { --part-animation: agent-shot-rest-legs calc(var(--agent-shot-ms) - 75ms) ease-in-out 75ms 1 both; }
+.clawd.is-action-turnEnded [data-part="claw-left"] { --part-animation: agent-shot-claw-close calc(var(--agent-shot-ms) - 0ms) ease-in-out 0ms 1 both; }
+.clawd.is-action-join [data-part="claw-left"] { --part-animation: agent-shot-wave calc(var(--agent-shot-ms) - 0ms) ease-in-out 0ms 1 both; }
+.clawd.is-action-join [data-part="eyes"] { --part-animation: agent-shot-alert-eyes calc(var(--agent-shot-ms) - 0ms) ease-in-out 0ms 1 both; }
+.clawd.is-action-leave [data-part="claw-left"] { --part-animation: agent-shot-claw-close calc(var(--agent-shot-ms) - 0ms) ease-in-out 0ms 1 both; }
+.clawd.is-action-leave [data-part="claw-right"] { --part-animation: agent-shot-claw-close-right calc(var(--agent-shot-ms) - 0ms) ease-in-out 0ms 1 both; }
+.agent-mascot.is-sleeping .clawd-claw-left { transform: translateX(3px) rotate(14deg); }
+.agent-mascot.is-sleeping .clawd-claw-right { transform: translateX(-3px) rotate(-14deg); }
+.agent-mascot.is-sad .clawd-claw-left { transform: rotate(12deg); }
+.agent-mascot.is-sad .clawd-claw-right { transform: rotate(-12deg); }
+.clawd.is-small .clawd-leg, .clawd.is-small .clawd-eyes,
+.clawd.is-action-started [data-part="claw-left"] { --part-animation: agent-shot-work-tap var(--agent-shot-ms) ease-in-out 1 both; }
+.clawd.is-action-started [data-part="claw-right"] { --part-animation: agent-shot-work-tap var(--agent-shot-ms) ease-in-out 1 both; }
+.clawd.is-action-started [data-part="leg-0"] { --part-animation: agent-shot-work-support var(--agent-shot-ms) ease-in-out 1 both; }
+.clawd.is-action-started [data-part="leg-3"] { --part-animation: agent-shot-work-support var(--agent-shot-ms) ease-in-out 1 both; }
+.clawd.is-action-concerned [data-part="claw-left"] { --part-animation: agent-shot-claw-close calc(var(--agent-shot-ms) - 0ms) ease-in-out 0ms 1 both; }
+.clawd.is-action-concerned [data-part="claw-right"] { --part-animation: agent-shot-claw-close-right calc(var(--agent-shot-ms) - 0ms) ease-in-out 0ms 1 both; }
+.clawd.is-action-sleeping .mascot-eye { animation: agent-shot-sleep-eyes var(--agent-shot-ms) ease-in-out both; }
+.clawd.is-action-sleeping [data-part="claw-left"] { --part-animation: agent-shot-sleep-claw-left var(--agent-shot-ms) ease-in-out 1 both; }
+.clawd.is-action-sleeping [data-part="claw-right"] { --part-animation: agent-shot-sleep-claw-right var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-idle-codex-body { 0%,72%,100% { transform: none; } 80% { transform: rotate(-7deg) scale(.96); } 89% { transform: rotate(5deg) scale(1.03); } }
+.codex.is-loop-idle { --body-animation: agent-idle-codex-body var(--agent-idle-ms) ease-in-out var(--agent-phase) infinite; }
+@keyframes agent-work-codex-body { 0%,76%,100% { transform: none; } 9%,29% { transform: translateY(7px) rotate(-8deg) scaleY(.94); } 18%,40% { transform: translateY(5px) rotate(8deg) scaleY(.96); } 55% { transform: translateY(-5px) scaleY(1.05); } 65% { transform: none; } }
+.codex.is-loop-working { --body-animation: agent-work-codex-body var(--agent-work-ms) ease-in-out var(--agent-phase) infinite; }
+@keyframes agent-shot-work-codex-body { 0%,76%,100% { transform: none; } 9%,29% { transform: translateY(7px) rotate(-8deg) scaleY(.94); } 18%,40% { transform: translateY(5px) rotate(8deg) scaleY(.96); } 55% { transform: translateY(-5px) scaleY(1.05); } 65% { transform: none; } }
+.codex.has-action.is-action-started { --body-animation: agent-shot-work-codex-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-codex-attention-body { 0%,100% { transform: none; } 10% { transform: translate(-3px,3px) rotate(-5deg); } 24%,76% { transform: translate(7px,-5px) rotate(16deg); } 90% { transform: rotate(-3deg); } }
+.codex.has-action.is-action-attention { --body-animation: agent-shot-codex-attention-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-remind-codex-body { 0%,40% { transform: none; } 4% { transform: translate(-3px,3px) rotate(-5deg); } 9.6%,30.4% { transform: translate(7px,-5px) rotate(16deg); } 36% { transform: rotate(-3deg); } 40%,100% { transform: none; } }
+.codex.is-loop-attention { --body-animation: agent-remind-codex-body var(--agent-remind-ms) ease-in-out var(--agent-remind-phase) infinite; }
+@keyframes agent-shot-codex-approved-body { 0%,100% { transform: none; } 16% { transform: translateY(8px) scale(1.13,.79); } 37% { transform: translateY(-17px) scale(.98,1.1) rotate(-5deg); } 53% { transform: translateY(-14px) rotate(4deg); } 73% { transform: translateY(5px) scale(1.1,.87); } 86% { transform: translateY(-3px); } }
+.codex.has-action.is-action-approved { --body-animation: agent-shot-codex-approved-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-codex-denied-body { 0%,100% { transform: none; } 12% { transform: scale(.95,1.07); } 25%,51% { transform: translateX(-7px) rotate(-17deg); } 38%,64% { transform: translateX(7px) rotate(17deg); } 80% { transform: translateY(3px) scale(.9); } }
+.codex.has-action.is-action-denied { --body-animation: agent-shot-codex-denied-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-codex-concerned-body { 0%,100% { transform: none; } 20% { transform: translateX(5px) rotate(8deg); } 42% { transform: translateX(-4px) rotate(-8deg); } 66% { transform: translateX(2px) rotate(4deg); } }
+.codex.has-action.is-action-concerned { --body-animation: agent-shot-codex-concerned-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-codex-turnEnded-body { 0%,100% { transform: none; } 30% { transform: translateY(6px) scaleY(.94); } 68% { transform: translateY(-2px); } }
+.codex.has-action.is-action-turnEnded { --body-animation: agent-shot-codex-turnEnded-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-codex-join-body { 0%,100% { transform: none; } 22% { transform: translateY(-8px) rotate(-8deg); } 54% { transform: rotate(8deg); } 76% { transform: none; } }
+.codex.has-action.is-action-join { --body-animation: agent-shot-codex-join-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-codex-leave-body { 0%,100% { transform: none; } 35%,65% { transform: translate(-10px,4px) rotate(-12deg) scale(.91); } }
+.codex.has-action.is-action-leave { --body-animation: agent-shot-codex-leave-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-codex-sleeping-body { 0%,100% { transform: none; } 45%,70% { transform: translateY(9px) rotate(10deg) scale(1.02,.82); } }
+.codex.has-action.is-action-sleeping { --body-animation: agent-shot-codex-sleeping-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-idle-cursor-mascot-body { 0%,74%,100% { transform: none; } 83%,88% { transform: rotate(9deg); } 94% { transform: rotate(-4deg); } }
+.cursor-mascot.is-loop-idle { --body-animation: agent-idle-cursor-mascot-body var(--agent-idle-ms) ease-in-out var(--agent-phase) infinite; }
+@keyframes agent-work-cursor-mascot-body { 0%,32%,67%,100% { transform: none; } 10%,45% { transform: translate(3px,-5px) rotate(5deg); } 20%,55% { transform: translate(6px,9px) rotate(10deg) scaleY(.91); } 27%,62% { transform: translateY(-3px); } }
+.cursor-mascot.is-loop-working { --body-animation: agent-work-cursor-mascot-body var(--agent-work-ms) ease-in-out var(--agent-phase) infinite; }
+@keyframes agent-shot-work-cursor-mascot-body { 0%,32%,67%,100% { transform: none; } 10%,45% { transform: translate(3px,-5px) rotate(5deg); } 20%,55% { transform: translate(6px,9px) rotate(10deg) scaleY(.91); } 27%,62% { transform: translateY(-3px); } }
+.cursor-mascot.has-action.is-action-started { --body-animation: agent-shot-work-cursor-mascot-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-cursor-mascot-attention-body { 0%,100% { transform: none; } 12% { transform: rotate(-6deg); } 26%,76% { transform: translate(7px,-5px) rotate(15deg); } 88% { transform: rotate(-3deg); } }
+.cursor-mascot.has-action.is-action-attention { --body-animation: agent-shot-cursor-mascot-attention-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-remind-cursor-mascot-body { 0%,40% { transform: none; } 4.8% { transform: rotate(-6deg); } 10.4%,30.4% { transform: translate(7px,-5px) rotate(15deg); } 35.2% { transform: rotate(-3deg); } 40%,100% { transform: none; } }
+.cursor-mascot.is-loop-attention { --body-animation: agent-remind-cursor-mascot-body var(--agent-remind-ms) ease-in-out var(--agent-remind-phase) infinite; }
+@keyframes agent-shot-cursor-mascot-approved-body { 0%,100% { transform: none; } 16% { transform: translate(-4px,5px) scale(.95); } 36%,49% { transform: translate(14px,-19px) rotate(12deg); } 68% { transform: translate(4px,6px) rotate(-5deg) scaleY(.92); } 84% { transform: translateY(-2px); } }
+.cursor-mascot.has-action.is-action-approved { --body-animation: agent-shot-cursor-mascot-approved-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-cursor-mascot-denied-body { 0%,100% { transform: none; } 15% { transform: translate(3px,-2px); } 36%,66% { transform: translate(-14px,3px) rotate(-18deg) scaleX(.9); } 82% { transform: rotate(4deg); } }
+.cursor-mascot.has-action.is-action-denied { --body-animation: agent-shot-cursor-mascot-denied-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-cursor-mascot-concerned-body { 0%,100% { transform: none; } 22% { transform: rotate(-12deg); } 48% { transform: rotate(12deg); } 74% { transform: rotate(-5deg); } }
+.cursor-mascot.has-action.is-action-concerned { --body-animation: agent-shot-cursor-mascot-concerned-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-cursor-mascot-turnEnded-body { 0%,100% { transform: none; } 34% { transform: translateY(5px) scaleY(.95); } 72% { transform: translateY(-2px); } }
+.cursor-mascot.has-action.is-action-turnEnded { --body-animation: agent-shot-cursor-mascot-turnEnded-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-cursor-mascot-join-body { 0%,100% { transform: none; } 26% { transform: translate(6px,-8px) rotate(10deg); } 58% { transform: rotate(-5deg); } }
+.cursor-mascot.has-action.is-action-join { --body-animation: agent-shot-cursor-mascot-join-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-cursor-mascot-leave-body { 0%,100% { transform: none; } 30%,66% { transform: translate(-13px,2px) rotate(-12deg); } }
+.cursor-mascot.has-action.is-action-leave { --body-animation: agent-shot-cursor-mascot-leave-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-cursor-mascot-sleeping-body { 0%,100% { transform: none; } 48%,74% { transform: translateY(8px) rotate(13deg) scaleY(.86); } }
+.cursor-mascot.has-action.is-action-sleeping { --body-animation: agent-shot-cursor-mascot-sleeping-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-idle-gemini-body { 0%,70%,100% { transform: none; } 80% { transform: rotate(-6deg) scale(.95,1.02); } 90% { transform: rotate(4deg) scale(1.04,.98); } }
+.gemini.is-loop-idle { --body-animation: agent-idle-gemini-body var(--agent-idle-ms) ease-in-out var(--agent-phase) infinite; }
+@keyframes agent-work-gemini-body { 0%,78.125%,100% { transform: none; } 5.625% { transform: translateY(3.15px) scale(1.04,.94); } 13.4375% { transform: translate(-3.465px,5.04px) rotate(-13deg); } 21.25% { transform: rotate(-4deg); } 32.1875% { transform: translate(3.465px,5.04px) rotate(13deg); } 40.3125% { transform: rotate(4deg); } 49.375% { transform: translate(-2.205px,3.15px) rotate(-10deg); } 57.1875% { transform: translate(1.89px,3.15px) rotate(9deg); } 67.5% { transform: translateY(-3.15px) scale(.98,1.04); } }
+.gemini.is-loop-working { --body-animation: agent-work-gemini-body var(--agent-work-ms) ease-in-out var(--agent-phase) infinite; }
+@keyframes agent-shot-work-gemini-body { 0%,78.125%,100% { transform: none; } 5.625% { transform: translateY(3.15px) scale(1.04,.94); } 13.4375% { transform: translate(-3.465px,5.04px) rotate(-13deg); } 21.25% { transform: rotate(-4deg); } 32.1875% { transform: translate(3.465px,5.04px) rotate(13deg); } 40.3125% { transform: rotate(4deg); } 49.375% { transform: translate(-2.205px,3.15px) rotate(-10deg); } 57.1875% { transform: translate(1.89px,3.15px) rotate(9deg); } 67.5% { transform: translateY(-3.15px) scale(.98,1.04); } }
+.gemini.has-action.is-action-started { --body-animation: agent-shot-work-gemini-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-gemini-attention-body { 0%,100% { transform: none; } 8.75% { transform: translate(-2.205px,2.205px) rotate(-7deg) scaleY(.95); } 20.625%,75% { transform: translate(7.245px,-3.465px) rotate(17deg) scaleY(1.03); } 96.25% { transform: none; } }
+.gemini.has-action.is-action-attention { --body-animation: agent-shot-gemini-attention-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-remind-gemini-body { 0%,40% { transform: none; } 3.5% { transform: translate(-2.205px,2.205px) rotate(-7deg) scaleY(.95); } 8.25%,30% { transform: translate(7.245px,-3.465px) rotate(17deg) scaleY(1.03); } 38.5% { transform: none; } 40%,100% { transform: none; } }
+.gemini.is-loop-attention { --body-animation: agent-remind-gemini-body var(--agent-remind-ms) ease-in-out var(--agent-remind-phase) infinite; }
+@keyframes agent-shot-gemini-approved-body { 0%,100% { transform: none; } 15.7895% { transform: translateY(8.82px) scale(1.22,.7); } 32.6316% { transform: translateY(-18.585px) rotate(-6deg) scale(.94,1.16); } 47.3684% { transform: translateY(-21.42px) rotate(6deg) scale(1.04); } 68.4211% { transform: translateY(5.985px) scale(1.18,.79); } 83.1579% { transform: translateY(-3.15px) scale(.98,1.05); } }
+.gemini.has-action.is-action-approved { --body-animation: agent-shot-gemini-approved-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-gemini-denied-body { 0%,100% { transform: none; } 12.8713% { transform: translateY(-2.52px) scale(.91,1.12); } 24.7525% { transform: translateX(-7.56px) rotate(-19deg); } 37.6238% { transform: translateX(7.56px) rotate(19deg); } 50.495% { transform: translateX(-6.3px) rotate(-16deg); } 63.3663% { transform: translateX(5.04px) rotate(13deg); } 77.2277% { transform: translateY(3.15px) scale(.88,.9); } }
+.gemini.has-action.is-action-denied { --body-animation: agent-shot-gemini-denied-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-gemini-concerned-body { 0%,100% { transform: none; } 20% { transform: rotate(-10deg); } 46% { transform: rotate(10deg); } 72% { transform: rotate(-6deg); } }
+.gemini.has-action.is-action-concerned { --body-animation: agent-shot-gemini-concerned-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-gemini-turnEnded-body { 0%,100% { transform: none; } 35% { transform: translateY(4px) scale(.96); } 72% { transform: translateY(-2px); } }
+.gemini.has-action.is-action-turnEnded { --body-animation: agent-shot-gemini-turnEnded-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-gemini-join-body { 0%,100% { transform: none; } 28% { transform: translateY(-7px) rotate(10deg); } 60% { transform: rotate(-6deg); } }
+.gemini.has-action.is-action-join { --body-animation: agent-shot-gemini-join-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-gemini-leave-body { 0%,100% { transform: none; } 38%,65% { transform: translate(-10px,5px) rotate(-13deg) scale(.9); } }
+.gemini.has-action.is-action-leave { --body-animation: agent-shot-gemini-leave-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-gemini-sleeping-body { 0%,100% { transform: none; } 43%,72% { transform: translateY(9px) rotate(13deg) scale(1.04,.84); } }
+.gemini.has-action.is-action-sleeping { --body-animation: agent-shot-gemini-sleeping-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-idle-opencode-body { 0%,76%,100% { transform: none; } 84% { transform: translateY(-4px) rotate(-5deg); } 92% { transform: rotate(4deg); } }
+.opencode.is-loop-idle { --body-animation: agent-idle-opencode-body var(--agent-idle-ms) ease-in-out var(--agent-phase) infinite; }
+@keyframes agent-work-opencode-body { 0%,33%,70%,100% { transform: none; } 9%,45% { transform: translateY(-4px) rotate(-3deg); } 21%,58% { transform: translateY(8px) scaleY(.91); } 28%,65% { transform: translateY(-2px); } }
+.opencode.is-loop-working { --body-animation: agent-work-opencode-body var(--agent-work-ms) ease-in-out var(--agent-phase) infinite; }
+@keyframes agent-shot-work-opencode-body { 0%,33%,70%,100% { transform: none; } 9%,45% { transform: translateY(-4px) rotate(-3deg); } 21%,58% { transform: translateY(8px) scaleY(.91); } 28%,65% { transform: translateY(-2px); } }
+.opencode.has-action.is-action-started { --body-animation: agent-shot-work-opencode-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-opencode-attention-body { 0%,100% { transform: none; } 12% { transform: translateY(2px); } 28% { transform: translate(-5px,-5px) rotate(-14deg); } 48% { transform: translate(5px,-5px) rotate(14deg); } 65%,78% { transform: translate(3px,-5px) rotate(8deg); } }
+.opencode.has-action.is-action-attention { --body-animation: agent-shot-opencode-attention-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-remind-opencode-body { 0%,40% { transform: none; } 4.8% { transform: translateY(2px); } 11.2% { transform: translate(-5px,-5px) rotate(-14deg); } 19.2% { transform: translate(5px,-5px) rotate(14deg); } 26%,31.2% { transform: translate(3px,-5px) rotate(8deg); } 40%,100% { transform: none; } }
+.opencode.is-loop-attention { --body-animation: agent-remind-opencode-body var(--agent-remind-ms) ease-in-out var(--agent-remind-phase) infinite; }
+@keyframes agent-shot-opencode-approved-body { 0%,100% { transform: none; } 19% { transform: translateY(7px) scale(1.09,.84); } 39%,50% { transform: translateY(-16px) scale(.98,1.08); } 71% { transform: translateY(5px) scale(1.08,.89); } 86% { transform: translateY(-2px); } }
+.opencode.has-action.is-action-approved { --body-animation: agent-shot-opencode-approved-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-opencode-denied-body { 0%,100% { transform: none; } 20% { transform: translateY(3px) scaleY(.92); } 34%,61% { transform: translateX(-5px) rotate(-14deg); } 47%,74% { transform: translateX(5px) rotate(14deg); } 86% { transform: scale(.94); } }
+.opencode.has-action.is-action-denied { --body-animation: agent-shot-opencode-denied-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-opencode-concerned-body { 0%,100% { transform: none; } 24% { transform: rotate(-8deg); } 51% { transform: rotate(8deg); } 73% { transform: rotate(-3deg); } }
+.opencode.has-action.is-action-concerned { --body-animation: agent-shot-opencode-concerned-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-opencode-turnEnded-body { 0%,100% { transform: none; } 38% { transform: translateY(5px) scaleY(.96); } 74% { transform: none; } }
+.opencode.has-action.is-action-turnEnded { --body-animation: agent-shot-opencode-turnEnded-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-opencode-join-body { 0%,100% { transform: none; } 25% { transform: translateY(-6px); } 57% { transform: rotate(8deg); } }
+.opencode.has-action.is-action-join { --body-animation: agent-shot-opencode-join-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-opencode-leave-body { 0%,100% { transform: none; } 34%,67% { transform: translate(-9px,4px) rotate(-8deg) scale(.92); } }
+.opencode.has-action.is-action-leave { --body-animation: agent-shot-opencode-leave-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-opencode-sleeping-body { 0%,100% { transform: none; } 46%,73% { transform: translateY(7px) rotate(7deg) scaleY(.86); } }
+.opencode.has-action.is-action-sleeping { --body-animation: agent-shot-opencode-sleeping-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-idle-zcode-body { 0%,75%,100% { transform: none; } 85% { transform: rotate(5deg); } 94% { transform: rotate(-2deg); } }
+.zcode.is-loop-idle { --body-animation: agent-idle-zcode-body var(--agent-idle-ms) ease-in-out var(--agent-phase) infinite; }
+@keyframes agent-work-zcode-body { 0%,70%,100% { transform: none; } 12%,26% { transform: translate(4px,2px) rotate(9deg); } 38% { transform: translate(6px,4px) rotate(12deg); } 54% { transform: translate(-2px,-3px) rotate(-4deg); } }
+.zcode.is-loop-working { --body-animation: agent-work-zcode-body var(--agent-work-ms) ease-in-out var(--agent-phase) infinite; }
+@keyframes agent-shot-work-zcode-body { 0%,70%,100% { transform: none; } 12%,26% { transform: translate(4px,2px) rotate(9deg); } 38% { transform: translate(6px,4px) rotate(12deg); } 54% { transform: translate(-2px,-3px) rotate(-4deg); } }
+.zcode.has-action.is-action-started { --body-animation: agent-shot-work-zcode-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-zcode-attention-body { 0%,100% { transform: none; } 18% { transform: translateY(3px) rotate(-4deg); } 34%,76% { transform: translate(4px,-3px) rotate(6deg); } }
+.zcode.has-action.is-action-attention { --body-animation: agent-shot-zcode-attention-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-remind-zcode-body { 0%,40% { transform: none; } 7.2% { transform: translateY(3px) rotate(-4deg); } 13.6%,30.4% { transform: translate(4px,-3px) rotate(6deg); } 40%,100% { transform: none; } }
+.zcode.is-loop-attention { --body-animation: agent-remind-zcode-body var(--agent-remind-ms) ease-in-out var(--agent-remind-phase) infinite; }
+@keyframes agent-shot-zcode-approved-body { 0%,100% { transform: none; } 20% { transform: translateY(4px) scaleY(.93); } 43%,56% { transform: translateY(-9px) rotate(-3deg); } 75% { transform: translateY(3px) scaleY(.95); } }
+.zcode.has-action.is-action-approved { --body-animation: agent-shot-zcode-approved-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-zcode-denied-body { 0%,100% { transform: none; } 76% { transform: translateY(2px); } }
+.zcode.has-action.is-action-denied { --body-animation: agent-shot-zcode-denied-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-zcode-concerned-body { 0%,100% { transform: none; } 24% { transform: rotate(5deg); } 54% { transform: rotate(-5deg); } 74% { transform: rotate(3deg); } }
+.zcode.has-action.is-action-concerned { --body-animation: agent-shot-zcode-concerned-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-zcode-turnEnded-body { 0%,100% { transform: none; } 38% { transform: translateY(3px) scaleY(.96); } 73% { transform: none; } }
+.zcode.has-action.is-action-turnEnded { --body-animation: agent-shot-zcode-turnEnded-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-zcode-join-body { 0%,100% { transform: none; } 28% { transform: translateY(-5px) rotate(5deg); } 63% { transform: rotate(-3deg); } }
+.zcode.has-action.is-action-join { --body-animation: agent-shot-zcode-join-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-zcode-leave-body { 0%,100% { transform: none; } 35%,68% { transform: translate(-5px,4px) rotate(-6deg); } }
+.zcode.has-action.is-action-leave { --body-animation: agent-shot-zcode-leave-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-zcode-sleeping-body { 0%,100% { transform: none; } 48%,74% { transform: translateY(5px) rotate(6deg); } }
+.zcode.has-action.is-action-sleeping { --body-animation: agent-shot-zcode-sleeping-body var(--agent-shot-ms) ease-in-out 1 both; }
+
+/* Codex: alternating petal taps, one raised petal when asking, all petals when cheering. */
+@keyframes agent-idle-codex-petal { 0%,74%,100% { transform: none; } 83% { transform: scale(.94); } 91% { transform: scale(1.07); } }
+@keyframes agent-work-codex-left { 0%,70%,100% { transform: none; } 9%,29% { transform: translate(-1px,2px) rotate(-10deg); } 18%,40% { transform: translate(-1px,-1px) rotate(6deg); } }
+@keyframes agent-work-codex-right { 0%,70%,100% { transform: none; } 9%,29% { transform: translate(1px,-1px) rotate(-6deg); } 18%,40% { transform: translate(1px,2px) rotate(10deg); } }
+@keyframes agent-work-codex-prompt { 0%,28%,65%,100% { transform: none; } 11%,43% { transform: translateX(1.6px); } }
+@keyframes agent-work-codex-caret { 0%,7%,29%,38%,65%,100% { opacity: 1; } 11%,23%,43%,57% { opacity: .2; } }
+@keyframes agent-shot-codex-ask-petal { 0%,100% { transform: none; } 25%,76% { transform: translate(1.8px,-3.2px) rotate(-17deg); } 38%,53% { transform: translate(1.4px,-2px) rotate(-5deg); } }
+@keyframes agent-shot-codex-ask-prompt { 0%,100% { transform: none; } 25%,76% { transform: translateY(-1.8px) rotate(-8deg); } }
+@keyframes agent-shot-codex-bloom { 0%,100% { transform: none; } 16% { transform: scale(.94); } 37%,53% { transform: scale(1.16); } 73% { transform: scale(1.04); } }
+@keyframes agent-shot-codex-close { 0%,100% { transform: none; } 27%,76% { transform: scale(.87); } }
+@keyframes agent-shot-codex-prompt-no { 0%,100% { transform: none; } 25%,51% { transform: translateX(-1.4px); } 38%,64% { transform: translateX(1.4px); } 80% { transform: translateX(-1px); } }
+@keyframes agent-shot-codex-question { 0%,100% { transform: none; } 20% { transform: translateX(1.6px); } 42% { transform: translateX(-1px); } 66% { transform: translateX(.8px); } }
+@keyframes agent-shot-codex-caret-rest { 0%,100% { transform: none; opacity: 1; } 35%,65% { transform: scaleX(.5); opacity: .6; } }
+
+/* Cursor: the pointer precedes the whole cube; outlines remain attached to faces. */
+@keyframes agent-idle-cursor-pointer { 0%,74%,100% { transform: none; } 83%,88% { transform: translate(18px,-16px); } }
+@keyframes agent-work-cursor-pointer { 0%,32%,67%,100% { transform: none; } 10%,45% { transform: translate(24px,-18px); } 20%,55% { transform: translate(-6px,12px) scale(.94); } }
+@keyframes agent-work-cursor-panel { 0%,32%,67%,100% { transform: none; } 22%,57% { transform: scaleY(.94); } }
+@keyframes agent-shot-cursor-peek { 0%,100% { transform: none; } 26%,76% { transform: translate(0,-36px) rotate(-5deg); } }
+@keyframes agent-shot-cursor-open { 0%,100% { transform: none; } 34%,74% { transform: scaleX(1.09); } }
+@keyframes agent-shot-cursor-click { 0%,100% { transform: none; } 30%,46% { transform: translate(28px,-26px); } 61% { transform: translate(-8px,12px) scale(.94); } 78% { transform: translate(5px,-5px); } }
+@keyframes agent-shot-cursor-close { 0%,100% { transform: none; } 42%,67% { transform: scaleX(.88); } }
+@keyframes agent-shot-cursor-retreat { 0%,100% { transform: none; } 18%,65% { transform: translate(-30px,22px) scale(.88); } }
+@keyframes agent-shot-cursor-check { 0%,100% { transform: none; } 22% { transform: translate(-24px,-8px); } 48% { transform: translate(24px,-8px); } 74% { transform: translate(-10px,-4px); } }
+@keyframes agent-shot-cursor-center { 0%,100% { transform: none; } 30% { transform: translate(-12px,14px); } 64% { transform: translate(0,4px); } }
+@keyframes agent-shot-cursor-sleep { 0%,100% { transform: none; } 45%,72% { transform: translate(-12px,26px) scale(.86); } }
+
+/* OpenCode: the white block pops first; the box follows, then catches it. */
+@keyframes agent-idle-opencode-block { 0%,77%,100% { transform: none; } 84%,90% { transform: translateY(-3.5px); } }
+@keyframes agent-work-opencode-block { 0%,33%,70%,100% { transform: none; } 9%,45% { transform: translateY(-4px); } 21%,58% { transform: translateY(2px); } }
+@keyframes agent-work-opencode-ring { 0%,33%,70%,100% { transform: none; } 23%,60% { transform: scaleY(.96); } }
+@keyframes agent-shot-opencode-peek { 0%,100% { transform: none; } 24% { transform: translate(-1.8px,-4px) scaleY(1.1); } 46% { transform: translate(1.8px,-4px) scaleY(1.1); } 64%,78% { transform: translateY(-4px) scaleY(1.1); } }
+@keyframes agent-shot-opencode-pop { 0%,100% { transform: none; } 16% { transform: translateY(2px) scaleY(.8); } 31%,53% { transform: translateY(-2px) scaleY(1.5); } 75% { transform: translateY(1.5px); } 88% { transform: translateY(-1px); } }
+@keyframes agent-shot-opencode-ring-open { 0%,100% { transform: none; } 40%,55% { transform: scale(1.08); } 75% { transform: scale(1.02,.95); } }
+@keyframes agent-shot-opencode-hide { 0%,100% { transform: none; } 16%,78% { transform: translateY(5.5px) scaleX(.78); } }
+@keyframes agent-shot-opencode-close { 0%,100% { transform: none; } 30%,74% { transform: scaleX(.92); } }
+@keyframes agent-shot-opencode-check { 0%,100% { transform: none; } 20% { transform: translate(-2px,-2px); } 46% { transform: translate(2px,-2px); } 70% { transform: translate(-1px,-1px); } }
+@keyframes agent-shot-opencode-settle { 0%,100% { transform: none; } 35%,62% { transform: translateY(2px); } }
+@keyframes agent-shot-opencode-sleep { 0%,100% { transform: none; } 48%,74% { transform: translateY(6px); } }
+
+/* ZCode: the letter acts as the body, the tile follows with a delay. */
+@keyframes agent-idle-zcode-letter { 0%,75%,100% { transform: none; } 84%,89% { transform: translate(1px,-1px) rotate(8deg); } }
+@keyframes agent-work-zcode-letter { 0%,70%,100% { transform: none; } 10%,26% { transform: translate(2px,-1.5px) rotate(7deg); } 38% { transform: translate(2.5px,-1px) rotate(9deg); } 54% { transform: translate(-.8px,1px) rotate(-4deg); } }
+@keyframes agent-work-zcode-tile { 0%,76%,100% { transform: none; } 23%,41% { transform: rotate(5deg); } 62% { transform: rotate(-3deg); } }
+@keyframes agent-work-zcode-ink { 0%,5%,40%,100% { opacity: 0; } 14%,29% { opacity: 1; } }
+@keyframes agent-work-zcode-base { 0%,5%,65%,100% { opacity: 1; } 14%,48% { opacity: .35; } }
+@keyframes agent-shot-zcode-ask { 0%,100% { transform: none; } 28%,76% { transform: translate(1.5px,-3.5px) rotate(10deg); } }
+@keyframes agent-shot-zcode-follow { 0%,100% { transform: none; } 45%,74% { transform: rotate(-6deg); } 85% { transform: rotate(3deg); } }
+@keyframes agent-shot-zcode-proud { 0%,100% { transform: none; } 18% { transform: translateY(1.5px) rotate(7deg); } 37%,56% { transform: translateY(-3px) rotate(-9deg) scaleY(1.1); } 75% { transform: translateY(.5px); } }
+@keyframes agent-shot-zcode-recoil { 0%,100% { transform: none; } 18% { transform: translate(.7px,-1px); } 38%,68% { transform: translate(-2.5px,1.5px) rotate(-20deg) scaleX(.93); } 85% { transform: rotate(5deg); } }
+@keyframes agent-shot-zcode-check { 0%,100% { transform: none; } 22% { transform: translate(1.6px,-1px) rotate(7deg); } 48% { transform: translate(-1px,.5px) rotate(-7deg); } 72% { transform: rotate(4deg); } }
+@keyframes agent-shot-zcode-rest { 0%,100% { transform: none; } 30%,62% { transform: translateY(1.5px); } }
+@keyframes agent-shot-zcode-sleep { 0%,100% { transform: none; } 46%,74% { transform: translateY(3.5px) rotate(10deg) scaleY(.83); } }
+@keyframes agent-shot-zcode-ink-top { 0%,100% { opacity: 0; } 18%,57% { opacity: 1; } }
+@keyframes agent-shot-zcode-ink-diagonal { 0%,18%,100% { opacity: 0; } 38%,72% { opacity: 1; } }
+@keyframes agent-shot-zcode-ink-bottom { 0%,38%,100% { opacity: 0; } 57%,84% { opacity: 1; } }
+@keyframes agent-shot-zcode-ink-reverse { 0%,100% { opacity: 0; } 20%,38% { opacity: 1; } 52%,76% { opacity: 0; } }
+@keyframes agent-shot-zcode-base { 0%,100% { opacity: 1; } 18%,57% { opacity: .35; } 78% { opacity: 1; } }
+
+.codex.is-loop-idle [data-part="petal-0"] { --part-animation: agent-idle-codex-petal var(--agent-idle-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.codex.is-loop-idle [data-part="petal-1"] { --part-animation: agent-idle-codex-petal var(--agent-idle-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.codex.is-loop-idle [data-part="petal-2"] { --part-animation: agent-idle-codex-petal var(--agent-idle-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.codex.is-loop-idle [data-part="petal-3"] { --part-animation: agent-idle-codex-petal var(--agent-idle-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.codex.is-loop-idle [data-part="petal-4"] { --part-animation: agent-idle-codex-petal var(--agent-idle-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.codex.is-loop-idle [data-part="petal-5"] { --part-animation: agent-idle-codex-petal var(--agent-idle-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.codex.is-loop-working [data-part="petal-4"] { --part-animation: agent-work-codex-left var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.codex.is-loop-working [data-part="petal-5"] { --part-animation: agent-work-codex-left var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.codex.is-loop-working [data-part="petal-1"] { --part-animation: agent-work-codex-right var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.codex.is-loop-working [data-part="petal-2"] { --part-animation: agent-work-codex-right var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.codex.is-loop-working [data-part="prompt"] { --part-animation: agent-work-codex-prompt var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.codex.is-loop-working [data-part="caret"] { --part-animation: agent-work-codex-caret var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.cursor-mascot.is-loop-idle [data-part="pointer"] { --part-animation: agent-idle-cursor-pointer var(--agent-idle-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.cursor-mascot.is-loop-working [data-part="pointer"] { --part-animation: agent-work-cursor-pointer var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.cursor-mascot.is-loop-working [data-part="face-left"] { --part-animation: agent-work-cursor-panel var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 90ms) infinite; }
+.cursor-mascot.is-loop-working [data-part="face-right"] { --part-animation: agent-work-cursor-panel var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 90ms) infinite; }
+.opencode.is-loop-idle [data-part="block"] { --part-animation: agent-idle-opencode-block var(--agent-idle-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.opencode.is-loop-working [data-part="block"] { --part-animation: agent-work-opencode-block var(--agent-work-ms) cubic-bezier(.2,0,.8,1) calc(var(--agent-phase) + 0ms) infinite; }
+.opencode.is-loop-working [data-part="ring"] { --part-animation: agent-work-opencode-ring var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.zcode.is-loop-idle [data-part="letter"] { --part-animation: agent-idle-zcode-letter var(--agent-idle-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.zcode.is-loop-working [data-part="letter"] { --part-animation: agent-work-zcode-letter var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.zcode.is-loop-working [data-part="tile"] { --part-animation: agent-work-zcode-tile var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.zcode.is-loop-working [data-part="letter-base"] { --part-animation: agent-work-zcode-base var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.zcode.is-loop-working [data-part="ink-top"] { --part-animation: agent-work-zcode-ink var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.zcode.is-loop-working [data-part="ink-diagonal"] { --part-animation: agent-work-zcode-ink var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 210ms) infinite; }
+.zcode.is-loop-working [data-part="ink-bottom"] { --part-animation: agent-work-zcode-ink var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 420ms) infinite; }
+.codex.has-action.is-action-attention [data-part="petal-1"] { --part-animation: agent-shot-codex-ask-petal var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-remind-codex-ask-petal {  0%,40% { transform: none; } 10%,30.4% { transform: translate(1.8px,-3.2px) rotate(-17deg); } 15.2%,21.2% { transform: translate(1.4px,-2px) rotate(-5deg); }  40%,100% { transform: none; } }
+.codex.is-loop-attention [data-part="petal-1"] { --part-animation: agent-remind-codex-ask-petal var(--agent-remind-ms) ease-in-out calc(var(--agent-remind-phase) + 0ms) infinite; }
+.codex.has-action.is-action-attention [data-part="prompt"] { --part-animation: agent-shot-codex-ask-prompt var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-remind-codex-ask-prompt {  0%,40% { transform: none; } 10%,30.4% { transform: translateY(-1.8px) rotate(-8deg); }  40%,100% { transform: none; } }
+.codex.is-loop-attention [data-part="prompt"] { --part-animation: agent-remind-codex-ask-prompt var(--agent-remind-ms) ease-in-out calc(var(--agent-remind-phase) + 0ms) infinite; }
+.codex.has-action.is-action-approved [data-part="petal-0"] { --part-animation: agent-shot-codex-bloom var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-approved [data-part="petal-1"] { --part-animation: agent-shot-codex-bloom var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-approved [data-part="petal-2"] { --part-animation: agent-shot-codex-bloom var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-approved [data-part="petal-3"] { --part-animation: agent-shot-codex-bloom var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-approved [data-part="petal-4"] { --part-animation: agent-shot-codex-bloom var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-approved [data-part="petal-5"] { --part-animation: agent-shot-codex-bloom var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-approved [data-part="caret"] { --part-animation: agent-shot-codex-caret-rest var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-denied [data-part="petal-0"] { --part-animation: agent-shot-codex-close var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-denied [data-part="petal-1"] { --part-animation: agent-shot-codex-close var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-denied [data-part="petal-2"] { --part-animation: agent-shot-codex-close var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-denied [data-part="petal-3"] { --part-animation: agent-shot-codex-close var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-denied [data-part="petal-4"] { --part-animation: agent-shot-codex-close var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-denied [data-part="petal-5"] { --part-animation: agent-shot-codex-close var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-denied [data-part="shell"] { --part-animation: agent-shot-codex-close var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-denied [data-part="prompt"] { --part-animation: agent-shot-codex-prompt-no var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-concerned [data-part="prompt"] { --part-animation: agent-shot-codex-question var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-turnEnded [data-part="caret"] { --part-animation: agent-shot-codex-caret-rest var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-join [data-part="petal-1"] { --part-animation: agent-shot-codex-ask-petal var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-leave [data-part="shell"] { --part-animation: agent-shot-codex-close var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.codex.has-action.is-action-sleeping [data-part="shell"] { --part-animation: agent-shot-codex-close var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.cursor-mascot.has-action.is-action-attention [data-part="pointer"] { --part-animation: agent-shot-cursor-peek var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-remind-cursor-peek {  0%,40% { transform: none; } 10.4%,30.4% { transform: translate(0,-36px) rotate(-5deg); }  40%,100% { transform: none; } }
+.cursor-mascot.is-loop-attention [data-part="pointer"] { --part-animation: agent-remind-cursor-peek var(--agent-remind-ms) ease-in-out calc(var(--agent-remind-phase) + 0ms) infinite; }
+.cursor-mascot.has-action.is-action-attention [data-part="face-left"] { --part-animation: agent-shot-cursor-open var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.cursor-mascot.has-action.is-action-attention [data-part="face-right"] { --part-animation: agent-shot-cursor-open var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-remind-cursor-open {  0%,40% { transform: none; } 13.6%,29.6% { transform: scaleX(1.09); }  40%,100% { transform: none; } }
+.cursor-mascot.is-loop-attention [data-part="face-left"] { --part-animation: agent-remind-cursor-open var(--agent-remind-ms) ease-in-out calc(var(--agent-remind-phase) + 0ms) infinite; }
+.cursor-mascot.is-loop-attention [data-part="face-right"] { --part-animation: agent-remind-cursor-open var(--agent-remind-ms) ease-in-out calc(var(--agent-remind-phase) + 0ms) infinite; }
+.cursor-mascot.has-action.is-action-approved [data-part="pointer"] { --part-animation: agent-shot-cursor-click var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.cursor-mascot.has-action.is-action-approved [data-part="face-bottom"] { --part-animation: agent-shot-cursor-open var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.cursor-mascot.has-action.is-action-approved [data-part="face-left"] { --part-animation: agent-shot-cursor-open var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.cursor-mascot.has-action.is-action-approved [data-part="face-right"] { --part-animation: agent-shot-cursor-open var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.cursor-mascot.has-action.is-action-denied [data-part="pointer"] { --part-animation: agent-shot-cursor-retreat var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.cursor-mascot.has-action.is-action-denied [data-part="face-left"] { --part-animation: agent-shot-cursor-close var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.cursor-mascot.has-action.is-action-denied [data-part="face-right"] { --part-animation: agent-shot-cursor-close var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.cursor-mascot.has-action.is-action-concerned [data-part="pointer"] { --part-animation: agent-shot-cursor-check var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.cursor-mascot.has-action.is-action-turnEnded [data-part="pointer"] { --part-animation: agent-shot-cursor-center var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.cursor-mascot.has-action.is-action-join [data-part="pointer"] { --part-animation: agent-shot-cursor-peek var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.cursor-mascot.has-action.is-action-leave [data-part="pointer"] { --part-animation: agent-shot-cursor-retreat var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.cursor-mascot.has-action.is-action-sleeping [data-part="pointer"] { --part-animation: agent-shot-cursor-sleep var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.cursor-mascot.has-action.is-action-sleeping [data-part="face-left"] { --part-animation: agent-shot-cursor-close var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.cursor-mascot.has-action.is-action-sleeping [data-part="face-right"] { --part-animation: agent-shot-cursor-close var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.opencode.has-action.is-action-attention [data-part="block"] { --part-animation: agent-shot-opencode-peek var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-remind-opencode-peek {  0%,40% { transform: none; } 9.6% { transform: translate(-1.8px,-4px) scaleY(1.1); } 18.4% { transform: translate(1.8px,-4px) scaleY(1.1); } 25.6%,31.2% { transform: translateY(-4px) scaleY(1.1); }  40%,100% { transform: none; } }
+.opencode.is-loop-attention [data-part="block"] { --part-animation: agent-remind-opencode-peek var(--agent-remind-ms) ease-in-out calc(var(--agent-remind-phase) + 0ms) infinite; }
+.opencode.has-action.is-action-approved [data-part="block"] { --part-animation: agent-shot-opencode-pop var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.opencode.has-action.is-action-approved [data-part="ring"] { --part-animation: agent-shot-opencode-ring-open var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.opencode.has-action.is-action-denied [data-part="block"] { --part-animation: agent-shot-opencode-hide var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.opencode.has-action.is-action-denied [data-part="ring"] { --part-animation: agent-shot-opencode-close var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.opencode.has-action.is-action-concerned [data-part="block"] { --part-animation: agent-shot-opencode-check var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.opencode.has-action.is-action-turnEnded [data-part="block"] { --part-animation: agent-shot-opencode-settle var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.opencode.has-action.is-action-join [data-part="block"] { --part-animation: agent-shot-opencode-peek var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.opencode.has-action.is-action-leave [data-part="block"] { --part-animation: agent-shot-opencode-hide var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.opencode.has-action.is-action-sleeping [data-part="block"] { --part-animation: agent-shot-opencode-sleep var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-attention [data-part="letter"] { --part-animation: agent-shot-zcode-ask var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-remind-zcode-ask {  0%,40% { transform: none; } 11.2%,30.4% { transform: translate(1.5px,-3.5px) rotate(10deg); }  40%,100% { transform: none; } }
+.zcode.is-loop-attention [data-part="letter"] { --part-animation: agent-remind-zcode-ask var(--agent-remind-ms) ease-in-out calc(var(--agent-remind-phase) + 0ms) infinite; }
+.zcode.has-action.is-action-attention [data-part="tile"] { --part-animation: agent-shot-zcode-follow var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-remind-zcode-follow {  0%,40% { transform: none; } 18%,29.6% { transform: rotate(-6deg); } 34% { transform: rotate(3deg); }  40%,100% { transform: none; } }
+.zcode.is-loop-attention [data-part="tile"] { --part-animation: agent-remind-zcode-follow var(--agent-remind-ms) ease-in-out calc(var(--agent-remind-phase) + 0ms) infinite; }
+.zcode.has-action.is-action-attention [data-part="ink-diagonal"] { --part-animation: agent-shot-zcode-ink-diagonal var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-remind-zcode-ink-diagonal {  0%,7.2%,40% { opacity: 0; } 15.2%,28.8% { opacity: 1; }  40%,100% { opacity: 0; } }
+.zcode.is-loop-attention [data-part="ink-diagonal"] { --part-animation: agent-remind-zcode-ink-diagonal var(--agent-remind-ms) ease-in-out calc(var(--agent-remind-phase) + 0ms) infinite; }
+.zcode.has-action.is-action-approved [data-part="letter"] { --part-animation: agent-shot-zcode-proud var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-approved [data-part="tile"] { --part-animation: agent-shot-zcode-follow var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-approved [data-part="ink-top"] { --part-animation: agent-shot-zcode-ink-top var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-approved [data-part="ink-diagonal"] { --part-animation: agent-shot-zcode-ink-diagonal var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-approved [data-part="ink-bottom"] { --part-animation: agent-shot-zcode-ink-bottom var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-approved [data-part="letter-base"] { --part-animation: agent-shot-zcode-base var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-denied [data-part="letter"] { --part-animation: agent-shot-zcode-recoil var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-denied [data-part="ink-bottom"] { --part-animation: agent-shot-zcode-ink-reverse var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-denied [data-part="ink-diagonal"] { --part-animation: agent-shot-zcode-ink-reverse calc(var(--agent-shot-ms) - 110ms) ease-in-out 110ms 1 both; }
+.zcode.has-action.is-action-denied [data-part="ink-top"] { --part-animation: agent-shot-zcode-ink-reverse calc(var(--agent-shot-ms) - 220ms) ease-in-out 220ms 1 both; }
+.zcode.has-action.is-action-concerned [data-part="letter"] { --part-animation: agent-shot-zcode-check var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-concerned [data-part="ink-diagonal"] { --part-animation: agent-shot-zcode-ink-diagonal var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-turnEnded [data-part="letter"] { --part-animation: agent-shot-zcode-rest var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-turnEnded [data-part="tile"] { --part-animation: agent-shot-zcode-rest var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-join [data-part="letter"] { --part-animation: agent-shot-zcode-ask var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-join [data-part="tile"] { --part-animation: agent-shot-zcode-follow var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-leave [data-part="letter"] { --part-animation: agent-shot-zcode-recoil var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-sleeping [data-part="letter"] { --part-animation: agent-shot-zcode-sleep var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-shot-work-codex-prompt { 0%,28%,65%,100% { transform: none; } 11%,43% { transform: translateX(1.6px); } }
+.codex.has-action.is-action-started [data-part="prompt"] { --part-animation: agent-shot-work-codex-prompt var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-shot-work-codex-caret { 0%,7%,29%,38%,65%,100% { opacity: 1; } 11%,23%,43%,57% { opacity: .2; } }
+.codex.has-action.is-action-started [data-part="caret"] { --part-animation: agent-shot-work-codex-caret var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-shot-work-codex-left { 0%,70%,100% { transform: none; } 9%,29% { transform: translate(-1px,2px) rotate(-10deg); } 18%,40% { transform: translate(-1px,-1px) rotate(6deg); } }
+.codex.has-action.is-action-started [data-part="petal-4"] { --part-animation: agent-shot-work-codex-left var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-shot-work-codex-right { 0%,70%,100% { transform: none; } 9%,29% { transform: translate(1px,-1px) rotate(-6deg); } 18%,40% { transform: translate(1px,2px) rotate(10deg); } }
+.codex.has-action.is-action-started [data-part="petal-1"] { --part-animation: agent-shot-work-codex-right var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-shot-work-cursor-pointer { 0%,32%,67%,100% { transform: none; } 10%,45% { transform: translate(24px,-18px); } 20%,55% { transform: translate(-6px,12px) scale(.94); } }
+.cursor-mascot.has-action.is-action-started [data-part="pointer"] { --part-animation: agent-shot-work-cursor-pointer var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-shot-work-cursor-panel { 0%,32%,67%,100% { transform: none; } 22%,57% { transform: scaleY(.94); } }
+.cursor-mascot.has-action.is-action-started [data-part="face-left"] { --part-animation: agent-shot-work-cursor-panel var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.cursor-mascot.has-action.is-action-started [data-part="face-right"] { --part-animation: agent-shot-work-cursor-panel var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-shot-work-opencode-block { 0%,33%,70%,100% { transform: none; } 9%,45% { transform: translateY(-4px); } 21%,58% { transform: translateY(2px); } }
+.opencode.has-action.is-action-started [data-part="block"] { --part-animation: agent-shot-work-opencode-block var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-shot-work-opencode-ring { 0%,33%,70%,100% { transform: none; } 23%,60% { transform: scaleY(.96); } }
+.opencode.has-action.is-action-started [data-part="ring"] { --part-animation: agent-shot-work-opencode-ring var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-shot-work-zcode-letter { 0%,70%,100% { transform: none; } 10%,26% { transform: translate(2px,-1.5px) rotate(7deg); } 38% { transform: translate(2.5px,-1px) rotate(9deg); } 54% { transform: translate(-.8px,1px) rotate(-4deg); } }
+.zcode.has-action.is-action-started [data-part="letter"] { --part-animation: agent-shot-work-zcode-letter var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-shot-work-zcode-tile { 0%,76%,100% { transform: none; } 23%,41% { transform: rotate(5deg); } 62% { transform: rotate(-3deg); } }
+.zcode.has-action.is-action-started [data-part="tile"] { --part-animation: agent-shot-work-zcode-tile var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-shot-work-zcode-base { 0%,5%,65%,100% { opacity: 1; } 14%,48% { opacity: .35; } }
+.zcode.has-action.is-action-started [data-part="letter-base"] { --part-animation: agent-shot-work-zcode-base var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+@keyframes agent-shot-work-zcode-ink { 0%,5%,40%,100% { opacity: 0; } 14%,29% { opacity: 1; } }
+.zcode.has-action.is-action-started [data-part="ink-top"] { --part-animation: agent-shot-work-zcode-ink var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-started [data-part="ink-diagonal"] { --part-animation: agent-shot-work-zcode-ink var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+.zcode.has-action.is-action-started [data-part="ink-bottom"] { --part-animation: agent-shot-work-zcode-ink var(--agent-shot-ms) ease-in-out 0ms 1 both; }
+
+/* Low spirits droop once; this is distinct from a refusal or settling to sleep. */
+.codex.has-action.is-action-sleeping .codex-petal, .codex.has-action.is-action-leave .codex-petal { --part-animation: agent-shot-codex-close var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-zcode-ask-base { 0%,100% { opacity: 1; } 28%,76% { opacity: .4; } }
+@keyframes agent-shot-zcode-ask-ink { 0%,100% { opacity: 0; } 28%,76% { opacity: 1; } }
+@keyframes agent-remind-zcode-ask-base { 0%,40%,100% { opacity: 1; } 11.2%,30.4% { opacity: .4; } }
+@keyframes agent-remind-zcode-ask-ink { 0%,40%,100% { opacity: 0; } 11.2%,30.4% { opacity: 1; } }
+@keyframes agent-shot-zcode-base-reverse { 0%,100% { opacity: 1; } 18%,78% { opacity: .35; } }
+.zcode.has-action.is-action-attention [data-part="letter-base"] { --part-animation: agent-shot-zcode-ask-base var(--agent-shot-ms) ease-in-out 1 both; }
+.zcode.has-action.is-action-attention [data-part="ink-diagonal"] { --part-animation: agent-shot-zcode-ask-ink var(--agent-shot-ms) ease-in-out 1 both; }
+.zcode.is-loop-attention [data-part="letter-base"] { --part-animation: agent-remind-zcode-ask-base var(--agent-remind-ms) ease-in-out var(--agent-remind-phase) infinite; }
+.zcode.is-loop-attention [data-part="ink-diagonal"] { --part-animation: agent-remind-zcode-ask-ink var(--agent-remind-ms) ease-in-out var(--agent-remind-phase) infinite; }
+.zcode.has-action.is-action-denied [data-part="letter-base"] { --part-animation: agent-shot-zcode-base-reverse var(--agent-shot-ms) ease-in-out 1 both; }
+.zcode.has-action.is-action-concerned [data-part="letter-base"] { --part-animation: agent-shot-zcode-base var(--agent-shot-ms) ease-in-out 1 both; }
+
+@keyframes agent-shot-codex-downcast-body { 0%,100% { transform: none; } 32%,72% { transform: translateY(7px) rotate(-10deg) scale(.96); } }
+@keyframes agent-shot-cursor-downcast-body { 0%,100% { transform: none; } 32%,72% { transform: translateY(6px) rotate(-9deg); } }
+@keyframes agent-shot-gemini-downcast-body { 0%,100% { transform: none; } 31.1%,73.3% { transform: translateY(7px) rotate(-12deg) scale(.94,.97); } }
+@keyframes agent-shot-opencode-downcast-body { 0%,100% { transform: none; } 32%,72% { transform: translateY(6px) rotate(-8deg); } }
+@keyframes agent-shot-zcode-downcast-body { 0%,100% { transform: none; } 32%,72% { transform: translateY(4px) rotate(-4deg); } }
+@keyframes agent-shot-codex-droop { 0%,100% { transform: none; } 32%,72% { transform: translate(-1px,2px) rotate(-12deg); } }
+@keyframes agent-shot-cursor-droop { 0%,100% { transform: none; } 32%,72% { transform: translate(-10px,18px) rotate(-7deg); } }
+@keyframes agent-shot-opencode-droop { 0%,100% { transform: none; } 32%,72% { transform: translate(-2px,3px); } }
+@keyframes agent-shot-zcode-droop { 0%,100% { transform: none; } 32%,72% { transform: translateY(2.5px) rotate(-10deg); } }
+.codex.has-action.is-action-downcast { --body-animation: agent-shot-codex-downcast-body var(--agent-shot-ms) ease-in-out 1 both; }
+.cursor-mascot.has-action.is-action-downcast { --body-animation: agent-shot-cursor-downcast-body var(--agent-shot-ms) ease-in-out 1 both; }
+.gemini.has-action.is-action-downcast { --body-animation: agent-shot-gemini-downcast-body var(--agent-shot-ms) ease-in-out 1 both; }
+.opencode.has-action.is-action-downcast { --body-animation: agent-shot-opencode-downcast-body var(--agent-shot-ms) ease-in-out 1 both; }
+.zcode.has-action.is-action-downcast { --body-animation: agent-shot-zcode-downcast-body var(--agent-shot-ms) ease-in-out 1 both; }
+.codex.has-action.is-action-downcast [data-part="petal-4"] { --part-animation: agent-shot-codex-droop var(--agent-shot-ms) ease-in-out 1 both; }
+.cursor-mascot.has-action.is-action-downcast [data-part="pointer"] { --part-animation: agent-shot-cursor-droop var(--agent-shot-ms) ease-in-out 1 both; }
+.opencode.has-action.is-action-downcast [data-part="block"] { --part-animation: agent-shot-opencode-droop var(--agent-shot-ms) ease-in-out 1 both; }
+.zcode.has-action.is-action-downcast [data-part="letter"] { --part-animation: agent-shot-zcode-droop var(--agent-shot-ms) ease-in-out 1 both; }
+
+/* Keep both the whole-body gesture and defining parts at menu-bar sizes. */
+.clawd.is-small .clawd-leg, .clawd.is-small .clawd-eyes { animation: none !important; transform: none !important; }
+.agent-mascot.is-motion-disabled [data-part], .agent-mascot.is-static [data-part] { animation: none !important; transform: none !important; }
+.agent-mascot.is-motion-disabled .mascot-original, .agent-mascot.is-static .mascot-original { display: inline; }
+.agent-mascot.is-motion-disabled .mascot-articulated, .agent-mascot.is-static .mascot-articulated { display: none; }
+.agent-mascot.is-motion-disabled .zcode-ink, .agent-mascot.is-static .zcode-ink { opacity: 0; }
+.agent-mascot.is-motion-disabled .zcode-letter-base, .agent-mascot.is-static .zcode-letter-base { opacity: 1; }
+.agent-mascot.is-motion-disabled .mascot-eye { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .agent-mascot [data-part] { animation: none !important; transform: none !important; }
+  .agent-mascot .mascot-original { display: inline; }
+  .agent-mascot .mascot-articulated { display: none; }
+  .agent-mascot .zcode-ink { opacity: 0; }
+  .agent-mascot .zcode-letter-base { opacity: 1; }
+  .agent-mascot .mascot-eye { animation: none !important; }
+}

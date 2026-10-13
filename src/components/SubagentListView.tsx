@@ -85,11 +85,12 @@ export const SubagentListRow = memo(function SubagentListRow({
     >
       <AgentMascot
         agent={agent}
+        instanceKey={subagent.agentId}
+        activity={completed ? "rest" : "working"}
         size={18}
         mood={mood}
         accent={color.accent}
         accentDark={color.accentDark}
-        animated={false}
       />
       <div className="subagent-list-item-info">
         <span className={`subagent-list-item-name ${color.tone}`}>

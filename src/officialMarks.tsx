@@ -1,5 +1,7 @@
 import { useId } from "react";
 import type { ClawdMood } from "./mascotShared";
+import type { MascotTimeline } from "./mascotMotion";
+import { GeminiContourAnimation } from "./geminiMotion";
 
 /** Official Codex mark: OpenAI blossom with a `>_` prompt cutout. */
 export const CODEX_OFFICIAL_PATH =
@@ -59,14 +61,39 @@ export function codexMarkFill(mood: ClawdMood, accent?: string): string {
   return accent || "#f4f4f4";
 }
 
+// Preserve the official silhouette and the exact two prompt cutouts at rest.
+const CODEX_SHELL_PATH = CODEX_OFFICIAL_PATH.split("zm")[0] + "z";
+const CODEX_CHEVRON_PATH = "M7.282 8.307a.848.848 0 00-1.473.842l1.694 2.965-1.688 2.848a.849.849 0 001.46.864l1.94-3.272a.849.849 0 00.007-.854l-1.94-3.393z";
+const CODEX_CARET_PATH = "M12.728 14.547a.849.849 0 000 1.695h4.848a.849.849 0 000-1.696h-4.848z";
+const PETAL_SECTORS = Array.from({ length: 6 }, (_, i) => {
+  const angle = (i * 60 - 120) * Math.PI / 180;
+  const point = (r: number, a: number) => `${12.15 + r * Math.cos(a)},${12.15 + r * Math.sin(a)}`;
+  return `12.15,12.15 ${point(40, angle - 0.004)} ${point(40, angle + Math.PI / 3 + 0.004)}`;
+});
+
 export function CodexOfficialMark({ fill, className }: { fill: string; className?: string }) {
-  return (
-    <g className={className}>
-      <g transform="translate(56 26.4) scale(3.5) translate(-12.15 -8)">
-        <path fill={fill} fillRule="evenodd" clipRule="evenodd" d={CODEX_OFFICIAL_PATH} />
+  const id = `codex-parts-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
+  return <g className={className}>
+    <g transform="translate(56 26.4) scale(3.5) translate(-12.15 -8)">
+      <defs>
+        <mask id={`${id}-prompt`} maskUnits="userSpaceOnUse" x="-8" y="-8" width="40" height="40" style={{ maskType: "luminance" }}>
+          <rect x="-8" y="-8" width="40" height="40" fill="white" />
+          <g data-part="prompt" className="codex-prompt"><path d={CODEX_CHEVRON_PATH} fill="black" /></g>
+          <g data-part="caret" className="codex-caret"><path d={CODEX_CARET_PATH} fill="black" /></g>
+        </mask>
+        <clipPath id={`${id}-hub`}><circle cx="12.15" cy="12.15" r="6.5" /></clipPath>
+        {PETAL_SECTORS.map((points, i) => <clipPath id={`${id}-petal-${i}`} key={i}><polygon points={points} /></clipPath>)}
+      </defs>
+      <path className="mascot-original" fill={fill} fillRule="evenodd" clipRule="evenodd" d={CODEX_OFFICIAL_PATH} />
+      <g className="mascot-articulated" mask={`url(#${id}-prompt)`}>
+        <g data-part="shell" className="codex-shell"><path fill={fill} d={CODEX_SHELL_PATH} /></g>
+        {PETAL_SECTORS.map((_, i) => <g key={i} data-part={`petal-${i}`} className={`codex-petal codex-petal-${i}`}>
+          <path fill={fill} d={CODEX_SHELL_PATH} clipPath={`url(#${id}-petal-${i})`} />
+        </g>)}
+        <path fill={fill} d={CODEX_SHELL_PATH} clipPath={`url(#${id}-hub)`} />
       </g>
     </g>
-  );
+  </g>;
 }
 
 /** ZCode mark: rounded tile with a bold italic "Z" after the official app icon.
@@ -124,12 +151,20 @@ export function ZcodeOfficialMark({
       </defs>
       {/* Same visual band as the Codex blossom / Cursor cube (center ≈ y 37-40). */}
       <g transform="translate(56 39) scale(3.15) translate(-12 -12)">
-        <path fill={`url(#${gradientId})`} d={ZCODE_TILE_PATH} />
-        <path
-          fill={zcodeMarkFill(mood)}
-          transform="translate(2 0) skewX(-9.5)"
-          d={ZCODE_Z_PATH}
-        />
+        <g data-part="tile" className="zcode-tile"><path fill={`url(#${gradientId})`} d={ZCODE_TILE_PATH} /></g>
+        <g transform="translate(2 0) skewX(-9.5)">
+          <g data-part="letter" className="zcode-letter">
+            <path data-part="letter-base" className="zcode-letter-base" fill={zcodeMarkFill(mood)} d={ZCODE_Z_PATH} />
+            <defs>
+              <clipPath id={`${gradientId}-top`}><rect x="4" y="5" width="16" height="3" /></clipPath>
+              <clipPath id={`${gradientId}-diagonal`}><rect x="4" y="8" width="16" height="8" /></clipPath>
+              <clipPath id={`${gradientId}-bottom`}><rect x="4" y="16" width="16" height="3" /></clipPath>
+            </defs>
+            {["top", "diagonal", "bottom"].map((part) => <g key={part} className={`zcode-ink zcode-ink-${part}`} data-part={`ink-${part}`}>
+              <path fill={zcodeMarkFill(mood)} d={ZCODE_Z_PATH} clipPath={`url(#${gradientId}-${part})`} />
+            </g>)}
+          </g>
+        </g>
       </g>
     </g>
   );
@@ -162,11 +197,13 @@ export function GeminiOfficialMark({
   accent,
   accentDark,
   className,
+  timeline,
 }: {
   mood: ClawdMood;
   accent?: string;
   accentDark?: string;
   className?: string;
+  timeline?: MascotTimeline | null;
 }) {
   // Per-instance gradient id: several mascots with different moods (e.g. a dead
   // header logo next to a live agent tab) must not share one gradient def.
@@ -176,7 +213,7 @@ export function GeminiOfficialMark({
   return (
     <g className={className}>
       <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="0.9" y2="1">
+        <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="21.6" y2="24">
           <stop offset="0" stopColor={from} />
           {mid !== undefined && <stop offset="0.5" stopColor={mid} />}
           <stop offset="1" stopColor={to} />
@@ -184,15 +221,25 @@ export function GeminiOfficialMark({
       </defs>
       {/* Same visual band as the Codex blossom / Cursor cube / ZCode tile. */}
       <g transform="translate(56 39) scale(3.15) translate(-12 -12)">
-        <path fill={`url(#${gradientId})`} d={GEMINI_SPARK_PATH} />
+        <defs>
+          {["12,12 -40,-40 64,-40", "12,12 64,-40 64,64", "12,12 64,64 -40,64", "12,12 -40,64 -40,-40"].map((points, i) =>
+            <clipPath id={`${gradientId}-tip-${i}`} key={i}><polygon points={points} /></clipPath>)}
+        </defs>
+        <path className="mascot-original" fill={`url(#${gradientId})`} d={GEMINI_SPARK_PATH} />
+        <g className="mascot-articulated">
+          <g data-part="core" className="gemini-core"><path fill={`url(#${gradientId})`} d={GEMINI_SPARK_PATH}>
+            <GeminiContourAnimation key={`${timeline?.key}:${timeline?.durationMs}`} timeline={timeline} />
+          </path></g>
+          {[0, 1, 2, 3].map(i => <g key={i} data-part={`tip-${i}`} className={`gemini-tip gemini-tip-${i}`}>
+            <path fill={`url(#${gradientId})`} d={GEMINI_SPARK_PATH} clipPath={`url(#${gradientId}-tip-${i})`}>
+              <GeminiContourAnimation key={`${timeline?.key}:${timeline?.durationMs}`} timeline={timeline} />
+            </path>
+          </g>)}
+        </g>
       </g>
     </g>
   );
 }
-
-const CURSOR_CUBE_PATH_KEYS = Object.keys(
-  CURSOR_CUBE_PATHS,
-) as Array<keyof typeof CURSOR_CUBE_PATHS>;
 
 /** OpenCode mark: the pixel-block "o" from the official wordmark
  * (logo-ornate in opencode.ai's bundle), rebuilt on a 24×24 grid — a square
@@ -253,8 +300,11 @@ export function OpencodeOfficialMark({
       </defs>
       {/* Same visual band as the Codex blossom / Cursor cube / ZCode tile / Gemini spark. */}
       <g transform="translate(56 39) scale(3.15) translate(-12 -12)">
-        <path fill={`url(#${gradientId})`} fillRule="evenodd" clipRule="evenodd" d={OPENCODE_RING_PATH} />
-        <path fill={opencodeBlockFill(mood)} d={OPENCODE_BLOCK_PATH} />
+        <g data-part="ring" className="opencode-ring"><path fill={`url(#${gradientId})`} fillRule="evenodd" clipRule="evenodd" d={OPENCODE_RING_PATH} /></g>
+        <defs><clipPath id={`${gradientId}-aperture`}><rect x="6" y="6" width="12" height="12" /></clipPath></defs>
+        <g clipPath={`url(#${gradientId}-aperture)`}>
+          <g data-part="block" className="opencode-block"><path fill={opencodeBlockFill(mood)} d={OPENCODE_BLOCK_PATH} /></g>
+        </g>
       </g>
     </g>
   );
@@ -270,25 +320,18 @@ export function CursorOfficialMark({
   return (
     <g className={className}>
       <g transform="translate(56 37) scale(0.411) translate(-483.5 -490.5)">
-        {/* WKWebView ignores CSS filter on <g>; paint a non-scaling stroke behind fills. */}
-        <g className="cursor-mascot-outline" aria-hidden="true">
-          {CURSOR_CUBE_PATH_KEYS.map((key) => (
-            <path
-              key={key}
-              d={CURSOR_CUBE_PATHS[key]}
-              fill="none"
-              strokeWidth={2.4}
-              strokeLinejoin="round"
-              strokeLinecap="round"
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
+        {/* Keep each non-scaling outline attached to its moving fill. */}
+        {(["bottom", "left", "right"] as const).map(part => <g key={part} data-part={`face-${part}`} className={`cursor-mascot-panel cursor-mascot-panel-${part}`}>
+          <g className="cursor-mascot-outline" aria-hidden="true"><path d={CURSOR_CUBE_PATHS[part]} fill="none" strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" /></g>
+          <path className={`cursor-mascot-face-${part}`} fill={palette[part]} d={CURSOR_CUBE_PATHS[part]} />
+        </g>)}
+        <g data-part="pointer" className="cursor-mascot-pointer">
+          <g className="cursor-mascot-outline" aria-hidden="true">
+            {(["stem", "head"] as const).map(part => <path key={part} d={CURSOR_CUBE_PATHS[part]} fill="none" strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />)}
+          </g>
+          <path className="cursor-mascot-pointer-stem" fill={palette.stem} d={CURSOR_CUBE_PATHS.stem} />
+          <path className="cursor-mascot-pointer-head" fill={palette.head} d={CURSOR_CUBE_PATHS.head} />
         </g>
-        <path className="cursor-mascot-face-bottom" fill={palette.bottom} d={CURSOR_CUBE_PATHS.bottom} />
-        <path className="cursor-mascot-face-left" fill={palette.left} d={CURSOR_CUBE_PATHS.left} />
-        <path className="cursor-mascot-face-right" fill={palette.right} d={CURSOR_CUBE_PATHS.right} />
-        <path className="cursor-mascot-pointer-stem" fill={palette.stem} d={CURSOR_CUBE_PATHS.stem} />
-        <path className="cursor-mascot-pointer-head" fill={palette.head} d={CURSOR_CUBE_PATHS.head} />
       </g>
     </g>
   );

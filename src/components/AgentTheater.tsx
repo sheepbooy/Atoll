@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
-import { AgentMascot } from "../AgentMascot";
+import { AgentMascot, type MascotAction } from "../AgentMascot";
+import { getSessionColor, getSubagentColor } from "../subagentIdentity";
 import type { TheaterScene } from "../hooks/useAgentTheater";
 
 export function AgentTheater({ scene, capacity = 3 }: { scene: TheaterScene; capacity?: number }) {
@@ -15,14 +16,18 @@ export function AgentTheater({ scene, capacity = 3 }: { scene: TheaterScene; cap
   const actors = ordered.slice(0, limit);
   const overflow = ordered.length - actors.length;
   const label = t(`theater.${event.kind}`);
-  return <span className="agent-theater compact-session-stack" title={label} role="status" aria-label={label} key={event.eventId}>
-    {actors.map(id => <span key={id === null ? "main" : `subagent:${id}`} className={`compact-session-dot agent-theater-actor${id === event.subagentId ? ` is-${event.kind}` : ""}`}>
-      <AgentMascot agent={event.agent} mood={event.kind === "turnEnded" ? "calm" : "alert"} size={18} animated={false} />
-      {id === null && event.kind === "started" ? <svg className="theater-keyboard" viewBox="0 0 18 6" aria-hidden="true">
-        <rect x="1" y="1" width="16" height="4" rx="1" fill="#33434f" />
-        <path d="M3 2h12M4 4h10" stroke="#84d1e8" strokeWidth=".6" />
-      </svg> : null}
-    </span>)}
+  const action: MascotAction = event.kind === "started" ? "started" : event.kind === "subagentStarted" ? "join" : event.kind === "subagentEnded" ? "leave" : "turnEnded";
+  return <span className="agent-theater compact-session-stack" title={label} role="status" aria-label={label}>
+    {actors.map(id => {
+      const performing = id === event.subagentId;
+      const color = id === null ? getSessionColor(event.sessionId) : getSubagentColor(id);
+      return <span key={`${event.agent}:${event.sessionId}:${id ?? "main"}`} className={`compact-session-dot agent-theater-actor${performing ? ` is-${event.kind}` : ""}`}>
+        <AgentMascot agent={event.agent} mood="calm" size={18}
+          instanceKey={id ?? event.sessionId} accent={color.accent} accentDark={color.accentDark}
+          activity="rest"
+          action={performing ? action : null} actionKey={event.eventId} />
+      </span>;
+    })}
     {overflow > 0 ? <span className="compact-session-overflow">+{overflow}</span> : null}
   </span>;
 }

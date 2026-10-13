@@ -1,0 +1,39 @@
+html:has(.agent-playground), body:has(.agent-playground), #root:has(.agent-playground) { overflow: auto; background: #0b0d11; }
+.agent-playground { min-height: 100vh; padding: 36px; color: #e6e9ed; background: radial-gradient(ellipse at 45% 0, #172732, transparent 65%), #0b0d11; }
+.agent-playground-heading { max-width: 1200px; margin: auto; }
+.agent-playground-heading > p { color: #89cbd9; font: 11px var(--font-mono); letter-spacing: .14em; }
+.agent-playground h1 { margin: 12px 0; font-size: 30px; letter-spacing: -.04em; }
+.agent-playground-heading > div { color: #8995a3; font-size: 13px; }
+.agent-playground-controls { max-width: 1200px; margin: 24px auto; padding: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; border: 1px solid #29313c; border-radius: 14px; background: #141a22; font-size: 12px; }
+.agent-playground label { display: inline-flex; align-items: center; gap: 6px; }
+.agent-playground button, .agent-playground select { color: #d9e3ed; border: 1px solid #354354; border-radius: 7px; background: #1b2632; padding: 6px 10px; font-size: 12px; cursor: pointer; }
+.agent-playground button:hover { background: #293f50; }
+.agent-playground button:disabled { opacity: .4; cursor: default; }
+.agent-playground button:focus-visible, .agent-playground select:focus-visible { outline: 2px solid #89cbd9; outline-offset: 3px; }
+.agent-playground-actions { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; }
+.agent-playground-grid { max-width: 1200px; margin: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.agent-playground-card { text-align: center; padding: 20px; border: 1px solid #28313c; border-radius: 16px; background: #131920; }
+.agent-playground-card h2 { font-size: 16px; font-weight: 600; margin: 0; }
+.agent-playground-card h2 small { display: block; color: #7d8c9c; font-weight: 400; font-size: 11px; margin-top: 6px; }
+.agent-playground-stage { height: 142px; display: flex; align-items: center; justify-content: center; }
+.agent-playground-card p { margin: 0 0 18px; color: #8e9bab; font-size: 11px; }
+.agent-playground-sizes { border-top: 1px solid #26313c; padding-top: 12px; display: flex; gap: 22px; justify-content: center; }
+.agent-playground-sizes > div { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.agent-playground-slot { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 36px; background: #080c10; border-radius: 7px; }
+.agent-playground-sizes small { font: 10px var(--font-mono); color: #66778a; }
+.agent-playground .agent-playground-replay { border: none; background: transparent; margin-top: 12px; color: #80b8cc; font-size: 11px; }
+.agent-playground.hides-extras .mascot-extras { display: none; }
+.agent-playground.is-monochrome svg { filter: grayscale(1); }
+.agent-playground footer { margin: 24px auto 0; max-width: 1200px; color: #66778a; font-size: 11px; text-align: center; }
+.agent-comparison { max-width: 1200px; margin: auto; display: grid; gap: 18px; }
+.agent-comparison-row { padding: 18px; border: 1px solid #28313c; border-radius: 16px; background: #131920; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 16px; }
+.agent-comparison-heading { grid-column: 1/-1; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.agent-comparison-heading h2 { margin: 0; font-size: 16px; }
+.agent-comparison-heading small { display: block; color: #8e9bab; font-size: 11px; font-weight: 400; margin-top: 5px; }
+.agent-comparison-cell { text-align: center; min-width: 0; }
+.agent-comparison-cell h3 { margin: 0; font-size: 12px; font-weight: 500; color: #b9c7d5; }
+.agent-comparison-stage { height: 102px; display: flex; align-items: center; justify-content: center; }
+.agent-comparison-cell .agent-playground-sizes { gap: 10px; }
+@media (max-width: 600px) { .agent-comparison-row { grid-template-columns: repeat(2,minmax(0,1fr)); } .agent-comparison-heading { flex-wrap: wrap; } }
+@media (max-width: 850px) { .agent-playground { padding: 20px; } .agent-playground-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 540px) { .agent-playground-grid { grid-template-columns: 1fr; } }

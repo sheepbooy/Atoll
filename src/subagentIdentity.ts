@@ -27,9 +27,6 @@ export const SESSION_PALETTE: SessionColor[] = [
   { tone: "blue", accent: "#80b0f8", accentDark: "#5888d0" },
 ];
 
-const SUBAGENT_RUNNING_MOODS: ClawdMood[] = ["alert", "happy", "calm"];
-const SUBAGENT_COMPLETED_MOODS: ClawdMood[] = ["calm", "happy", "sleeping"];
-
 export function stringHash(value: string): number {
   let hash = 0;
   for (let i = 0; i < value.length; i += 1) {
@@ -51,7 +48,7 @@ export function getSubagentColor(agentId: string): SessionColor {
   return SESSION_PALETTE[paletteIndex(agentId, SESSION_PALETTE.length)];
 }
 
-export function getSubagentMood(agentId: string, completed: boolean): ClawdMood {
-  const moods = completed ? SUBAGENT_COMPLETED_MOODS : SUBAGENT_RUNNING_MOODS;
-  return moods[paletteIndex(`${agentId}:mood`, moods.length)];
+export function getSubagentMood(_agentId: string, _completed: boolean): ClawdMood {
+  // Status is semantic; identity only varies color and animation phase.
+  return "calm";
 }

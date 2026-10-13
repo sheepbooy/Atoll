@@ -5,6 +5,7 @@ import { App } from "./App";
 import { AppErrorBoundary } from "./AppErrorBoundary";
 import { BrandExportPage, getBrandExportMode } from "./BrandExport";
 import { CursorMascotPreviewPage, getCursorPreviewMode } from "./CursorMascotPreview";
+import { AgentMascotPreviewPage, getAgentPreviewMode } from "./AgentMascotPreview";
 import { getDemoMode } from "./demoSnapshot";
 import { getNotchMetrics } from "./tauri/island";
 import { applyWindowMetrics } from "./islandLayout";
@@ -56,6 +57,8 @@ async function bootstrap() {
         <BrandExportPage />
       </React.StrictMode>,
     );
+  } else if (getAgentPreviewMode()) {
+    root.render(<React.StrictMode><AgentMascotPreviewPage /></React.StrictMode>);
   } else if (getCursorPreviewMode()) {
     root.render(
       <React.StrictMode>

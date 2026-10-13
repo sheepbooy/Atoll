@@ -16,24 +16,25 @@ describe("subagentIdentity", () => {
     );
   });
 
-  it("assigns stable color and mood per subagent id", () => {
+  it("assigns stable colors without inventing attention states", () => {
     const agentId = "subagent-123";
     expect(getSubagentColor(agentId)).toEqual({
       tone: "lime",
       accent: "#b2e578",
       accentDark: "#7aa44d",
     });
-    expect(getSubagentMood(agentId, false)).toBe("alert");
+    expect(getSubagentMood(agentId, false)).toBe("calm");
     expect(getSubagentMood(agentId, true)).toBe("calm");
   });
 
-  it("varies color and mood across different subagent ids", () => {
+  it("varies colors while keeping status independent of identity", () => {
     const ids = ["sub-a", "sub-b", "sub-c", "sub-d", "sub-e", "sub-f"];
     const colors = new Set(ids.map(getSubagentColor));
     const runningMoods = new Set(ids.map((id) => getSubagentMood(id, false)));
 
     expect(colors.size).toBeGreaterThan(1);
-    expect(runningMoods.size).toBeGreaterThan(1);
+    expect([...runningMoods]).toEqual(["calm"]);
+    expect(ids.every(id => getSubagentMood(id, true) === "calm")).toBe(true);
   });
 
   it("keeps session color hashing compatible", () => {

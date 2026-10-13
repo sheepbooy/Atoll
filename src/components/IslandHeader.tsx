@@ -341,7 +341,6 @@ export function IslandHeader(props: IslandHeaderProps) {
             />
             {!isMicro ? (
               props.theater ? <AgentTheater scene={props.theater} capacity={Math.max(1, compactLeftSessions.length)} /> : <CompactSessionStack
-                animated={!props.energySaving}
                 sessions={compactLeftSessions}
                 overflowCount={compactLeftOverflow}
                 activeRequest={activeRequest}
@@ -535,7 +534,6 @@ export function IslandHeader(props: IslandHeaderProps) {
           ) : null}
           {showCompactHeaderMetrics && compactRightSessions.length > 0 ? (
             <CompactSessionStack
-              animated={!props.energySaving}
               placement="right"
               sessions={compactRightSessions}
               overflowCount={compactRightOverflow}

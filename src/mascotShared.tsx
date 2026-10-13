@@ -14,6 +14,16 @@ export const MASCOT_VIEWBOX = { x: -20, y: -34, w: 152, h: 136 };
 export const MASCOT_ASPECT = MASCOT_VIEWBOX.w / MASCOT_VIEWBOX.h;
 export const MASCOT_VIEWBOX_ATTR = `${MASCOT_VIEWBOX.x} ${MASCOT_VIEWBOX.y} ${MASCOT_VIEWBOX.w} ${MASCOT_VIEWBOX.h}`;
 
+/** Small brand marks use the slot for their silhouette, without decorative padding. */
+export function brandMascotViewBox(size: number | undefined, character: "codex" | "cursor" | "gemini" | "opencode" | "zcode") {
+  if (size === undefined || size >= 40) return MASCOT_VIEWBOX_ATTR;
+  const compact = character === "codex" ? [13,-2,86,86] : character === "cursor" ? [14,-5,84,84] : [18,1,76,76];
+  // Restore decorative room progressively so a 21–36px avatar never shrinks below its 20px version.
+  const progress = Math.max(0,(size-20)/20);
+  const full = [MASCOT_VIEWBOX.x,MASCOT_VIEWBOX.y,MASCOT_VIEWBOX.w,MASCOT_VIEWBOX.h];
+  return compact.map((value,index) => Number((value+(full[index]-value)*progress).toFixed(3))).join(" ");
+}
+
 export const MASCOT_BODY = { x: 8, y: 0, w: 96, h: 56, topH: 9 };
 export const MASCOT_LEGS = [16, 30.4, 72, 86.4];
 export const MASCOT_CLAW_LEFT = { x: -4, y: 25.6, w: 12, h: 14.4 };
@@ -107,6 +117,7 @@ export function MascotClaws({ classPrefix, fill }: { classPrefix: string; fill: 
   return (
     <>
       <rect
+        data-part="claw-left"
         className={`${classPrefix}-claw ${classPrefix}-claw-left`}
         x={MASCOT_CLAW_LEFT.x}
         y={MASCOT_CLAW_LEFT.y}
@@ -115,6 +126,7 @@ export function MascotClaws({ classPrefix, fill }: { classPrefix: string; fill: 
         fill={fill}
       />
       <rect
+        data-part="claw-right"
         className={`${classPrefix}-claw ${classPrefix}-claw-right`}
         x={MASCOT_CLAW_RIGHT.x}
         y={MASCOT_CLAW_RIGHT.y}
@@ -132,6 +144,7 @@ export function MascotLegs({ classPrefix, fill }: { classPrefix: string; fill: s
       {MASCOT_LEGS.map((x, i) => (
         <rect
           key={x}
+          data-part={`leg-${i}`}
           className={`${classPrefix}-leg ${classPrefix}-leg-${i}`}
           x={x}
           y={56}
@@ -239,13 +252,13 @@ export function MascotFace({
         </>
       ) : mood === "sleeping" ? (
         <>
-          <rect x={leftX} y={eyeY + 4} width={eyeW + 1.6} height={2.4} fill={eyeFill} />
-          <rect x={rightX} y={eyeY + 4} width={eyeW + 1.6} height={2.4} fill={eyeFill} />
+          <rect className="mascot-eye" x={leftX} y={eyeY + 4} width={eyeW + 1.6} height={2.4} fill={eyeFill} />
+          <rect className="mascot-eye" x={rightX} y={eyeY + 4} width={eyeW + 1.6} height={2.4} fill={eyeFill} />
         </>
       ) : (
         <>
-          <rect x={leftX} y={eyeY} width={eyeW} height={eyeHeight} fill={eyeFill} />
-          <rect x={rightX} y={eyeY} width={eyeW} height={eyeHeight} fill={eyeFill} />
+          <rect className="mascot-eye" x={leftX} y={eyeY} width={eyeW} height={eyeHeight} fill={eyeFill} />
+          <rect className="mascot-eye" x={rightX} y={eyeY} width={eyeW} height={eyeHeight} fill={eyeFill} />
         </>
       )}
 

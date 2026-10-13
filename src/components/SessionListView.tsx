@@ -176,6 +176,8 @@ export function SessionListView({
                   <span className="session-clawd">
                     <AgentMascot
                       agent={session.agent}
+                      instanceKey={session.sessionId}
+                      size={30}
                       mood={deriveSessionMood(session, activeRequest, justResolved)}
                       accent={sessionColor.accent}
                       accentDark={sessionColor.accentDark}
@@ -229,6 +231,8 @@ export function SessionListView({
                                       <AgentMascot
                                         agent={session.agent}
                                         size={14}
+                                        instanceKey={sub.agentId}
+                                        activity={sub.completedAt ? "rest" : "working"}
                                         mood={subagentMood}
                                         accent={subagentColor.accent}
                                         accentDark={subagentColor.accentDark}

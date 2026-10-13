@@ -65,12 +65,12 @@ describe("AgentMascot", () => {
   it("renders the official Codex blossom-and-prompt mark", () => {
     const codex = render(<AgentMascot agent="codex" mood="calm" animated={false} />);
     expect(codex.container.querySelector(".codex-mark")).not.toBeNull();
-    expect(codex.container.querySelectorAll(".codex-mark path")).toHaveLength(1);
-    expect(codex.container.querySelector(".codex-mark path")?.getAttribute("fill-rule")).toBe("evenodd");
+    expect(codex.container.querySelectorAll(".codex-mark .mascot-original")).toHaveLength(1);
+    expect(codex.container.querySelector(".codex-mark .mascot-original")?.getAttribute("fill-rule")).toBe("evenodd");
     expect(codex.container.querySelector(".codex-chassis")).toBeNull();
     expect(codex.container.querySelector(".codex-screen")).toBeNull();
     expect(codex.container.querySelector(".codex-leg")).toBeNull();
-    expect(codex.container.querySelector(".codex-mark path")?.getAttribute("fill")).toBe("#f4f4f4");
+    expect(codex.container.querySelector(".codex-mark .mascot-original")?.getAttribute("fill")).toBe("#f4f4f4");
   });
 
   it("renders the official Gemini spark instead of a reused Clawd", () => {
@@ -117,7 +117,7 @@ describe("AgentMascot", () => {
 
   it("recolors official marks for offline and error moods", () => {
     const deadCodex = render(<AgentMascot agent="codex" mood="dead" animated={false} />);
-    expect(deadCodex.container.querySelector(".codex-mark path")?.getAttribute("fill")).toBe("#8a8a8a");
+    expect(deadCodex.container.querySelector(".codex-mark .mascot-original")?.getAttribute("fill")).toBe("#8a8a8a");
 
     const sickCursor = render(<AgentMascot agent="cursor" mood="worried" animated={false} />);
     expect(sickCursor.container.querySelector(".cursor-mascot-face-bottom")?.getAttribute("fill")).toBe("#6d8a6d");
@@ -135,21 +135,21 @@ describe("AgentMascot", () => {
     const codex = render(
       <AgentMascot agent="codex" mood="calm" accent="#ff8175" animated={false} />,
     );
-    expect(codex.container.querySelector(".codex-mark path")?.getAttribute("fill")).toBe(
+    expect(codex.container.querySelector(".codex-mark .mascot-original")?.getAttribute("fill")).toBe(
       "#ff8175",
     );
 
     const sleeping = render(
       <AgentMascot agent="codex" mood="sleeping" accent="#80b0f8" animated={false} />,
     );
-    expect(sleeping.container.querySelector(".codex-mark path")?.getAttribute("fill")).toBe(
+    expect(sleeping.container.querySelector(".codex-mark .mascot-original")?.getAttribute("fill")).toBe(
       "#80b0f8",
     );
 
     const dead = render(
       <AgentMascot agent="codex" mood="dead" accent="#ff8175" animated={false} />,
     );
-    expect(dead.container.querySelector(".codex-mark path")?.getAttribute("fill")).toBe(
+    expect(dead.container.querySelector(".codex-mark .mascot-original")?.getAttribute("fill")).toBe(
       "#8a8a8a",
     );
   });

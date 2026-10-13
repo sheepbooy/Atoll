@@ -61,6 +61,7 @@ export function CompactSessionStack({
             <AgentMascot
               animated={animated}
               agent={session.agent}
+              instanceKey={session.sessionId}
               mood={deriveSessionMood(session, activeRequest, justResolved)}
               accent={sessionColor.accent}
               accentDark={sessionColor.accentDark}

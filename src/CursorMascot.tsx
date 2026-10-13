@@ -1,11 +1,12 @@
+import { useMascotMotion, type MascotMotionProps } from "./mascotMotion";
 import type { CSSProperties } from "react";
 import type { ClawdMood } from "./ClawdMascot";
-import { MASCOT_VIEWBOX_ATTR, MascotExtras, MascotShadow, mascotSizeStyle } from "./mascotShared";
+import { brandMascotViewBox, MascotExtras, MascotShadow, mascotSizeStyle } from "./mascotShared";
 import { CursorOfficialMark, cursorCubePalette } from "./officialMarks";
 
 const CURSOR_OUTLINE_FALLBACK = "#f4f0e8";
 
-interface CursorMascotProps {
+interface CursorMascotProps extends MascotMotionProps {
   mood: ClawdMood;
   size?: number;
   className?: string;
@@ -20,7 +21,9 @@ export function CursorMascot({
   className,
   accent,
   animated = true,
+  ...motionProps
 }: CursorMascotProps) {
+  const motion = useMascotMotion({ mood, animated, size, character: "cursor", ...motionProps });
   const palette = cursorCubePalette(mood);
   const extras =
     mood === "dead"
@@ -31,13 +34,15 @@ export function CursorMascot({
   const outline = accent || CURSOR_OUTLINE_FALLBACK;
   const style = {
     ...mascotSizeStyle(size),
+    ...motion.motionStyle,
     "--cursor-outline": outline,
     color: outline,
   } as CSSProperties;
 
   return (
     <span
-      className={`cursor-mascot is-${mood}${animated ? "" : " is-static"}${className ? ` ${className}` : ""}`}
+      ref={motion.ref}
+      className={`cursor-mascot is-${mood} ${motion.motionClassName}${animated ? "" : " is-static"}${className ? ` ${className}` : ""}`}
       style={style}
       aria-hidden="true"
     >
@@ -45,13 +50,15 @@ export function CursorMascot({
         className="cursor-mascot-svg"
         width="100%"
         height="100%"
-        viewBox={MASCOT_VIEWBOX_ATTR}
+        viewBox={brandMascotViewBox(size, "cursor")}
         preserveAspectRatio="xMidYMid meet"
       >
         <MascotShadow className="cursor-mascot-shadow" />
 
-        <g className="cursor-mascot-body">
+        <g className="cursor-mascot-body" data-part="body">
           <CursorOfficialMark className="cursor-mascot-cube cursor-mascot-mark" palette={palette} />
+        </g>
+        <g className="mascot-extras">
           <MascotExtras
             mood={mood}
             classPrefix="cursor-mascot"

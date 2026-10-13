@@ -54,6 +54,8 @@ export function AgentTabBar({
       <span className={`agent-tab is-static ${agentTone[active]}${compact ? " is-compact" : ""}`} data-no-drag>
         <AgentMascot
           agent={active}
+          instanceKey={active}
+          feedbackScope="agent"
           mood={mood}
           accent={agentMascotAccent(active)}
           accentDark={agentMascotDark(active)}
@@ -82,6 +84,8 @@ export function AgentTabBar({
           >
             <AgentMascot
               agent={agent}
+              instanceKey={agent}
+              feedbackScope="agent"
               mood={mood}
               accent={agentMascotAccent(agent)}
               accentDark={agentMascotDark(agent)}

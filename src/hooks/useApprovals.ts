@@ -12,6 +12,7 @@ import {
 import { RESOLVE_FEEDBACK_MS } from "../islandPresentation";
 import { waitForMotion } from "../animationTiming";
 import type { AgentKind, Decision, PanelView } from "../appTypes";
+import type { ApprovalMascotFeedback } from "../mascotMotion";
 
 interface UseApprovalsOptions {
   snapshot: IslandSnapshot;
@@ -41,8 +42,13 @@ export function useApprovals({
   const [busyDecision, setBusyDecision] = useState<Decision | null>(null);
   const busyRef = useRef<Decision | null>(null);
   busyRef.current = busyDecision;
-  const [justResolved, setJustResolved] = useState(false);
-  const prevPendingRef = useRef(0);
+  const [mascotFeedback, setMascotFeedback] = useState<ApprovalMascotFeedback | null>(null);
+  const feedbackSeq = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const showFeedback = (request: PermissionRequest, decision: Decision) => {
+    if (mounted.current) setMascotFeedback({ eventId: `${request.id}:${++feedbackSeq.current}`, requestId: request.id, agent: request.agent, sessionId: request.session, decision });
+  };
   const panelRef = useRef(panelView); panelRef.current = panelView;
 
   useEffect(() => {
@@ -77,16 +83,20 @@ export function useApprovals({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Approval flash: when the pending queue drains, show the resolved tick.
+  // Feedback belongs to a confirmed decision and has its own expiry. A new
+  // request must never cancel the expiry and leave unrelated avatars happy.
   useEffect(() => {
-    const prev = prevPendingRef.current;
-    prevPendingRef.current = snapshot.pendingCount;
-    if (prev > 0 && snapshot.pendingCount === 0) {
-      setJustResolved(true);
-      const timer = window.setTimeout(() => setJustResolved(false), 1300);
-      return () => window.clearTimeout(timer);
+    if (!mascotFeedback) return;
+    const timer = window.setTimeout(() => setMascotFeedback(null), 1300);
+    return () => window.clearTimeout(timer);
+  }, [mascotFeedback]);
+  useEffect(() => {
+    if (!mascotFeedback) return;
+    const requests = snapshot.activeRequest ? [snapshot.activeRequest, ...snapshot.recent] : snapshot.recent;
+    if (requests.some(request => request.agent === mascotFeedback.agent && request.session === mascotFeedback.sessionId && request.id !== mascotFeedback.requestId && request.status === "pending")) {
+      setMascotFeedback(null);
     }
-  }, [snapshot.pendingCount]);
+  }, [snapshot.activeRequest, snapshot.recent, mascotFeedback]);
 
   async function resolveActive(
     request: PermissionRequest | null,
@@ -117,6 +127,7 @@ export function useApprovals({
         resolveWork,
       ]);
       applySnapshot(nextSnapshot);
+      showFeedback(request, decision);
       if (nextSnapshot.pendingCount === 0) {
         collapseIsland(true);
         deactivateAtoll(request.agent, request.session, request.cwd).catch(
@@ -138,6 +149,7 @@ export function useApprovals({
       const seq = ++navigationSeqRef.current;
       const nextSnapshot = await resolvePermissionRequest(id, decision, note);
       applySnapshot(nextSnapshot);
+      if (resolvedRequest) showFeedback(resolvedRequest, decision);
       if (panelView.kind === "session" && navigationSeqRef.current === seq) {
         const requests = await getSessionRequests(panelView.sessionId).catch(() => []);
         if (navigationSeqRef.current === seq) {
@@ -157,5 +169,5 @@ export function useApprovals({
     }
   }
 
-  return { busyDecision, justResolved, resolveActive, resolveRequest };
+  return { busyDecision, justResolved: mascotFeedback !== null, mascotFeedback, resolveActive, resolveRequest };
 }

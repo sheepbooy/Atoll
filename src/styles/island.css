@@ -1121,50 +1121,7 @@
   background: none;
 }
 
-/* Breathing glow for compact session dots — mirrors atoll-breathe */
-.compact-session-dot .clawd.is-calm,
-.compact-session-dot .codex.is-calm,
-.compact-session-dot .cursor-mascot.is-calm {
-  animation: session-dot-breathe 3.2s ease-in-out infinite;
-}
-
-.compact-session-dot .clawd.is-sleeping,
-.compact-session-dot .codex.is-sleeping,
-.compact-session-dot .cursor-mascot.is-sleeping {
-  animation: session-dot-breathe 3.6s ease-in-out infinite;
-}
-
-.compact-session-dot .clawd.is-calm .clawd-body,
-.compact-session-dot .codex.is-calm .codex-body,
-.compact-session-dot .cursor-mascot.is-calm .cursor-mascot-body,
-.compact-session-dot .clawd.is-sleeping .clawd-body,
-.compact-session-dot .codex.is-sleeping .codex-body,
-.compact-session-dot .cursor-mascot.is-sleeping .cursor-mascot-body {
-  animation: none;
-}
-
-.compact-session-dot .clawd.is-alert,
-.compact-session-dot .codex.is-alert,
-.compact-session-dot .cursor-mascot.is-alert,
-.compact-session-dot .clawd.is-happy,
-.compact-session-dot .codex.is-happy,
-.compact-session-dot .cursor-mascot.is-happy,
-.compact-session-dot .clawd.is-worried,
-.compact-session-dot .codex.is-worried,
-.compact-session-dot .cursor-mascot.is-worried {
-  animation: none;
-}
-
-@keyframes session-dot-breathe {
-  0%, 100% {
-    transform: scale(0.96) translateY(2%);
-    filter: drop-shadow(0 0 2px transparent);
-  }
-  50% {
-    transform: scale(1.04) translateY(-2%);
-    filter: drop-shadow(0 0 5px var(--dot-glow, rgba(56, 189, 248, 0.35)));
-  }
-}
+.compact-session-dot .agent-mascot { animation: none; }
 
 .compact-session-dot.has-pending {
   background: rgba(248, 221, 160, 0.15);
@@ -1308,42 +1265,36 @@
    see the notch section in panel.css), so the .more-menu dropdown is never
    clipped. */
 
-/* Automatic saving leaves live status and finite interaction feedback intact. */
-.island.is-energy-saving *, .island.is-energy-saving *::before, .island.is-energy-saving *::after {
-  animation-play-state: paused !important;
-}
-/* A newly mounted (or restored after theater) session must not freeze at
-   the entrance animation's transparent first frame or staggered delay. */
-.island.is-energy-saving .compact-session-dot:not(.agent-theater-actor) {
-  animation: none;
-}
-.island.is-energy-saving .agent-theater * {
-  animation-play-state: running !important;
-}
-.island.is-energy-saving .lyrics-marquee * {
+/* Saving only affects ambient loops. Finite UI entrances and feedback finish. */
+.island.is-energy-saving .agent-mascot:not(.has-action) [data-part],
+.island.is-energy-saving .atoll-logo,
+.island.is-energy-saving .atoll-logo *,
+.island.is-energy-saving .listener-dot::after,
+.island.is-energy-saving .has-pending::after,
+.island.is-energy-saving .risk-pill.danger > svg,
+.island.is-energy-saving .idle-icon,
+.island.is-energy-saving .idle-dot,
+.island.is-energy-saving .install-button::before,
+.island.is-energy-saving .pending-badge::after,
+.island.is-energy-saving .session-pending-badge::after,
+.island.is-energy-saving .token-counter-wrap--live .token-counter,
+.island.is-energy-saving .token-counter-mark--compact,
+.island.is-energy-saving .token-counter-mark--micro,
+.island.is-energy-saving.has-pending::after {
   animation: none !important;
-  will-change: auto;
 }
+.island.is-energy-saving .agent-mascot:not(.has-action) [data-part] { transform: none !important; }
+.island.is-energy-saving .agent-mascot:not(.has-action) .zcode-ink { opacity: 0; }
+.island.is-energy-saving .agent-mascot:not(.has-action) .zcode-letter-base { opacity: 1; }
+.island.is-energy-saving .lyrics-marquee * { animation: none !important; will-change: auto; }
 
-/* Finite lifecycle feedback fits the existing mascot slots. */
 .agent-theater { position: relative; }
 .agent-theater .compact-session-overflow {
   position: absolute; right: -2px; bottom: -3px;
   min-width: 12px; padding: 0 2px; font-size: 8px; line-height: 10px;
   background: var(--island-bg, #18181c); border-radius: 5px;
 }
-.agent-theater-actor.is-started { animation: theater-type 240ms ease-in-out 8; }
-.agent-theater-actor.is-subagentStarted { animation: theater-wave 420ms ease-in-out 4; }
-.agent-theater-actor.is-subagentEnded { animation: theater-exit 900ms ease-in 1 forwards; }
-.agent-theater-actor.is-turnEnded { animation: theater-stretch 1.2s ease-in-out 1; }
-@keyframes theater-type { 50% { transform: translateY(-1px) rotate(-4deg); } }
-@keyframes theater-wave { 25% { transform: rotate(-14deg); } 75% { transform: rotate(14deg); } }
-@keyframes theater-exit { to { transform: translateX(8px) scale(.8); opacity: .25; } }
-@keyframes theater-stretch { 50% { transform: translateY(-2px) scale(1.12, 1.04); } }
-@media (prefers-reduced-motion: reduce) {
-  .agent-theater-actor { animation: none !important; }
-  .agent-theater-actor.is-subagentEnded { opacity: .25; }
-}
+.agent-theater-actor { position: relative; animation: none; }
+.agent-theater-actor.is-subagentEnded { opacity: .45; }
 
-.agent-theater-actor { position: relative; }
-.theater-keyboard { position: absolute; bottom: -1px; left: 0; width: 18px; height: 6px; }
+.island.is-energy-saving .compact-session-dot:not(.agent-theater-actor) { animation: none; }

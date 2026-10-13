@@ -179,9 +179,9 @@ describe("deriveSessionMood", () => {
     expect(mood).toBe("alert");
   });
 
-  it("happy right after the queue drains", () => {
+  it("does not celebrate unrelated sessions when the global queue drains", () => {
     const mood = deriveSessionMood(makeSession(), null, true);
-    expect(mood).toBe("happy");
+    expect(mood).toBe("calm");
   });
 
   it("calm otherwise", () => {

@@ -1,5 +1,7 @@
 import { render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { AgentTheater } from "./AgentTheater";
+import { MascotEnvironmentProvider } from "../mascotMotion";
 import { CompactSessionStack } from "./CompactSessionStack";
 // @ts-expect-error The project does not install @types/node; Vitest runs in Node.
 import { readFileSync } from "node:fs";
@@ -47,7 +49,7 @@ describe("compact session visibility during energy saving", () => {
       // Removing the entrance also removes its opacity:0 backwards fill,
       // including the staggered delay on the second icon.
       expect(getComputedStyle(dot).animation).toBe("none");
-      expect(getComputedStyle(dot.querySelector(".codex")!).animationPlayState).toBe("paused");
+      expect(dot.querySelector(".codex")).toHaveClass("is-motion-disabled");
     }
   });
 
@@ -62,16 +64,16 @@ describe("compact session visibility during energy saving", () => {
     expect(getComputedStyle(container.querySelector(".compact-session-dot")!).animation).toBe("none");
   });
 
-  it("preserves finite theater feedback while mascot loops stay paused", () => {
+  it("plays character feedback while ambient loops are saving", () => {
     const { container } = render(
-      <div className="island is-energy-saving">
-        <span className="agent-theater">
-          <span className="compact-session-dot agent-theater-actor is-started" />
-        </span>
-      </div>,
+      <MascotEnvironmentProvider ambientPaused feedback={null}>
+        <div className="island is-energy-saving">
+          <AgentTheater scene={{ event: { eventId: "start", agent: "codex", sessionId: "s", subagentId: null, kind: "started", occurredAt: Date.now() }, actors: [null] }} />
+        </div>
+      </MascotEnvironmentProvider>,
     );
-    const actor = container.querySelector(".agent-theater-actor")!;
-    expect(getComputedStyle(actor).animation).toContain("theater-type");
-    expect(getComputedStyle(actor).animationPlayState).toBe("running");
+    expect(container.querySelector(".agent-theater-actor .codex")).toHaveClass("is-action-started");
+    expect(container.querySelector(".is-loop-working")).toBeNull();
+    expect(getComputedStyle(container.querySelector(".agent-theater-actor")!).animation).toBe("none");
   });
 });

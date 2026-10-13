@@ -18,6 +18,11 @@ describe("deriveAtollReaction", () => {
     expect(deriveAtollReaction("working", "idle")).toBe("cheer");
   });
 
+  it("does not celebrate a denied request when the queue clears", () => {
+    expect(deriveAtollReaction("pending", "idle", "denied")).toBeNull();
+    expect(deriveAtollReaction("pending", "idle", "approved")).toBe("cheer");
+  });
+
   it("stays quiet on non-event transitions", () => {
     expect(deriveAtollReaction("idle", "working")).toBeNull();
     expect(deriveAtollReaction("idle", "pending")).toBeNull();
