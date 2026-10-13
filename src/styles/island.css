@@ -904,6 +904,10 @@
 
 .atoll-indicator .atoll-logo-svg {
   shape-rendering: auto;
+  /* Scale around the body center (32, 31) without changing the header slot. */
+  transform-box: view-box;
+  transform-origin: 50% 62.037%;
+  transform: scale(1.2);
 }
 
 .atoll-indicator.is-offline {
