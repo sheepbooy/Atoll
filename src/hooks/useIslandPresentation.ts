@@ -138,6 +138,7 @@ export function useIslandPresentation({
   // True while a native file drag hovers the island (see useFileStation):
   // expansions triggered meanwhile use the fast drag duration.
   const fileDragActiveRef = useRef(false);
+  const windowDragActiveRef = useRef(false);
   const transitionTimerRef = useRef<number | null>(null);
   const idleTimerRef = useRef<number | null>(null);
   const frozenCollapseWidthRef = useRef<number | null>(null);
@@ -279,13 +280,14 @@ export function useIslandPresentation({
   const unsubscribeHover = manageAsyncUnlisten(
     onIslandHoverChanged(({ hovering, cursorOverWindow }) => {
       cursorOverIslandRef.current = cursorOverWindow;
+      const hoverMayExpand = !supportsMicroIslandRef.current || fileDragActiveRef.current;
       const dragExpandOptions = fileDragActiveRef.current
         ? { fast: true }
         : undefined;
       if (cursorOverWindow) {
         clearIdleTimer();
         if (
-          !suppressHoverExpandRef.current &&
+          hoverMayExpand && !suppressHoverExpandRef.current &&
           (phaseRef.current === "closing" ||
             (shrinkInFlightRef.current && phaseRef.current === "micro"))
         ) {
@@ -295,7 +297,7 @@ export function useIslandPresentation({
       }
       hoveringRef.current = hovering;
       if (hovering) {
-        if (!suppressHoverExpandRef.current) {
+        if (hoverMayExpand && !suppressHoverExpandRef.current) {
           expandIsland(dragExpandOptions);
         }
       } else if (!cursorOverWindow) {
@@ -530,7 +532,7 @@ export function useIslandPresentation({
       hoveringRef.current ||
       cursorOverIslandRef.current ||
       snapshotRef.current.pendingCount > 0 ||
-      isTextEntryActive() || compactUtilityRef?.current
+      isTextEntryActive() || (compactUtilityRef?.current && !usesMicroIslandRef.current)
     ) {
       return;
     }
@@ -681,8 +683,8 @@ export function useIslandPresentation({
   }
 
   function collapsePresentationMode(): "micro" | "compact" | "dormant" {
-    if (compactUtilityRef?.current) return "compact";
     if (shouldRestInMicro(usesMicroIslandRef.current)) return "micro";
+    if (compactUtilityRef?.current) return "compact";
     if (supportsMicroIslandRef.current) return "compact";
     return collapsedModeRef.current;
 
@@ -851,6 +853,12 @@ export function useIslandPresentation({
     return finalize();
   }
 
+  function setWindowDragActive(active: boolean) {
+    windowDragActiveRef.current = active;
+    if (active) clearIdleTimer();
+    else scheduleIdleCollapse();
+  }
+
   function scheduleIdleCollapse() {
     if (reminderHoldRef?.current) return;
     if (summonHoldRef.current) {
@@ -862,6 +870,7 @@ export function useIslandPresentation({
     // open once the pointer leaves. A lingering button focus — e.g. after
     // tapping "View session" — must NOT block the idle collapse.
     if (
+      windowDragActiveRef.current ||
       hoveringRef.current ||
       snapshotRef.current.pendingCount > 0 ||
       isTextEntryActive()
@@ -885,7 +894,7 @@ export function useIslandPresentation({
     hoveringRef.current = true;
     cursorOverIslandRef.current = true;
     clearIdleTimer();
-    if (!suppressHoverExpandRef.current) {
+    if (!supportsMicroIslandRef.current && !suppressHoverExpandRef.current) {
       expandIsland();
     }
   }
@@ -939,7 +948,7 @@ export function useIslandPresentation({
   }
 
   async function startWindowDrag(event: MouseEvent<HTMLElement>) {
-    if (!("__TAURI_INTERNALS__" in window) || event.button !== 0) return;
+    if (supportsMicroIslandRef.current || !("__TAURI_INTERNALS__" in window) || event.button !== 0) return;
 
     const target = event.target as HTMLElement;
     if (target.closest("[data-no-drag]")) return;
@@ -972,6 +981,7 @@ export function useIslandPresentation({
     compactMediaThumbRef,
     expandIsland,
     setFileDragActive,
+    setWindowDragActive,
     collapseIsland,
     scheduleIdleCollapse,
     clearIdleTimer,

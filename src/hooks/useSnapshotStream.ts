@@ -22,6 +22,7 @@ import type { PanelView } from "../appTypes";
 import type { PresentationPhase } from "../islandPresentation";
 
 interface UseSnapshotStreamOptions {
+  autoExpandApprovals?: boolean;
   snapshotRef: { current: IslandSnapshot };
   setSnapshot: Dispatch<SetStateAction<IslandSnapshot>>;
   phaseRef: { current: PresentationPhase };
@@ -40,6 +41,7 @@ interface UseSnapshotStreamOptions {
 }
 
 export function useSnapshotStream({
+  autoExpandApprovals = true,
   snapshotRef,
   setSnapshot,
   phaseRef,
@@ -57,6 +59,23 @@ export function useSnapshotStream({
   setHookHealthHydrated,
 }: UseSnapshotStreamOptions) {
   const snapshotLoadSeqRef = useRef(0);
+  const autoExpandApprovalsRef = useRef(autoExpandApprovals);
+  autoExpandApprovalsRef.current = autoExpandApprovals;
+
+  function maybeExpandApprovals(snapshot: IslandSnapshot) {
+    if (!autoExpandApprovalsRef.current || snapshot.pendingCount === 0) return;
+    const pending = snapshot.recent.filter(request => request.status === "pending");
+    const dismissed = dismissedPlanRequestIdsRef.current;
+    const allDismissed = dismissed !== null && pending.length > 0 && pending.every(
+      request => isPlanModeCommand(request.command) && dismissed.has(request.id),
+    );
+    if (!allDismissed) expandIsland();
+  }
+
+  // A startup snapshot can arrive before the persisted reminder mode does.
+  useEffect(() => {
+    if (autoExpandApprovals) maybeExpandApprovals(snapshotRef.current);
+  }, [autoExpandApprovals]);
 
   function applySnapshot(
     nextSnapshot: IslandSnapshot,
@@ -93,25 +112,7 @@ export function useSnapshotStream({
     setSnapshot(merged);
 
     if (merged.pendingCount > 0) {
-      // Once the user collapses the island while plan requests are pending,
-      // later snapshot refreshes must not pop the same plan display back open.
-      // Re-expansion is reserved for a new request (different id) or a
-      // non-plan approval, which keeps its insistent behavior.
-      const pendingRequests = merged.recent.filter(
-        (request) => request.status === "pending",
-      );
-      const dismissedPlanIds = dismissedPlanRequestIdsRef.current;
-      const allPendingDismissedPlans =
-        dismissedPlanIds !== null &&
-        pendingRequests.length > 0 &&
-        pendingRequests.every(
-          (request) =>
-            isPlanModeCommand(request.command) &&
-            dismissedPlanIds.has(request.id),
-        );
-      if (!allPendingDismissedPlans) {
-        expandIsland();
-      }
+      maybeExpandApprovals(merged);
     } else {
       // Every request resolved: forget the dismissed batch so the next plan
       // notification opens the island again.

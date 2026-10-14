@@ -91,7 +91,7 @@ describe("compact counter geometry", () => {
     input.supportsMicroIsland = true;
     const { rerender } = renderHook(useCompactLayout, { initialProps: input });
     const width = input.microPresentationWidthRef.current;
-    expect(width).toBe(computeMicroWindowWidth(1, 0));
+    expect(width).toBe(computeMicroWindowWidth(0));
     rerender({ ...input, foldedCounterDisplay: "salary" });
     expect(input.microPresentationWidthRef.current).toBe(width);
     expect(setCompactLayout).not.toHaveBeenCalled();

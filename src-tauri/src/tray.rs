@@ -23,7 +23,7 @@ pub(crate) fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .on_tray_icon_event(|tray, event| {
             let app = tray.app_handle();
             match event {
-                TrayIconEvent::Enter { .. } => {
+                TrayIconEvent::Enter { .. } if !cfg!(target_os = "windows") => {
                     show_main_window(&app);
                 }
                 TrayIconEvent::Click {

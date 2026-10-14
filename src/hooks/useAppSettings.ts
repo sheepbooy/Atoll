@@ -18,13 +18,15 @@ export function useAppSettings() {
   const [language, setLanguage] = useState<AppLanguage>(() => readLanguage());
   const [approvalNoticeMode, setApprovalNoticeModeState] =
     useState<ApprovalNoticeMode>("interrupt");
+  const [approvalNoticeModeHydrated, setApprovalNoticeModeHydrated] = useState(false);
   const [globalShortcutView, setGlobalShortcutView] = useState<GlobalShortcutView | null>(null);
 
   useEffect(() => {
     setSessionRetention(readRetentionMinutes()).catch(() => undefined);
     getApprovalNoticeMode()
       .then(setApprovalNoticeModeState)
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setApprovalNoticeModeHydrated(true));
     getGlobalShortcutConfig()
       .then(setGlobalShortcutView)
       .catch(() => undefined);
@@ -55,6 +57,7 @@ export function useAppSettings() {
   return {
     language,
     approvalNoticeMode,
+    approvalNoticeModeHydrated,
     globalShortcutView,
     handleChangeLanguage,
     handleChangeApprovalNoticeMode,

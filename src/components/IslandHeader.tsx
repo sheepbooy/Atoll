@@ -1,3 +1,4 @@
+import { useWindowsEdgeDrag } from "../hooks/useWindowsEdgeDrag";
 import { CompactReminder } from "./CompactReminder";
 import type { ReminderSnapshot } from "../tauri/reminders";
 // The island header: app logo, collapsed activity strip / subview navs /
@@ -66,6 +67,9 @@ interface IslandHeaderProps {
   isExpandedChrome: boolean;
   isPresentationTransition: boolean;
   isMicro: boolean;
+  isWindowsEdge?: boolean;
+  edgeDragEnabled?: boolean;
+  onEdgeDragActiveChange?: (active: boolean) => void;
   isDormant: boolean;
   isSubview: boolean;
   showPanelAgentTabs: boolean;
@@ -278,11 +282,14 @@ export function IslandHeader(props: IslandHeaderProps) {
   } = props;
   const showExpandedTokenCounter = true;
 
+  const edgeDrag = useWindowsEdgeDrag(props.isWindowsEdge === true && props.edgeDragEnabled !== false && !isPresentationTransition, props.onEdgeDragActiveChange);
+
   return (
     <header
       className={`island-header${showLyricsMarquee ? " has-lyrics" : ""}`}
+      {...edgeDrag}
       onMouseDown={startWindowDrag}
-      title={isExpanded ? t("header.dragWindow") : t("header.hoverToOpen")}
+      title={isExpanded ? t("header.dragWindow") : t(props.isWindowsEdge ? "header.clickToOpen" : "header.hoverToOpen")}
     >
       <div
         className={`header-main ${showPanelAgentTabs ? "has-agent-tabs" : ""}${isSubview ? " has-subview-nav" : ""}`}
@@ -316,11 +323,11 @@ export function IslandHeader(props: IslandHeaderProps) {
                   }
                 : undefined
             }
-            data-no-drag
+            data-no-drag={props.isWindowsEdge && isMicro && !hooksNeedAttention ? undefined : true}
           >
             <span className="atoll-indicator-inner">
-              {props.theater && (isMicro || !showCollapsedActivityStrip) && panelView.kind === "home" ? <AgentTheater scene={props.theater} capacity={1} /> : <HeaderLogo
-                display={collapsedHeaderLogo}
+              {(!props.isWindowsEdge || !isMicro) && props.theater && (isMicro || !showCollapsedActivityStrip) && panelView.kind === "home" ? <AgentTheater scene={props.theater} capacity={1} /> : <HeaderLogo
+                display={props.isWindowsEdge && isMicro ? { kind: "atoll", activity: collapsedHeaderLogo.kind === "atoll" ? collapsedHeaderLogo.activity : "idle" } : collapsedHeaderLogo}
                 size={menuBarLogoSize}
                 idleIntervalSec={idleIntervalMin * 60}
                 idleDurationSec={idleDurationMin * 60}
@@ -333,7 +340,7 @@ export function IslandHeader(props: IslandHeaderProps) {
             </span>
           </span>
         </span>
-        {showCollapsedActivityStrip ? (
+        {showCollapsedActivityStrip || isMicro ? (
           <>
             <span
               className={`listener-dot ${online ? "online" : ""}`}
@@ -517,14 +524,14 @@ export function IslandHeader(props: IslandHeaderProps) {
         />
       ) : null}
 
-      {showCompactHeaderMetrics || showMicroTokenCounter ? (
+      {showCompactHeaderMetrics || showMicroTokenCounter || isMicro ? (
         <div
           className={`header-metrics${
             isMicro ? " is-micro-metrics" : ""
           }${isPresentationTransition ? ` is-${phase}` : ""}`}
         >
-          {props.reminders && props.onOpenReminders && <CompactReminder snapshot={props.reminders} small={props.reminderSmall ?? false} onOpen={props.onOpenReminders}/>}
-          {bluetoothBatteryEnabled &&
+          {props.reminders && props.onOpenReminders && <CompactReminder snapshot={props.reminders} small={isMicro || (props.reminderSmall ?? false)} onOpen={props.onOpenReminders}/>}
+          {!isMicro && bluetoothBatteryEnabled &&
           !isPresentationTransition &&
           (showCompactHeaderMetrics || isMicro) ? (
             <BluetoothBatteryRing
@@ -574,13 +581,13 @@ export function IslandHeader(props: IslandHeaderProps) {
               draggable={false}
             />
           ) : null}
-          {showCompactHeaderMetrics && pendingCount > 0 ? (
+          {(showCompactHeaderMetrics || isMicro) && pendingCount > 0 ? (
             <span className="pending-badge-slot">
               <span
                 className="pending-badge"
                 aria-label={t("header.pendingAria", { count: pendingCount })}
               >
-                {pendingCount}
+                {isMicro && pendingCount > 99 ? "99+" : pendingCount}
               </span>
             </span>
           ) : null}

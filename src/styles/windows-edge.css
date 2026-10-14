@@ -1,0 +1,78 @@
+/* Windows uses the same content panel, anchored to the right work-area edge. */
+.island.is-windows-edge.is-micro,
+.island.is-windows-edge.is-closing {
+  border-radius: 16px 0 0 16px;
+}
+
+.island.is-windows-edge.is-expanded,
+.island.is-windows-edge.is-opening {
+  border-radius: 22px;
+}
+
+.is-windows-edge .island-header {
+  touch-action: none;
+  user-select: none;
+  cursor: ns-resize;
+}
+
+.is-windows-edge.is-micro .island-header {
+  padding: 0 6px;
+  gap: 4px;
+}
+
+.is-windows-edge.is-micro .header-main {
+  overflow: visible;
+}
+
+.is-windows-edge.is-micro .atoll-indicator,
+.is-windows-edge.is-micro .atoll-indicator:has(.atoll-logo.is-idle) {
+  height: 24px;
+}
+
+.is-windows-edge.is-micro .atoll-indicator-inner,
+.is-windows-edge.is-micro .atoll-indicator:has(.atoll-logo.is-idle) .atoll-indicator-inner {
+  transform: none;
+}
+
+.is-windows-edge.is-micro .header-metrics {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.is-windows-edge.is-micro .pending-badge-slot {
+  display: inline-flex;
+  width: auto;
+  min-width: 18px;
+}
+
+.is-windows-edge.is-micro .pending-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  font-size: 10px;
+  transform: none;
+}
+
+.is-windows-edge.is-micro .compact-reminder b {
+  max-width: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.is-windows-edge .compact-reminder {
+  cursor: pointer;
+}
+
+.is-windows-edge .windows-edge-lyrics {
+  display: flex;
+  justify-content: center;
+  padding: 6px 12px;
+  overflow: hidden;
+}
+
+.is-windows-edge .windows-edge-lyrics .lyrics-marquee {
+  width: 100%;
+  max-width: 100%;
+  text-align: center;
+}

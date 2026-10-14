@@ -133,7 +133,9 @@ pub fn start_display_change_monitor(app: AppHandle) {
     {
         macos::start_display_change_monitor(app);
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    crate::start_windows_edge_display_monitor(app);
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = app;
     }
@@ -257,8 +259,8 @@ pub fn begin_staged_files_drag(window: &WebviewWindow, paths: &[String]) -> bool
 /// Generation-guarded variant used at animation settle time: the toggle is
 /// skipped when a newer presentation has already superseded this animation,
 /// so a stale collapse cannot re-enable click pass-through over a fresh
-/// expand. Only macOS needs the guard (the racing epilogue is the animated
-/// settle path); other platforms fall through to the plain toggle.
+/// expand. Windows also guards the region update on the UI thread so an old
+/// collapse cannot replace a new panel's rounded hit-test silhouette.
 pub fn set_island_cursor_events_ignored_if_current(
     window: &WebviewWindow,
     ignore: bool,
@@ -274,26 +276,20 @@ pub fn set_island_cursor_events_ignored_if_current(
             generation,
         );
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        let frame_window = window.clone();
+        let _ = window.run_on_main_thread(move || {
+            if presentation_generation.load(std::sync::atomic::Ordering::SeqCst) == generation {
+                windows::set_island_cursor_events_ignored(&frame_window, ignore);
+            }
+        });
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = (presentation_generation, generation);
         set_island_cursor_events_ignored(window, ignore);
     }
-}
-
-#[cfg(target_os = "windows")]
-pub fn sync_cursor_pass_through(window: &WebviewWindow, hovering: bool) {
-    windows::sync_cursor_pass_through(window, hovering);
-}
-
-#[cfg(target_os = "windows")]
-pub fn is_island_expanded() -> bool {
-    windows::is_island_expanded()
-}
-
-#[cfg(target_os = "windows")]
-pub fn compact_hover_expand_dwell() -> std::time::Duration {
-    std::time::Duration::from_millis(windows::COMPACT_HOVER_EXPAND_DWELL_MS)
 }
 
 pub fn set_island_window_frame_now(

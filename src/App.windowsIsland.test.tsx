@@ -1,12 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { computeCollapsedWindowWidth } from "./compactLayout";
-import { markHookAgentConfigured } from "./hookAgentsConfigured";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   IDLE_COLLAPSE_DELAY_MS,
-  PANEL_EXIT_MS,
-  RESOLVE_FEEDBACK_MS,
 } from "./islandPresentation";
 // Shared bridge lives in its own module so every App test file references the
 // same mock objects; only the vi.mock declarations themselves are per-file.
@@ -18,21 +14,25 @@ import {
   emptySnapshot,
   emitIslandHover,
   emitIslandOpen,
-  emitPresentationSettled,
   emitSnapshot,
   emitSettledPhase,
   flushCollapseAnimation,
   flushPanelExit,
-  makeSession,
-  makeSubagent,
-  planQuestionRequest,
-  planSingleQuestionRequest,
   request,
   resetAppTestBridge,
   waitForExpandedPanel,
   windowBridge,
 } from "./test-utils/appTestBridge";
 import { App } from "./App";
+import { EMPTY_REMINDERS } from "./tauri/reminders";
+
+const reminderBridge = vi.hoisted(() => ({ getReminders: vi.fn() }));
+vi.mock("./tauri/reminders", async importOriginal => ({
+  ...await importOriginal<typeof import("./tauri/reminders")>(),
+  getReminders: reminderBridge.getReminders,
+  onRemindersChanged: async () => () => undefined,
+  onRemindersDue: async () => () => undefined,
+}));
 
 vi.mock("./appUpdate", () => ({
   checkAppUpdate: (...args: unknown[]) => appUpdateBridge.checkAppUpdate(...args),
@@ -54,9 +54,17 @@ vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => windowBridge,
 }));
 
+const defaultUserAgent = navigator.userAgent;
+
 describe("App", () => {
+  afterEach(() => {
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: defaultUserAgent });
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    vi.useRealTimers();
+  });
   beforeEach(() => {
     resetAppTestBridge();
+    reminderBridge.getReminders.mockResolvedValue(EMPTY_REMINDERS);
   });
 
   it("collapses to micro when opening Cursor from a session subview on Windows micro island", async () => {
@@ -97,7 +105,7 @@ describe("App", () => {
     const { container } = render(<App />);
     const island = screen.getByLabelText("Atoll");
 
-    fireEvent.pointerEnter(island);
+    fireEvent.click(island);
     await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
     await emitSettledPhase("expanded");
 
@@ -132,7 +140,7 @@ describe("App", () => {
     ).toBe(false);
 
     vi.useRealTimers();
-    fireEvent.pointerEnter(screen.getByLabelText("Atoll"));
+    fireEvent.click(screen.getByLabelText("Atoll"));
     await waitFor(() =>
       expect(container.querySelector(".is-expanded")).not.toBeNull(),
     );
@@ -181,7 +189,7 @@ describe("App", () => {
     Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   });
 
-  it("starts in compact mode on Windows when regular folded island is selected", async () => {
+  it("ignores the legacy regular size on Windows without changing its stored value", async () => {
     window.localStorage.setItem("atoll.foldedIslandSize", "regular");
     Object.defineProperty(window, "__TAURI_INTERNALS__", {
       configurable: true,
@@ -204,8 +212,9 @@ describe("App", () => {
 
     const { container } = render(<App />);
 
-    expect(container.querySelector(".is-compact")).not.toBeNull();
-    expect(container.querySelector(".is-micro")).toBeNull();
+    expect(container.querySelector(".is-compact")).toBeNull();
+    expect(container.querySelector(".is-micro")).not.toBeNull();
+    expect(window.localStorage.getItem("atoll.foldedIslandSize")).toBe("regular");
     expect(bridge.setIslandPresentation.mock.calls[0]?.[0].mode).not.toBe("dormant");
 
     Object.defineProperty(navigator, "userAgent", {
@@ -215,7 +224,7 @@ describe("App", () => {
     Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   });
 
-  it("shows and persists the Windows small folded island setting", async () => {
+  it("hides the old folded size setting on Windows", async () => {
     Object.defineProperty(window, "__TAURI_INTERNALS__", {
       configurable: true,
       value: {},
@@ -243,27 +252,7 @@ describe("App", () => {
       await screen.findByRole("button", { name: /Island appearance/i }),
     );
 
-    const toggle = await screen.findByRole("switch", {
-      name: /Small folded island/i,
-    });
-    expect(toggle).toHaveAttribute("aria-checked", "true");
-
-    fireEvent.click(toggle);
-
-    await waitFor(() =>
-      expect(window.localStorage.getItem("atoll.foldedIslandSize")).toBe(
-        "regular",
-      ),
-    );
-    expect(toggle).toHaveAttribute("aria-checked", "false");
-
-    fireEvent.click(toggle);
-    await waitFor(() =>
-      expect(window.localStorage.getItem("atoll.foldedIslandSize")).toBe(
-        "small",
-      ),
-    );
-    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(screen.queryByRole("switch", { name: /Small folded island/i })).not.toBeInTheDocument();
 
     bridge.setIslandPresentation.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Collapse Atoll" }));
@@ -360,7 +349,7 @@ describe("App", () => {
     });
 
     await waitFor(() =>
-      expect(container.querySelector(".listener-dot")).toBeNull(),
+      expect(container.querySelector(".listener-dot.online")).not.toBeNull(),
     );
 
     Object.defineProperty(navigator, "userAgent", {
@@ -423,7 +412,7 @@ describe("App", () => {
     Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   });
 
-  it("uses a wider micro island when an active session is present", async () => {
+  it("keeps a small edge entry even when session token counts grow", async () => {
     Object.defineProperty(window, "__TAURI_INTERNALS__", {
       configurable: true,
       value: {},
@@ -468,7 +457,7 @@ describe("App", () => {
       );
       expect(
         microCalls.some(
-          (call) => typeof call[0].compactWidth === "number" && call[0].compactWidth > 72,
+          (call) => typeof call[0].compactWidth === "number" && call[0].compactWidth === 72,
         ),
       ).toBe(true);
     });
@@ -480,80 +469,100 @@ describe("App", () => {
     Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   });
 
-  it("cancels micro shrink when the cursor re-enters before hover dwell completes on Windows", async () => {
-    Object.defineProperty(window, "__TAURI_INTERNALS__", {
-      configurable: true,
-      value: {},
-    });
-    const originalUserAgent = navigator.userAgent;
-    Object.defineProperty(navigator, "userAgent", {
-      configurable: true,
-      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    });
-    window.localStorage.setItem("atoll.foldedIslandSize", "regular");
+  it("does not expand on DOM or native hover, but does expand on click", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Windows NT 10.0" });
     bridge.usesMicroIsland.mockResolvedValue(true);
-    bridge.getSnapshot.mockResolvedValue({
-      online: true,
-      pendingCount: 0,
-      activeRequest: null,
-      recent: [],
-      sessions: [],
-      hookHealth: connectedHookHealth,
-    });
-
+    bridge.getSnapshot.mockResolvedValue({ ...emptySnapshot, hookHealth: connectedHookHealth });
     const { container } = render(<App />);
     await waitFor(() => expect(emitIslandHover).not.toBeNull());
-    await waitFor(() =>
-      expect(container.querySelector(".is-compact")).not.toBeNull(),
-    );
-
-    fireEvent.pointerEnter(screen.getByLabelText("Atoll"));
-    await waitFor(() =>
-      expect(container.querySelector(".is-expanded")).not.toBeNull(),
-    );
-    await emitSettledPhase("expanded");
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /More options/i })).toBeInTheDocument(),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /More options/i }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /Settings/i }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Island appearance/i }),
-    );
-    const toggle = await screen.findByRole("switch", {
-      name: /Small folded island/i,
-    });
-    fireEvent.click(toggle);
-    await waitFor(() =>
-      expect(toggle).toHaveAttribute("aria-checked", "true"),
-    );
-
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    fireEvent.click(screen.getByRole("button", { name: "Collapse Atoll" }));
-    await flushCollapseAnimation();
-    expect(container.querySelector(".is-micro")).not.toBeNull();
-
+    await waitFor(() => expect(container.querySelector(".is-windows-edge.is-micro")).not.toBeNull());
     bridge.setIslandPresentation.mockClear();
-    emitIslandHover?.({ hovering: false, cursorOverWindow: false });
+    fireEvent.pointerEnter(screen.getByLabelText("Atoll"));
+    await act(async () => { emitIslandHover?.({ hovering: true, cursorOverWindow: true }); });
+    expect(container.querySelector(".is-micro")).not.toBeNull();
+    expect(bridge.setIslandPresentation.mock.calls.some(call => call[0].mode === "expanded")).toBe(false);
+    fireEvent.click(screen.getByLabelText("Atoll"));
+    await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+    expect(bridge.setIslandPresentation).toHaveBeenCalledWith(expect.objectContaining({ mode: "expanded" }));
+  });
+
+  function windowsRuntime() {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Windows NT 10.0" });
+    bridge.usesMicroIsland.mockResolvedValue(true);
+  }
+
+  it("keeps notify-mode approvals folded at startup and opens from the tray", async () => {
+    windowsRuntime();
+    bridge.getApprovalNoticeMode.mockResolvedValue("notify");
+    bridge.getSnapshot.mockResolvedValue({ ...emptySnapshot, online: true, pendingCount: 1, activeRequest: request, recent: [request], hookHealth: connectedHookHealth });
+    const { container } = render(<App />);
+    await waitFor(() => expect(container.querySelector(".pending-badge")).toHaveTextContent("1"));
+    expect(container.querySelector(".is-micro")).not.toBeNull();
+    expect(bridge.setIslandPresentation.mock.calls.some(call => call[0].mode === "expanded")).toBe(false);
+    await act(async () => { emitIslandOpen?.("focus"); });
+    await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+  });
+
+  it.each(["notify", "interrupt"] as const)("honors %s mode for incoming approvals", async mode => {
+    windowsRuntime();
+    bridge.getApprovalNoticeMode.mockResolvedValue(mode);
+    bridge.getSnapshot.mockResolvedValue({ ...emptySnapshot, online: true, hookHealth: connectedHookHealth });
+    const { container } = render(<App />);
+    await waitFor(() => expect(emitSnapshot).not.toBeNull());
+    await act(async () => { emitSnapshot?.({ ...emptySnapshot, online: true, pendingCount: 1, activeRequest: request, recent: [request], hookHealth: connectedHookHealth }); });
+    if (mode === "notify") {
+      expect(container.querySelector(".pending-badge")).toHaveTextContent("1");
+      expect(container.querySelector(".is-micro")).not.toBeNull();
+    } else {
+      await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+    }
+  });
+
+  it("shows independent approval and reminder badges within the edge entry", async () => {
+    windowsRuntime();
+    bridge.getApprovalNoticeMode.mockResolvedValue("notify");
+    bridge.getSnapshot.mockResolvedValue({ ...emptySnapshot, online: true, pendingCount: 1, activeRequest: request, recent: [request], hookHealth: connectedHookHealth });
+    reminderBridge.getReminders.mockResolvedValue({ ...EMPTY_REMINDERS, occurrences: [{
+      id: "occurrence-1", reminderId: "reminder-1", title: "Drink water", dueAt: Date.now() / 1000 - 60, completedAt: null, snoozedUntil: null, alerted: true,
+    }] });
+    const { container } = render(<App />);
+    await waitFor(() => expect(container.querySelector(".compact-reminder b")).toHaveTextContent("1"));
+    expect(container.querySelector(".pending-badge")).toHaveTextContent("1");
+    expect(container.querySelector(".is-micro")).not.toBeNull();
+    expect(container.querySelector(".token-counter")).toBeNull();
+    await waitFor(() => expect(bridge.setIslandPresentation).toHaveBeenCalledWith(expect.objectContaining({ mode: "micro", compactWidth: 104 })));
+  });
+
+  it("expands quickly for a native file drag despite disabling hover opening", async () => {
+    windowsRuntime();
+    let drag: ((kind: string, paths: string[], position: { x: number; y: number }) => void) | undefined;
+    bridge.onIslandDragDropEvent.mockImplementation(async callback => { drag = callback; return () => undefined; });
+    bridge.getSnapshot.mockResolvedValue({ ...emptySnapshot, online: true, hookHealth: connectedHookHealth });
+    const { container } = render(<App />);
+    await waitFor(() => expect(drag).toBeDefined());
+    await act(async () => { drag?.("enter", ["C:\\tmp\\test.txt"], { x: 20, y: 10 }); });
+    await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
+    expect(bridge.setIslandPresentation).toHaveBeenCalledWith(expect.objectContaining({ mode: "expanded", durationMs: 140 }));
+  });
+
+  it("holds a shortcut summon open and returns to the edge on a second summon", async () => {
+    windowsRuntime();
+    bridge.getSnapshot.mockResolvedValue({ ...emptySnapshot, online: true, hookHealth: connectedHookHealth });
+    const { container } = render(<App />);
+    await waitFor(() => expect(emitIslandOpen).not.toBeNull());
+    await act(async () => { emitIslandOpen?.("summon"); });
+    await emitSettledPhase("expanded");
+    vi.useFakeTimers();
+    fireEvent.pointerLeave(screen.getByLabelText("Atoll"));
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(250);
+      emitIslandHover?.({ hovering: false, cursorOverWindow: false });
+      await vi.advanceTimersByTimeAsync(IDLE_COLLAPSE_DELAY_MS + 50);
     });
-    emitIslandHover?.({ hovering: false, cursorOverWindow: true });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(300);
-    });
-
-    expect(
-      bridge.setIslandPresentation.mock.calls.some((call) => call[0].mode === "micro"),
-    ).toBe(false);
-
-    vi.useRealTimers();
-
-    Object.defineProperty(navigator, "userAgent", {
-      configurable: true,
-      value: originalUserAgent,
-    });
-    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    expect(container.querySelector(".is-expanded")).not.toBeNull();
+    await act(async () => { emitIslandOpen?.("summon"); });
+    await flushCollapseAnimation("micro");
+    expect(container.querySelector(".is-windows-edge.is-micro")).not.toBeNull();
   });
 });

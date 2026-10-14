@@ -692,7 +692,7 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
           onChangeMaxCompactIcons={(nextValue) =>
             setMaxCompactIcons(clampCompactIconLimit(nextValue, maxCompactIconLimit))
           }
-          showFoldedIslandSizeSetting={supportsMicroIsland}
+          showFoldedIslandSizeSetting={false}
           foldedIslandSize={foldedIslandSize}
           onChangeFoldedIslandSize={handleChangeFoldedIslandSize}
           maxSubagentDisplay={maxSubagentDisplay}

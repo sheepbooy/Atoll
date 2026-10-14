@@ -565,3 +565,13 @@ fn load_settings_bool(key: &str, default: bool) -> bool {
     };
     value.get(key).and_then(Value::as_bool).unwrap_or(default)
 }
+
+/// Windows keeps a proportional vertical position across display changes.
+pub(crate) fn load_windows_edge_position() -> f64 {
+    atoll_settings_path()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+        .and_then(|value| value.get("windowsEdgePosition").and_then(Value::as_f64))
+        .map(crate::windows_edge::normalize_edge_position)
+        .unwrap_or(crate::windows_edge::DEFAULT_EDGE_POSITION)
+}

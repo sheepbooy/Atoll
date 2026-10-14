@@ -14,6 +14,26 @@ export function usesMicroIslandSync(): boolean {
   return isWindowsTauriRuntime();
 }
 
+export interface WindowsEdgePosition {
+  ratio: number;
+  dragRatio: number;
+  cursorY: number;
+}
+
+export function getWindowsEdgePosition(): Promise<WindowsEdgePosition> {
+  return invoke("get_windows_edge_position");
+}
+
+export function setWindowsEdgePosition(ratio: number, persist = true): Promise<number> {
+  return invoke("set_windows_edge_position", { ratio, persist });
+}
+
+export function moveWindowsEdgeIsland(origin: WindowsEdgePosition, persist = false): Promise<number> {
+  return invoke("move_windows_edge_island", {
+    startRatio: origin.dragRatio, startCursorY: origin.cursorY, persist,
+  });
+}
+
 export async function setImeActive(active: boolean) {
   if (!isTauriRuntime()) {
     return;

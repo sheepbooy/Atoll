@@ -456,40 +456,10 @@ export function computeCollapsedWindowWidth(
   ).windowWidth;
 }
 
-/** Keep in sync with MICRO_WINDOW_WIDTH in src-tauri/src/lib.rs. */
+/** Keep in sync with MICRO_WINDOW_WIDTH in src-tauri/src/state.rs. */
 export const MICRO_WINDOW_MIN_WIDTH = 72;
-/** Windows micro header slots — keep in sync with .is-micro rules in styles.css. */
-export const MICRO_LOGO_SLOT = 24;
-export const MICRO_LISTENER_SLOT = 6;
-export const MICRO_OUTER_PADDING = 10;
-export const MICRO_HEADER_GAP = 3;
-export const MICRO_INNER_GAP = 2;
-export const MICRO_TOKEN_MARK_SLOT = 7;
 
-/** Width budget for the Windows super-collapsed strip. */
-export function computeMicroWindowWidth(
-  sessionCount: number,
-  tokenTotal: number,
-  tokenCompactLevel = 0,
-): number {
-  if (sessionCount <= 0) {
-    return MICRO_WINDOW_MIN_WIDTH;
-  }
-
-  const tokenText = formatCompactTokenCount(
-    tokenTotal,
-    tokenCompactLevel,
-    tokenTotal,
-  );
-  const tokenWidth = tokenTotal > 0 ? estimateTokenDisplayWidth(tokenText) : 0;
-  const content =
-    MICRO_OUTER_PADDING +
-    MICRO_LOGO_SLOT +
-    MICRO_INNER_GAP +
-    MICRO_LISTENER_SLOT +
-    MICRO_HEADER_GAP +
-    MICRO_TOKEN_MARK_SLOT +
-    tokenWidth;
-
-  return Math.max(MICRO_WINDOW_MIN_WIDTH, Math.ceil(content));
+/** The Windows edge entry contains only the logo, status and action badges. */
+export function computeMicroWindowWidth(pendingCount: number, hasReminders = false): number {
+  return MICRO_WINDOW_MIN_WIDTH + (hasReminders ? 32 : 0) + (pendingCount > 99 ? 8 : 0);
 }

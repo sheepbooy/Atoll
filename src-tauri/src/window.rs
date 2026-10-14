@@ -14,6 +14,141 @@ use super::*;
 pub(crate) fn uses_micro_island() -> bool {
     cfg!(target_os = "windows")
 }
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WindowsEdgePosition {
+    ratio: f64,
+    drag_ratio: f64,
+    /// Native physical coordinates avoid mixed-DPI browser screenY conversions.
+    cursor_y: f64,
+}
+
+#[cfg(target_os = "windows")]
+fn refresh_windows_edge_home(
+    window: &tauri::WebviewWindow,
+    state: &AppState,
+) -> Result<(), String> {
+    let preferred = lock_state(&state.preferred_monitor).clone();
+    let Some(monitor) = resolve_island_monitor(window, preferred.as_deref()) else {
+        return Ok(());
+    };
+    let edge = crate::windows_edge::EdgeAnchor::for_monitor(
+        &monitor,
+        *lock_state(&state.windows_edge_position),
+    );
+    if let Some(home) = lock_state(&state.home_bounds).as_mut() {
+        home.edge_anchor = Some(edge);
+        home.compact_size = PhysicalSize::new(
+            (COMPACT_WINDOW_WIDTH * edge.scale_factor).round() as u32,
+            (MICRO_WINDOW_HEIGHT * edge.scale_factor).round() as u32,
+        );
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) fn get_windows_edge_position(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<WindowsEdgePosition, String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or("island window unavailable")?;
+    let ratio = *lock_state(&state.windows_edge_position);
+    let edge = lock_state(&state.home_bounds).and_then(|home| home.edge_anchor);
+    let drag_ratio = if let Some(edge) = edge {
+        let y = window.outer_position().map_err(|e| e.to_string())?.y as f64 / edge.scale_factor;
+        crate::windows_edge::normalize_edge_position(
+            (y - edge.top) / (edge.height - MICRO_WINDOW_HEIGHT).max(1.0),
+        )
+    } else {
+        ratio
+    };
+    Ok(WindowsEdgePosition {
+        ratio,
+        drag_ratio,
+        cursor_y: window.cursor_position().map_err(|e| e.to_string())?.y,
+    })
+}
+
+#[tauri::command]
+pub(crate) fn set_windows_edge_position(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    ratio: f64,
+    persist: bool,
+) -> Result<f64, String> {
+    if !ratio.is_finite() {
+        return Err("edge position must be finite".into());
+    }
+    if !cfg!(target_os = "windows") {
+        return Err("edge positioning is Windows-only".into());
+    }
+    let ratio = crate::windows_edge::normalize_edge_position(ratio);
+    *lock_state(&state.windows_edge_position) = ratio;
+    state.shape_pulse_generation.fetch_add(1, Ordering::SeqCst);
+    let generation = state.presentation_generation.fetch_add(1, Ordering::SeqCst) + 1;
+    let window = app
+        .get_webview_window("main")
+        .ok_or("island window unavailable")?;
+    #[cfg(target_os = "windows")]
+    refresh_windows_edge_home(&window, &state)?;
+    let home = *lock_state(&state.home_bounds);
+    let frame_window = window.clone();
+    let guard = Arc::clone(&state.presentation_generation);
+    window
+        .run_on_main_thread(move || {
+            if guard.load(Ordering::SeqCst) != generation {
+                return;
+            }
+            if let Some(home) = home {
+                if let Some(edge) = home.edge_anchor {
+                    if let Ok(size) = frame_window.outer_size() {
+                        let size = edge.size(home.edge_requested_size.unwrap_or_else(|| {
+                            size.to_logical::<f64>(
+                                frame_window.scale_factor().unwrap_or(edge.scale_factor),
+                            )
+                        }));
+                        let _ = platform::set_island_window_frame_now(
+                            &frame_window,
+                            edge.position(size),
+                            size,
+                            edge.scale_factor,
+                            home,
+                        );
+                    }
+                }
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    if persist {
+        persist_settings_value("windowsEdgePosition", serde_json::Value::from(ratio));
+    }
+    Ok(ratio)
+}
+
+#[tauri::command]
+pub(crate) fn move_windows_edge_island(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    start_ratio: f64,
+    start_cursor_y: f64,
+    persist: bool,
+) -> Result<f64, String> {
+    if !start_ratio.is_finite() || !start_cursor_y.is_finite() {
+        return Err("invalid drag origin".into());
+    }
+    let window = app
+        .get_webview_window("main")
+        .ok_or("island window unavailable")?;
+    let edge = lock_state(&state.home_bounds)
+        .and_then(|home| home.edge_anchor)
+        .ok_or("edge geometry unavailable")?;
+    let cursor_y = window.cursor_position().map_err(|e| e.to_string())?.y;
+    let ratio = edge.dragged_ratio(start_ratio, cursor_y - start_cursor_y);
+    set_windows_edge_position(app, state, ratio, persist)
+}
 #[tauri::command]
 pub(crate) async fn set_island_presentation(
     app: AppHandle,
@@ -158,6 +293,21 @@ pub(crate) async fn set_island_presentation(
             .lock()
             .map_err(|error| error.to_string())?,
     );
+    #[cfg(target_os = "windows")]
+    {
+        refresh_windows_edge_home(&window, &state)?;
+        if let Some(home) = lock_state(&state.home_bounds).as_mut() {
+            home.edge_requested_size = Some(island_window_logical_size(
+                mode,
+                presentation_width,
+                NotchMetrics::default(),
+                expanded_idle.unwrap_or(false),
+                expanded_plan.unwrap_or(false),
+                expanded_settings.unwrap_or(false),
+                expanded_wings,
+            ));
+        }
+    }
     let home_bounds = *state
         .home_bounds
         .lock()
@@ -393,6 +543,10 @@ fn animate_island_shape_pulse(
         target_size,
         home_bounds.map(|home| home.notch).unwrap_or_default(),
     );
+    let target_position = home_bounds
+        .and_then(|home| home.edge_anchor)
+        .map(|edge| edge.position(target_size))
+        .unwrap_or(target_position);
     let animation_frame = platform::display_animation_frame_interval(window);
     let total = out + back;
     let started_at = Instant::now();
@@ -653,8 +807,6 @@ pub(crate) fn start_island_hover_monitor(app: AppHandle) {
         let mut last_hovering = false;
         let mut last_cursor_over = false;
         let mut last_client: Option<(f64, f64)> = None;
-        #[cfg(target_os = "windows")]
-        let mut compact_hover_since: Option<Instant> = None;
 
         loop {
             #[cfg(target_os = "windows")]
@@ -667,26 +819,8 @@ pub(crate) fn start_island_hover_monitor(app: AppHandle) {
             };
 
             let cursor_over_window = is_cursor_over_window(&window).unwrap_or(false);
-            #[cfg(target_os = "windows")]
-            let hovering = if platform::is_island_expanded() {
-                cursor_over_window
-            } else if cursor_over_window {
-                let now = Instant::now();
-                if compact_hover_since.is_none() {
-                    compact_hover_since = Some(now);
-                }
-                compact_hover_since.is_some_and(|since| {
-                    now.duration_since(since) >= platform::compact_hover_expand_dwell()
-                })
-            } else {
-                compact_hover_since = None;
-                false
-            };
-            #[cfg(not(target_os = "windows"))]
             let hovering = cursor_over_window;
 
-            #[cfg(target_os = "windows")]
-            platform::sync_cursor_pass_through(&window, cursor_over_window);
             let client = if hovering {
                 cursor_client_point(&window)
             } else {
@@ -719,6 +853,47 @@ pub(crate) fn start_island_hover_monitor(app: AppHandle) {
                 last_client = if hovering { client } else { None };
             }
         }
+    });
+}
+
+/// Work-area changes include taskbar moves, resolution, scaling and unplugging
+/// the preferred display. Refresh even while expanded; CSS follows the viewport.
+#[cfg(target_os = "windows")]
+pub(crate) fn start_windows_edge_display_monitor(app: AppHandle) {
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_secs(1));
+        let Some(window) = app.get_webview_window("main") else {
+            continue;
+        };
+        let state = app.state::<AppState>();
+        let before = lock_state(&state.home_bounds).and_then(|home| home.edge_anchor);
+        if refresh_windows_edge_home(&window, &state).is_err() {
+            continue;
+        }
+        let after = *lock_state(&state.home_bounds);
+        let Some(home) = after else {
+            continue;
+        };
+        if home.edge_anchor == before {
+            continue;
+        }
+        let frame_window = window.clone();
+        let _ = window.run_on_main_thread(move || {
+            if let (Some(edge), Ok(size)) = (home.edge_anchor, frame_window.outer_size()) {
+                let scale = frame_window.scale_factor().unwrap_or(edge.scale_factor);
+                let size = edge.size(
+                    home.edge_requested_size
+                        .unwrap_or_else(|| size.to_logical::<f64>(scale)),
+                );
+                let _ = platform::set_island_window_frame_now(
+                    &frame_window,
+                    edge.position(size),
+                    size,
+                    edge.scale_factor,
+                    home,
+                );
+            }
+        });
     });
 }
 /// Pick the display the island anchors to: the user's preferred monitor when
@@ -816,7 +991,20 @@ pub(crate) fn apply_island_window_mode(
     // the notch / menu-bar band; the actual content is pushed below the notch
     // height inside the web view. On non-notched screens this is unchanged.
     let centered_y = monitor_top;
-    let position = LogicalPosition::new(centered_x, centered_y);
+    #[cfg(target_os = "windows")]
+    let edge_anchor = Some(crate::windows_edge::EdgeAnchor::for_monitor(
+        &monitor,
+        *lock_state(&window.state::<AppState>().windows_edge_position),
+    ));
+    #[cfg(not(target_os = "windows"))]
+    let edge_anchor: Option<crate::windows_edge::EdgeAnchor> = None;
+    let edge_requested_size = edge_anchor.map(|_| logical_window_size);
+    let logical_window_size = edge_anchor
+        .map(|edge| edge.size(logical_window_size))
+        .unwrap_or(logical_window_size);
+    let position = edge_anchor
+        .map(|edge| edge.position(logical_window_size))
+        .unwrap_or(LogicalPosition::new(centered_x, centered_y));
     if platform::notch_debug_enabled() {
         eprintln!(
             "[Atoll] island mode {mode:?}: size {}x{} at ({},{}) left_pane={left_pane_width} notch {notch:?}",
@@ -827,6 +1015,8 @@ pub(crate) fn apply_island_window_mode(
         );
     }
     let home = HomeWindowBounds {
+        edge_anchor,
+        edge_requested_size,
         position,
         // Fixed reference size for animation scale-factor recovery:
         //   compact_size.width / COMPACT_WINDOW_WIDTH == scale_factor
@@ -847,6 +1037,10 @@ pub(crate) fn apply_island_window_mode(
         ),
     };
 
+    #[cfg(target_os = "windows")]
+    {
+        *lock_state(&window.state::<AppState>().home_bounds) = Some(home);
+    }
     platform::set_island_window_frame_now(
         window,
         position,
@@ -908,12 +1102,20 @@ pub(crate) fn animate_island_window_mode(
         expanded_wings,
     );
     let target_logical_size = target_size.to_logical::<f64>(scale_factor);
+    let target_logical_size = home_bounds
+        .and_then(|home| home.edge_anchor)
+        .map(|edge| edge.size(target_logical_size))
+        .unwrap_or(target_logical_size);
     // Center the target window on the screen center.  Using monitor_center_x
     // instead of deriving from home.position avoids mis-centering when the
     // initial home position was set from a narrower mode (e.g. dormant 260px
     // vs compact 460px).
     let (target_x, target_y) = home_bounds
         .map(|home| {
+            if let Some(edge) = home.edge_anchor {
+                let position = edge.position(target_logical_size);
+                return (position.x, position.y);
+            }
             // The compact capsule anchors its left pane against the notch's
             // left edge; the expanded window is screen-centered with
             // symmetric wings (no drift during the resize animation).

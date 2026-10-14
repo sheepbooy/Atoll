@@ -19,7 +19,8 @@ use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, Monitor, WebviewWi
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{GetLastError, BOOL, ERROR_ALREADY_EXISTS, HANDLE};
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
+    CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, GetMonitorInfoW,
+    MonitorFromWindow, SetWindowRgn, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST, RGN_OR,
 };
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -38,16 +39,8 @@ unsafe impl Sync for InstanceMutex {}
 
 static SINGLE_INSTANCE_MUTEX: OnceLock<InstanceMutex> = OnceLock::new();
 
-/// When true, keep the island interactive even if the cursor is outside its bounds
-/// (e.g. approval focus while the pointer is still over another app).
-static FORCE_INTERACTIVE: AtomicBool = AtomicBool::new(false);
-static CURSOR_CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(false);
-/// Compact/dormant vs expanded — Windows only captures mouse input while expanded.
+/// Chooses the native hit-test silhouette: rounded panel or right-edge pill.
 static IS_EXPANDED: AtomicBool = AtomicBool::new(false);
-
-/// Dwell time before hover-to-expand on Windows compact/dormant. Keeps quick
-/// passes through the top edge from stealing clicks or popping the island open.
-pub const COMPACT_HOVER_EXPAND_DWELL_MS: u64 = 350;
 
 /// Returns false when another Atoll instance already holds the global mutex.
 pub fn ensure_single_instance() -> bool {
@@ -75,9 +68,12 @@ pub fn ensure_single_instance() -> bool {
 
 pub fn apply_island_window_style(window: &WebviewWindow) {
     let _ = window.set_always_on_top(true);
-    // Start pass-through by default; the hover monitor re-enables capture on demand.
-    let _ = window.set_ignore_cursor_events(true);
-    CURSOR_CAPTURE_ACTIVE.store(false, Ordering::Release);
+    let _ = window.set_min_size(Some(LogicalSize::new(
+        crate::MICRO_WINDOW_WIDTH,
+        crate::MICRO_WINDOW_HEIGHT,
+    )));
+    // The HWND region clips transparent corners; the visible pill is clickable.
+    let _ = window.set_ignore_cursor_events(false);
 }
 
 /// Re-assert topmost on Windows without moving or resizing the window. Full-screen
@@ -115,48 +111,42 @@ fn set_island_topmost(window: &WebviewWindow, show: bool) {
     }
 }
 
-/// Windows WebView2 does not pass clicks through transparent pixels the way macOS
-/// WebKit does. Compact/dormant islands always pass clicks through because Windows
-/// apps (browsers, etc.) extend under the top edge unlike the macOS menu bar.
-/// Only the expanded panel captures input, and only while the cursor is over it.
+/// Keep the visible surface interactive in both presentations. A native region
+/// excludes transparent corners rather than making the entire pill click-through.
 pub fn set_island_cursor_events_ignored(window: &WebviewWindow, ignore: bool) {
     IS_EXPANDED.store(!ignore, Ordering::Release);
-    if ignore {
-        FORCE_INTERACTIVE.store(false, Ordering::Release);
-        if CURSOR_CAPTURE_ACTIVE.swap(false, Ordering::AcqRel) {
-            let _ = window.set_ignore_cursor_events(true);
-        }
+    let _ = window.set_ignore_cursor_events(false);
+    if let (Ok(size), Ok(scale)) = (window.outer_size(), window.scale_factor()) {
+        apply_island_region(window, size.width as i32, size.height as i32, scale);
     }
 }
 
-pub fn is_island_expanded() -> bool {
-    IS_EXPANDED.load(Ordering::Acquire)
+fn set_force_interactive(window: &WebviewWindow, _force: bool) {
+    let _ = window.set_ignore_cursor_events(false);
 }
 
-pub fn sync_cursor_pass_through(window: &WebviewWindow, hovering: bool) {
-    if hovering {
-        FORCE_INTERACTIVE.store(false, Ordering::Release);
-    }
-
-    let should_capture = if IS_EXPANDED.load(Ordering::Acquire) {
-        hovering || FORCE_INTERACTIVE.load(Ordering::Acquire)
-    } else {
-        false
-    };
-
-    let was_capturing = CURSOR_CAPTURE_ACTIVE.load(Ordering::Acquire);
-    if was_capturing == should_capture {
+fn apply_island_region(window: &WebviewWindow, width: i32, height: i32, scale: f64) {
+    let Some(hwnd) = window_hwnd(window) else {
         return;
-    }
-    CURSOR_CAPTURE_ACTIVE.store(should_capture, Ordering::Release);
-    let _ = window.set_ignore_cursor_events(!should_capture);
-}
-
-fn set_force_interactive(window: &WebviewWindow, force: bool) {
-    FORCE_INTERACTIVE.store(force, Ordering::Release);
-    if force && !CURSOR_CAPTURE_ACTIVE.load(Ordering::Acquire) {
-        CURSOR_CAPTURE_ACTIVE.store(true, Ordering::Release);
-        let _ = window.set_ignore_cursor_events(false);
+    };
+    let expanded = IS_EXPANDED.load(Ordering::Acquire);
+    let radius = ((if expanded { 22.0 } else { 16.0 }) * scale).round() as i32;
+    unsafe {
+        let region = CreateRoundRectRgn(0, 0, width + 1, height + 1, radius * 2, radius * 2);
+        if region.0.is_null() {
+            return;
+        }
+        if !expanded {
+            let right = CreateRectRgn(width / 2, 0, width + 1, height + 1);
+            if !right.0.is_null() {
+                let _ = CombineRgn(region, region, right, RGN_OR);
+                let _ = DeleteObject(right);
+            }
+        }
+        // SetWindowRgn transfers ownership on success.
+        if SetWindowRgn(hwnd, region, true) == 0 {
+            let _ = DeleteObject(region);
+        }
     }
 }
 
@@ -173,11 +163,57 @@ pub fn set_island_window_frame_now(
     window: &WebviewWindow,
     position: LogicalPosition<f64>,
     size: LogicalSize<f64>,
-    _scale_factor: f64,
-    _home: HomeWindowBounds,
+    scale_factor: f64,
+    home: HomeWindowBounds,
 ) -> tauri::Result<()> {
-    window.set_size(size)?;
-    window.set_position(position)
+    // Read live geometry: a display change may occur during an animation.
+    let live_edge = crate::lock_state(&window.state::<AppState>().home_bounds)
+        .and_then(|home| home.edge_anchor)
+        .or(home.edge_anchor);
+    let (position, size, scale) = if let Some(edge) = live_edge {
+        let size = edge.size(size);
+        let anchored = edge.position(size);
+        let y = if Some(edge) != home.edge_anchor {
+            anchored.y
+        } else {
+            position
+                .y
+                .clamp(edge.top, edge.top + edge.height - size.height)
+        };
+        (LogicalPosition::new(anchored.x, y), size, edge.scale_factor)
+    } else {
+        (position, size, scale_factor)
+    };
+    let (position, size) = if let Some(edge) = live_edge {
+        // Round the size first and subtract it from the physical right edge.
+        // Rounding logical x and width independently can drift one pixel at
+        // fractional DPI scales during the resize spring.
+        edge.physical_frame(position.y, size)
+    } else {
+        (
+            position.to_physical::<i32>(scale),
+            size.to_physical::<u32>(scale),
+        )
+    };
+    if let Some(hwnd) = window_hwnd(window) {
+        unsafe {
+            SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                position.x,
+                position.y,
+                size.width as i32,
+                size.height as i32,
+                SWP_NOACTIVATE,
+            )
+            .map_err(|error| tauri::Error::Anyhow(error.into()))?;
+        }
+    } else {
+        window.set_size(size)?;
+        window.set_position(position)?;
+    }
+    apply_island_region(window, size.width as i32, size.height as i32, scale);
+    Ok(())
 }
 
 pub fn set_island_window_frame(

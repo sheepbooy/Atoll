@@ -25,7 +25,7 @@ pub(crate) const COMPACT_WINDOW_WIDTH: f64 = 132.0;
 pub(crate) const NOTCH_BAND_HEIGHT: f64 = 32.0;
 /// Windows-only super-collapsed strip; macOS never selects this mode.
 pub(crate) const MICRO_WINDOW_WIDTH: f64 = 72.0;
-pub(crate) const MICRO_WINDOW_HEIGHT: f64 = 24.0;
+pub(crate) const MICRO_WINDOW_HEIGHT: f64 = 32.0;
 pub(crate) const EXPANDED_WINDOW_WIDTH: f64 = 560.0;
 pub(crate) const EXPANDED_WINDOW_HEIGHT: f64 = 320.0;
 // Expanded header wings on notched displays: the menu-bar row stays beside the
@@ -343,6 +343,7 @@ pub(crate) struct AppState {
     /// presentation change wins over a running one).
     pub(crate) shape_pulse_generation: Arc<AtomicU64>,
     pub(crate) home_bounds: Mutex<Option<HomeWindowBounds>>,
+    pub(crate) windows_edge_position: Mutex<f64>,
     pub(crate) notch_metrics: Mutex<NotchMetrics>,
     pub(crate) session_last_seen: Mutex<HashMap<String, u64>>,
     pub(crate) session_retention_secs: Mutex<u64>,
@@ -439,6 +440,9 @@ pub(crate) struct AppState {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct HomeWindowBounds {
+    pub(crate) edge_anchor: Option<crate::windows_edge::EdgeAnchor>,
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    pub(crate) edge_requested_size: Option<tauri::LogicalSize<f64>>,
     pub(crate) position: LogicalPosition<f64>,
     pub(crate) compact_size: PhysicalSize<u32>,
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]

@@ -39,8 +39,8 @@ mod media;
 mod media_windows;
 mod platform;
 mod pricing;
-mod risk_patterns;
 mod reminders;
+mod risk_patterns;
 mod salary_history;
 mod shortcuts;
 mod token_history;
@@ -74,6 +74,8 @@ mod shared_media;
 pub(crate) use monitors::*;
 
 mod window;
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+mod windows_edge;
 
 pub(crate) use window::*;
 
@@ -156,6 +158,7 @@ pub fn run() {
             presentation_generation: Arc::new(AtomicU64::new(0)),
             shape_pulse_generation: Arc::new(AtomicU64::new(0)),
             home_bounds: Mutex::new(None),
+            windows_edge_position: Mutex::new(load_windows_edge_position()),
             notch_metrics: Mutex::new(NotchMetrics::default()),
             session_last_seen: Mutex::new(HashMap::new()),
             session_retention_secs: Mutex::new(DEFAULT_SESSION_RETENTION_SECS),
@@ -234,6 +237,9 @@ pub fn run() {
             update_island_layout_metrics,
             pulse_island_shape,
             list_monitors,
+            get_windows_edge_position,
+            set_windows_edge_position,
+            move_windows_edge_island,
             get_preferred_monitor,
             set_preferred_monitor,
             get_notch_metrics,
@@ -428,7 +434,11 @@ pub fn run() {
                     &window,
                     preferred_monitor.as_deref(),
                     initial_mode,
-                    COMPACT_WINDOW_WIDTH,
+                    if cfg!(target_os = "windows") {
+                        MICRO_WINDOW_WIDTH
+                    } else {
+                        COMPACT_WINDOW_WIDTH
+                    },
                     0.0,
                     false,
                     false,

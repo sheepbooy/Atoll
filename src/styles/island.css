@@ -518,7 +518,7 @@
 /* ─── Windows micro pill (super-collapsed) ─────────────────────── */
 .island.is-micro {
   width: min(560px, 100vw);
-  height: var(--micro-height, 24px);
+  height: var(--micro-height, 32px);
   border-radius: 0 0 9px 9px;
   overflow: hidden;
 }

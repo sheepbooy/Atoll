@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NowPlayingTrack, NotchMetrics } from "../tauri";
 import type { LyricPayload } from "../tauri";
 import {
+  computeMicroWindowWidth,
   computeCompactPresentation,
   computeCompactReminderWidth,
   computeCompactHeaderLayout,
@@ -12,7 +13,6 @@ import {
   computeMaxCompactIconLimit,
 } from "../compactLayout";
 import {
-  microPresentationWidth,
   resolveCollapsedMode,
 } from "../islandLayout";
 import type { CompactIndicatorMode, UsageDisplayMode } from "../displayPrefs";
@@ -136,9 +136,9 @@ export function useCompactLayout({
     // Same for the Bluetooth battery rings: they live in the compact header.
     bluetoothRingCount > 0,
   );
-  const collapsedMode = hasReminders ? "compact" : rawCollapsedMode;
+  const collapsedMode = hasReminders && !usesMicroIslandRef.current ? "compact" : rawCollapsedMode;
 
-  // Micro mode keeps its existing token-only geometry and formatting tiers.
+  // Keep shared header metrics stable during presentation transitions.
   const microHeaderLayout = useMemo(() => computeCompactHeaderLayout(
     notchMetrics, sessions.length, maxCompactIcons, activeSessionTokenTotal, pendingCount,
   ), [notchMetrics, sessions.length, maxCompactIcons, activeSessionTokenTotal, pendingCount]);
@@ -152,11 +152,8 @@ export function useCompactLayout({
   collapsedModeRef.current = collapsedMode;
   collapsedWindowWidthRef.current = collapsedWindowWidth;
   compactLeftPaneWidthRef.current = compactLeftPaneWidth;
-  microPresentationWidthRef.current = microPresentationWidth(
-    sessions.length,
-    activeSessionTokenTotal,
-    microHeaderLayout.tokenCompactLevel,
-  );
+  // Two compact badges (approval and reminders) fit without counters/media.
+  microPresentationWidthRef.current = computeMicroWindowWidth(pendingCount, hasReminders);
 
   useEffect(() => {
     if (typeof document === "undefined") return;

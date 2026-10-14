@@ -207,13 +207,18 @@ describe("compactLayout", () => {
     expect(width).toBeLessThanOrEqual(COMPACT_MAX_WINDOW_WIDTH);
   });
 
-  it("uses the idle micro width when no sessions are active", () => {
-    expect(computeMicroWindowWidth(0, 0, 0)).toBe(MICRO_WINDOW_MIN_WIDTH);
+  it("keeps ordinary approval counts within the minimum edge width", () => {
+    expect(computeMicroWindowWidth(0)).toBe(MICRO_WINDOW_MIN_WIDTH);
   });
 
-  it("widens the micro island when sessions and tokens are present", () => {
-    const width = computeMicroWindowWidth(1, 12_345, 0);
-    expect(width).toBeGreaterThan(MICRO_WINDOW_MIN_WIDTH);
+  it("reserves independent space for reminder and approval badges", () => {
+    expect(computeMicroWindowWidth(1, true)).toBeGreaterThan(computeMicroWindowWidth(1));
+    expect(computeMicroWindowWidth(99)).toBe(MICRO_WINDOW_MIN_WIDTH);
+  });
+
+  it("bounds the entry width even when the approval badge reads 99+", () => {
+    expect(computeMicroWindowWidth(100)).toBeGreaterThan(computeMicroWindowWidth(99));
+    expect(computeMicroWindowWidth(100_000, true)).toBeLessThanOrEqual(112);
   });
 });
 

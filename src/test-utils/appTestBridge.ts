@@ -137,7 +137,7 @@ export const emptySnapshot = {
 
 export async function waitForExpandedPanel(container: HTMLElement) {
   const island = screen.getByLabelText("Atoll");
-  fireEvent.pointerEnter(island);
+  fireEvent.click(island);
   await waitFor(() => expect(container.querySelector(".is-expanded")).not.toBeNull());
   await emitSettledPhase("expanded");
   await waitFor(() => expect(container.querySelector(".island-panel")).not.toBeNull(), {
@@ -250,10 +250,14 @@ export const bridge = {
   resolvePermissionRequest: vi.fn(),
   resolvePermissionWithInput: vi.fn(),
   setIslandPresentation: vi.fn(),
+  getWindowsEdgePosition: vi.fn(),
+  moveWindowsEdgeIsland: vi.fn(),
   updateIslandLayoutMetrics: vi.fn(),
   setImeActive: vi.fn(),
   setCompactLayout: vi.fn(),
   usesMicroIsland: vi.fn(),
+  getApprovalNoticeMode: vi.fn(),
+  onIslandDragDropEvent: vi.fn(),
   getClaudeHookStatus: vi.fn(),
   installClaudeHooks: vi.fn(),
   uninstallClaudeHooks: vi.fn(),
@@ -352,10 +356,14 @@ export function resetAppTestBridge() {
   bridge.onCaptureOpenHooksRequested.mockResolvedValue(() => undefined);
   bridge.onCaptureScreenshotRequested.mockResolvedValue(() => undefined);
   bridge.setIslandPresentation.mockResolvedValue(undefined);
+  bridge.getWindowsEdgePosition.mockResolvedValue({ ratio: 1 / 3, dragRatio: 1 / 3, cursorY: 300 });
+  bridge.moveWindowsEdgeIsland.mockResolvedValue(1 / 3);
   bridge.updateIslandLayoutMetrics.mockResolvedValue(undefined);
   bridge.setImeActive.mockResolvedValue(undefined);
   bridge.setCompactLayout.mockResolvedValue(undefined);
   bridge.usesMicroIsland.mockResolvedValue(false);
+  bridge.getApprovalNoticeMode.mockResolvedValue("interrupt");
+  bridge.onIslandDragDropEvent.mockResolvedValue(() => undefined);
   bridge.quitAtoll.mockResolvedValue(undefined);
   bridge.deactivateAtoll.mockResolvedValue(undefined);
   bridge.resolvePermissionRequest.mockResolvedValue({

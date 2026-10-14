@@ -17,8 +17,8 @@ import {
 
 // Keep in sync with NOTCH_BAND_HEIGHT in src-tauri/src/state.rs.
 export const NOTCH_BAND_HEIGHT = 32;
-// Keep in sync with MICRO_WINDOW_HEIGHT in src-tauri/src/lib.rs.
-export const MICRO_WINDOW_HEIGHT = 24;
+// Keep in sync with MICRO_WINDOW_HEIGHT in src-tauri/src/state.rs.
+export const MICRO_WINDOW_HEIGHT = 32;
 // Keep in sync with NOTCH_COVER_PADDING in src-tauri/src/lib.rs.
 export const NOTCH_COVER_PADDING = 16;
 // Notch-matched corner radius (community-measured; refine via
@@ -122,11 +122,10 @@ export function compactPresentationKey(
 }
 
 export function microPresentationWidth(
-  sessionCount: number,
-  tokenTotal: number,
-  tokenCompactLevel: number,
+  pendingCount: number,
+  hasReminders = false,
 ): number {
-  return computeMicroWindowWidth(sessionCount, tokenTotal, tokenCompactLevel);
+  return computeMicroWindowWidth(pendingCount, hasReminders);
 }
 
 export function shouldRestInMicro(usesMicro: boolean): boolean {
@@ -135,9 +134,9 @@ export function shouldRestInMicro(usesMicro: boolean): boolean {
 
 export function shouldUseMicroIsland(
   supportsMicroIsland: boolean,
-  foldedIslandSize: FoldedIslandSize,
+  _foldedIslandSize: FoldedIslandSize,
 ): boolean {
-  return supportsMicroIsland && foldedIslandSize === "small";
+  return supportsMicroIsland;
 }
 
 export function resolveCollapsedMode(

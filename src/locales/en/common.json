@@ -10,7 +10,8 @@
     "listening": "Listening",
     "offline": "Offline",
     "listeningForAgents": "Listening for agents",
-    "pendingAria": "{{count}} pending"
+    "pendingAria": "{{count}} pending",
+    "clickToOpen": "Click to open"
   },
   "update": {
     "available": "Update available: v{{version}}",

@@ -15,6 +15,7 @@ pub(crate) fn test_app_state() -> AppState {
         presentation_generation: Arc::new(AtomicU64::new(0)),
         shape_pulse_generation: Arc::new(AtomicU64::new(0)),
         home_bounds: Mutex::new(None),
+        windows_edge_position: Mutex::new(crate::windows_edge::DEFAULT_EDGE_POSITION),
         notch_metrics: Mutex::new(NotchMetrics::default()),
         session_last_seen: Mutex::new(HashMap::new()),
         session_retention_secs: Mutex::new(DEFAULT_SESSION_RETENTION_SECS),

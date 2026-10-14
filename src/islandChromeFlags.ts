@@ -71,14 +71,13 @@ export function deriveIslandChromeFlags({
         pendingCount === 0));
   const showCompactHeaderMetrics =
     !isMicro && !isDormant && !isExpanded && !isPresentationTransition;
-  const showMicroTokenCounter =
-    isMicro && !isPresentationTransition && sessions.length > 0 &&
-    (compactIndicator === "tokens" || compactIndicator === "both");
+  // The Windows edge entry reserves its space for actionable badges.
+  const showMicroTokenCounter = false;
   const showCompactTokenCounter =
-    sessions.length > 0 &&
+    !usesMicroIsland && sessions.length > 0 &&
     (compactIndicator === "tokens" || compactIndicator === "both");
   const showCompactMediaIndicator =
-    (showCompactHeaderMetrics || isMicro) &&
+    !usesMicroIsland && (showCompactHeaderMetrics || isMicro) &&
     !isPresentationTransition &&
     (compactIndicator === "media" || compactIndicator === "both") &&
     nowPlayingTrack?.artworkBase64 != null;
@@ -91,7 +90,7 @@ export function deriveIslandChromeFlags({
   // be hidden). Show in both compact and dormant idle states so the user
   // sees lyrics even with no active agent sessions.
   const showLyricsMarquee =
-    lyricsEnabled &&
+    !usesMicroIsland && lyricsEnabled &&
     lyricsData != null &&
     lyricsData.lines.length > 0 &&
     !isMicro &&

@@ -44,6 +44,7 @@ import {
 import {
   NowPlayingCard,
 } from "./NowPlayingCard";
+import { LyricsMarquee, lyricsMatchTrack } from "./LyricsMarquee";
 import {
   deriveAppLogoState,
   deriveAtollActivity,
@@ -140,6 +141,7 @@ export function App() {
   const {
     language,
     approvalNoticeMode,
+    approvalNoticeModeHydrated,
     globalShortcutView,
     handleChangeLanguage,
     handleChangeApprovalNoticeMode,
@@ -244,7 +246,7 @@ export function App() {
   const collapsedModeRef = useRef<"micro" | "compact" | "dormant">("compact");
   const collapsedWindowWidthRef = useRef(0);
   const compactLeftPaneWidthRef = useRef(0);
-  const microPresentationWidthRef = useRef(computeMicroWindowWidth(0, 0, 0));
+  const microPresentationWidthRef = useRef(computeMicroWindowWidth(0));
 
   const {
     panelView,
@@ -310,10 +312,10 @@ export function App() {
     compactMediaThumbRef,
     expandIsland,
     setFileDragActive,
+    setWindowDragActive,
     collapseIsland,
     scheduleIdleCollapse,
     clearIdleTimer,
-    promoteToCompact,
     shrinkToMicro,
     handleChangeFoldedIslandSize,
     refreshNotchMetrics,
@@ -344,7 +346,7 @@ export function App() {
     closeMenu: () => setMenuOpen(false),
   });
   const { lyricsData, playbackPosition, lyricsEnabled, handleChangeLyricsEnabled } = useLyrics({
-    positionEnabled: (phase === "expanded" && mediaCardEnabled) || (!notchMetrics.hasNotch && phase !== "expanded" && phase !== "opening" && phase !== "closing" && phase !== "micro"),
+    positionEnabled: (phase === "expanded" && (mediaCardEnabled || supportsMicroIsland)) || (!notchMetrics.hasNotch && phase !== "expanded" && phase !== "opening" && phase !== "closing" && phase !== "micro"),
   });
   fsmRef.current = {
     expandIsland,
@@ -352,6 +354,7 @@ export function App() {
   };
 
   const { applySnapshot, invalidatePendingSnapshotLoads } = useSnapshotStream({
+    autoExpandApprovals: !supportsMicroIsland || (approvalNoticeModeHydrated && approvalNoticeMode === "interrupt"),
     snapshotRef,
     setSnapshot,
     phaseRef,
@@ -548,7 +551,6 @@ export function App() {
     panelViewRef, setPanelView, expand: expandIsland, resize: ensureExpandedSettingsPresentation,
     collapse: collapseIsland, clearIdle: clearIdleTimer, holdRef: reminderHoldRef,
   });
-  useEffect(() => { if (hasReminders && phase === "micro") void promoteToCompact(); }, [hasReminders, phase]);
   async function reminderAlertAction(id: string, action: "complete" | "snooze" | "restart", minutes?: number) {
     if (reminderAlertBusyRef.current) return;
     reminderAlertBusyRef.current = true; setReminderAlertBusy(true); setReminderAlertError(""); holdReminderAlert();
@@ -1108,7 +1110,7 @@ export function App() {
     <main className="stage">
       <section
         ref={islandRef}
-        className={`island${energySaving ? " is-energy-saving" : ""} is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isPlanExpanded ? "is-plan" : ""} ${isSettingsExpanded ? "is-settings" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${logoStashLevel > 0 ? `is-stash-${Math.min(Math.round(logoStashLevel), 3)}` : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList" ? "is-session-subview" : ""}${panelExiting ? " is-panel-exiting" : ""}`}
+        className={`island${supportsMicroIsland ? " is-windows-edge" : ""}${energySaving ? " is-energy-saving" : ""} is-${phase} ${isExpanded ? "is-expanded" : ""} ${isIdleExpanded ? "is-idle" : ""} ${isPlanExpanded ? "is-plan" : ""} ${isSettingsExpanded ? "is-settings" : ""} ${isMicro ? "is-micro" : ""} ${isDormant ? "is-dormant" : ""} ${snapshot.pendingCount > 0 ? "has-pending" : ""} ${logoStashLevel > 0 ? `is-stash-${Math.min(Math.round(logoStashLevel), 3)}` : ""} ${isExpandedChrome && panelView.kind !== "home" ? "is-subview" : ""} ${panelView.kind === "session" || panelView.kind === "subagent" || panelView.kind === "subagentList" ? "is-session-subview" : ""}${panelExiting ? " is-panel-exiting" : ""}`}
         style={{ "--panel-glow": panelGlow } as CSSProperties}
         aria-label={t("app.name")}
         tabIndex={0}
@@ -1140,6 +1142,9 @@ export function App() {
     theater={theater}
     isPresentationTransition={isPresentationTransition}
     isMicro={isMicro}
+    isWindowsEdge={supportsMicroIsland}
+    edgeDragEnabled={presentationReady}
+    onEdgeDragActiveChange={setWindowDragActive}
     isDormant={isDormant}
     isSubview={isSubview}
     showPanelAgentTabs={showPanelAgentTabs}
@@ -1363,15 +1368,20 @@ export function App() {
               handleChangeLaunchAtLogin={handleChangeLaunchAtLogin}
             />
             </div>
-            {isExpandedChrome && mediaCardEnabled && nowPlayingTrack ? (
+            {isExpandedChrome && nowPlayingTrack && (mediaCardEnabled || (supportsMicroIsland && lyricsEnabled)) ? (
               <div className="island-panel-footer">
-                <NowPlayingCard
+                {mediaCardEnabled && <NowPlayingCard
                   track={nowPlayingTrack}
                   livePosition={playbackPosition}
                   onCommand={(cmd) => {
                     sendMediaCommand(cmd).catch(() => undefined);
                   }}
-                />
+                />}
+                {supportsMicroIsland && lyricsEnabled && lyricsMatchTrack(lyricsData, nowPlayingTrack) && lyricsData!.lines.length > 0 && (
+                  <div className="windows-edge-lyrics">
+                    <LyricsMarquee lines={lyricsData!.lines} sample={playbackPosition} />
+                  </div>
+                )}
               </div>
             ) : null}
           </div>

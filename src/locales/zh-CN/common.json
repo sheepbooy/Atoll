@@ -10,7 +10,8 @@
     "listening": "监听中",
     "offline": "离线",
     "listeningForAgents": "正在监听 Agent",
-    "pendingAria": "{{count}} 个待处理"
+    "pendingAria": "{{count}} 个待处理",
+    "clickToOpen": "点击展开"
   },
   "update": {
     "available": "有可用更新：v{{version}}",
