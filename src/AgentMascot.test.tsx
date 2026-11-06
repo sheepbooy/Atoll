@@ -48,6 +48,14 @@ describe("AgentMascot", () => {
     expect(container.querySelector(".codex.is-static")).not.toBeNull();
   });
 
+  it("renders the official Pi block mark", () => {
+    const pi = render(<AgentMascot agent="pi" mood="calm" animated={false} />);
+    expect(pi.container.querySelector(".pi.is-static")).not.toBeNull();
+    expect(pi.container.querySelector(".pi-mark")).not.toBeNull();
+    expect(pi.container.querySelector('[data-part="mark"]')).not.toBeNull();
+    expect(pi.container.querySelectorAll(".pi-mark path")).toHaveLength(3);
+  });
+
   it("renders the official Cursor 2.5D cube mark", () => {
     const cursor = render(<AgentMascot agent="cursor" mood="calm" animated={false} />);
     expect(cursor.container.querySelector(".cursor-mascot-mark")).not.toBeNull();

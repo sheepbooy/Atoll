@@ -132,6 +132,7 @@ interface IslandPanelRouterProps {
   handleInstallZcodeHooks: () => void;
   handleInstallGeminiHooks: () => void;
   handleInstallOpencodeHooks: () => void;
+  handleInstallPiHooks: () => void;
   handleInstallCursorHooks: () => void;
   handleInstallAllHooks: () => void;
   handleUninstallClaudeHooks: () => void;
@@ -139,6 +140,7 @@ interface IslandPanelRouterProps {
   handleUninstallZcodeHooks: () => void;
   handleUninstallGeminiHooks: () => void;
   handleUninstallOpencodeHooks: () => void;
+  handleUninstallPiHooks: () => void;
   handleUninstallCursorHooks: () => void;
   handleUninstallHooks: () => void;
   handleRemoveCompetingClaudeHooks: () => void;
@@ -291,6 +293,7 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
     handleInstallZcodeHooks,
     handleInstallGeminiHooks,
     handleInstallOpencodeHooks,
+    handleInstallPiHooks,
     handleInstallCursorHooks,
     handleInstallAllHooks,
     handleUninstallClaudeHooks,
@@ -298,6 +301,7 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
     handleUninstallZcodeHooks,
     handleUninstallGeminiHooks,
     handleUninstallOpencodeHooks,
+    handleUninstallPiHooks,
     handleUninstallCursorHooks,
     handleUninstallHooks,
     handleRemoveCompetingClaudeHooks,
@@ -406,6 +410,7 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
   const zcodeHookStatus = hookHealth?.zcode ?? null;
   const geminiHookStatus = hookHealth?.gemini ?? null;
   const opencodeHookStatus = hookHealth?.opencode ?? null;
+  const piHookStatus = hookHealth?.pi ?? null;
 
   const hookMenuAgents: HookMenuAgent[] = [
     {
@@ -510,6 +515,23 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
           }),
       onInstall: handleInstallOpencodeHooks,
       onUninstall: handleUninstallOpencodeHooks,
+    },
+    {
+      key: "pi",
+      label: "Pi",
+      status: piHookStatus,
+      note: piHookStatus.settingsPath
+        ? i18n.t("register.withPath", {
+            ns: "hooks",
+            path: piHookStatus.settingsPath,
+            note: hookAgentNote("pi"),
+          })
+        : i18n.t("register.pi", {
+            ns: "hooks",
+            note: hookAgentNote("pi"),
+          }),
+      onInstall: handleInstallPiHooks,
+      onUninstall: handleUninstallPiHooks,
     },
   ];
 

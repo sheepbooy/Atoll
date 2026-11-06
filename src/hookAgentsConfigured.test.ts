@@ -76,6 +76,12 @@ describe("hookAgentsConfigured", () => {
         settingsPath: "/tmp/opencode",
         scriptPath: "",
       },
+      pi: {
+        installed: false,
+        scriptFound: false,
+        settingsPath: "/tmp/pi",
+        scriptPath: "",
+      },
     });
 
     expect([...configured].sort()).toEqual(["claude", "cursor", "gemini"]);

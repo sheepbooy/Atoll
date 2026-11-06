@@ -15,6 +15,8 @@ import {
   uninstallGeminiHooks,
   installOpencodeHooks,
   uninstallOpencodeHooks,
+  installPiHooks,
+  uninstallPiHooks,
   type HookStatus,
   type HookHealthSnapshot,
 } from "../tauri";
@@ -75,6 +77,7 @@ export function useHookInstaller({
     { key: "zcode", label: HOOK_AGENT_LABELS.zcode, install: installZcodeHooks, uninstall: uninstallZcodeHooks },
     { key: "gemini", label: HOOK_AGENT_LABELS.gemini, install: installGeminiHooks, uninstall: uninstallGeminiHooks },
     { key: "opencode", label: HOOK_AGENT_LABELS.opencode, install: installOpencodeHooks, uninstall: uninstallOpencodeHooks },
+    { key: "pi", label: HOOK_AGENT_LABELS.pi, install: installPiHooks, uninstall: uninstallPiHooks },
   ];
 
   async function runHookAgentActions(
@@ -102,7 +105,7 @@ export function useHookInstaller({
 
   function applyHookInstallSnapshot(
     statuses: Partial<
-      Record<"claude" | "codex" | "cursor" | "zcode" | "gemini" | "opencode", HookStatus>
+      Record<"claude" | "codex" | "cursor" | "zcode" | "gemini" | "opencode" | "pi", HookStatus>
     >,
   ) {
     invalidatePendingSnapshotLoads();
@@ -113,6 +116,7 @@ export function useHookInstaller({
       zcode: statuses.zcode ?? snapshotRef.current.hookHealth.zcode,
       gemini: statuses.gemini ?? snapshotRef.current.hookHealth.gemini,
       opencode: statuses.opencode ?? snapshotRef.current.hookHealth.opencode,
+      pi: statuses.pi ?? snapshotRef.current.hookHealth.pi,
     };
     const optimisticHookHealth = mergeHookHealthPreferReady(
       snapshotRef.current.hookHealth,
@@ -260,6 +264,31 @@ export function useHookInstaller({
         i18n.t("error.installFailed", {
           ns: "hooks",
           agentLabel: "OpenCode",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
+  async function handleInstallPiHooks() {
+    setHookBusy("pi");
+    setHookInstallError(null);
+    try {
+      const status = await installPiHooks();
+      if (status.installed) {
+        setConfiguredHookAgents(markHookAgentConfigured("pi"));
+      }
+      await applyHookInstallSnapshot({ pi: status });
+      if (status.installed) {
+        collapseIsland(true);
+      }
+    } catch (error) {
+      setHookInstallError(
+        i18n.t("error.installFailed", {
+          ns: "hooks",
+          agentLabel: "Pi",
           message: formatHookInstallErrorMessage(error),
         }),
       );
@@ -477,6 +506,31 @@ export function useHookInstaller({
     }
   }
 
+  async function handleUninstallPiHooks() {
+    closeMenu();
+    setHookBusy("pi");
+    try {
+      const status = await uninstallPiHooks();
+      applySnapshot({
+        ...snapshotRef.current,
+        hookHealth: {
+          ...snapshotRef.current.hookHealth,
+          pi: status,
+        },
+      });
+    } catch (error) {
+      setHookInstallError(
+        i18n.t("error.uninstallFailed", {
+          ns: "hooks",
+          agentLabel: "Pi",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
   async function handleUninstallHooks() {
     closeMenu();
     setHookBusy("all");
@@ -591,6 +645,7 @@ export function useHookInstaller({
     handleInstallZcodeHooks,
     handleInstallGeminiHooks,
     handleInstallOpencodeHooks,
+    handleInstallPiHooks,
     handleInstallCursorHooks,
     handleInstallAllHooks,
     handleUninstallClaudeHooks,
@@ -598,6 +653,7 @@ export function useHookInstaller({
     handleUninstallZcodeHooks,
     handleUninstallGeminiHooks,
     handleUninstallOpencodeHooks,
+    handleUninstallPiHooks,
     handleUninstallCursorHooks,
     handleUninstallHooks,
     handleRemoveCompetingClaudeHooks,

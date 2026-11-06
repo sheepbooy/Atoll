@@ -158,6 +158,30 @@
 .opencode.has-action.is-action-leave { --body-animation: agent-shot-opencode-leave-body var(--agent-shot-ms) ease-in-out 1 both; }
 @keyframes agent-shot-opencode-sleeping-body { 0%,100% { transform: none; } 46%,73% { transform: translateY(7px) rotate(7deg) scaleY(.86); } }
 .opencode.has-action.is-action-sleeping { --body-animation: agent-shot-opencode-sleeping-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-idle-pi-body { 0%,76%,100% { transform: none; } 84% { transform: translateY(-4px) rotate(4deg); } 92% { transform: translateY(1px) rotate(-3deg); } }
+.pi.is-loop-idle { --body-animation: agent-idle-pi-body var(--agent-idle-ms) ease-in-out var(--agent-phase) infinite; }
+@keyframes agent-work-pi-body { 0%,33%,70%,100% { transform: none; } 9%,45% { transform: translateY(-4px) rotate(-4deg); } 21%,58% { transform: translateY(7px) scaleY(.93); } 28%,65% { transform: translateY(-2px); } }
+.pi.is-loop-working { --body-animation: agent-work-pi-body var(--agent-work-ms) ease-in-out var(--agent-phase) infinite; }
+@keyframes agent-shot-work-pi-body { 0%,33%,70%,100% { transform: none; } 9%,45% { transform: translateY(-4px) rotate(-4deg); } 21%,58% { transform: translateY(7px) scaleY(.93); } 28%,65% { transform: translateY(-2px); } }
+.pi.has-action.is-action-started { --body-animation: agent-shot-work-pi-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-pi-attention-body { 0%,100% { transform: none; } 12% { transform: translateY(2px); } 28% { transform: translate(-4px,-5px) rotate(-12deg); } 48% { transform: translate(4px,-5px) rotate(12deg); } 65%,78% { transform: translate(3px,-4px) rotate(7deg); } }
+.pi.has-action.is-action-attention { --body-animation: agent-shot-pi-attention-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-remind-pi-body { 0%,40% { transform: none; } 4.8% { transform: translateY(2px); } 11.2% { transform: translate(-4px,-5px) rotate(-12deg); } 19.2% { transform: translate(4px,-5px) rotate(12deg); } 26%,31.2% { transform: translate(3px,-4px) rotate(7deg); } 40%,100% { transform: none; } }
+.pi.is-loop-attention { --body-animation: agent-remind-pi-body var(--agent-remind-ms) ease-in-out var(--agent-remind-phase) infinite; }
+@keyframes agent-shot-pi-approved-body { 0%,100% { transform: none; } 19% { transform: translateY(6px) scale(1.08,.85); } 39%,50% { transform: translateY(-14px) scale(.98,1.07); } 71% { transform: translateY(5px) scale(1.06,.9); } 86% { transform: translateY(-2px); } }
+.pi.has-action.is-action-approved { --body-animation: agent-shot-pi-approved-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-pi-denied-body { 0%,100% { transform: none; } 20% { transform: translateY(3px) scaleY(.92); } 34%,61% { transform: translateX(-5px) rotate(-12deg); } 47%,74% { transform: translateX(5px) rotate(12deg); } 86% { transform: scale(.94); } }
+.pi.has-action.is-action-denied { --body-animation: agent-shot-pi-denied-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-pi-concerned-body { 0%,100% { transform: none; } 24% { transform: rotate(-7deg); } 51% { transform: rotate(7deg); } 73% { transform: rotate(-3deg); } }
+.pi.has-action.is-action-concerned { --body-animation: agent-shot-pi-concerned-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-pi-turnEnded-body { 0%,100% { transform: none; } 38% { transform: translateY(5px) scaleY(.96); } 74% { transform: none; } }
+.pi.has-action.is-action-turnEnded { --body-animation: agent-shot-pi-turnEnded-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-pi-join-body { 0%,100% { transform: none; } 25% { transform: translateY(-6px) rotate(6deg); } 57% { transform: rotate(-5deg); } }
+.pi.has-action.is-action-join { --body-animation: agent-shot-pi-join-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-pi-leave-body { 0%,100% { transform: none; } 34%,67% { transform: translate(-8px,4px) rotate(-7deg) scale(.93); } }
+.pi.has-action.is-action-leave { --body-animation: agent-shot-pi-leave-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-pi-sleeping-body { 0%,100% { transform: none; } 46%,73% { transform: translateY(6px) rotate(6deg) scaleY(.88); } }
+.pi.has-action.is-action-sleeping { --body-animation: agent-shot-pi-sleeping-body var(--agent-shot-ms) ease-in-out 1 both; }
 @keyframes agent-idle-zcode-body { 0%,75%,100% { transform: none; } 85% { transform: rotate(5deg); } 94% { transform: rotate(-2deg); } }
 .zcode.is-loop-idle { --body-animation: agent-idle-zcode-body var(--agent-idle-ms) ease-in-out var(--agent-phase) infinite; }
 @keyframes agent-work-zcode-body { 0%,70%,100% { transform: none; } 12%,26% { transform: translate(4px,2px) rotate(9deg); } 38% { transform: translate(6px,4px) rotate(12deg); } 54% { transform: translate(-2px,-3px) rotate(-4deg); } }
@@ -261,6 +285,10 @@
 .opencode.is-loop-idle [data-part="block"] { --part-animation: agent-idle-opencode-block var(--agent-idle-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
 .opencode.is-loop-working [data-part="block"] { --part-animation: agent-work-opencode-block var(--agent-work-ms) cubic-bezier(.2,0,.8,1) calc(var(--agent-phase) + 0ms) infinite; }
 .opencode.is-loop-working [data-part="ring"] { --part-animation: agent-work-opencode-ring var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+@keyframes agent-idle-pi-mark { 0%,77%,100% { transform: none; } 84%,90% { transform: rotate(3deg) scale(1.02); } }
+@keyframes agent-work-pi-mark { 0%,33%,70%,100% { transform: none; } 9%,45% { transform: rotate(-5deg); } 21%,58% { transform: scale(.95,1.05); } }
+.pi.is-loop-idle [data-part="mark"] { --part-animation: agent-idle-pi-mark var(--agent-idle-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
+.pi.is-loop-working [data-part="mark"] { --part-animation: agent-work-pi-mark var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
 .zcode.is-loop-idle [data-part="letter"] { --part-animation: agent-idle-zcode-letter var(--agent-idle-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
 .zcode.is-loop-working [data-part="letter"] { --part-animation: agent-work-zcode-letter var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }
 .zcode.is-loop-working [data-part="tile"] { --part-animation: agent-work-zcode-tile var(--agent-work-ms) ease-in-out calc(var(--agent-phase) + 0ms) infinite; }

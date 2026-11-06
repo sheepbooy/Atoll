@@ -42,6 +42,8 @@ const AGENT_DOT_CLASS: Record<string, string> = {
   cursor: "is-cursor",
   gemini: "is-gemini",
   zcode: "is-zcode",
+  opencode: "is-opencode",
+  pi: "is-pi",
   other: "is-other",
 };
 
@@ -51,6 +53,8 @@ const AGENT_COLOR: Record<string, string> = {
   cursor: "#a78bfa",
   gemini: "#9177c7",
   zcode: "#4d9df8",
+  opencode: "#70d8c8",
+  pi: "#4d9abf",
   other: "#c9bcff",
 };
 
@@ -60,6 +64,8 @@ const AGENT_LABEL: Record<string, string> = {
   cursor: "Cursor",
   gemini: "Gemini",
   zcode: "ZCode",
+  opencode: "OpenCode",
+  pi: "Pi",
   other: "Other",
 };
 

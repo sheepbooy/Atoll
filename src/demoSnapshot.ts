@@ -301,6 +301,24 @@ const demoOpencodeHookMissing: HookStatus = {
   nodeFound: true,
 };
 
+const demoPiHookInstalled: HookStatus = {
+  installed: true,
+  scriptFound: true,
+  settingsPath: "~/.pi/agent/extensions",
+  scriptPath: "/Applications/Atoll.app/.../atoll-pi-bridge.js",
+  nodePath: "",
+  nodeFound: true,
+};
+
+const demoPiHookMissing: HookStatus = {
+  installed: false,
+  scriptFound: true,
+  settingsPath: "~/.pi/agent/extensions",
+  scriptPath: "/Applications/Atoll.app/.../atoll-pi-bridge.js",
+  nodePath: "",
+  nodeFound: true,
+};
+
 function refreshRequestTimestamp(request: PermissionRequest): PermissionRequest {
   return { ...request, requestedAt: new Date().toISOString() };
 }
@@ -357,6 +375,7 @@ export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {
       zcode: demoZcodeHookInstalled,
       gemini: demoGeminiHookInstalled,
       opencode: demoOpencodeHookInstalled,
+      pi: demoPiHookInstalled,
     },
   };
 
@@ -423,6 +442,10 @@ export function getDemoGeminiHookStatus(mode: DemoMode): HookStatus {
 
 export function getDemoOpencodeHookStatus(mode: DemoMode): HookStatus {
   return mode === "idle" ? demoOpencodeHookMissing : demoOpencodeHookInstalled;
+}
+
+export function getDemoPiHookStatus(mode: DemoMode): HookStatus {
+  return mode === "idle" ? demoPiHookMissing : demoPiHookInstalled;
 }
 
 export function shouldAutoExpandDemo(mode: DemoMode): boolean {

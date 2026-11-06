@@ -60,6 +60,7 @@ function makeSnapshot(overrides: Partial<IslandSnapshot> = {}): IslandSnapshot {
       zcode: hookStatus,
       gemini: hookStatus,
       opencode: hookStatus,
+      pi: hookStatus,
     },
     ...overrides,
   };

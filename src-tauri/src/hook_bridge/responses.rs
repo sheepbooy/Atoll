@@ -72,6 +72,7 @@ pub(crate) enum PermissionResponseStyle {
     Cursor,
     Gemini,
     Opencode,
+    Pi,
 }
 
 pub(crate) fn cursor_permission_hook_response(
@@ -199,6 +200,9 @@ pub(crate) fn build_permission_response(
             gemini_permission_hook_response(decision, note, updated_input)
         }
         PermissionResponseStyle::Opencode => opencode_permission_response(decision, note),
+        // The Pi extension reads the same flat decision shape and maps it onto
+        // `{ block: true, reason }` for denied tool calls.
+        PermissionResponseStyle::Pi => opencode_permission_response(decision, note),
     }
 }
 
@@ -212,6 +216,8 @@ pub(crate) fn build_hook_defer_response(
         PermissionResponseStyle::Cursor => cursor_hook_defer_response(hook_event_name, reason),
         PermissionResponseStyle::Gemini => gemini_hook_defer_response(),
         PermissionResponseStyle::Opencode => json!({}),
+        // No decision: the extension falls back to Pi's own TUI confirmation.
+        PermissionResponseStyle::Pi => json!({}),
     }
 }
 

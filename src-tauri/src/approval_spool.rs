@@ -110,6 +110,7 @@ fn spool_record_to_entry(record: &SpoolRecord, file_stem: &str) -> Option<Approv
         "opencode" => {
             hook_bridge::permission_request_from_opencode_payload(id, payload, requested_at)?
         }
+        "pi" => hook_bridge::permission_request_from_pi_payload(id, payload, requested_at)?,
         _ => return None,
     };
     Some(ApprovalHistoryEntry {

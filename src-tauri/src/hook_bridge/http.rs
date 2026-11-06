@@ -134,6 +134,13 @@ pub(crate) fn command_label(tool_name: &str, tool_input: &Value) -> String {
         }
     }
 
+    // Pi names its Windows shell tool "powershell".
+    if tool_name == "powershell" || tool_name == "PowerShell" {
+        if let Some(command) = tool_input.get("command").and_then(Value::as_str) {
+            return format!("PowerShell: {command}");
+        }
+    }
+
     if let Some(file_path) = tool_input.get("file_path").and_then(Value::as_str) {
         return format!("{tool_name}: {file_path}");
     }

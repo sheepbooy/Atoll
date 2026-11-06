@@ -180,6 +180,7 @@
     "agentZcode": "ZCode",
     "agentGemini": "Gemini",
     "agentOpencode": "OpenCode",
+    "agentPi": "Pi",
     "agentOther": "Agent",
     "outcomePending": "待处理",
     "outcomeApproved": "已批准",

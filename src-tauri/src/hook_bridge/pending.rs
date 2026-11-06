@@ -62,6 +62,7 @@ pub(crate) fn submit_blocking_permission_request(
         AgentKind::Zcode => "zcode",
         AgentKind::Gemini => "gemini",
         AgentKind::Opencode => "opencode",
+        AgentKind::Pi => "pi",
         AgentKind::Other => "other",
     };
     crate::agent_events::record(
@@ -328,6 +329,8 @@ pub(crate) fn agent_resolved_label(agent: &AgentKind) -> &'static str {
         AgentKind::Cursor => "Cursor",
         AgentKind::Zcode => "ZCode",
         AgentKind::Gemini => "Gemini",
+        AgentKind::Opencode => "OpenCode",
+        AgentKind::Pi => "Pi",
         _ => "Agent",
     }
 }

@@ -63,7 +63,7 @@
   },
   "integrations": {
     "agentHooksTitle": "Agent 钩子",
-    "agentHooksDesc": "连接 Claude Code、Codex 及未来的本地 Agent。"
+    "agentHooksDesc": "连接 Claude Code、Codex、Pi 及其他本地 Agent。"
   },
   "display": {
     "monitorLabel": "显示器",

@@ -691,3 +691,86 @@ fn auto_archive_retention_purge_preserves_session_token_usage() {
     assert_eq!(snapshot.daily_tokens.output_tokens, 120);
     assert_eq!(snapshot.active_session_tokens.input_tokens, 0);
 }
+
+#[test]
+fn pi_payload_usage_adds_deltas_and_maxes_cumulative_totals() {
+    let _env = TOKEN_HISTORY_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let path = std::env::temp_dir().join(format!("atoll-pi-usage-{}.json", uuid::Uuid::new_v4()));
+    std::env::set_var("ATOLL_TOKEN_HISTORY_PATH", &path);
+
+    let state = test_app_state();
+    let delta = serde_json::json!({
+        "model": "pi-model",
+        "token_usage": {
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "cache_read_tokens": 2,
+            "cache_creation_tokens": 1
+        }
+    });
+    ingest_pi_token_usage_from_payload(&state, "pi-session", &delta, "AfterAgentResponse")
+        .expect("delta ingest");
+
+    let after_delta = state
+        .session_token_usage
+        .lock()
+        .expect("usage")
+        .get("pi-session")
+        .copied()
+        .expect("pi usage");
+    assert_eq!(after_delta.input_tokens, 10);
+    assert_eq!(after_delta.output_tokens, 5);
+
+    // A second turn adds its delta.
+    ingest_pi_token_usage_from_payload(&state, "pi-session", &delta, "AfterAgentResponse")
+        .expect("second delta");
+    let after_second = state
+        .session_token_usage
+        .lock()
+        .expect("usage")
+        .get("pi-session")
+        .copied()
+        .expect("pi usage");
+    assert_eq!(after_second.input_tokens, 20);
+
+    // Settle reports the cumulative total; max keeps it idempotent.
+    let cumulative = serde_json::json!({
+        "model": "pi-model",
+        "token_usage": {
+            "input_tokens": 35,
+            "output_tokens": 12,
+            "cache_read_tokens": 4,
+            "cache_creation_tokens": 3
+        }
+    });
+    ingest_pi_token_usage_from_payload(&state, "pi-session", &cumulative, "Stop")
+        .expect("cumulative ingest");
+    ingest_pi_token_usage_from_payload(&state, "pi-session", &cumulative, "Stop")
+        .expect("repeated cumulative ingest");
+    let settled = state
+        .session_token_usage
+        .lock()
+        .expect("usage")
+        .get("pi-session")
+        .copied()
+        .expect("pi usage");
+    assert_eq!(settled.input_tokens, 35);
+    assert_eq!(settled.output_tokens, 12);
+
+    assert_eq!(
+        state
+            .session_agent_map
+            .lock()
+            .expect("agent map")
+            .get("pi-session")
+            .map(String::as_str),
+        Some("pi")
+    );
+
+    std::env::remove_var("ATOLL_TOKEN_HISTORY_PATH");
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_file(path.with_extension("json.bak"));
+    let _ = std::fs::remove_file(path.with_extension("json.tmp"));
+}

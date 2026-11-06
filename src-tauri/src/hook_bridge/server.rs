@@ -20,6 +20,7 @@ pub(crate) enum ObserverKind {
     Cursor,
     Zcode,
     Gemini,
+    Pi,
 }
 
 fn observer_agent(kind: ObserverKind) -> &'static str {
@@ -29,6 +30,7 @@ fn observer_agent(kind: ObserverKind) -> &'static str {
         ObserverKind::Cursor => "cursor",
         ObserverKind::Zcode => "zcode",
         ObserverKind::Gemini => "gemini",
+        ObserverKind::Pi => "pi",
     }
 }
 fn supported_observer_event(agent: &str, event: &str) -> bool {
@@ -67,6 +69,10 @@ fn supported_observer_event(agent: &str, event: &str) -> bool {
         "zcode" => matches!(
             event,
             "PostToolUse" | "PostToolUseFailure" | "Stop" | "SessionStart" | "UserPromptSubmit"
+        ),
+        "pi" => matches!(
+            event,
+            "SessionStart" | "PostToolUse" | "AfterAgentResponse" | "Stop" | "sessionEnd"
         ),
         _ => false,
     }
@@ -114,6 +120,9 @@ pub(crate) fn start_observer_worker() {
                     }
                     ObserverKind::Gemini => {
                         process_gemini_observer_event(job.app, job.hook_event_name, job.payload)
+                    }
+                    ObserverKind::Pi => {
+                        process_pi_observer_event(job.app, job.hook_event_name, job.payload)
                     }
                 };
                 if result.is_ok() && supported_observer_event(agent, &event) {
@@ -173,6 +182,7 @@ pub(crate) fn write_bridge_config(port: u16, token: &str) -> std::io::Result<()>
         "zcodeUrl": format!("http://{HOOK_BIND_HOST}:{port}/zcode/hook"),
         "geminiUrl": format!("http://{HOOK_BIND_HOST}:{port}/gemini/hook"),
         "opencodeUrl": format!("http://{HOOK_BIND_HOST}:{port}/opencode/hook"),
+        "piUrl": format!("http://{HOOK_BIND_HOST}:{port}/pi/hook"),
         "token": token,
     });
     std::fs::write(path, serde_json::to_string_pretty(&config)?)
@@ -450,6 +460,10 @@ pub(crate) fn route_request(
             require_hook_auth(&app, &request)?;
             route_opencode_request(app, request, stream)
         }
+        "/pi/hook" => {
+            require_hook_auth(&app, &request)?;
+            route_pi_request(app, request, stream)
+        }
         _ => Err("Unsupported Atoll hook endpoint".into()),
     }
 }
@@ -541,6 +555,7 @@ mod bridge_bind_tests {
             "zcodeUrl": format!("http://{HOOK_BIND_HOST}:{port}/zcode/hook"),
             "geminiUrl": format!("http://{HOOK_BIND_HOST}:{port}/gemini/hook"),
             "opencodeUrl": format!("http://{HOOK_BIND_HOST}:{port}/opencode/hook"),
+            "piUrl": format!("http://{HOOK_BIND_HOST}:{port}/pi/hook"),
             "token": token,
         });
         std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())
@@ -567,6 +582,11 @@ mod bridge_bind_tests {
             .and_then(Value::as_str)
             .unwrap()
             .contains("/cursor/hook"));
+        assert!(parsed
+            .get("piUrl")
+            .and_then(Value::as_str)
+            .unwrap()
+            .contains("/pi/hook"));
         assert_eq!(parsed.get("token").and_then(Value::as_str), Some(token));
 
         let _ = std::fs::remove_dir_all(temp);

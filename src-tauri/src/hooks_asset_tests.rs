@@ -57,6 +57,7 @@ fn repo_hook_scripts_are_usable_install_sources() {
         "atoll-codex-hook.mjs",
         "atoll-cursor-hook.mjs",
         "atoll-hook-bridge.mjs",
+        "atoll-pi-bridge.js",
     ] {
         let path = repo_hook_script_path(name);
         assert!(

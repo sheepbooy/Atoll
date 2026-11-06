@@ -11,6 +11,7 @@ const CHARACTERS: { agent: AgentKind; label: string; parts: string; gesture: str
   { agent: "cursor", label: "Cursor", parts: "三面立方体 · 内部箭头", gesture: "箭头先探出，立方体各面随后响应" },
   { agent: "gemini", label: "Gemini", parts: "四个星尖 · 连续轮廓", gesture: "左右忙活、歪头招手、蓄力雀跃与摇头收身" },
   { agent: "opencode", label: "OpenCode", parts: "像素外框 · 内部白块", gesture: "探头点头、左右查看、顶起盒子与缩头摇头" },
+  { agent: "pi", label: "Pi", parts: "珊瑚臂 · 蓝色阶梯 · 黄色方块", gesture: "倾斜张望、轻点拼块、炫耀式弹起与缩身" },
   { agent: "zcode", label: "ZCode", parts: "底板 · Z 字 · 三段笔画", gesture: "前倾用力、抬身等待、挺胸弹起与后仰回撤" },
 ];
 const STATES: { label: string; mood: ClawdMood; activity: "idle" | "working" | "rest" }[] = [

@@ -186,6 +186,16 @@ export function HooksView({
                     </ul>
                   </details>
                 ) : null}
+                {agent.key === "pi" ? (
+                  <details className="settings-hook-desktop-note">
+                    <summary>{t("checklist.piTitle")}</summary>
+                    <ul>
+                      <li>{t("checklist.piExtension")}</li>
+                      <li>{t("checklist.piRestart")}</li>
+                      <li>{t("checklist.piVerify")}</li>
+                    </ul>
+                  </details>
+                ) : null}
                 {agent.key === "cursor" ? (
                   <details className="settings-hook-desktop-note">
                     <summary>{t("checklist.cursorTitle")}</summary>

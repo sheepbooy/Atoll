@@ -439,6 +439,7 @@ export function App() {
     handleInstallZcodeHooks,
     handleInstallGeminiHooks,
     handleInstallOpencodeHooks,
+    handleInstallPiHooks,
     handleInstallCursorHooks,
     handleInstallAllHooks,
     handleUninstallClaudeHooks,
@@ -446,6 +447,7 @@ export function App() {
     handleUninstallZcodeHooks,
     handleUninstallGeminiHooks,
     handleUninstallOpencodeHooks,
+    handleUninstallPiHooks,
     handleUninstallCursorHooks,
     handleUninstallHooks,
     handleRemoveCompetingClaudeHooks,
@@ -707,6 +709,7 @@ export function App() {
       zcode: 0,
       gemini: 0,
       opencode: 0,
+      pi: 0,
       other: 0,
     };
     for (const session of sessions) {
@@ -1260,6 +1263,7 @@ export function App() {
               handleInstallZcodeHooks={handleInstallZcodeHooks}
               handleInstallGeminiHooks={handleInstallGeminiHooks}
               handleInstallOpencodeHooks={handleInstallOpencodeHooks}
+              handleInstallPiHooks={handleInstallPiHooks}
               handleInstallCursorHooks={handleInstallCursorHooks}
               handleInstallAllHooks={handleInstallAllHooks}
               handleUninstallClaudeHooks={handleUninstallClaudeHooks}
@@ -1267,6 +1271,7 @@ export function App() {
               handleUninstallZcodeHooks={handleUninstallZcodeHooks}
               handleUninstallGeminiHooks={handleUninstallGeminiHooks}
               handleUninstallOpencodeHooks={handleUninstallOpencodeHooks}
+              handleUninstallPiHooks={handleUninstallPiHooks}
               handleUninstallCursorHooks={handleUninstallCursorHooks}
               handleUninstallHooks={handleUninstallHooks}
               handleRemoveCompetingClaudeHooks={handleRemoveCompetingClaudeHooks}

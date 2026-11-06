@@ -17,6 +17,7 @@ const AGENT_OPTIONS: { key: string; label: string }[] = [
   { key: "zcode", label: "ZCode" },
   { key: "gemini", label: "Gemini CLI" },
   { key: "opencode", label: "OpenCode" },
+  { key: "pi", label: "Pi" },
 ];
 
 interface RuleDraft {

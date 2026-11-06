@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>macOS 顶栏 / Windows 贴边的 AI 权限审批浮岛</strong><br/>
-  <sub>Claude Code / Codex / Cursor / ZCode / Gemini CLI / OpenCode 发起权限请求时，不用切窗口，一眼批准或拒绝</sub>
+  <sub>Claude Code / Codex / Cursor / ZCode / Gemini CLI / OpenCode / Pi 发起权限请求时，不用切窗口，一眼批准或拒绝</sub>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
 - **刘海屏适配** — 有刘海的 MacBook 上与实体刘海像素级贴合：折叠胶囊锚定刘海居中，展开态「贴顶 + 左右对称翼」随内容自适应加宽，顶栏内容不落入摄像头模组区域，展开/收起动画零平移
 - **全程本地** — Hook 桥接 `127.0.0.1:47777`，数据不出本机
 
-目前支持 **Claude Code**（CLI 与 Desktop）、**Codex**（CLI 与 Desktop）、**Cursor IDE**、**ZCode**（CLI 与 Desktop）、**Gemini CLI** 和 **OpenCode**。
+目前支持 **Claude Code**（CLI 与 Desktop）、**Codex**（CLI 与 Desktop）、**Cursor IDE**、**ZCode**（CLI 与 Desktop）、**Gemini CLI**、**OpenCode** 和 **Pi**。
 
 ## 最新功能
 
@@ -173,8 +173,9 @@ Atoll 通过应用内 **一键安装 Hook**，无需手动编辑配置文件。
 | **ZCode**（CLI + Desktop） | 同上 → Install ZCode | 安装后完全退出并重启 ZCode，再触发一次 shell 权限验证；Token 统计读取 `~/.zcode/cli/rollout`（含子代理归集） |
 | **Gemini CLI** | 同上 → Install Gemini | 安装后在 Gemini 中打开 `/hooks` 并信任 Atoll hook，重启 Gemini，再触发一次 shell 命令验证（在 Atoll 各执行一次批准与拒绝） |
 | **OpenCode** | 同上 → Install OpenCode | OpenCode 没有 hooks 配置文件——Atoll 在其插件目录 `~/.config/opencode/plugins` 部署进程内桥接插件，安装后重启 OpenCode，再触发一次需要批准的操作验证；Atoll 不在线时 OpenCode 自带的 TUI 确认自动兜底 |
+| **Pi** | 同上 → Install Pi | Pi 没有内置权限系统——Atoll 在 `~/.pi/agent/extensions` 部署全局扩展，通过 `tool_call` 事件拦截 bash / PowerShell / write / edit 并等待 Atoll 决定；安装后重启 Pi 才会加载。Atoll 不在线时 Pi 在自己的 TUI 中询问，print/JSON 模式默认失败关闭 |
 
-Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）、`~/.codex/hooks.json`、`~/.zcode/cli/config.json`、Cursor hooks 配置或 `~/.gemini/settings.json`；OpenCode 例外，见上表——部署的是进程内桥接插件而非 hooks 配置。安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`；系统没有 Node 时（如全新电脑）自动回退到 Atoll 自带的运行时，无需单独安装 Node.js。
+Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）、`~/.codex/hooks.json`、`~/.zcode/cli/config.json`、Cursor hooks 配置或 `~/.gemini/settings.json`；OpenCode 与 Pi 例外，见上表——部署的是进程内桥接插件/扩展而非 hooks 配置。安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`；系统没有 Node 时（如全新电脑）自动回退到 Atoll 自带的运行时，无需单独安装 Node.js。
 
 开发版安装后可点击对应 Agent 的「验证连接」：**配置已安装 → 等待真实事件 → 连接已验证**。按上表完成信任与重启后，在该 Agent 中发送消息并触发工具调用；旧事件或其他 Agent 的事件不会完成本次验证。支持权限接入的 Agent 收到新审批时另显示「权限请求已收到」，Cursor 仅确认观察连接。60 秒无事件可重试，重新安装后验证状态重置。
 
@@ -223,7 +224,7 @@ Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事�
 
 ### Agent 形象
 
-每个 Agent 有独立形象：Claude 是像素风 Clawd，Codex / Cursor 使用官方品牌标，ZCode 是天蓝渐变、白色斜体 Z 的官方方块形象，Gemini 是官方四角星 spark 渐变形象，OpenCode 是取形官方字标的像素圆环 "o"（青色系、随心情变化）：
+每个 Agent 有独立形象：Claude 是像素风 Clawd，Codex / Cursor 使用官方品牌标，ZCode 是天蓝渐变、白色斜体 Z 的官方方块形象，Gemini 是官方四角星 spark 渐变形象，OpenCode 是取形官方字标的像素圆环 "o"（青色系、随心情变化），Pi 是官方珊瑚 / 蓝 / 黄三色拼块标：
 
 <p align="center">
   <img src="docs/assets/agent-mascots.png" alt="Claude / Codex / Cursor / ZCode / Gemini / OpenCode mascots" width="560" />
@@ -276,7 +277,7 @@ src/App.tsx                    浮岛壳层（hook 编排；面板/Header 组件
 src/styles/                    样式（按域拆分，styles.css 为入口 barrel）
 src-tauri/src/commands/        Tauri command（按域拆分）
 src-tauri/src/session.rs       会话状态与快照组装
-src-tauri/src/hook_bridge.rs   本地 HTTP 桥接（六个 Agent 的 hook 事件入口）
+src-tauri/src/hook_bridge.rs   本地 HTTP 桥接（七个 Agent 的 hook 事件入口）
 src-tauri/src/hooks.rs         Hook 安装 / 健康检测 / 卸载（+ hooks/ 子模块）
 src-tauri/src/transcript.rs    JSONL 会话 & Token 解析
 scripts/atoll-*-hook.mjs       Hook shim（随应用分发）
@@ -310,6 +311,7 @@ npm run export:brand     # Logo 状态 + Agent 形象
 - [x] ZCode token 用量统计（rollout JSONL，含子代理归集）
 - [x] Gemini CLI hook 适配（BeforeTool 阻断式审批）
 - [x] OpenCode 接入（插件桥接，无 hooks 管线）
+- [x] Pi 接入（全局扩展，`tool_call` 阻断式审批）
 - [x] Cursor hook 适配
 - [x] Codex hook 适配
 - [x] 文件中转站（拖喂 + 原生拖出）

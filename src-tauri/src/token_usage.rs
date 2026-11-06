@@ -481,6 +481,31 @@ pub(crate) fn ingest_cursor_token_usage_from_payload(
     payload: &serde_json::Value,
     source: &str,
 ) -> Result<(), String> {
+    ingest_token_usage_from_payload(state, session_id, payload, source, &AgentKind::Cursor)
+}
+
+/// Pi reports per-turn `usage` deltas on turn end and cumulative session
+/// totals on settle/shutdown; both arrive through the bridge extension.
+pub(crate) fn ingest_pi_token_usage_from_payload(
+    state: &AppState,
+    session_id: &str,
+    payload: &serde_json::Value,
+    source: &str,
+) -> Result<(), String> {
+    ingest_token_usage_from_payload(state, session_id, payload, source, &AgentKind::Pi)
+}
+
+fn ingest_token_usage_from_payload(
+    state: &AppState,
+    session_id: &str,
+    payload: &serde_json::Value,
+    source: &str,
+    agent: &AgentKind,
+) -> Result<(), String> {
+    let agent_label = match agent {
+        AgentKind::Pi => "Pi",
+        _ => "Cursor",
+    };
     let parsed_usage = parse_cursor_token_usage_from_payload(payload);
 
     if parsed_usage.is_zero() {
@@ -489,13 +514,13 @@ pub(crate) fn ingest_cursor_token_usage_from_payload(
             .map(|obj| obj.keys().map(String::as_str).collect())
             .unwrap_or_default();
         eprintln!(
-            "Atoll Cursor {source} payload has no token fields (session={session_id}, keys={keys:?})"
+            "Atoll {agent_label} {source} payload has no token fields (session={session_id}, keys={keys:?})"
         );
         return Ok(());
     }
 
     eprintln!(
-        "Atoll Cursor {source} tokens: input={} output={} cache_read={} \
+        "Atoll {agent_label} {source} tokens: input={} output={} cache_read={} \
          cache_write={} session={session_id}",
         parsed_usage.input_tokens,
         parsed_usage.output_tokens,
@@ -504,6 +529,8 @@ pub(crate) fn ingest_cursor_token_usage_from_payload(
     );
 
     roll_over_token_usage_if_needed(state);
+    // sessionEnd/Stop report cumulative session totals; per-turn hooks add.
+    let cumulative = matches!(source, "sessionEnd" | "Stop");
 
     {
         let mut usage_by_session = state
@@ -511,8 +538,7 @@ pub(crate) fn ingest_cursor_token_usage_from_payload(
             .lock()
             .map_err(|error| error.to_string())?;
         let entry = usage_by_session.entry(session_id.to_string()).or_default();
-        // sessionEnd may report cumulative session totals; per-turn hooks add.
-        if source == "sessionEnd" {
+        if cumulative {
             *entry = entry.component_wise_max(parsed_usage);
         } else {
             entry.add_assign(parsed_usage);
@@ -528,17 +554,13 @@ pub(crate) fn ingest_cursor_token_usage_from_payload(
             .lock()
             .map_err(|error| error.to_string())?;
         let model_entry = usage_by_model.entry(session_id.to_string()).or_default();
-        if source == "sessionEnd" {
-            merge_session_model_usage(model_entry, &model_usage, true);
-        } else {
-            merge_session_model_usage(model_entry, &model_usage, false);
-        }
+        merge_session_model_usage(model_entry, &model_usage, cumulative);
     }
 
     if let Ok(mut sticky) = state.session_agent_map.lock() {
         sticky
             .entry(session_id.to_string())
-            .or_insert_with(|| token_history::agent_kind_key(&AgentKind::Cursor));
+            .or_insert_with(|| token_history::agent_kind_key(agent));
     }
 
     state.token_history_dirty.store(true, Ordering::Release);

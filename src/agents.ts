@@ -12,6 +12,7 @@ export const agentLabels: Record<AgentKind, string> = {
   zcode: "ZCode",
   gemini: "Gemini",
   opencode: "OpenCode",
+  pi: "Pi",
   other: "Agent",
 };
 
@@ -22,6 +23,7 @@ export const agentTone: Record<AgentKind, string> = {
   zcode: "sky",
   gemini: "lime",
   opencode: "teal",
+  pi: "blue",
   other: "neutral",
 };
 
@@ -32,6 +34,7 @@ export const agentSortRank: Record<AgentKind, number> = {
   zcode: 2,
   gemini: 2,
   opencode: 2,
+  pi: 2,
   other: 3,
 };
 export const agentMascotAccent = (agent: AgentKind) => AGENT_ACCENT[agent]?.accent;
@@ -44,5 +47,6 @@ export const PANEL_GLOW: Record<AgentKind, string> = {
   zcode: "rgba(56, 189, 248, 0.18)",
   gemini: "rgba(178, 229, 120, 0.18)",
   opencode: "rgba(112, 216, 200, 0.15)",
+  pi: "rgba(77, 154, 191, 0.18)",
   other: "rgba(201, 188, 255, 0.16)",
 };

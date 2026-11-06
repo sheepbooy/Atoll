@@ -42,7 +42,8 @@
     "cursor": "Works with Cursor IDE Agent and Ask modes. After install: confirm hooks in Cursor Settings, restart Cursor, then send a message in Agent or Ask mode to verify.",
     "zcode": "Works with the ZCode desktop app and CLI. After install: restart ZCode so the hook runner picks up the new config, then trigger one shell permission to verify.",
     "gemini": "Works with the Gemini CLI. After install: run /hooks in Gemini and trust the Atoll hook, restart Gemini, then trigger one shell command to verify.",
-    "opencode": "Works with the OpenCode CLI. After install: restart OpenCode so the bridge plugin loads, then trigger one permission prompt to verify."
+    "opencode": "Works with the OpenCode CLI. After install: restart OpenCode so the bridge plugin loads, then trigger one permission prompt to verify.",
+    "pi": "Works with the Pi coding agent CLI. After install: restart Pi so the global extension loads; Atoll approves bash/write/edit (and PowerShell) calls. When Atoll is off, Pi asks in its own TUI."
   },
   "register": {
     "withPath": "Registers hooks in {{path}}. {{note}}",
@@ -51,7 +52,8 @@
     "cursor": "Registers Cursor hooks for permission approval. {{note}}",
     "zcode": "Registers ZCode hooks for permission approval. {{note}}",
     "gemini": "Registers Gemini CLI hooks for permission approval. {{note}}",
-    "opencode": "Installs the Atoll bridge plugin for permission approval. {{note}}"
+    "opencode": "Installs the Atoll bridge plugin for permission approval. {{note}}",
+    "pi": "Deploys the Atoll bridge extension for permission approval. {{note}}"
   },
   "checklist": {
     "claudeTitle": "Claude Desktop checklist",
@@ -81,7 +83,11 @@
     "geminiVerify": "Trigger one shell command in a local session to verify; approve and deny once from Atoll.",
     "opencodeTitle": "OpenCode checklist",
     "opencodeRestart": "Quit and reopen OpenCode after installing the plugin so it loads at startup.",
-    "opencodeVerify": "Trigger one permission prompt in a local session to verify; approve and deny once from Atoll."
+    "opencodeVerify": "Trigger one permission prompt in a local session to verify; approve and deny once from Atoll.",
+    "piTitle": "Pi checklist",
+    "piExtension": "Installs a global extension in ~/.pi/agent/extensions so Pi sessions you start from any terminal are covered.",
+    "piRestart": "Restart Pi after installing the extension; already-running sessions do not load it.",
+    "piVerify": "Trigger one bash, write, or edit call in a Pi session to verify; approve and deny once from Atoll."
   },
   "warning": {
     "scriptMissing": "Hook script missing from the app bundle. Reinstall Atoll if install fails.",
@@ -102,6 +108,7 @@
     "zcode": "Atoll updated the ZCode hook script since it was last trusted. Click Reinstall hooks in Atoll, then restart ZCode.",
     "gemini": "Atoll updated the Gemini hook script since it was last trusted. Click Reinstall hooks in Atoll, re-trust the hook via /hooks in Gemini, then restart Gemini.",
     "opencode": "Atoll updated the OpenCode bridge plugin since it was last loaded. Click Reinstall hooks in Atoll, then restart OpenCode.",
+    "pi": "Atoll updated the Pi bridge extension since it was last loaded. Click Reinstall hooks in Atoll, then restart Pi.",
     "default": "Atoll updated this hook script since it was last trusted. Re-confirm it in the agent app, then restart."
   },
   "error": {

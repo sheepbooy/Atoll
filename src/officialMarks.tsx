@@ -310,6 +310,55 @@ export function OpencodeOfficialMark({
   );
 }
 
+/** Pi mark: the official interlocking block emblem (pi.dev/logo-auto.svg),
+ * rebuilt on its 800×800 grid — coral top arm, blue stair-step left, yellow
+ * block at the lower right. */
+export const PI_LOGO_PATHS = {
+  salmon: "M165.29 165.29H517.36V400H400V282.65H165.29Z",
+  blue: "M165.29 282.65H282.65V400H400V517.36H282.65V634.72H165.29Z",
+  yellow: "M517.36 400H634.72V634.72H517.36Z",
+} as const;
+
+export function piMarkColors(
+  mood: ClawdMood,
+  accent?: string,
+  accentDark?: string,
+): { salmon: string; blue: string; yellow: string; yellowOpacity: number } {
+  if (mood === "dead") return { salmon: "#6a6a6a", blue: "#4e4e4e", yellow: "#7a7a7a", yellowOpacity: 1 };
+  if (mood === "worried") return { salmon: "#a97e78", blue: "#4f7485", yellow: "#b39a66", yellowOpacity: 1 };
+  if (mood === "sleeping") return { salmon: "#7c5e58", blue: "#2f5567", yellow: "#7b6739", yellowOpacity: 1 };
+  if (accent) {
+    return { salmon: accent, blue: accentDark || accent, yellow: accent, yellowOpacity: 0.68 };
+  }
+  return { salmon: "#f09082", blue: "#4d9abf", yellow: "#f1be58", yellowOpacity: 1 };
+}
+
+export function PiOfficialMark({
+  mood,
+  accent,
+  accentDark,
+  className,
+}: {
+  mood: ClawdMood;
+  accent?: string;
+  accentDark?: string;
+  className?: string;
+}) {
+  const colors = piMarkColors(mood, accent, accentDark);
+  return (
+    <g className={className}>
+      {/* Same visual band as the other brand marks (75.6px inside 152×136). */}
+      <g data-part="mark">
+        <g transform="translate(56 39) scale(0.0945) translate(-400 -400)">
+          <path fill={colors.salmon} d={PI_LOGO_PATHS.salmon} />
+          <path fill={colors.blue} d={PI_LOGO_PATHS.blue} />
+          <path fill={colors.yellow} fillOpacity={colors.yellowOpacity} d={PI_LOGO_PATHS.yellow} />
+        </g>
+      </g>
+    </g>
+  );
+}
+
 export function CursorOfficialMark({
   palette,
   className,

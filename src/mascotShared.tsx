@@ -15,7 +15,7 @@ export const MASCOT_ASPECT = MASCOT_VIEWBOX.w / MASCOT_VIEWBOX.h;
 export const MASCOT_VIEWBOX_ATTR = `${MASCOT_VIEWBOX.x} ${MASCOT_VIEWBOX.y} ${MASCOT_VIEWBOX.w} ${MASCOT_VIEWBOX.h}`;
 
 /** Small brand marks use the slot for their silhouette, without decorative padding. */
-export function brandMascotViewBox(size: number | undefined, character: "codex" | "cursor" | "gemini" | "opencode" | "zcode") {
+export function brandMascotViewBox(size: number | undefined, character: "codex" | "cursor" | "gemini" | "opencode" | "zcode" | "pi") {
   if (size === undefined || size >= 40) return MASCOT_VIEWBOX_ATTR;
   const compact = character === "codex" ? [13,-2,86,86] : character === "cursor" ? [14,-5,84,84] : [18,1,76,76];
   // Restore decorative room progressively so a 21–36px avatar never shrinks below its 20px version.

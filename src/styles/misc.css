@@ -303,6 +303,14 @@
   background: #4d9df8;
 }
 
+.token-heatmap-agent-dot.is-opencode {
+  background: #70d8c8;
+}
+
+.token-heatmap-agent-dot.is-pi {
+  background: #4d9abf;
+}
+
 .token-heatmap-agent-dot.is-other {
   background: #c9bcff;
 }

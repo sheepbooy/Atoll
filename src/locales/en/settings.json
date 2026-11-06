@@ -63,7 +63,7 @@
   },
   "integrations": {
     "agentHooksTitle": "Agent hooks",
-    "agentHooksDesc": "Connect Claude Code, Codex, and future local agents."
+    "agentHooksDesc": "Connect Claude Code, Codex, Pi, and other local agents."
   },
   "display": {
     "monitorLabel": "Display",

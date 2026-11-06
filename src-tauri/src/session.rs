@@ -23,18 +23,21 @@ pub(crate) fn compute_listening_online(app: &AppHandle) -> bool {
     let zcode_ready = zcode_hook_status(app);
     let gemini_ready = gemini_hook_status(app);
     let opencode_ready = opencode_hook_status(app);
+    let pi_ready = pi_hook_status(app);
     let any_installed = claude_ready.installed
         || codex_ready.installed
         || cursor_ready.installed
         || zcode_ready.installed
         || gemini_ready.installed
-        || opencode_ready.installed;
+        || opencode_ready.installed
+        || pi_ready.installed;
     let any_script_found = claude_ready.script_found
         || codex_ready.script_found
         || cursor_ready.script_found
         || zcode_ready.script_found
         || gemini_ready.script_found
-        || opencode_ready.script_found;
+        || opencode_ready.script_found
+        || pi_ready.script_found;
     any_installed && any_script_found && hook_bridge::is_bridge_online(app)
 }
 
@@ -382,6 +385,7 @@ pub(crate) fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
             zcode: forced_uninstalled_status(app, &ZCODE_HOOK_PROFILE),
             gemini: forced_uninstalled_status(app, &GEMINI_HOOK_PROFILE),
             opencode: opencode_hook_status(app),
+            pi: pi_hook_status(app),
         };
     }
 
@@ -391,6 +395,7 @@ pub(crate) fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
     let zcode_status = zcode_hook_status(app);
     let gemini_status = gemini_hook_status(app);
     let opencode_status = opencode_hook_status(app);
+    let pi_status = pi_hook_status(app);
 
     // #region agent log (diagA)
     crate::debug_agent::log(
@@ -446,6 +451,7 @@ pub(crate) fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
         zcode: zcode_status,
         gemini: gemini_status,
         opencode: opencode_status,
+        pi: pi_status,
     }
 }
 

@@ -34,6 +34,7 @@ const AGENTS = [
   { id: "zcode", label: "ZCode" },
   { id: "gemini", label: "Gemini" },
   { id: "opencode", label: "OpenCode" },
+  { id: "pi", label: "Pi" },
 ] as const;
 
 /** 全部姿态（应用态 + 彩蛋），调试台 / 资产导出共用顺序。 */

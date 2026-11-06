@@ -235,6 +235,7 @@ pub(crate) enum AgentKind {
     Zcode,
     Gemini,
     Opencode,
+    Pi,
     Other,
 }
 

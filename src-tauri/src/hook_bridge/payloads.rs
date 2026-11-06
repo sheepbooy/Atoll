@@ -100,6 +100,26 @@ pub(crate) fn permission_request_from_opencode_payload(
     Some(request)
 }
 
+/// The Pi extension (scripts/atoll-pi-bridge.js) normalizes `tool_call`
+/// events into Atoll's PermissionRequest payload before posting them. Pi has
+/// no native permission prompt, so every gated tool call blocks on Atoll.
+/// Always-allow is session-local on the Atoll side, like ZCode/OpenCode.
+pub(crate) fn permission_request_from_pi_payload(
+    id: String,
+    payload: Value,
+    requested_at: String,
+) -> Option<PermissionRequest> {
+    let event_name = payload.get("hook_event_name")?.as_str()?;
+    if event_name != "PermissionRequest" {
+        return None;
+    }
+
+    let mut request =
+        permission_request_from_tool_payload(id, payload, requested_at, AgentKind::Pi, false)?;
+    request.supports_always = true;
+    Some(request)
+}
+
 pub(crate) fn permission_request_from_cursor_payload(
     id: String,
     payload: Value,
@@ -157,6 +177,7 @@ pub(crate) fn permission_request_from_tool_payload(
         AgentKind::Zcode => "zcode",
         AgentKind::Gemini => "gemini",
         AgentKind::Opencode => "opencode",
+        AgentKind::Pi => "pi",
         _ => "claude-code",
     };
 
@@ -409,6 +430,79 @@ mod payload_tests {
             "Atoll approval timed out",
         );
         assert_eq!(response, json!({}));
+    }
+
+    #[test]
+    fn pi_payload_builds_permission_request_with_always() {
+        let payload = json!({
+            "hook_event_name": "PermissionRequest",
+            "session_id": "pi-session-1",
+            "cwd": "/tmp/project",
+            "model": "claude-sonnet-5-5",
+            "tool_name": "bash",
+            "tool_input": { "command": "npm test" },
+            "tool_use_id": "call-1"
+        });
+        let request = permission_request_from_pi_payload(
+            "req-1".into(),
+            payload,
+            "2026-11-05T00:00:00Z".into(),
+        )
+        .expect("pi request");
+        assert!(matches!(request.agent, AgentKind::Pi));
+        assert_eq!(request.session, "pi-session-1");
+        assert_eq!(request.command, "Bash: npm test");
+        assert_eq!(request.tool_use_id.as_deref(), Some("call-1"));
+        assert!(request.supports_always);
+    }
+
+    #[test]
+    fn pi_powershell_payload_uses_powershell_label() {
+        let payload = json!({
+            "hook_event_name": "PermissionRequest",
+            "session_id": "pi-session-2",
+            "cwd": "C:\\project",
+            "tool_name": "powershell",
+            "tool_input": { "command": "Get-ChildItem" },
+            "tool_use_id": "call-2"
+        });
+        let request = permission_request_from_pi_payload(
+            "req-2".into(),
+            payload,
+            "2026-11-05T00:00:00Z".into(),
+        )
+        .expect("pi request");
+        assert_eq!(request.command, "PowerShell: Get-ChildItem");
+    }
+
+    #[test]
+    fn pi_non_permission_payload_is_ignored() {
+        let payload = json!({
+            "hook_event_name": "SessionStart",
+            "session_id": "pi-session-1"
+        });
+        assert!(permission_request_from_pi_payload(
+            "req-1".into(),
+            payload,
+            "2026-11-05T00:00:00Z".into(),
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn pi_payload_without_session_falls_back_to_default() {
+        let payload = json!({
+            "hook_event_name": "PermissionRequest",
+            "tool_name": "edit",
+            "tool_input": { "path": "/tmp/a.txt" }
+        });
+        let request = permission_request_from_pi_payload(
+            "req-1".into(),
+            payload,
+            "2026-11-05T00:00:00Z".into(),
+        )
+        .expect("pi request");
+        assert_eq!(request.session, "pi");
     }
 
     #[test]

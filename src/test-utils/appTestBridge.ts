@@ -72,6 +72,12 @@ export const connectedHookHealth = {
     settingsPath: "",
     scriptPath: "",
   },
+  pi: {
+    installed: true,
+    scriptFound: true,
+    settingsPath: "",
+    scriptPath: "",
+  },
 };
 
 export const emptyHookHealth = {
@@ -106,6 +112,12 @@ export const emptyHookHealth = {
     scriptPath: "",
   },
   opencode: {
+    installed: false,
+    scriptFound: false,
+    settingsPath: "",
+    scriptPath: "",
+  },
+  pi: {
     installed: false,
     scriptFound: false,
     settingsPath: "",
@@ -267,6 +279,9 @@ export const bridge = {
   getCursorHookStatus: vi.fn(),
   installCursorHooks: vi.fn(),
   uninstallCursorHooks: vi.fn(),
+  getPiHookStatus: vi.fn(),
+  installPiHooks: vi.fn(),
+  uninstallPiHooks: vi.fn(),
   setSessionAutoApprove: vi.fn(),
   archiveAllResolved: vi.fn(),
   archiveRequest: vi.fn(),
@@ -431,6 +446,18 @@ export function resetAppTestBridge() {
     scriptPath: "",
   });
   bridge.uninstallCodexHooks.mockResolvedValue({
+    installed: false,
+    scriptFound: false,
+    settingsPath: "",
+    scriptPath: "",
+  });
+  bridge.installPiHooks.mockResolvedValue({
+    installed: true,
+    scriptFound: true,
+    settingsPath: "",
+    scriptPath: "",
+  });
+  bridge.uninstallPiHooks.mockResolvedValue({
     installed: false,
     scriptFound: false,
     settingsPath: "",

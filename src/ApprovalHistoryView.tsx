@@ -34,6 +34,7 @@ const AGENT_FILTERS = [
   "zcode",
   "gemini",
   "opencode",
+  "pi",
 ] as const;
 const OUTCOME_FILTERS = [
   "",
@@ -102,6 +103,8 @@ function agentLabelKey(agent: string) {
       return "history.agentGemini";
     case "opencode":
       return "history.agentOpencode";
+    case "pi":
+      return "history.agentPi";
     default:
       return "history.agentOther";
   }

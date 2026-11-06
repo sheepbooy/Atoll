@@ -10,6 +10,7 @@ export const HOOK_AGENT_LABELS = {
   zcode: "ZCode",
   gemini: "Gemini CLI",
   opencode: "OpenCode",
+  pi: "Pi",
 } as const;
 
 export type HookAgentKey = keyof typeof HOOK_AGENT_LABELS;
@@ -91,6 +92,8 @@ export function mergeHookHealthPreferReady(
   const upgradeGemini = upgrade.gemini ?? baseGemini;
   const baseOpencode = base.opencode ?? EMPTY_HOOK_HEALTH.opencode;
   const upgradeOpencode = upgrade.opencode ?? baseOpencode;
+  const basePi = base.pi ?? EMPTY_HOOK_HEALTH.pi;
+  const upgradePi = upgrade.pi ?? basePi;
   return {
     claude: preferHookStatus(base.claude, upgrade.claude),
     codex: preferHookStatus(base.codex, upgrade.codex),
@@ -98,6 +101,7 @@ export function mergeHookHealthPreferReady(
     zcode: preferHookStatus(baseZcode, upgradeZcode),
     gemini: preferHookStatus(baseGemini, upgradeGemini),
     opencode: preferHookStatus(baseOpencode, upgradeOpencode),
+    pi: preferHookStatus(basePi, upgradePi),
   };
 }
 
@@ -149,6 +153,7 @@ export function analyzeHookHealth(
     { key: "zcode", label: HOOK_AGENT_LABELS.zcode, status: health?.zcode },
     { key: "gemini", label: HOOK_AGENT_LABELS.gemini, status: health?.gemini },
     { key: "opencode", label: HOOK_AGENT_LABELS.opencode, status: health?.opencode },
+    { key: "pi", label: HOOK_AGENT_LABELS.pi, status: health?.pi },
   ];
   const agents = agentEntries.filter(
     (agent): agent is { key: HookAgentKey; label: string; status: HookStatus } =>
@@ -255,6 +260,8 @@ export function hookRetrustNote(agentKey: HookAgentKey): string {
       return i18n.t("retrust.gemini", { ns: "hooks" });
     case "opencode":
       return i18n.t("retrust.opencode", { ns: "hooks" });
+    case "pi":
+      return i18n.t("retrust.pi", { ns: "hooks" });
     default:
       return i18n.t("retrust.default", { ns: "hooks" });
   }

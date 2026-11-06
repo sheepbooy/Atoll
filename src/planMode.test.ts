@@ -36,6 +36,7 @@ const hookHealth: HookHealthSnapshot = {
   zcode: hookStatus,
   gemini: hookStatus,
   opencode: hookStatus,
+  pi: hookStatus,
 };
 
 function makeRequest(overrides: Partial<PermissionRequest> = {}): PermissionRequest {

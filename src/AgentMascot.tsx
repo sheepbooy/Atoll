@@ -3,6 +3,7 @@ import { CodexMascot } from "./CodexMascot";
 import { CursorMascot } from "./CursorMascot";
 import { GeminiMascot } from "./GeminiMascot";
 import { OpencodeMascot } from "./OpencodeMascot";
+import { PiMascot } from "./PiMascot";
 import { ZcodeMascot } from "./ZcodeMascot";
 import type { AgentKind } from "./tauri";
 import { useMascotEnvironment, type MascotMotionProps } from "./mascotMotion";
@@ -16,6 +17,7 @@ export const AGENT_ACCENT: Record<AgentKind, { accent?: string; accentDark?: str
   zcode: { accent: "#7cc8f0", accentDark: "#2f88b8" },
   gemini: { accent: "#4796E3", accentDark: "#CA6673" },
   opencode: { accent: "#70d8c8", accentDark: "#2aa896" },
+  pi: { accent: "#4d9abf", accentDark: "#3d7d9c" },
   other: { accent: "#c9bcff", accentDark: "#9182d1" },
 };
 
@@ -34,7 +36,7 @@ export interface AgentMascotProps extends MascotMotionProps {
 }
 
 const CHARACTERS = { claude: ClawdMascot, codex: CodexMascot, cursor: CursorMascot,
-  zcode: ZcodeMascot, gemini: GeminiMascot, opencode: OpencodeMascot, other: ClawdMascot };
+  zcode: ZcodeMascot, gemini: GeminiMascot, opencode: OpencodeMascot, pi: PiMascot, other: ClawdMascot };
 
 export function AgentMascot({ agent, feedbackScope = "session", ...props }: AgentMascotProps) {
   const { feedback, workingSessions } = useMascotEnvironment();

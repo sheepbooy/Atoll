@@ -42,8 +42,9 @@ function hookHealth(
   zcode: typeof ready = cursor,
   gemini: typeof ready = zcode,
   opencode: typeof ready = missing,
+  pi: typeof ready = missing,
 ): HookHealthSnapshot {
-  return { claude, codex, cursor, zcode, gemini, opencode };
+  return { claude, codex, cursor, zcode, gemini, opencode, pi };
 }
 
 describe("hookHealth", () => {
@@ -164,6 +165,7 @@ describe("hookHealth", () => {
     const expected = {
       ...hookHealth(ready, ready, ready),
       opencode: { ...missing, nodeFound: true },
+      pi: { ...missing, nodeFound: true },
     };
     expect(merged).toEqual(expected);
     const analysis = analyzeHookHealth(merged);
@@ -217,6 +219,7 @@ describe("hookHealth", () => {
       zcode: ready,
       gemini: ready,
       opencode: missing,
+      pi: missing,
     });
     expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["cursor"]);
     expect(deriveHeaderLogoDisplay(analysis, "idle")).toEqual({
@@ -236,6 +239,7 @@ describe("hookHealth", () => {
         zcode: ready,
         gemini: ready,
         opencode: missing,
+        pi: missing,
       },
       { configuredAgents: configuredCursor },
     );
@@ -255,6 +259,7 @@ describe("hookHealth", () => {
       zcode: ready,
       gemini: ready,
       opencode: missing,
+      pi: missing,
     });
     expect(analysis.disconnectedAgents).toEqual([]);
     expect(analysis.needsReconnect).toBe(false);
@@ -326,6 +331,7 @@ describe("hookHealth", () => {
         zcode: ready,
         gemini: missing,
         opencode: missing,
+        pi: missing,
       },
       { configuredAgents: configuredGemini },
     );

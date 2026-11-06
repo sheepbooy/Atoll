@@ -423,6 +423,138 @@ pub(crate) fn route_opencode_request(
     }
 }
 
+/// Pi's global extension (scripts/atoll-pi-bridge.js) gates `tool_call`
+/// events by posting a normalized PermissionRequest and waiting for Atoll's
+/// answer. Pi has no native permission prompt, so an empty response means the
+/// extension falls back to its own TUI confirmation.
+pub(crate) fn route_pi_request(
+    app: AppHandle,
+    request: HttpRequest,
+    stream: &TcpStream,
+) -> Result<Value, String> {
+    let payload: Value = serde_json::from_slice(strip_utf8_bom(&request.body))
+        .map_err(|error| format!("Invalid Pi hook payload: {error}"))?;
+
+    let hook_event_name = payload
+        .get("hook_event_name")
+        .and_then(Value::as_str)
+        .unwrap_or("PermissionRequest")
+        .to_string();
+
+    crate::debug_agent::log(
+        "H-C",
+        "hook_bridge.rs:route_pi_request",
+        "pi hook received",
+        json!({
+            "event": hook_event_name,
+            "toolName": payload.get("tool_name"),
+            "sessionId": payload.get("session_id"),
+            "cwd": payload.get("cwd"),
+        }),
+    );
+
+    match hook_event_name.as_str() {
+        "PermissionRequest" => submit_blocking_permission_request(
+            app,
+            payload,
+            stream,
+            |id, payload, at| permission_request_from_pi_payload(id, payload, at),
+            &hook_event_name,
+            PermissionResponseStyle::Pi,
+        )
+        .or_else(|error| {
+            Ok(build_hook_defer_response(
+                PermissionResponseStyle::Pi,
+                &hook_event_name,
+                &error,
+            ))
+        }),
+        _ => {
+            enqueue_observer(ObserverJob {
+                app,
+                hook_event_name,
+                payload,
+                kind: ObserverKind::Pi,
+                generation: 0,
+                received_at: 0,
+            })?;
+            Ok(json!({}))
+        }
+    }
+}
+
+pub(crate) fn process_pi_observer_event(
+    app: AppHandle,
+    hook_event_name: String,
+    payload: Value,
+) -> Result<(), String> {
+    match hook_event_name.as_str() {
+        "SessionStart" => {
+            let state = app.state::<AppState>();
+            let session_id = payload
+                .get("session_id")
+                .and_then(Value::as_str)
+                .unwrap_or("pi");
+            let cwd = payload.get("cwd").and_then(Value::as_str).unwrap_or(".");
+            register_known_session(&state, session_id, AgentKind::Pi, cwd, None);
+            touch_session_activity(&state, session_id);
+            schedule_observer_snapshot_emit(&app);
+            Ok(())
+        }
+        "PostToolUse" => sync_tool_completion(app, payload, AgentKind::Pi, None),
+        "AfterAgentResponse" => {
+            let state = app.state::<AppState>();
+            if let Some(session_id) = payload_session_id(&payload) {
+                let cwd = payload.get("cwd").and_then(Value::as_str).unwrap_or(".");
+                register_known_session(&state, session_id, AgentKind::Pi, cwd, None);
+                touch_session_activity(&state, session_id);
+                if let Err(error) = crate::ingest_pi_token_usage_from_payload(
+                    &state,
+                    session_id,
+                    &payload,
+                    "AfterAgentResponse",
+                ) {
+                    eprintln!("Atoll Pi token usage ingest failed: {error}");
+                }
+            }
+            schedule_observer_snapshot_emit(&app);
+            Ok(())
+        }
+        "Stop" => {
+            // agent_end carries cumulative session usage; component-wise
+            // max keeps it idempotent across repeated settles.
+            let state = app.state::<AppState>();
+            if let Some(session_id) = payload_session_id(&payload) {
+                if let Err(error) =
+                    crate::ingest_pi_token_usage_from_payload(&state, session_id, &payload, "Stop")
+                {
+                    eprintln!("Atoll Pi token usage ingest failed: {error}");
+                }
+            }
+            sync_turn_completion(app, payload, AgentKind::Pi, true, None)
+        }
+        "sessionEnd" => {
+            let state = app.state::<AppState>();
+            if let Some(session_id) = payload_session_id(&payload) {
+                let cwd = payload.get("cwd").and_then(Value::as_str).unwrap_or(".");
+                register_known_session(&state, session_id, AgentKind::Pi, cwd, None);
+                touch_session_activity(&state, session_id);
+                if let Err(error) = crate::ingest_pi_token_usage_from_payload(
+                    &state,
+                    session_id,
+                    &payload,
+                    "sessionEnd",
+                ) {
+                    eprintln!("Atoll Pi token usage ingest failed: {error}");
+                }
+            }
+            schedule_observer_snapshot_emit(&app);
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Cursor fires `preToolUse` for *every* tool call (unlike Claude Code which
 /// only fires `PermissionRequest` for dangerous ones).  Since Cursor already
 /// has its own permission management UI (auto-approve / ask settings), Atoll
