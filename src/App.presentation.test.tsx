@@ -105,8 +105,9 @@ describe("App", () => {
       const { container } = render(<App />);
       fireEvent.pointerEnter(screen.getByLabelText("Atoll"));
       await waitFor(() => expect(container.querySelector(".island-panel")).not.toBeNull());
+      const collapse = await screen.findByRole("button", { name: "Collapse Atoll" });
       bridge.setIslandPresentation.mockClear();
-      fireEvent.click(screen.getByRole("button", { name: "Collapse Atoll" }));
+      fireEvent.click(collapse);
       await waitFor(() => expect(container.querySelector(".is-closing")).toBeNull());
       expect(bridge.setIslandPresentation).toHaveBeenCalledOnce();
       expect(container.querySelector(".is-compact")).not.toBeNull();
