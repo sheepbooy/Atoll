@@ -423,6 +423,100 @@ pub(crate) fn route_opencode_request(
     }
 }
 
+/// DSH's in-process Cordis plugin (scripts/dsh-plugin/index.mjs) normalizes
+/// `approval/request` into an Atoll PermissionRequest and forwards lifecycle
+/// events. There is no command-hook process: the plugin lives inside DSH's
+/// Node runtime, so Atoll being down leaves DSH's native approval UI in charge.
+pub(crate) fn route_dsh_request(
+    app: AppHandle,
+    request: HttpRequest,
+    stream: &TcpStream,
+) -> Result<Value, String> {
+    let payload: Value = serde_json::from_slice(strip_utf8_bom(&request.body))
+        .map_err(|error| format!("Invalid DeepSeek Harness hook payload: {error}"))?;
+
+    let hook_event_name = payload
+        .get("hook_event_name")
+        .and_then(Value::as_str)
+        .unwrap_or("PermissionRequest")
+        .to_string();
+
+    crate::debug_agent::log(
+        "H-C",
+        "hook_bridge.rs:route_dsh_request",
+        "dsh hook received",
+        json!({
+            "event": hook_event_name,
+            "toolName": payload.get("tool_name"),
+            "sessionId": payload.get("session_id"),
+            "cwd": payload.get("cwd"),
+        }),
+    );
+
+    match hook_event_name.as_str() {
+        "PermissionRequest" => submit_blocking_permission_request(
+            app,
+            payload,
+            stream,
+            |id, payload, at| permission_request_from_dsh_payload(id, payload, at),
+            &hook_event_name,
+            PermissionResponseStyle::Dsh,
+        )
+        .or_else(|error| {
+            Ok(build_hook_defer_response(
+                PermissionResponseStyle::Dsh,
+                &hook_event_name,
+                &error,
+            ))
+        }),
+        "SessionStart" | "SessionEnd" | "UserPromptSubmit" | "PostToolUse"
+        | "PostToolUseFailure" | "Stop" => {
+            enqueue_observer(ObserverJob {
+                app,
+                hook_event_name,
+                payload,
+                kind: ObserverKind::Dsh,
+                generation: 0,
+                received_at: 0,
+            })?;
+            Ok(json!({}))
+        }
+        _ => Ok(json!({})),
+    }
+}
+
+pub(crate) fn process_dsh_observer_event(
+    app: AppHandle,
+    hook_event_name: String,
+    payload: Value,
+) -> Result<(), String> {
+    match hook_event_name.as_str() {
+        "PostToolUse" | "PostToolUseFailure" => {
+            sync_tool_completion(app, payload, AgentKind::Dsh, None)
+        }
+        "Stop" => sync_turn_completion(app, payload, AgentKind::Dsh, true, None),
+        "SessionStart" | "SessionEnd" | "UserPromptSubmit" => {
+            let state = app.state::<AppState>();
+            let session_id = payload
+                .get("session_id")
+                .and_then(Value::as_str)
+                .unwrap_or("dsh");
+            let cwd = payload.get("cwd").and_then(Value::as_str).unwrap_or(".");
+            register_known_session(
+                &state,
+                session_id,
+                AgentKind::Dsh,
+                cwd,
+                payload_transcript_path(&payload).as_deref(),
+            );
+            touch_session_activity(&state, session_id);
+            schedule_observer_snapshot_emit(&app);
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Pi's global extension (scripts/atoll-pi-bridge.js) gates `tool_call`
 /// events by posting a normalized PermissionRequest and waiting for Atoll's
 /// answer. Pi has no native permission prompt, so an empty response means the

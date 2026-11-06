@@ -415,3 +415,66 @@ fn encodes_pre_tool_use_ask_response() {
         })
     );
 }
+
+#[test]
+fn maps_dsh_approval_to_permission_request() {
+    let payload = json!({
+        "session_id": "session-dsh",
+        "cwd": "/repo",
+        "hook_event_name": "PermissionRequest",
+        "tool_name": "Bash",
+        "tool_input": {
+            "command": "npm test",
+            "description": "Run tests",
+            "justification": "Needs network access"
+        },
+        "tool_use_id": "call-dsh",
+        "reason": "sandbox escalation"
+    });
+
+    let request = crate::hook_bridge::permission_request_from_dsh_payload(
+        "request-dsh".into(),
+        payload,
+        "2026-10-19T09:00:00Z".into(),
+    )
+    .expect("payload should map to a request");
+
+    assert!(matches!(request.agent, crate::AgentKind::Dsh));
+    assert_eq!(request.session, "session-dsh");
+    assert_eq!(request.command, "Bash: npm test");
+    assert_eq!(request.detail, "Run tests");
+    assert_eq!(request.cwd, "/repo");
+    assert_eq!(request.tool_use_id.as_deref(), Some("call-dsh"));
+    assert!(request.supports_always);
+}
+
+#[test]
+fn dsh_permission_response_is_a_flat_decision() {
+    let approved = crate::hook_bridge::build_permission_response(
+        crate::hook_bridge::PermissionResponseStyle::Dsh,
+        "PermissionRequest",
+        crate::Decision::Approved,
+        "",
+        None,
+    );
+    assert_eq!(approved, json!({ "decision": "allow" }));
+
+    let denied = crate::hook_bridge::build_permission_response(
+        crate::hook_bridge::PermissionResponseStyle::Dsh,
+        "PermissionRequest",
+        crate::Decision::Denied,
+        "not today",
+        None,
+    );
+    assert_eq!(
+        denied,
+        json!({ "decision": "deny", "reason": "Denied from Atoll: not today" })
+    );
+
+    let defer = crate::hook_bridge::build_hook_defer_response(
+        crate::hook_bridge::PermissionResponseStyle::Dsh,
+        "PermissionRequest",
+        "Atoll unavailable",
+    );
+    assert_eq!(defer, json!({}));
+}

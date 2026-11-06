@@ -1,11 +1,12 @@
 //! Hook installation and health: per-agent (Claude/Codex/ZCode/Gemini/
-//! Cursor/OpenCode/Pi) install/uninstall/read commands, competing-hook
-//! detection, node and hook-script resolution, deployed-asset materialization,
-//! and the launcher/config repair helpers.
+//! Cursor/OpenCode/Pi/DeepSeek Harness) install/uninstall/read commands,
+//! competing-hook detection, node and hook-script resolution, deployed-asset
+//! materialization, and the launcher/config repair helpers.
 
 use super::*;
 
 mod assets;
+mod dsh;
 mod launcher;
 mod node;
 mod opencode;
@@ -13,6 +14,7 @@ mod pi;
 mod repair;
 
 pub(crate) use assets::*;
+pub(crate) use dsh::*;
 pub(crate) use launcher::*;
 pub(crate) use node::*;
 pub(crate) use opencode::*;
@@ -74,7 +76,25 @@ pub(crate) struct HookHealthSnapshot {
     #[serde(default)]
     pub(crate) opencode: HookStatus,
     #[serde(default)]
+    pub(crate) dsh: HookStatus,
+    #[serde(default)]
     pub(crate) pi: HookStatus,
+}
+
+#[cfg(test)]
+mod hook_health_compatibility_tests {
+    use super::HookHealthSnapshot;
+
+    #[test]
+    fn missing_new_agent_statuses_default_to_uninstalled() {
+        let mut value = serde_json::to_value(HookHealthSnapshot::default()).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("dsh");
+        object.remove("pi");
+        let restored: HookHealthSnapshot = serde_json::from_value(value).unwrap();
+        assert!(!restored.dsh.installed);
+        assert!(!restored.pi.installed);
+    }
 }
 
 impl HookStatus {

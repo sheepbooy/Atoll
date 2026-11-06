@@ -385,6 +385,7 @@ pub(crate) fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
             zcode: forced_uninstalled_status(app, &ZCODE_HOOK_PROFILE),
             gemini: forced_uninstalled_status(app, &GEMINI_HOOK_PROFILE),
             opencode: opencode_hook_status(app),
+            dsh: dsh_hook_status(app),
             pi: pi_hook_status(app),
         };
     }
@@ -395,6 +396,7 @@ pub(crate) fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
     let zcode_status = zcode_hook_status(app);
     let gemini_status = gemini_hook_status(app);
     let opencode_status = opencode_hook_status(app);
+    let dsh_status = dsh_hook_status(app);
     let pi_status = pi_hook_status(app);
 
     // #region agent log (diagA)
@@ -440,6 +442,11 @@ pub(crate) fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
                 "nodeFound": gemini_status.node_found,
                 "nodePath": gemini_status.node_path,
             },
+            "dsh": {
+                "installed": dsh_status.installed,
+                "scriptFound": dsh_status.script_found,
+                "scriptPath": dsh_status.script_path,
+            },
         }),
     );
     // #endregion
@@ -451,6 +458,7 @@ pub(crate) fn build_hook_health(app: &AppHandle) -> HookHealthSnapshot {
         zcode: zcode_status,
         gemini: gemini_status,
         opencode: opencode_status,
+        dsh: dsh_status,
         pi: pi_status,
     }
 }

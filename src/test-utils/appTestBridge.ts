@@ -72,6 +72,12 @@ export const connectedHookHealth = {
     settingsPath: "",
     scriptPath: "",
   },
+  dsh: {
+    installed: true,
+    scriptFound: true,
+    settingsPath: "",
+    scriptPath: "",
+  },
   pi: {
     installed: true,
     scriptFound: true,
@@ -112,6 +118,12 @@ export const emptyHookHealth = {
     scriptPath: "",
   },
   opencode: {
+    installed: false,
+    scriptFound: false,
+    settingsPath: "",
+    scriptPath: "",
+  },
+  dsh: {
     installed: false,
     scriptFound: false,
     settingsPath: "",
@@ -279,6 +291,9 @@ export const bridge = {
   getCursorHookStatus: vi.fn(),
   installCursorHooks: vi.fn(),
   uninstallCursorHooks: vi.fn(),
+  getDshHookStatus: vi.fn(),
+  installDshHooks: vi.fn(),
+  uninstallDshHooks: vi.fn(),
   getPiHookStatus: vi.fn(),
   installPiHooks: vi.fn(),
   uninstallPiHooks: vi.fn(),

@@ -10,6 +10,7 @@ const ALL_HOOK_AGENTS: HookAgentKey[] = [
   "zcode",
   "gemini",
   "opencode",
+  "dsh",
   "pi",
 ];
 
@@ -27,6 +28,7 @@ function parseConfigured(raw: string | null): Set<HookAgentKey> {
           entry === "zcode" ||
           entry === "gemini" ||
           entry === "opencode" ||
+          entry === "dsh" ||
           entry === "pi",
       ),
     );

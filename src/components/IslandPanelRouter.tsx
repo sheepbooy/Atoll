@@ -132,6 +132,7 @@ interface IslandPanelRouterProps {
   handleInstallZcodeHooks: () => void;
   handleInstallGeminiHooks: () => void;
   handleInstallOpencodeHooks: () => void;
+  handleInstallDshHooks: () => void;
   handleInstallPiHooks: () => void;
   handleInstallCursorHooks: () => void;
   handleInstallAllHooks: () => void;
@@ -140,6 +141,7 @@ interface IslandPanelRouterProps {
   handleUninstallZcodeHooks: () => void;
   handleUninstallGeminiHooks: () => void;
   handleUninstallOpencodeHooks: () => void;
+  handleUninstallDshHooks: () => void;
   handleUninstallPiHooks: () => void;
   handleUninstallCursorHooks: () => void;
   handleUninstallHooks: () => void;
@@ -293,6 +295,7 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
     handleInstallZcodeHooks,
     handleInstallGeminiHooks,
     handleInstallOpencodeHooks,
+    handleInstallDshHooks,
     handleInstallPiHooks,
     handleInstallCursorHooks,
     handleInstallAllHooks,
@@ -301,6 +304,7 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
     handleUninstallZcodeHooks,
     handleUninstallGeminiHooks,
     handleUninstallOpencodeHooks,
+    handleUninstallDshHooks,
     handleUninstallPiHooks,
     handleUninstallCursorHooks,
     handleUninstallHooks,
@@ -410,6 +414,7 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
   const zcodeHookStatus = hookHealth?.zcode ?? null;
   const geminiHookStatus = hookHealth?.gemini ?? null;
   const opencodeHookStatus = hookHealth?.opencode ?? null;
+  const dshHookStatus = hookHealth?.dsh ?? null;
   const piHookStatus = hookHealth?.pi ?? null;
 
   const hookMenuAgents: HookMenuAgent[] = [
@@ -515,6 +520,23 @@ export function IslandPanelRouter(props: IslandPanelRouterProps) {
           }),
       onInstall: handleInstallOpencodeHooks,
       onUninstall: handleUninstallOpencodeHooks,
+    },
+    {
+      key: "dsh",
+      label: "DeepSeek Harness",
+      status: dshHookStatus,
+      note: dshHookStatus.settingsPath
+        ? i18n.t("register.withPath", {
+            ns: "hooks",
+            path: dshHookStatus.settingsPath,
+            note: hookAgentNote("dsh"),
+          })
+        : i18n.t("register.dsh", {
+            ns: "hooks",
+            note: hookAgentNote("dsh"),
+          }),
+      onInstall: handleInstallDshHooks,
+      onUninstall: handleUninstallDshHooks,
     },
     {
       key: "pi",

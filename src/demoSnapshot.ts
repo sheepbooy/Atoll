@@ -301,11 +301,29 @@ const demoOpencodeHookMissing: HookStatus = {
   nodeFound: true,
 };
 
+const demoDshHookInstalled: HookStatus = {
+  installed: true,
+  scriptFound: true,
+  settingsPath: "~/.dsh/cordis.patch.yml",
+  scriptPath: "/Applications/Atoll.app/.../dsh-plugin/index.mjs",
+  nodePath: "",
+  nodeFound: true,
+};
+
 const demoPiHookInstalled: HookStatus = {
   installed: true,
   scriptFound: true,
   settingsPath: "~/.pi/agent/extensions",
   scriptPath: "/Applications/Atoll.app/.../atoll-pi-bridge.js",
+  nodePath: "",
+  nodeFound: true,
+};
+
+const demoDshHookMissing: HookStatus = {
+  installed: false,
+  scriptFound: true,
+  settingsPath: "~/.dsh/cordis.patch.yml",
+  scriptPath: "/Applications/Atoll.app/.../dsh-plugin/index.mjs",
   nodePath: "",
   nodeFound: true,
 };
@@ -375,6 +393,7 @@ export function getDemoSnapshot(mode: DemoMode): IslandSnapshot {
       zcode: demoZcodeHookInstalled,
       gemini: demoGeminiHookInstalled,
       opencode: demoOpencodeHookInstalled,
+      dsh: demoDshHookInstalled,
       pi: demoPiHookInstalled,
     },
   };
@@ -442,6 +461,10 @@ export function getDemoGeminiHookStatus(mode: DemoMode): HookStatus {
 
 export function getDemoOpencodeHookStatus(mode: DemoMode): HookStatus {
   return mode === "idle" ? demoOpencodeHookMissing : demoOpencodeHookInstalled;
+}
+
+export function getDemoDshHookStatus(mode: DemoMode): HookStatus {
+  return mode === "idle" ? demoDshHookMissing : demoDshHookInstalled;
 }
 
 export function getDemoPiHookStatus(mode: DemoMode): HookStatus {

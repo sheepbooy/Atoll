@@ -1,0 +1,11 @@
+{
+  "name": "@atoll/dsh-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Atoll approval bridge for DeepSeek Harness",
+  "main": "index.mjs",
+  "exports": {
+    ".": "./index.mjs"
+  }
+}

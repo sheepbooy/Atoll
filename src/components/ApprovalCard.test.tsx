@@ -94,3 +94,26 @@ describe("ApprovalCard rule scope menu", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("ApprovalCard agent identity", () => {
+  it("renders DeepSeek Harness approvals with the DSH label and mascot", () => {
+    const { container } = render(
+      <ApprovalCard
+        request={makeRequest({
+          agent: "dsh",
+          command: "Bash: npm test",
+          detail: "Run tests",
+        })}
+        busyDecision={null}
+        sessions={[]}
+        onApprove={vi.fn()}
+        onDeny={vi.fn()}
+        onAlwaysApprove={vi.fn()}
+        onViewSession={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("DSH")).toBeInTheDocument();
+    expect(container.querySelector(".dsh")).not.toBeNull();
+  });
+});

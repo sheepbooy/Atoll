@@ -6,6 +6,7 @@ export type AgentKind =
   | "zcode"
   | "gemini"
   | "opencode"
+  | "dsh"
   | "pi"
   | "other";
 
@@ -153,6 +154,7 @@ export interface HookHealthSnapshot {
   zcode: HookStatus;
   gemini: HookStatus;
   opencode: HookStatus;
+  dsh: HookStatus;
   pi: HookStatus;
 }
 
@@ -203,6 +205,15 @@ export const EMPTY_HOOK_HEALTH: HookHealthSnapshot = {
     needsRetrust: false,
   },
   opencode: {
+    installed: false,
+    scriptFound: false,
+    settingsPath: "",
+    scriptPath: "",
+    nodePath: "",
+    nodeFound: true,
+    needsRetrust: false,
+  },
+  dsh: {
     installed: false,
     scriptFound: false,
     settingsPath: "",

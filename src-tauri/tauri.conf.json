@@ -56,6 +56,8 @@
       "../scripts/atoll-opencode-bridge.js": "scripts/atoll-opencode-bridge.js",
       "../scripts/atoll-pi-bridge.js": "scripts/atoll-pi-bridge.js",
       "../scripts/atoll-hook-bridge.mjs": "scripts/atoll-hook-bridge.mjs",
+      "../scripts/dsh-plugin/index.mjs": "scripts/dsh-plugin/index.mjs",
+      "../scripts/dsh-plugin/package.json": "scripts/dsh-plugin/package.json",
       "resources/media/mediaremote-adapter.pl": "media/mediaremote-adapter.pl",
       "resources/media/MediaRemoteAdapter.framework": "media/MediaRemoteAdapter.framework"
     }

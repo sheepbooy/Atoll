@@ -460,3 +460,29 @@
   .agent-mascot .zcode-letter-base { opacity: 1; }
   .agent-mascot .mascot-eye { animation: none !important; }
 }
+
+/* DSH: the whale drifts and rolls; the whole mark is one body part. */
+@keyframes agent-idle-dsh-body { 0%,72%,100% { transform: none; } 82% { transform: translateY(-2px) rotate(-2deg); } 91% { transform: translateY(1px) rotate(2deg); } }
+.dsh.is-loop-idle { --body-animation: agent-idle-dsh-body var(--agent-idle-ms) ease-in-out var(--agent-phase) infinite; }
+@keyframes agent-work-dsh-body { 0%,64%,100% { transform: none; } 12% { transform: translateY(3px) rotate(-3deg); } 30% { transform: translateY(-4px) rotate(2deg); } 46% { transform: translateY(2px) rotate(-2deg); } 58% { transform: translateY(-1px); } }
+.dsh.is-loop-working { --body-animation: agent-work-dsh-body var(--agent-work-ms) ease-in-out var(--agent-phase) infinite; }
+@keyframes agent-shot-work-dsh-body { 0%,64%,100% { transform: none; } 12% { transform: translateY(3px) rotate(-3deg); } 30% { transform: translateY(-4px) rotate(2deg); } 46% { transform: translateY(2px) rotate(-2deg); } 58% { transform: translateY(-1px); } }
+.dsh.has-action.is-action-started { --body-animation: agent-shot-work-dsh-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-dsh-attention-body { 0%,100% { transform: none; } 18% { transform: translateY(2px) rotate(-3deg); } 34%,76% { transform: translate(3px,-3px) rotate(5deg); } }
+.dsh.has-action.is-action-attention { --body-animation: agent-shot-dsh-attention-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-remind-dsh-body { 0%,40% { transform: none; } 6.4% { transform: translateY(2px) rotate(-3deg); } 14.4%,30.4% { transform: translate(3px,-3px) rotate(5deg); } 40%,100% { transform: none; } }
+.dsh.is-loop-attention { --body-animation: agent-remind-dsh-body var(--agent-remind-ms) ease-in-out var(--agent-remind-phase) infinite; }
+@keyframes agent-shot-dsh-approved-body { 0%,100% { transform: none; } 22% { transform: translateY(4px) scaleY(.93); } 44%,58% { transform: translateY(-8px) rotate(-3deg); } 76% { transform: translateY(2px) scaleY(.96); } }
+.dsh.has-action.is-action-approved { --body-animation: agent-shot-dsh-approved-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-dsh-denied-body { 0%,100% { transform: none; } 18% { transform: translateY(2px) rotate(-2deg); } 34%,58% { transform: translateX(-4px) rotate(-8deg); } 46%,72% { transform: translateX(4px) rotate(8deg); } 86% { transform: none; } }
+.dsh.has-action.is-action-denied { --body-animation: agent-shot-dsh-denied-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-dsh-concerned-body { 0%,100% { transform: none; } 24% { transform: rotate(-5deg); } 52% { transform: rotate(5deg); } 74% { transform: rotate(-2deg); } }
+.dsh.has-action.is-action-concerned { --body-animation: agent-shot-dsh-concerned-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-dsh-turnEnded-body { 0%,100% { transform: none; } 38% { transform: translateY(3px) scaleY(.97); } 73% { transform: none; } }
+.dsh.has-action.is-action-turnEnded { --body-animation: agent-shot-dsh-turnEnded-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-dsh-join-body { 0%,100% { transform: none; } 28% { transform: translateY(-5px) rotate(4deg); } 60% { transform: translateY(1px); } }
+.dsh.has-action.is-action-join { --body-animation: agent-shot-dsh-join-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-dsh-leave-body { 0%,100% { transform: none; } 35%,68% { transform: translate(-4px,3px) rotate(-5deg); } }
+.dsh.has-action.is-action-leave { --body-animation: agent-shot-dsh-leave-body var(--agent-shot-ms) ease-in-out 1 both; }
+@keyframes agent-shot-dsh-sleeping-body { 0%,100% { transform: none; } 48%,74% { transform: translateY(4px) rotate(4deg) scaleY(.94); } }
+.dsh.has-action.is-action-sleeping { --body-animation: agent-shot-dsh-sleeping-body var(--agent-shot-ms) ease-in-out 1 both; }

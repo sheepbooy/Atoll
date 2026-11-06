@@ -13,6 +13,7 @@ const CHARACTERS: { agent: AgentKind; label: string; parts: string; gesture: str
   { agent: "opencode", label: "OpenCode", parts: "像素外框 · 内部白块", gesture: "探头点头、左右查看、顶起盒子与缩头摇头" },
   { agent: "pi", label: "Pi", parts: "珊瑚臂 · 蓝色阶梯 · 黄色方块", gesture: "倾斜张望、轻点拼块、炫耀式弹起与缩身" },
   { agent: "zcode", label: "ZCode", parts: "底板 · Z 字 · 三段笔画", gesture: "前倾用力、抬身等待、挺胸弹起与后仰回撤" },
+  { agent: "dsh", label: "DSH", parts: "DeepSeek 鲸鱼标 · 单部件", gesture: "呼吸、摆尾、抬头等待与下沉回撤" },
 ];
 const STATES: { label: string; mood: ClawdMood; activity: "idle" | "working" | "rest" }[] = [
   { label: "空闲", mood: "calm", activity: "idle" },

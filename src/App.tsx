@@ -439,6 +439,7 @@ export function App() {
     handleInstallZcodeHooks,
     handleInstallGeminiHooks,
     handleInstallOpencodeHooks,
+    handleInstallDshHooks,
     handleInstallPiHooks,
     handleInstallCursorHooks,
     handleInstallAllHooks,
@@ -447,6 +448,7 @@ export function App() {
     handleUninstallZcodeHooks,
     handleUninstallGeminiHooks,
     handleUninstallOpencodeHooks,
+    handleUninstallDshHooks,
     handleUninstallPiHooks,
     handleUninstallCursorHooks,
     handleUninstallHooks,
@@ -505,6 +507,7 @@ export function App() {
   const zcodeHookStatus = snapshot.hookHealth?.zcode ?? null;
   const geminiHookStatus = snapshot.hookHealth?.gemini ?? null;
   const opencodeHookStatus = snapshot.hookHealth?.opencode ?? null;
+  const dshHookStatus = snapshot.hookHealth?.dsh ?? null;
   const hookAttention = hookAttentionTitle(
     hookHealthAnalysis,
     hookHealthHydrated,
@@ -709,6 +712,7 @@ export function App() {
       zcode: 0,
       gemini: 0,
       opencode: 0,
+      dsh: 0,
       pi: 0,
       other: 0,
     };
@@ -1263,6 +1267,7 @@ export function App() {
               handleInstallZcodeHooks={handleInstallZcodeHooks}
               handleInstallGeminiHooks={handleInstallGeminiHooks}
               handleInstallOpencodeHooks={handleInstallOpencodeHooks}
+              handleInstallDshHooks={handleInstallDshHooks}
               handleInstallPiHooks={handleInstallPiHooks}
               handleInstallCursorHooks={handleInstallCursorHooks}
               handleInstallAllHooks={handleInstallAllHooks}
@@ -1271,6 +1276,7 @@ export function App() {
               handleUninstallZcodeHooks={handleUninstallZcodeHooks}
               handleUninstallGeminiHooks={handleUninstallGeminiHooks}
               handleUninstallOpencodeHooks={handleUninstallOpencodeHooks}
+              handleUninstallDshHooks={handleUninstallDshHooks}
               handleUninstallPiHooks={handleUninstallPiHooks}
               handleUninstallCursorHooks={handleUninstallCursorHooks}
               handleUninstallHooks={handleUninstallHooks}

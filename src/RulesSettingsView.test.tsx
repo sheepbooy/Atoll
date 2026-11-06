@@ -107,6 +107,15 @@ describe("RulesSettingsView", () => {
     });
   });
 
+  it("offers DeepSeek Harness as a rule scope", async () => {
+    render(<RulesSettingsView />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add rule" }));
+
+    expect(
+      screen.getByRole("option", { name: "DeepSeek Harness" }),
+    ).toBeInTheDocument();
+  });
+
   it("refuses to save a rule without any matcher", async () => {
     render(<RulesSettingsView />);
     fireEvent.click(await screen.findByRole("button", { name: "Add rule" }));

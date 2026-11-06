@@ -15,6 +15,8 @@ import {
   uninstallGeminiHooks,
   installOpencodeHooks,
   uninstallOpencodeHooks,
+  installDshHooks,
+  uninstallDshHooks,
   installPiHooks,
   uninstallPiHooks,
   type HookStatus,
@@ -77,6 +79,7 @@ export function useHookInstaller({
     { key: "zcode", label: HOOK_AGENT_LABELS.zcode, install: installZcodeHooks, uninstall: uninstallZcodeHooks },
     { key: "gemini", label: HOOK_AGENT_LABELS.gemini, install: installGeminiHooks, uninstall: uninstallGeminiHooks },
     { key: "opencode", label: HOOK_AGENT_LABELS.opencode, install: installOpencodeHooks, uninstall: uninstallOpencodeHooks },
+    { key: "dsh", label: HOOK_AGENT_LABELS.dsh, install: installDshHooks, uninstall: uninstallDshHooks },
     { key: "pi", label: HOOK_AGENT_LABELS.pi, install: installPiHooks, uninstall: uninstallPiHooks },
   ];
 
@@ -105,7 +108,7 @@ export function useHookInstaller({
 
   function applyHookInstallSnapshot(
     statuses: Partial<
-      Record<"claude" | "codex" | "cursor" | "zcode" | "gemini" | "opencode" | "pi", HookStatus>
+      Record<"claude" | "codex" | "cursor" | "zcode" | "gemini" | "opencode" | "dsh" | "pi", HookStatus>
     >,
   ) {
     invalidatePendingSnapshotLoads();
@@ -116,6 +119,7 @@ export function useHookInstaller({
       zcode: statuses.zcode ?? snapshotRef.current.hookHealth.zcode,
       gemini: statuses.gemini ?? snapshotRef.current.hookHealth.gemini,
       opencode: statuses.opencode ?? snapshotRef.current.hookHealth.opencode,
+      dsh: statuses.dsh ?? snapshotRef.current.hookHealth.dsh,
       pi: statuses.pi ?? snapshotRef.current.hookHealth.pi,
     };
     const optimisticHookHealth = mergeHookHealthPreferReady(
@@ -577,6 +581,57 @@ export function useHookInstaller({
     }
   }
 
+  async function handleInstallDshHooks() {
+    setHookBusy("dsh");
+    setHookInstallError(null);
+    try {
+      const status = await installDshHooks();
+      if (status.installed) {
+        setConfiguredHookAgents(markHookAgentConfigured("dsh"));
+      }
+      await applyHookInstallSnapshot({ dsh: status });
+      if (status.installed) {
+        collapseIsland(true);
+      }
+    } catch (error) {
+      setHookInstallError(
+        i18n.t("error.installFailed", {
+          ns: "hooks",
+          agentLabel: "DeepSeek Harness",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
+  async function handleUninstallDshHooks() {
+    closeMenu();
+    setHookBusy("dsh");
+    setHookInstallError(null);
+    try {
+      const status = await uninstallDshHooks();
+      applySnapshot({
+        ...snapshotRef.current,
+        hookHealth: {
+          ...snapshotRef.current.hookHealth,
+          dsh: status,
+        },
+      });
+    } catch (error) {
+      setHookInstallError(
+        i18n.t("error.uninstallFailed", {
+          ns: "hooks",
+          agentLabel: "DeepSeek Harness",
+          message: formatHookInstallErrorMessage(error),
+        }),
+      );
+    } finally {
+      setHookBusy(false);
+    }
+  }
+
   async function handleInstallCursorHooks() {
     setHookBusy("cursor");
     setHookInstallError(null);
@@ -645,6 +700,7 @@ export function useHookInstaller({
     handleInstallZcodeHooks,
     handleInstallGeminiHooks,
     handleInstallOpencodeHooks,
+    handleInstallDshHooks,
     handleInstallPiHooks,
     handleInstallCursorHooks,
     handleInstallAllHooks,
@@ -653,6 +709,7 @@ export function useHookInstaller({
     handleUninstallZcodeHooks,
     handleUninstallGeminiHooks,
     handleUninstallOpencodeHooks,
+    handleUninstallDshHooks,
     handleUninstallPiHooks,
     handleUninstallCursorHooks,
     handleUninstallHooks,

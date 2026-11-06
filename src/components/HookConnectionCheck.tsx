@@ -8,7 +8,7 @@ export function verificationSucceeded(observation: HookObservation | null, start
   return startedAt !== null && observation?.generation === generation && observation.lastEventAt !== null && observation.lastEventAt >= startedAt;
 }
 
-export function HookConnectionCheck({ agent, installed }: { agent: string; installed: boolean }) {
+export function HookConnectionCheck({ agent, agentLabel, installed }: { agent: string; agentLabel?: string; installed: boolean }) {
   const { t, i18n } = useTranslation("hooks");
   const [ready, setReady] = useState(false);
   const [observation, setObservation] = useState<HookObservation | null>(null);
@@ -59,7 +59,7 @@ export function HookConnectionCheck({ agent, installed }: { agent: string; insta
         time: new Date(observation.lastPermissionAt).toLocaleString(i18n.language),
       })}</span> : null}
       {permissionSeen && agent !== "cursor" ? <span className="settings-card-desc">{t("verify.permissionSeen")}</span> : null}
-      {attempt && !verified ? <span className="settings-card-desc">{t("verify.steps", { agent })}</span> : null}
+      {attempt && !verified ? <span className="settings-card-desc">{t("verify.steps", { agent: agentLabel ?? agent })}</span> : null}
     </div>
   );
 }

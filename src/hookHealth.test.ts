@@ -42,9 +42,10 @@ function hookHealth(
   zcode: typeof ready = cursor,
   gemini: typeof ready = zcode,
   opencode: typeof ready = missing,
+  dsh: typeof ready = missing,
   pi: typeof ready = missing,
 ): HookHealthSnapshot {
-  return { claude, codex, cursor, zcode, gemini, opencode, pi };
+  return { claude, codex, cursor, zcode, gemini, opencode, dsh, pi };
 }
 
 describe("hookHealth", () => {
@@ -165,6 +166,7 @@ describe("hookHealth", () => {
     const expected = {
       ...hookHealth(ready, ready, ready),
       opencode: { ...missing, nodeFound: true },
+      dsh: { ...missing, nodeFound: true },
       pi: { ...missing, nodeFound: true },
     };
     expect(merged).toEqual(expected);
@@ -219,6 +221,7 @@ describe("hookHealth", () => {
       zcode: ready,
       gemini: ready,
       opencode: missing,
+      dsh: missing,
       pi: missing,
     });
     expect(analysis.disconnectedAgents.map((agent) => agent.key)).toEqual(["cursor"]);
@@ -239,6 +242,7 @@ describe("hookHealth", () => {
         zcode: ready,
         gemini: ready,
         opencode: missing,
+        dsh: missing,
         pi: missing,
       },
       { configuredAgents: configuredCursor },
@@ -259,6 +263,7 @@ describe("hookHealth", () => {
       zcode: ready,
       gemini: ready,
       opencode: missing,
+      dsh: missing,
       pi: missing,
     });
     expect(analysis.disconnectedAgents).toEqual([]);
@@ -319,6 +324,7 @@ describe("hookHealth", () => {
     expect(hookRetrustNote("claude")).toContain("Claude");
     expect(hookRetrustNote("cursor")).toContain("Cursor");
     expect(hookRetrustNote("gemini")).toContain("Gemini");
+    expect(hookRetrustNote("dsh")).toContain("DeepSeek Harness");
   });
 
   it("flags configured but uninstalled gemini as disconnected when others stay connected", () => {
@@ -331,6 +337,7 @@ describe("hookHealth", () => {
         zcode: ready,
         gemini: missing,
         opencode: missing,
+        dsh: missing,
         pi: missing,
       },
       { configuredAgents: configuredGemini },

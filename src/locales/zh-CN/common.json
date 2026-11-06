@@ -210,7 +210,8 @@
     "clear": "清空历史",
     "cleared": "审批历史已清空",
     "revealInFolder": "在文件夹中显示",
-    "dismiss": "关闭"
+    "dismiss": "关闭",
+    "agentDsh": "DeepSeek Harness"
   },
   "fileStation": {
     "title": "文件中转站",

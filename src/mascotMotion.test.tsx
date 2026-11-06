@@ -5,7 +5,7 @@ import { MASCOT_ACTION_MS, MascotEnvironmentProvider } from "./mascotMotion";
 import { mockMotionPreference } from "./test-utils/motionPreference";
 import type { AgentKind } from "./tauri";
 
-const agents: AgentKind[] = ["claude", "codex", "cursor", "gemini", "opencode", "pi", "zcode", "other"];
+const agents: AgentKind[] = ["claude", "codex", "cursor", "gemini", "opencode", "zcode", "dsh", "pi", "other"];
 beforeEach(() => { vi.useFakeTimers(); mockMotionPreference(); });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); Reflect.deleteProperty(HTMLElement.prototype, "getAnimations"); });
 

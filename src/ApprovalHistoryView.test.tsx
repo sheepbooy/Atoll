@@ -189,6 +189,13 @@ describe("ApprovalHistoryView", () => {
         expect.objectContaining({ agent: "opencode" }),
       ),
     );
+
+    fireEvent.click(screen.getByRole("button", { name: "DeepSeek Harness" }));
+    await waitFor(() =>
+      expect(mockGet).toHaveBeenLastCalledWith(
+        expect.objectContaining({ agent: "dsh" }),
+      ),
+    );
   });
 
   it("exports JSON and reveals the exported file", async () => {

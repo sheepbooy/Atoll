@@ -20,6 +20,7 @@ pub(crate) enum ObserverKind {
     Cursor,
     Zcode,
     Gemini,
+    Dsh,
     Pi,
 }
 
@@ -30,6 +31,7 @@ fn observer_agent(kind: ObserverKind) -> &'static str {
         ObserverKind::Cursor => "cursor",
         ObserverKind::Zcode => "zcode",
         ObserverKind::Gemini => "gemini",
+        ObserverKind::Dsh => "dsh",
         ObserverKind::Pi => "pi",
     }
 }
@@ -69,6 +71,15 @@ fn supported_observer_event(agent: &str, event: &str) -> bool {
         "zcode" => matches!(
             event,
             "PostToolUse" | "PostToolUseFailure" | "Stop" | "SessionStart" | "UserPromptSubmit"
+        ),
+        "dsh" => matches!(
+            event,
+            "SessionStart"
+                | "SessionEnd"
+                | "UserPromptSubmit"
+                | "PostToolUse"
+                | "PostToolUseFailure"
+                | "Stop"
         ),
         "pi" => matches!(
             event,
@@ -120,6 +131,9 @@ pub(crate) fn start_observer_worker() {
                     }
                     ObserverKind::Gemini => {
                         process_gemini_observer_event(job.app, job.hook_event_name, job.payload)
+                    }
+                    ObserverKind::Dsh => {
+                        process_dsh_observer_event(job.app, job.hook_event_name, job.payload)
                     }
                     ObserverKind::Pi => {
                         process_pi_observer_event(job.app, job.hook_event_name, job.payload)
@@ -182,6 +196,7 @@ pub(crate) fn write_bridge_config(port: u16, token: &str) -> std::io::Result<()>
         "zcodeUrl": format!("http://{HOOK_BIND_HOST}:{port}/zcode/hook"),
         "geminiUrl": format!("http://{HOOK_BIND_HOST}:{port}/gemini/hook"),
         "opencodeUrl": format!("http://{HOOK_BIND_HOST}:{port}/opencode/hook"),
+        "dshUrl": format!("http://{HOOK_BIND_HOST}:{port}/dsh/hook"),
         "piUrl": format!("http://{HOOK_BIND_HOST}:{port}/pi/hook"),
         "token": token,
     });
@@ -460,6 +475,10 @@ pub(crate) fn route_request(
             require_hook_auth(&app, &request)?;
             route_opencode_request(app, request, stream)
         }
+        "/dsh/hook" => {
+            require_hook_auth(&app, &request)?;
+            route_dsh_request(app, request, stream)
+        }
         "/pi/hook" => {
             require_hook_auth(&app, &request)?;
             route_pi_request(app, request, stream)
@@ -555,6 +574,7 @@ mod bridge_bind_tests {
             "zcodeUrl": format!("http://{HOOK_BIND_HOST}:{port}/zcode/hook"),
             "geminiUrl": format!("http://{HOOK_BIND_HOST}:{port}/gemini/hook"),
             "opencodeUrl": format!("http://{HOOK_BIND_HOST}:{port}/opencode/hook"),
+            "dshUrl": format!("http://{HOOK_BIND_HOST}:{port}/dsh/hook"),
             "piUrl": format!("http://{HOOK_BIND_HOST}:{port}/pi/hook"),
             "token": token,
         });
@@ -582,6 +602,11 @@ mod bridge_bind_tests {
             .and_then(Value::as_str)
             .unwrap()
             .contains("/cursor/hook"));
+        assert!(parsed
+            .get("dshUrl")
+            .and_then(Value::as_str)
+            .unwrap()
+            .contains("/dsh/hook"));
         assert!(parsed
             .get("piUrl")
             .and_then(Value::as_str)

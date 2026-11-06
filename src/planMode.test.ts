@@ -36,6 +36,7 @@ const hookHealth: HookHealthSnapshot = {
   zcode: hookStatus,
   gemini: hookStatus,
   opencode: hookStatus,
+  dsh: hookStatus,
   pi: hookStatus,
 };
 

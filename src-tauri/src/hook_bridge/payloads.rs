@@ -100,6 +100,26 @@ pub(crate) fn permission_request_from_opencode_payload(
     Some(request)
 }
 
+/// DSH's Cordis plugin forwards one `approval/request` at a time as a
+/// `PermissionRequest` payload. Always-allow is session-local on the Atoll
+/// side, so the plugin keeps answering `allowed-once` while Atoll auto-approves
+/// later requests from the same session.
+pub(crate) fn permission_request_from_dsh_payload(
+    id: String,
+    payload: Value,
+    requested_at: String,
+) -> Option<PermissionRequest> {
+    let event_name = payload.get("hook_event_name")?.as_str()?;
+    if event_name != "PermissionRequest" {
+        return None;
+    }
+
+    let mut request =
+        permission_request_from_tool_payload(id, payload, requested_at, AgentKind::Dsh, false)?;
+    request.supports_always = true;
+    Some(request)
+}
+
 /// The Pi extension (scripts/atoll-pi-bridge.js) normalizes `tool_call`
 /// events into Atoll's PermissionRequest payload before posting them. Pi has
 /// no native permission prompt, so every gated tool call blocks on Atoll.
@@ -177,6 +197,7 @@ pub(crate) fn permission_request_from_tool_payload(
         AgentKind::Zcode => "zcode",
         AgentKind::Gemini => "gemini",
         AgentKind::Opencode => "opencode",
+        AgentKind::Dsh => "dsh",
         AgentKind::Pi => "pi",
         _ => "claude-code",
     };

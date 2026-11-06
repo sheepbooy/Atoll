@@ -210,7 +210,8 @@
     "clear": "Clear history",
     "cleared": "Approval history cleared",
     "revealInFolder": "Show in folder",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "agentDsh": "DeepSeek Harness"
   },
   "fileStation": {
     "title": "File station",

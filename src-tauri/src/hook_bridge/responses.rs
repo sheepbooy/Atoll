@@ -72,6 +72,7 @@ pub(crate) enum PermissionResponseStyle {
     Cursor,
     Gemini,
     Opencode,
+    Dsh,
     Pi,
 }
 
@@ -182,6 +183,26 @@ pub(crate) fn opencode_permission_response(decision: Decision, note: &str) -> Va
     }
 }
 
+/// DSH bridge plugin contract (scripts/dsh-plugin/index.mjs): a flat decision
+/// the plugin maps onto DSH's one-shot approval outcome ("allowed-once" /
+/// "rejected"). An empty object means "let DSH's own approval UI win".
+pub(crate) fn dsh_permission_response(decision: Decision, note: &str) -> Value {
+    match decision {
+        Decision::Approved => json!({ "decision": "allow" }),
+        Decision::Denied => {
+            let reason = if note.is_empty() {
+                "Denied from Atoll".to_string()
+            } else {
+                format!("Denied from Atoll: {note}")
+            };
+            json!({
+                "decision": "deny",
+                "reason": reason
+            })
+        }
+    }
+}
+
 pub(crate) fn build_permission_response(
     style: PermissionResponseStyle,
     hook_event_name: &str,
@@ -200,6 +221,7 @@ pub(crate) fn build_permission_response(
             gemini_permission_hook_response(decision, note, updated_input)
         }
         PermissionResponseStyle::Opencode => opencode_permission_response(decision, note),
+        PermissionResponseStyle::Dsh => dsh_permission_response(decision, note),
         // The Pi extension reads the same flat decision shape and maps it onto
         // `{ block: true, reason }` for denied tool calls.
         PermissionResponseStyle::Pi => opencode_permission_response(decision, note),
@@ -216,6 +238,7 @@ pub(crate) fn build_hook_defer_response(
         PermissionResponseStyle::Cursor => cursor_hook_defer_response(hook_event_name, reason),
         PermissionResponseStyle::Gemini => gemini_hook_defer_response(),
         PermissionResponseStyle::Opencode => json!({}),
+        PermissionResponseStyle::Dsh => json!({}),
         // No decision: the extension falls back to Pi's own TUI confirmation.
         PermissionResponseStyle::Pi => json!({}),
     }

@@ -186,6 +186,16 @@ export function HooksView({
                     </ul>
                   </details>
                 ) : null}
+                {agent.key === "dsh" ? (
+                  <details className="settings-hook-desktop-note">
+                    <summary>{t("checklist.dshTitle")}</summary>
+                    <ul>
+                      <li>{t("checklist.dshPatch")}</li>
+                      <li>{t("checklist.dshRestart")}</li>
+                      <li>{t("checklist.dshVerify")}</li>
+                    </ul>
+                  </details>
+                ) : null}
                 {agent.key === "pi" ? (
                   <details className="settings-hook-desktop-note">
                     <summary>{t("checklist.piTitle")}</summary>
@@ -251,7 +261,7 @@ export function HooksView({
                     </button>
                   </div>
                 ) : null}
-                <HookConnectionCheck agent={agent.key} installed={installed && !scriptMissing} />
+                <HookConnectionCheck agent={agent.key} agentLabel={agent.label} installed={installed && !scriptMissing} />
                 <div className="settings-hook-actions">
                   {installed ? (
                     <button

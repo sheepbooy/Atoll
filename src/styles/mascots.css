@@ -41,7 +41,8 @@
 .agent-slot .clawd,
 .agent-slot .codex,
 .agent-slot .cursor-mascot,
-.agent-slot .zcode {
+.agent-slot .zcode,
+.agent-slot .dsh {
   width: 21px;
   height: 18px;
   transition:
@@ -52,7 +53,8 @@
 .is-expanded .agent-slot .clawd,
 .is-expanded .agent-slot .codex,
 .is-expanded .agent-slot .cursor-mascot,
-.is-expanded .agent-slot .zcode {
+.is-expanded .agent-slot .zcode,
+.is-expanded .agent-slot .dsh {
   width: 40px;
   height: 35px;
 }
@@ -84,7 +86,8 @@
 
 .clawd-stack-item .clawd,
 .clawd-stack-item .codex,
-.clawd-stack-item .cursor-mascot {
+.clawd-stack-item .cursor-mascot,
+.clawd-stack-item .dsh {
   width: 20px;
   height: 18px;
 }
@@ -116,7 +119,8 @@
 
 .session-clawd .clawd,
 .session-clawd .codex,
-.session-clawd .cursor-mascot {
+.session-clawd .cursor-mascot,
+.session-clawd .dsh {
   width: 34px;
   height: 30px;
 }

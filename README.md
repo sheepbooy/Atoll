@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>macOS 顶栏 / Windows 贴边的 AI 权限审批浮岛</strong><br/>
-  <sub>Claude Code / Codex / Cursor / ZCode / Gemini CLI / OpenCode / Pi 发起权限请求时，不用切窗口，一眼批准或拒绝</sub>
+  <sub>Claude Code / Codex / Cursor / ZCode / Gemini CLI / OpenCode / Pi / DeepSeek Harness 发起权限请求时，不用切窗口，一眼批准或拒绝</sub>
 </p>
 
 <p align="center">
@@ -62,6 +62,7 @@
 - **应用内更新** — 启动时自动检测新版本，三点菜单一键下载安装并重启
 - **Cursor IDE** — Hook 集成、会话与 subagent 追踪、Token 统计；Shell 权限由 Cursor 自带 UI 处理，Atoll 以 observer hooks 异步监听，不阻塞 IDE；顶栏 **Open Cursor** 一键跳回 IDE
 - **Gemini CLI** — Hook 集成：`BeforeTool` 阻断式审批，Shell / 写文件 / 网络抓取等有副作用的工具先经 Atoll 批准才执行，拒绝时模型直接收到阻断原因；Atoll 未运行时自动回落 Gemini 自带权限流程，不阻塞会话
+- **DeepSeek Harness** — Cordis 进程内桥接：Atoll 接管 DSH 的 `approval/request`，沙箱升级与审批在浮岛完成；Atoll 不在线时自动回落 DSH 自带审批。安装写入 `~/.dsh/cordis.patch.yml` 的受管理条目，重启 DSH 后生效
 - **文件中转站** — 把文件拖到浮岛上即可"投喂"Atoll：拖近时岛自动展开张嘴待喂，按存量分档播放吃掉动画、空闲形象常驻鼓肚；文件以引用方式记录（绝不移动/复制/删除原文件），面板内搜索、多选复制、在文件管理器中显示、拖出即发起原生拖拽
 - **中英文双语** — Settings → Display 一键切换 English / 中文，全量界面文案跟随
 - **Windows 贴边入口（开发版）** — 右侧小胶囊，点击向左展开，可上下拖动并记住位置；普通悬停不展开，审批提醒沿用现有设置，文件拖入仍会展开。[使用与验证说明](docs/windows-edge-island.md)。
@@ -69,7 +70,7 @@
 - **刘海屏适配** — 有刘海的 MacBook 上与实体刘海像素级贴合：折叠胶囊锚定刘海居中，展开态「贴顶 + 左右对称翼」随内容自适应加宽，顶栏内容不落入摄像头模组区域，展开/收起动画零平移
 - **全程本地** — Hook 桥接 `127.0.0.1:47777`，数据不出本机
 
-目前支持 **Claude Code**（CLI 与 Desktop）、**Codex**（CLI 与 Desktop）、**Cursor IDE**、**ZCode**（CLI 与 Desktop）、**Gemini CLI**、**OpenCode** 和 **Pi**。
+目前支持 **Claude Code**（CLI 与 Desktop）、**Codex**（CLI 与 Desktop）、**Cursor IDE**、**ZCode**（CLI 与 Desktop）、**Gemini CLI**、**OpenCode**、**Pi** 和 **DeepSeek Harness**（Web 与 Desktop）。
 
 ## 最新功能
 
@@ -173,9 +174,10 @@ Atoll 通过应用内 **一键安装 Hook**，无需手动编辑配置文件。
 | **ZCode**（CLI + Desktop） | 同上 → Install ZCode | 安装后完全退出并重启 ZCode，再触发一次 shell 权限验证；Token 统计读取 `~/.zcode/cli/rollout`（含子代理归集） |
 | **Gemini CLI** | 同上 → Install Gemini | 安装后在 Gemini 中打开 `/hooks` 并信任 Atoll hook，重启 Gemini，再触发一次 shell 命令验证（在 Atoll 各执行一次批准与拒绝） |
 | **OpenCode** | 同上 → Install OpenCode | OpenCode 没有 hooks 配置文件——Atoll 在其插件目录 `~/.config/opencode/plugins` 部署进程内桥接插件，安装后重启 OpenCode，再触发一次需要批准的操作验证；Atoll 不在线时 OpenCode 自带的 TUI 确认自动兜底 |
+| **DeepSeek Harness**（Web + Desktop） | 同上 → Install DeepSeek Harness | DSH 没有命令 hook 管线——Atoll 在 `~/.dsh/profiles/node_modules/@atoll/dsh-bridge` 部署 Cordis 插件，并向 `~/.dsh/cordis.patch.yml` 写入受管理条目；安装后完全退出并重启 DSH，再触发一次沙箱升级或审批验证；Atoll 不在线时 DSH 自带审批自动兜底。[使用与验证说明](docs/deepseek-harness.md) |
 | **Pi** | 同上 → Install Pi | Pi 没有内置权限系统——Atoll 在 `~/.pi/agent/extensions` 部署全局扩展，通过 `tool_call` 事件拦截 bash / PowerShell / write / edit 并等待 Atoll 决定；安装后重启 Pi 才会加载。Atoll 不在线时 Pi 在自己的 TUI 中询问，print/JSON 模式默认失败关闭 |
 
-Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）、`~/.codex/hooks.json`、`~/.zcode/cli/config.json`、Cursor hooks 配置或 `~/.gemini/settings.json`；OpenCode 与 Pi 例外，见上表——部署的是进程内桥接插件/扩展而非 hooks 配置。安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`；系统没有 Node 时（如全新电脑）自动回退到 Atoll 自带的运行时，无需单独安装 Node.js。
+Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）、`~/.codex/hooks.json`、`~/.zcode/cli/config.json`、Cursor hooks 配置或 `~/.gemini/settings.json`；OpenCode、Pi 与 DeepSeek Harness 例外，见上表——部署的是进程内桥接插件而非 hooks 配置；DSH 插件运行在 DSH 自己的 Node 运行时中，不需要写入 Node 路径。其余 Agent 安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`；系统没有 Node 时（如全新电脑）自动回退到 Atoll 自带的运行时，无需单独安装 Node.js。
 
 开发版安装后可点击对应 Agent 的「验证连接」：**配置已安装 → 等待真实事件 → 连接已验证**。按上表完成信任与重启后，在该 Agent 中发送消息并触发工具调用；旧事件或其他 Agent 的事件不会完成本次验证。支持权限接入的 Agent 收到新审批时另显示「权限请求已收到」，Cursor 仅确认观察连接。60 秒无事件可重试，重新安装后验证状态重置。
 
@@ -224,10 +226,10 @@ Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事�
 
 ### Agent 形象
 
-每个 Agent 有独立形象：Claude 是像素风 Clawd，Codex / Cursor 使用官方品牌标，ZCode 是天蓝渐变、白色斜体 Z 的官方方块形象，Gemini 是官方四角星 spark 渐变形象，OpenCode 是取形官方字标的像素圆环 "o"（青色系、随心情变化），Pi 是官方珊瑚 / 蓝 / 黄三色拼块标：
+每个 Agent 有独立形象：Claude 是像素风 Clawd，Codex / Cursor 使用官方品牌标，ZCode 是天蓝渐变、白色斜体 Z 的官方方块形象，Gemini 是官方四角星 spark 渐变形象，OpenCode 是取形官方字标的像素圆环 "o"（青色系、随心情变化），Pi 是官方珊瑚 / 蓝 / 黄三色拼块标，DeepSeek Harness 使用官方鲸鱼标（深蓝渐变）：
 
 <p align="center">
-  <img src="docs/assets/agent-mascots.png" alt="Claude / Codex / Cursor / ZCode / Gemini / OpenCode mascots" width="560" />
+  <img src="docs/assets/agent-mascots.png" alt="Claude / Codex / Cursor / ZCode / Gemini / OpenCode / DeepSeek Harness mascots" width="560" />
 </p>
 
 ### 多 Session 与终端
@@ -311,6 +313,7 @@ npm run export:brand     # Logo 状态 + Agent 形象
 - [x] ZCode token 用量统计（rollout JSONL，含子代理归集）
 - [x] Gemini CLI hook 适配（BeforeTool 阻断式审批）
 - [x] OpenCode 接入（插件桥接，无 hooks 管线）
+- [x] DeepSeek Harness 接入（Cordis 插件桥接，审批与会话）
 - [x] Pi 接入（全局扩展，`tool_call` 阻断式审批）
 - [x] Cursor hook 适配
 - [x] Codex hook 适配

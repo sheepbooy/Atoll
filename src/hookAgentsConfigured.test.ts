@@ -76,6 +76,12 @@ describe("hookAgentsConfigured", () => {
         settingsPath: "/tmp/opencode",
         scriptPath: "",
       },
+      dsh: {
+        installed: true,
+        scriptFound: true,
+        settingsPath: "/tmp/dsh",
+        scriptPath: "/tmp/dsh/index.mjs",
+      },
       pi: {
         installed: false,
         scriptFound: false,
@@ -84,6 +90,6 @@ describe("hookAgentsConfigured", () => {
       },
     });
 
-    expect([...configured].sort()).toEqual(["claude", "cursor", "gemini"]);
+    expect([...configured].sort()).toEqual(["claude", "cursor", "dsh", "gemini"]);
   });
 });

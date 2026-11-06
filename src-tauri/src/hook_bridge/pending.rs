@@ -62,6 +62,7 @@ pub(crate) fn submit_blocking_permission_request(
         AgentKind::Zcode => "zcode",
         AgentKind::Gemini => "gemini",
         AgentKind::Opencode => "opencode",
+        AgentKind::Dsh => "dsh",
         AgentKind::Pi => "pi",
         AgentKind::Other => "other",
     };
@@ -221,6 +222,15 @@ pub(crate) fn submit_blocking_permission_request(
             }
         }
     }
+    if matches!(session_agent, AgentKind::Dsh) {
+        register_known_session(
+            &state,
+            &session_id,
+            session_agent.clone(),
+            &session_cwd,
+            request_transcript_path.as_deref(),
+        );
+    }
     let snapshot = build_snapshot(&app, &state);
     app.emit("snapshot-changed", &snapshot)
         .map_err(|error| error.to_string())?;
@@ -330,6 +340,7 @@ pub(crate) fn agent_resolved_label(agent: &AgentKind) -> &'static str {
         AgentKind::Zcode => "ZCode",
         AgentKind::Gemini => "Gemini",
         AgentKind::Opencode => "OpenCode",
+        AgentKind::Dsh => "DeepSeek Harness",
         AgentKind::Pi => "Pi",
         _ => "Agent",
     }

@@ -34,6 +34,7 @@ const AGENTS = [
   { id: "zcode", label: "ZCode" },
   { id: "gemini", label: "Gemini" },
   { id: "opencode", label: "OpenCode" },
+  { id: "dsh", label: "DSH" },
   { id: "pi", label: "Pi" },
 ] as const;
 

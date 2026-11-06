@@ -43,6 +43,7 @@
     "zcode": "Works with the ZCode desktop app and CLI. After install: restart ZCode so the hook runner picks up the new config, then trigger one shell permission to verify.",
     "gemini": "Works with the Gemini CLI. After install: run /hooks in Gemini and trust the Atoll hook, restart Gemini, then trigger one shell command to verify.",
     "opencode": "Works with the OpenCode CLI. After install: restart OpenCode so the bridge plugin loads, then trigger one permission prompt to verify.",
+    "dsh": "Works with DeepSeek Harness Web and Desktop. After install: restart DeepSeek Harness so the bridge plugin loads, then trigger a sandbox escalation or approval prompt to verify.",
     "pi": "Works with the Pi coding agent CLI. After install: restart Pi so the global extension loads; Atoll approves bash/write/edit (and PowerShell) calls. When Atoll is off, Pi asks in its own TUI."
   },
   "register": {
@@ -53,6 +54,7 @@
     "zcode": "Registers ZCode hooks for permission approval. {{note}}",
     "gemini": "Registers Gemini CLI hooks for permission approval. {{note}}",
     "opencode": "Installs the Atoll bridge plugin for permission approval. {{note}}",
+    "dsh": "Installs the Atoll bridge plugin for permission approval. {{note}}",
     "pi": "Deploys the Atoll bridge extension for permission approval. {{note}}"
   },
   "checklist": {
@@ -84,6 +86,10 @@
     "opencodeTitle": "OpenCode checklist",
     "opencodeRestart": "Quit and reopen OpenCode after installing the plugin so it loads at startup.",
     "opencodeVerify": "Trigger one permission prompt in a local session to verify; approve and deny once from Atoll.",
+    "dshTitle": "DeepSeek Harness checklist",
+    "dshPatch": "Atoll adds a managed bridge row to ~/.dsh/cordis.patch.yml; DSH must restart to load it.",
+    "dshRestart": "Quit and reopen DeepSeek Harness after installing the bridge.",
+    "dshVerify": "Trigger an approval or sandbox escalation in a local session; approve and deny once from Atoll.",
     "piTitle": "Pi checklist",
     "piExtension": "Installs a global extension in ~/.pi/agent/extensions so Pi sessions you start from any terminal are covered.",
     "piRestart": "Restart Pi after installing the extension; already-running sessions do not load it.",
@@ -109,7 +115,8 @@
     "gemini": "Atoll updated the Gemini hook script since it was last trusted. Click Reinstall hooks in Atoll, re-trust the hook via /hooks in Gemini, then restart Gemini.",
     "opencode": "Atoll updated the OpenCode bridge plugin since it was last loaded. Click Reinstall hooks in Atoll, then restart OpenCode.",
     "pi": "Atoll updated the Pi bridge extension since it was last loaded. Click Reinstall hooks in Atoll, then restart Pi.",
-    "default": "Atoll updated this hook script since it was last trusted. Re-confirm it in the agent app, then restart."
+    "default": "Atoll updated this hook script since it was last trusted. Re-confirm it in the agent app, then restart.",
+    "dsh": "Atoll updated the DeepSeek Harness bridge plugin since it was last loaded. Click Reinstall hooks in Atoll, then restart DeepSeek Harness."
   },
   "error": {
     "installFailed": "{{agentLabel}} hook install failed: {{message}}",
