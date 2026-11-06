@@ -177,7 +177,9 @@ Atoll 通过应用内 **一键安装 Hook**，无需手动编辑配置文件。
 | **DeepSeek Harness**（Web + Desktop） | 同上 → Install DeepSeek Harness | DSH 没有命令 hook 管线——Atoll 在 `~/.dsh/profiles/node_modules/@atoll/dsh-bridge` 部署 Cordis 插件，并向 `~/.dsh/cordis.patch.yml` 写入受管理条目；安装后完全退出并重启 DSH，再触发一次沙箱升级或审批验证；Atoll 不在线时 DSH 自带审批自动兜底。[使用与验证说明](docs/deepseek-harness.md) |
 | **Pi** | 同上 → Install Pi | Pi 没有内置权限系统——Atoll 在 `~/.pi/agent/extensions` 部署全局扩展，通过 `tool_call` 事件拦截 bash / PowerShell / write / edit 并等待 Atoll 决定；安装后重启 Pi 才会加载。Atoll 不在线时 Pi 在自己的 TUI 中询问，print/JSON 模式默认失败关闭 |
 
-Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）、`~/.codex/hooks.json`、`~/.zcode/cli/config.json`、Cursor hooks 配置或 `~/.gemini/settings.json`；OpenCode、Pi 与 DeepSeek Harness 例外，见上表——部署的是进程内桥接插件而非 hooks 配置；DSH 插件运行在 DSH 自己的 Node 运行时中，不需要写入 Node 路径。其余 Agent 安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`；系统没有 Node 时（如全新电脑）自动回退到 Atoll 自带的运行时，无需单独安装 Node.js。
+DeepSeek Harness 当前为首阶段接入：支持 Web / Desktop 审批与会话状态；Token 统计、聊天记录和子 Agent 暂不支持。
+
+Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事件，写入 `~/.claude/settings.json`（CLI 与 Desktop 共用）、`~/.codex/hooks.json`、`~/.zcode/cli/config.json`、Cursor hooks 配置或 `~/.gemini/settings.json`；OpenCode、Pi 与 DeepSeek Harness 例外，见上表——部署的是进程内桥接插件而非 hooks 配置；Pi 扩展和 DSH 插件运行在各自 Agent 的 Node 运行时中，不需要写入 Node 路径。使用命令 Hook 的 Agent 安装时会写入 Node.js 的绝对路径，避免 Desktop 子进程找不到 `node`；系统没有 Node 时（如全新电脑）自动回退到 Atoll 自带的运行时，无需单独安装 Node.js。
 
 开发版安装后可点击对应 Agent 的「验证连接」：**配置已安装 → 等待真实事件 → 连接已验证**。按上表完成信任与重启后，在该 Agent 中发送消息并触发工具调用；旧事件或其他 Agent 的事件不会完成本次验证。支持权限接入的 Agent 收到新审批时另显示「权限请求已收到」，Cursor 仅确认观察连接。60 秒无事件可重试，重新安装后验证状态重置。
 
@@ -229,7 +231,7 @@ Hook 注册 `PermissionRequest`、`BeforeTool`、`PostToolUse`、`Stop` 等事�
 每个 Agent 有独立形象：Claude 是像素风 Clawd，Codex / Cursor 使用官方品牌标，ZCode 是天蓝渐变、白色斜体 Z 的官方方块形象，Gemini 是官方四角星 spark 渐变形象，OpenCode 是取形官方字标的像素圆环 "o"（青色系、随心情变化），Pi 是官方珊瑚 / 蓝 / 黄三色拼块标，DeepSeek Harness 使用官方鲸鱼标（深蓝渐变）：
 
 <p align="center">
-  <img src="docs/assets/agent-mascots.png" alt="Claude / Codex / Cursor / ZCode / Gemini / OpenCode / DeepSeek Harness mascots" width="560" />
+  <img src="docs/assets/agent-mascots.png" alt="Claude / Codex / Cursor / ZCode / Gemini / OpenCode / Pi / DeepSeek Harness mascots" width="800" />
 </p>
 
 ### 多 Session 与终端

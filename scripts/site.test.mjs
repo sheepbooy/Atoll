@@ -5,6 +5,7 @@ import { JSDOM } from 'jsdom';
 
 const html = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8');
 const script = readFileSync(new URL('../docs/js/site.js', import.meta.url), 'utf8');
+const mascots = readFileSync(new URL('../docs/js/agent-mascots.js', import.meta.url), 'utf8');
 function setup(t, { reduced = false, observers = true } = {}) {
   const dom = new JSDOM(html, { url: 'https://example.test/Atoll/', runScripts: 'outside-only', pretendToBeVisual: true });
   t.after(() => dom.window.close());
@@ -32,6 +33,22 @@ function setup(t, { reduced = false, observers = true } = {}) {
   };
   return { window, $, click, timers, flushTimers, observation, copied: () => copied };
 }
+
+test('Pi and DeepSeek appear in the support cards and mascot gallery', t => {
+  const { window } = setup(t);
+  window.eval(mascots);
+  window.document.dispatchEvent(new window.Event('DOMContentLoaded'));
+  for (const [agent, name, asset] of [
+    ['pi', 'Pi', 'agent-pi.svg'],
+    ['dsh', 'DeepSeek Harness', 'agent-dsh.svg'],
+  ]) {
+    const card = window.document.querySelector(`.agent-card .mascot-slot[data-agent="${agent}"]`)?.closest('.agent-card');
+    assert.ok(card?.textContent.includes(name));
+    const slots = window.document.querySelectorAll(`[data-agent="${agent}"].mascot-slot, [data-agent="${agent}"].agent-mascot-slot`);
+    assert.equal(slots.length, 2);
+    for (const slot of slots) assert.ok(slot.querySelector(`img[src="assets/${asset}"]`));
+  }
+});
 
 test('approval decisions give feedback, collapse and replay', t => {
   const { $, click, flushTimers } = setup(t);

@@ -340,3 +340,21 @@
 .agent-mascot-card[data-agent="opencode"] figcaption {
   color: #70d8c8;
 }
+
+/* The Pi and DeepSeek marks reuse the same vector artwork as the app. */
+.mascot-slot .site-agent-mark,
+.agent-mascot-slot .site-agent-mark {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.mascot-slot .site-agent-mark--dsh,
+.agent-mascot-slot .site-agent-mark--dsh {
+  width: 62%;
+  height: 62%;
+}
+
+.agent-mascot-card[data-agent="pi"] figcaption { color: #f09082; }
+.agent-mascot-card[data-agent="dsh"] figcaption { color: #aebcff; }

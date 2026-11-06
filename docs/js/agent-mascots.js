@@ -27,6 +27,8 @@
       type: "opencode",
       mood: "calm",
     },
+    pi: { type: "mark", src: "assets/agent-pi.svg", mood: "calm" },
+    dsh: { type: "mark", src: "assets/agent-dsh.svg", mood: "calm" },
   };
 
   function slotMascotSize(slot) {
@@ -212,6 +214,10 @@
     const config = AGENTS[agentId];
     if (!config) return "";
     const mood = moodOverride || config.mood;
+
+    if (config.type === "mark") {
+      return `<img class="site-agent-mark site-agent-mark--${agentId}" src="${config.src}" alt="" />`;
+    }
 
     if (config.type === "cursor" && window.AtollCursorMascot) {
       return window.AtollCursorMascot.render(mood, size || 79);

@@ -4,13 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Atoll — 菜单栏 AI 工作流浮岛</title>
-  <meta name="description" content="Atoll 住在 macOS 菜单栏 / Windows 顶栏，为 Claude Code、Codex、Cursor、ZCode、Gemini CLI 与 OpenCode 提供权限审批、审批规则引擎、通知提醒、Plan 模式交互、Subagent 追踪与 Token 用量统计。100% 本地，数据不出本机。" />
+  <meta name="description" content="Atoll 住在 macOS 菜单栏 / Windows 顶栏，为 Claude Code、Codex、Cursor、ZCode、Gemini CLI、OpenCode、Pi 与 DeepSeek Harness 带来本地 AI 工作流。支持能力因 Agent 而异。" />
   <meta name="theme-color" content="#0a0b0d" />
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Atoll — 菜单栏 AI 工作流浮岛" />
-  <meta property="og:description" content="本地 Coding Agent 工作流浮岛：权限审批、审批规则引擎、通知提醒、Plan 模式问答与构建确认、Subagent 追踪、Token 统计。支持 Claude Code / Codex / Cursor / ZCode / Gemini CLI / OpenCode。" />
+  <meta property="og:description" content="本地 Coding Agent 工作流浮岛。支持 Claude Code / Codex / Cursor / ZCode / Gemini CLI / OpenCode / Pi / DeepSeek Harness。" />
   <meta property="og:image" content="https://sheepbooy.github.io/Atoll/assets/hero.png" />
   <meta property="og:url" content="https://sheepbooy.github.io/Atoll/" />
 
@@ -24,12 +24,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/mascots.css?v=133d240e55" />
+  <link rel="stylesheet" href="css/mascots.css?v=pi-dsh-1" />
   <link rel="stylesheet" href="css/atoll-logo.css?v=5eb4b17fe2" />
-  <link rel="stylesheet" href="css/site.css?v=7dc29db49a" />
+  <link rel="stylesheet" href="css/site.css?v=pi-dsh-1" />
   <script defer src="js/atoll-logo.js?v=a7b0347ddb"></script>
   <script defer src="js/cursor-mascot.js?v=0d06122c97"></script>
-  <script defer src="js/agent-mascots.js?v=4aa9e142ea"></script>
+  <script defer src="js/agent-mascots.js?v=pi-dsh-1"></script>
   <script defer src="js/site.js?v=50ce54d311"></script>
 </head>
 <body>
@@ -88,7 +88,7 @@
         <noscript><p class="noscript-note">交互演示需要 JavaScript；下方可阅读全部功能与安装说明。</p></noscript>
       </div>
     </header>
-    <div class="container agent-strip"><span>与你熟悉的 Agent，一起工作</span><div><span>Claude Code</span><span>Codex</span><span>Cursor</span><span>ZCode</span><span>Gemini CLI</span><span>OpenCode</span></div></div>
+    <div class="container agent-strip"><span>与你熟悉的 Agent，一起工作</span><div><span>Claude Code</span><span>Codex</span><span>Cursor</span><span>ZCode</span><span>Gemini CLI</span><span>OpenCode</span><span>Pi</span><span>DeepSeek Harness</span></div></div>
     <section class="container section" id="features">
       <div class="section-heading reveal"><span class="section-label">01 / STAY IN FLOW</span><h2>工作向前，<br /><span class="muted">注意力不必来回。</span></h2><p>从一个权限请求，到一个完整计划。<br />浮岛把需要你的时刻，带到你眼前。</p></div>
       <div class="workflow-grid">
@@ -118,7 +118,7 @@
       </div>
       <details class="platform-detail"><summary>查看固定场景 CPU 对照 <span aria-hidden="true">+</span></summary><div class="detail-copy">同一台 Mac 每组预热 30 秒、采样 60 秒，折叠且无交互：空闲 0.893% → 0.302%，一个工作会话 3.888% → 0.367%，音乐播放与歌词启用 0.818% → 0.318%。CPU 为主进程与所属 WebKit 合计，100% 表示一个核心；音乐适配器另计约 0.075%。<br /><br />这是关闭后台维护、固定会话状态的受控对照。刘海屏折叠态不显示歌词，结果不能直接推算真实任务全程耗电或电池续航。<a class="text-link" href="https://github.com/sheepbooy/Atoll/blob/main/docs/energy-benchmark.md" target="_blank" rel="noopener">查看方法与原始数据 ↗</a></div></details>
     </section>
-    <section class="container section" id="agents"><div class="section-heading reveal"><span class="section-label">03 / BETTER TOGETHER</span><h2>你的 Agent，<br /><span class="muted">熟悉的工作方式。</span></h2><p>在应用内安装对应 Hook，即可接入。<br />每个 Agent 的支持能力，都清楚写在这里。</p></div><div class="agent-cards">
+    <section class="container section" id="agents"><div class="section-heading reveal"><span class="section-label">03 / BETTER TOGETHER</span><h2>你的 Agent，<br /><span class="muted">熟悉的工作方式。</span></h2><p>在应用内安装对应 Hook 或桥接，即可接入。<br />每个 Agent 的支持能力，都清楚写在这里。</p></div><div class="agent-cards">
           <article class="agent-card">
             <img src="assets/agent-claude.png" alt="Claude" width="48" height="48" />
             <div>
@@ -170,7 +170,15 @@
               <h3>OpenCode</h3>
               <p>Settings → Agent hooks → Install OpenCode。OpenCode 没有 hooks 配置文件——Atoll 在其插件目录部署进程内桥接插件；Atoll 不在线时 OpenCode 自带确认自动兜底。</p>
             </div>
-          </article></div><details class="platform-detail"><summary>开发版：确认真实连接 <span aria-hidden="true">+</span></summary><div class="detail-copy">安装后点击「验证连接」，按需信任 Hook 并重启对应 Agent，再发送消息或触发工具。新的真实事件才会点亮成功标记；旧活动不会自动完成验证，重新安装后需要重新验证。Atoll 自带 Node.js 运行时，系统没有 Node 也无需另行安装。</div></details><details class="setup-details"><summary>查看首次接入演示 <span>+</span></summary><div class="product-media"><img src="assets/setup.gif" alt="首次安装 Hook 的操作演示" loading="lazy" /><span class="media-fallback" hidden>首次安装 Hook 的操作演示</span></div></details></section>
+          </article>
+          <article class="agent-card">
+            <div class="agent-card-mascot" aria-hidden="true"><span class="mascot-slot" data-agent="pi"></span></div>
+            <div><h3>Pi（CLI）</h3><p>Settings → Agent hooks → Install Pi。全局扩展拦截 bash、write、edit 等工具，同步会话与 Token；安装后重启 Pi。Atoll 离线时交互界面询问，非交互模式默认拒绝。</p></div>
+          </article>
+          <article class="agent-card">
+            <div class="agent-card-mascot" aria-hidden="true"><span class="mascot-slot" data-agent="dsh"></span></div>
+            <div><h3>DeepSeek Harness（Web + Desktop）</h3><p>Settings → Agent hooks → Install DeepSeek Harness。桥接插件支持审批与会话状态，安装后重启 DSH；Atoll 离线时回退原生审批。Token、聊天记录与子 Agent 暂不支持。</p></div>
+          </article></div><details class="platform-detail"><summary>确认真实连接 <span aria-hidden="true">+</span></summary><div class="detail-copy">安装后点击「验证连接」，按需信任 Hook 并重启对应 Agent，再发送消息或触发工具。新的真实事件才会点亮成功标记；旧活动不会自动完成验证，重新安装后需要重新验证。Atoll 自带 Node.js 运行时，系统没有 Node 也无需另行安装。</div></details><details class="setup-details"><summary>查看首次接入演示 <span>+</span></summary><div class="product-media"><img src="assets/setup.gif" alt="首次安装 Hook 的操作演示" loading="lazy" /><span class="media-fallback" hidden>首次安装 Hook 的操作演示</span></div></details></section>
     <section class="container section" id="architecture"><div class="privacy-card reveal"><div><span class="section-label">LOCAL BY DESIGN</span><h2>你的工作，<br />留在你的电脑里。</h2><p>Agent、Hook 与浮岛通过本机桥接通信。<br />会话内容与审批数据留在本地。</p><div class="privacy-badges"><span>本地桥接</span><span>开源可审查</span><span>无追踪</span></div></div><div class="bridge-diagram" role="img" aria-label="Agent 通过 Hook 与本地 Bridge 通信，浮岛回传决定"><div class="bridge-node"><span>01</span><strong>Coding Agent</strong><small>发起事件</small></div><div class="bridge-connector">↓ <code>127.0.0.1:47777</code></div><div class="bridge-node"><span>02</span><strong>Hook → Local Bridge</strong><small>维护会话与工作状态</small></div><div class="bridge-connector">↓ <span>你的决定，原路返回</span></div><div class="bridge-node"><span>03</span><strong>Atoll Island</strong><small>审批 · 计划 · 任务</small></div></div></div><details class="platform-detail"><summary>了解本地工作原理 <span>+</span></summary><div class="detail-copy">Hook shim 写入 Agent 配置，通过 Node.js 向 Rust 本地 HTTP bridge 发送事件。浮岛读取会话、Subagent 与 Token 状态，再将你的决定回传 Agent。所有工作流数据在本机闭环；应用更新、安装下载等操作会访问网络。Atoll 不替代 Agent，也不上传会话内容。</div></details></section>
     <section class="container section" id="install"><div class="install-layout"><div class="section-heading reveal"><span class="section-label">04 / MAKE IT YOURS</span><h2>给顶栏，<br /><span class="muted">一个新的住客。</span></h2><p>一行命令安装，几步完成接入。<br />下一次 Agent 需要你，浮岛就在那里。</p><a class="text-link" href="https://github.com/sheepbooy/Atoll/releases" target="_blank" rel="noopener">从 Releases 手动下载 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a></div><div class="install-panel reveal">
         <div class="install-tabs" role="tablist">
@@ -311,6 +319,14 @@
             <figure class="agent-mascot-card" data-agent="opencode">
               <div class="agent-mascot-slot" data-agent="opencode"></div>
               <figcaption>OpenCode</figcaption>
+            </figure>
+            <figure class="agent-mascot-card" data-agent="pi">
+              <div class="agent-mascot-slot" data-agent="pi"></div>
+              <figcaption>Pi</figcaption>
+            </figure>
+            <figure class="agent-mascot-card" data-agent="dsh">
+              <div class="agent-mascot-slot" data-agent="dsh"></div>
+              <figcaption>DeepSeek</figcaption>
             </figure>
           </div>
         </div></div></section>
